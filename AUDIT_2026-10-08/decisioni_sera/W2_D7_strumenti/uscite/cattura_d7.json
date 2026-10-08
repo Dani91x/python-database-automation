@@ -1,0 +1,2920 @@
+{
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_conto_illeggibile_rifiuto_esplicito": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: conto non leggibile (rete giu'): nessun ordine",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: conto non leggibile (rete giu'): nessun ordine",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_copertura_dell_app_ancora_appesa_sul_lato_della_copertura_ferma_il_secondo": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests",
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders",
+    "SportsAPING/v1.0/cancelOrders",
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: ordine dell'app H1 LAY ancora non abbinato (6.0) dopo l'annullo: nessuna copertura; annullo automatico ordine dell'app: H1 LAY @2.50 (6.00 non abbinato) annullo FALLITO: cancelOrders: risposta inattesa (None None); esposizione riletta dal conto",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: ordine dell'app H1 LAY ancora non abbinato (6.0) dopo l'annullo: nessuna copertura; annullo automatico ordine dell'app: H1 LAY @2.50 (6.00 non abbinato) annullo FALLITO: cancelOrders: risposta inattesa (None None); esposizione riletta dal conto",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_db_illeggibile_rifiuto_esplicito[betfair_live_order_requests]": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "conto non leggibile: proprietari degli ordini non letti dal DB (DB giu' su betfair_live_order_requests): nessun ordine",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "conto non leggibile: proprietari degli ordini non letti dal DB (DB giu' su betfair_live_order_requests): nessun ordine",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_db_illeggibile_rifiuto_esplicito[betfair_live_orders]": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "conto non leggibile: proprietari degli ordini non letti dal DB (DB giu' su betfair_live_orders): nessun ordine",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "conto non leggibile: proprietari degli ordini non letti dal DB (DB giu' su betfair_live_orders): nessun ordine",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_db_illeggibile_rifiuto_esplicito[omega_trades]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "conto non leggibile: proprietari degli ordini non letti dal DB (DB giu' su omega_trades): nessun ordine",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "conto non leggibile: proprietari degli ordini non letti dal DB (DB giu' su omega_trades): nessun ordine",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_frazione_uno_e_ft_ammessi": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot",
+     "fraction": 1.0,
+     "ft_parent": 9,
+     "ft_retry": 1
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 0 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_gli_ordini_dei_bot_sulla_stessa_selezione_non_si_toccano": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "M1",
+        "motivo": "strategia:mike"
+       },
+       {
+        "bet_id": "O1",
+        "motivo": "tabella:omega_trades"
+       },
+       {
+        "bet_id": "X1",
+        "motivo": "specchio:scalper"
+       },
+       {
+        "bet_id": "F1",
+        "motivo": "coda:safe-t4"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 4 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_idempotenza_il_secondo_comando_trova_la_posizione_piatta": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-601",
+    "error": null,
+    "handicap": 0,
+    "id": 601,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq601",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 0 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  },
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests",
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders",
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-602",
+    "error": null,
+    "handicap": 0,
+    "id": 602,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S1",
+       "H1"
+      ],
+      "l": 1.0,
+      "w": 1.0
+     },
+     "customer_order_ref": "awlq602",
+     "detail": "esposizione fuori bot gia' piatta: nessun ordine; conto: 2 ordini fuori bot, 0 dei bot (esclusi); W=1.00 L=1.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_il_follow_through_segue_la_copertura_fuori_bot": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-800",
+    "error": null,
+    "handicap": 0,
+    "id": 800,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq800",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 0 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_il_worker_rifiuta_ancora_la_copertura_che_chiuderebbe_mike": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: la copertura LAY 20.00 porterebbe il netto di conto della selezione da 10.00 a -10.00 e il bot mike (posizione 10.00) la dichiarerebbe CHIUSA DALL'UTENTE: nessun ordine",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.35",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: la copertura LAY 20.00 porterebbe il netto di conto della selezione da 10.00 a -10.00 e il bot mike (posizione 10.00) la dichiarerebbe CHIUSA DALL'UTENTE: nessun ordine",
+     "error_code": null,
+     "market_id": "1.35",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_mercato_a_due_esiti_posizione_piatta_sul_mercato": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.35",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": 0.0,
+      "w": 0.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "esposizione fuori bot gia' piatta: nessun ordine; conto: 1 ordini fuori bot, 0 dei bot (esclusi); W=5.00 L=-5.00; posizione del MERCATO a due esiti (altra selezione 47998: W=5.00 L=-5.00)",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.35",
+     "mode": "live",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_mike_intera_quando_il_prezzo_e_sceso_green_up_dell_utente": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     1.4,
+     5.36,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.35",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "M1",
+        "motivo": "strategia:mike"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 2.5
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 5.36@1.4 (f=1.00); atteso vince=0.36 perde=0.36; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=2.50 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.35",
+     "mode": "live",
+     "ok": true,
+     "price": 1.4,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 5.36,
+     "size_matched": 0.0,
+     "size_remaining": 5.36,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_mike_non_viene_dichiarata_chiusa_dal_green_up_dell_utente": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     1.5,
+     33.33,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.35",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "M1",
+        "motivo": "strategia:mike"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -10.0,
+      "w": 40.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 33.33@1.5 (f=1.00); atteso vince=23.34 perde=23.33; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=40.00 L=-10.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.35",
+     "mode": "live",
+     "ok": true,
+     "price": 1.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 33.33,
+     "size_matched": 0.0,
+     "size_remaining": 33.33,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_mike_resta_intera_quando_la_copertura_non_supera_la_puntata[1.5]": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     1.5,
+     5.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.35",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "M1",
+        "motivo": "strategia:mike"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 2.5
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 5.00@1.5 (f=1.00); atteso vince=0.0 perde=0.0; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=2.50 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.35",
+     "mode": "live",
+     "ok": true,
+     "price": 1.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 5.0,
+     "size_matched": 0.0,
+     "size_remaining": 5.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_mike_resta_intera_quando_la_copertura_non_supera_la_puntata[1.6]": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     1.6,
+     4.69,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.35",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "M1",
+        "motivo": "strategia:mike"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 2.5
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 4.69@1.6 (f=1.00); atteso vince=-0.31 perde=-0.31; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=2.50 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.35",
+     "mode": "live",
+     "ok": true,
+     "price": 1.6,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 4.69,
+     "size_matched": 0.0,
+     "size_remaining": 4.69,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_mike_role_utente_resta_escluso_come_nella_rpc": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "U9",
+        "motivo": "tabella:mike_trades"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_ogni_strategia_che_non_e_dell_utente_e_esclusa[LiveScalperStr]": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "B1",
+        "motivo": "strategia:LiveScalperStr"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_ogni_strategia_che_non_e_dell_utente_e_esclusa[omega]": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "B1",
+        "motivo": "strategia:omega"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_ogni_strategia_che_non_e_dell_utente_e_esclusa[safe]": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "B1",
+        "motivo": "strategia:safe"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_ogni_strategia_che_non_e_dell_utente_e_esclusa[safe_tennis]": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "B1",
+        "motivo": "strategia:safe_tennis"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_ogni_strategia_che_non_e_dell_utente_e_esclusa[x]": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "B1",
+        "motivo": "strategia:x"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_omega_intera_dopo_la_copertura_del_sito_sul_suo_stesso_lato": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.35",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "O1",
+        "motivo": "tabella:omega_trades"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.35",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_omega_intera_la_previsione_del_worker_coincide_col_verdetto_vero": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "BACK",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.35",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "O1",
+        "motivo": "tabella:omega_trades"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": 5.0,
+      "w": -10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "BACK 6.00@2.5 (f=1.00); atteso vince=-1.0 perde=-1.0; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=-10.00 L=5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.35",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_ordini_non_abbinati_non_contano_e_non_si_piazza_niente": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": 0.0,
+      "w": 0.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "esposizione fuori bot gia' piatta: nessun ordine; conto: 1 ordini fuori bot, 0 dei bot (esclusi); W=0.00 L=0.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_paginazione_del_conto": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders",
+    "SportsAPING/v1.0/listCurrentOrders",
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S0",
+       "S1",
+       "S2",
+       "S3",
+       "S4"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 5 ordini fuori bot, 0 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_paper_rifiutato_con_motivo_e_nessuna_lettura": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: solo LIVE - in prova (mode 'paper') gli ordini del sito non esistono: nessun ordine",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "paper",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: solo LIVE - in prova (mode 'paper') gli ordini del sito non esistono: nessun ordine",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "paper",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_parametri_del_greenup_parziale_e_comandi_dei_bot_rifiutati[extra0]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: params.amount non ammesso (copertura PIENA, solo dall'utente)",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "amount": 2.0,
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: params.amount non ammesso (copertura PIENA, solo dall'utente)",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_parametri_del_greenup_parziale_e_comandi_dei_bot_rifiutati[extra1]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: params.target_price non ammesso (copertura PIENA, solo dall'utente)",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot",
+     "target_price": 3.5
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: params.target_price non ammesso (copertura PIENA, solo dall'utente)",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_parametri_del_greenup_parziale_e_comandi_dei_bot_rifiutati[extra2]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: params.place_at_ticks non ammesso (copertura PIENA, solo dall'utente)",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot",
+     "place_at_ticks": 2
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: params.place_at_ticks non ammesso (copertura PIENA, solo dall'utente)",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_parametri_del_greenup_parziale_e_comandi_dei_bot_rifiutati[extra3]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: params.cancel_unmatched non ammesso (copertura PIENA, solo dall'utente)",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "cancel_unmatched": true,
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: params.cancel_unmatched non ammesso (copertura PIENA, solo dall'utente)",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_parametri_del_greenup_parziale_e_comandi_dei_bot_rifiutati[extra4]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: params.fraction 0.5 non ammessa (solo copertura piena)",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot",
+     "fraction": 0.5
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: params.fraction 0.5 non ammessa (solo copertura piena)",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_parametri_del_greenup_parziale_e_comandi_dei_bot_rifiutati[extra5]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: params.risk_rule_id non ammesso (copertura PIENA, solo dall'utente)",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot",
+     "risk_rule_id": 4
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: params.risk_rule_id non ammesso (copertura PIENA, solo dall'utente)",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_parametri_del_greenup_parziale_e_comandi_dei_bot_rifiutati[extra6]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: params.comando non ammesso (copertura PIENA, solo dall'utente)",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "comando": {
+      "attore": "mike",
+      "ref": "mike-t1"
+     },
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: params.comando non ammesso (copertura PIENA, solo dall'utente)",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_parziale_conta_solo_l_abbinato": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     4.8,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -4.0,
+      "w": 8.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 4.80@2.5 (f=1.00); atteso vince=0.8 perde=0.8; conto: 1 ordini fuori bot, 0 dei bot (esclusi); W=8.00 L=-4.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 4.8,
+     "size_matched": 0.0,
+     "size_remaining": 4.8,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_runner_in_paper_non_serve_la_riga_live": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "live_client_assente: il runner gira in modalita' PAPER e non ha nessun client per le righe 'live' - riga NON eseguita (fail-closed)",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "live_client_assente: il runner gira in modalita' PAPER e non ha nessun client per le righe 'live' - riga NON eseguita (fail-closed)",
+     "error_code": "live_client_assente",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_runner_senza_client_reale_rifiuto_esplicito": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup fuori_bot: conto non leggibile - nessun client reale per la riga: nessun ordine",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup fuori_bot: conto non leggibile - nessun client reale per la riga: nessun ordine",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_safe_stessa_aritmetica_del_verdetto": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     1.4,
+     5.36,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.35",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [
+       {
+        "bet_id": "F1",
+        "motivo": "tabella:safe_strategy_trades"
+       }
+      ],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 2.5
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 5.36@1.4 (f=1.00); atteso vince=0.36 perde=0.36; conto: 1 ordini fuori bot, 1 dei bot (esclusi); W=2.50 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.35",
+     "mode": "live",
+     "ok": true,
+     "price": 1.4,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 5.36,
+     "size_matched": 0.0,
+     "size_remaining": 5.36,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_sito_e_app_si_sommano": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     9.2,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S1",
+       "A1"
+      ],
+      "l": -7.0,
+      "w": 16.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 9.20@2.5 (f=1.00); atteso vince=2.2 perde=2.2; conto: 2 ordini fuori bot, 0 dei bot (esclusi); W=16.00 L=-7.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 9.2,
+     "size_matched": 0.0,
+     "size_remaining": 9.2,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_solo_sito_back_si_copre_con_una_lay_al_miglior_lay": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 1 ordini fuori bot, 0 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_solo_sito_lay_si_copre_con_una_back_al_miglior_back": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "BACK",
+     2.0,
+     5.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S1"
+      ],
+      "l": 4.0,
+      "w": -6.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "BACK 5.00@2.0 (f=1.00); atteso vince=-1.0 perde=-1.0; conto: 1 ordini fuori bot, 0 dei bot (esclusi); W=-6.00 L=4.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.0,
+     "selection_id": 47999,
+     "side": "back",
+     "size": 5.0,
+     "size_matched": 0.0,
+     "size_remaining": 5.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_un_ordine_del_sito_appeso_sul_lato_della_copertura_non_ferma": [
+  {
+   "blotter": 0,
+   "letture_db": [
+    "omega_trades",
+    "safe_strategy_trades",
+    "mike_trades",
+    "betfair_live_orders",
+    "betfair_live_order_requests"
+   ],
+   "metodi": [
+    "SportsAPING/v1.0/listCurrentOrders"
+   ],
+   "piazzati": [
+    [
+     "LAY",
+     2.5,
+     6.0,
+     "LAPSE",
+     "live"
+    ]
+   ],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": null,
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori_bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": 0.0,
+     "bet_id": null,
+     "conto": {
+      "bot": [],
+      "fuori_bot": [
+       "S1",
+       "S2"
+      ],
+      "l": -5.0,
+      "w": 10.0
+     },
+     "customer_order_ref": "awlq501",
+     "detail": "LAY 6.00@2.5 (f=1.00); atteso vince=1.0 perde=1.0; conto: 2 ordini fuori bot, 0 dei bot (esclusi); W=10.00 L=-5.00",
+     "error": null,
+     "esposizione": "fuori_bot",
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": true,
+     "price": 2.5,
+     "selection_id": 47999,
+     "side": "lay",
+     "size": 6.0,
+     "size_matched": 0.0,
+     "size_remaining": 6.0,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "done"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_valore_di_esposizione_sconosciuto_rifiutato[1]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup: params.esposizione non ammesso (1): atteso 'fuori_bot' o assente",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": 1
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup: params.esposizione non ammesso (1): atteso 'fuori_bot' o assente",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_valore_di_esposizione_sconosciuto_rifiutato[True]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup: params.esposizione non ammesso (True): atteso 'fuori_bot' o assente",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": true
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup: params.esposizione non ammesso (True): atteso 'fuori_bot' o assente",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_valore_di_esposizione_sconosciuto_rifiutato[]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup: params.esposizione non ammesso (''): atteso 'fuori_bot' o assente",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": ""
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup: params.esposizione non ammesso (''): atteso 'fuori_bot' o assente",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_valore_di_esposizione_sconosciuto_rifiutato[bot]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup: params.esposizione non ammesso ('bot'): atteso 'fuori_bot' o assente",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup: params.esposizione non ammesso ('bot'): atteso 'fuori_bot' o assente",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ],
+ "Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py::test_valore_di_esposizione_sconosciuto_rifiutato[fuori-bot]": [
+  {
+   "blotter": 0,
+   "letture_db": [],
+   "metodi": [],
+   "piazzati": [],
+   "riga": {
+    "action": "greenup",
+    "bet_id": null,
+    "client_ref": "ui-501",
+    "error": "greenup: params.esposizione non ammesso ('fuori-bot'): atteso 'fuori_bot' o assente",
+    "handicap": 0,
+    "id": 501,
+    "market_id": "1.100",
+    "mode": "live",
+    "params": {
+     "esposizione": "fuori-bot"
+    },
+    "price": null,
+    "result": {
+     "action": "greenup",
+     "average_price_matched": null,
+     "bet_id": null,
+     "customer_order_ref": "awlq501",
+     "detail": null,
+     "error": "greenup: params.esposizione non ammesso ('fuori-bot'): atteso 'fuori_bot' o assente",
+     "error_code": null,
+     "market_id": "1.100",
+     "mode": "live",
+     "ok": false,
+     "price": null,
+     "selection_id": 47999,
+     "side": null,
+     "size": null,
+     "size_matched": null,
+     "size_remaining": null,
+     "status": null,
+     "submin_step": null
+    },
+    "selection_id": 47999,
+    "side": null,
+    "size": null,
+    "status": "error"
+   }
+  }
+ ]
+}

@@ -1,0 +1,116 @@
+D1 nessun annullo (ordini appesi ignorati, si copre comunque)
+    -> 12 failed, 66 passed in 4.22s
+       ROSSO test_a_ordine_dell_app_appeso_si_annulla_poi_si_copre_e_l_esito_lo_dice
+       ROSSO test_a_la_risposta_del_finto_e_quella_della_libreria_vera
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[rifiuta-annullo
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[rete-annullo
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[muto-(6.00
+       ROSSO test_b_annullo_riuscito_ma_conto_non_rileggibile_nessuna_copertura
+       ROSSO test_c_abbinato_in_parte_durante_l_annullo_copertura_sulla_parte_vera
+       ROSSO test_c_abbinato_tutto_prima_dell_annullo_posizione_piatta_nessun_ordine
+       ROSSO test_c_annullo_fatto_poi_il_mercato_si_sospende_l_errore_dice_dell_annullo
+       ROSSO test_c_annullo_fatto_poi_la_copertura_e_rifiutata_l_errore_dice_dell_annullo
+       ROSSO test_c_annullo_fatto_poi_la_copertura_chiuderebbe_mike_rifiuto_che_lo_dice
+       ROSSO test_copertura_dell_app_ancora_appesa_sul_lato_della_copertura_ferma_il_secondo
+D2 nessuna rilettura del conto dopo l'annullo
+    -> 10 failed, 68 passed in 2.92s
+       ROSSO test_a_ordine_dell_app_appeso_si_annulla_poi_si_copre_e_l_esito_lo_dice
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[rifiuta-annullo
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[rete-annullo
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[muto-(6.00
+       ROSSO test_b_annullo_riuscito_ma_conto_non_rileggibile_nessuna_copertura
+       ROSSO test_c_abbinato_in_parte_durante_l_annullo_copertura_sulla_parte_vera
+       ROSSO test_c_abbinato_tutto_prima_dell_annullo_posizione_piatta_nessun_ordine
+       ROSSO test_c_annullo_fatto_poi_il_mercato_si_sospende_l_errore_dice_dell_annullo
+       ROSSO test_c_annullo_fatto_poi_la_copertura_e_rifiutata_l_errore_dice_dell_annullo
+       ROSSO test_c_annullo_fatto_poi_la_copertura_chiuderebbe_mike_rifiuto_che_lo_dice
+D3 nessun controllo dell'ordine ancora vivo dopo la rilettura
+    -> 4 failed, 74 passed in 4.08s
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[rifiuta-annullo
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[rete-annullo
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[muto-(6.00
+       ROSSO test_copertura_dell_app_ancora_appesa_sul_lato_della_copertura_ferma_il_secondo
+D4 cancelOrders senza betId (annulla tutto il mercato)
+    -> 11 failed, 67 passed in 2.02s
+       ROSSO test_a_ordine_dell_app_appeso_si_annulla_poi_si_copre_e_l_esito_lo_dice
+       ROSSO test_a_la_risposta_del_finto_e_quella_della_libreria_vera
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[rifiuta-annullo
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[muto-(6.00
+       ROSSO test_b_annullo_riuscito_ma_conto_non_rileggibile_nessuna_copertura
+       ROSSO test_c_abbinato_in_parte_durante_l_annullo_copertura_sulla_parte_vera
+       ROSSO test_c_abbinato_tutto_prima_dell_annullo_posizione_piatta_nessun_ordine
+       ROSSO test_c_annullo_fatto_poi_il_mercato_si_sospende_l_errore_dice_dell_annullo
+       ROSSO test_c_annullo_fatto_poi_la_copertura_e_rifiutata_l_errore_dice_dell_annullo
+       ROSSO test_c_annullo_fatto_poi_la_copertura_chiuderebbe_mike_rifiuto_che_lo_dice
+       ROSSO test_esito_senza_report_per_l_ordine_e_un_fallimento
+D5 guardia mercato/betId tolta
+    -> 3 failed, 75 passed in 3.31s
+       ROSSO test_mai_cancel_orders_senza_mercato_o_senza_bet_id[-H1]
+       ROSSO test_mai_cancel_orders_senza_mercato_o_senza_bet_id[1.100-]
+       ROSSO test_mai_cancel_orders_senza_mercato_o_senza_bet_id[None-H1]
+D6 annullo anche degli ordini 'live' dei BOT (qui invece di fuori)
+    -> 1 failed, 77 passed in 2.29s
+       ROSSO test_d_ordini_non_abbinati_degli_altri_bot_non_si_toccano
+D7 lato della copertura ignorato
+    -> 1 failed, 77 passed in 2.09s
+       ROSSO test_senza_ordini_dell_app_sul_lato_della_copertura_nessun_annullo[altro1]
+D8 annullo non dichiarato nel detail
+    -> 5 failed, 73 passed in 2.41s
+       ROSSO test_a_ordine_dell_app_appeso_si_annulla_poi_si_copre_e_l_esito_lo_dice
+       ROSSO test_c_abbinato_in_parte_durante_l_annullo_copertura_sulla_parte_vera
+       ROSSO test_c_abbinato_tutto_prima_dell_annullo_posizione_piatta_nessun_ordine
+       ROSSO test_c_annullo_fatto_poi_il_mercato_si_sospende_l_errore_dice_dell_annullo
+       ROSSO test_c_annullo_fatto_poi_la_copertura_chiuderebbe_mike_rifiuto_che_lo_dice
+D9 annullati_app non nell'esito
+    -> 3 failed, 75 passed in 2.65s
+       ROSSO test_a_ordine_dell_app_appeso_si_annulla_poi_si_copre_e_l_esito_lo_dice
+       ROSSO test_c_abbinato_in_parte_durante_l_annullo_copertura_sulla_parte_vera
+       ROSSO test_c_abbinato_tutto_prima_dell_annullo_posizione_piatta_nessun_ordine
+D10 sizeCancelled ignorata (annullato = non abbinato)
+    -> 1 failed, 77 passed in 3.18s
+       ROSSO test_c_abbinato_in_parte_durante_l_annullo_copertura_sulla_parte_vera
+D11 esito SUCCESS letto come fallito
+    -> 6 failed, 72 passed in 2.33s
+       ROSSO test_a_ordine_dell_app_appeso_si_annulla_poi_si_copre_e_l_esito_lo_dice
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[muto-(6.00
+       ROSSO test_b_annullo_riuscito_ma_conto_non_rileggibile_nessuna_copertura
+       ROSSO test_c_abbinato_in_parte_durante_l_annullo_copertura_sulla_parte_vera
+       ROSSO test_c_annullo_fatto_poi_il_mercato_si_sospende_l_errore_dice_dell_annullo
+       ROSSO test_c_annullo_fatto_poi_la_copertura_chiuderebbe_mike_rifiuto_che_lo_dice
+D12 rilettura KO senza la nota dell'annullo
+    -> 1 failed, 77 passed in 3.13s
+       ROSSO test_b_annullo_riuscito_ma_conto_non_rileggibile_nessuna_copertura
+D13 lightweight tolto (risposta = risorsa, non dict)
+    -> 9 failed, 69 passed in 2.62s
+       ROSSO test_a_ordine_dell_app_appeso_si_annulla_poi_si_copre_e_l_esito_lo_dice
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[rifiuta-annullo
+       ROSSO test_b_annullo_fallito_nessuna_copertura_e_il_motivo[muto-(6.00
+       ROSSO test_b_annullo_riuscito_ma_conto_non_rileggibile_nessuna_copertura
+       ROSSO test_c_abbinato_in_parte_durante_l_annullo_copertura_sulla_parte_vera
+       ROSSO test_c_abbinato_tutto_prima_dell_annullo_posizione_piatta_nessun_ordine
+       ROSSO test_c_annullo_fatto_poi_il_mercato_si_sospende_l_errore_dice_dell_annullo
+       ROSSO test_c_annullo_fatto_poi_la_copertura_chiuderebbe_mike_rifiuto_che_lo_dice
+       ROSSO test_esito_senza_report_per_l_ordine_e_un_fallimento
+D14 errore del piazzamento senza la coda dell'annullo
+    -> 1 failed, 77 passed in 2.61s
+       ROSSO test_c_annullo_fatto_poi_la_copertura_e_rifiutata_l_errore_dice_dell_annullo
+D15 la coda dell'annullo anche SENZA annullo
+    -> 1 failed, 77 passed in 1.70s
+       ROSSO test_senza_annullo_l_errore_del_piazzamento_e_quello_di_sempre
+D16 ordini del SITO annullati come quelli dell'app
+    -> 2 failed, 76 passed in 1.45s
+       ROSSO test_senza_ordini_dell_app_sul_lato_della_copertura_nessun_annullo[altro0]
+       ROSSO test_un_ordine_del_sito_appeso_sul_lato_della_copertura_non_ferma
+D17 annullo anche con la posizione piatta (lato non considerato se non eseguibile)
+    -> 1 failed, 77 passed in 1.98s
+       ROSSO test_posizione_piatta_con_ordine_dell_app_appeso_nessun_annullo
+D18 rilettura con la vecchia nota in testa al detail persa (prefisso nel rifiuto 'non eseguibile')
+    -> 1 failed, 77 passed in 2.22s
+       ROSSO test_c_annullo_fatto_poi_il_mercato_si_sospende_l_errore_dice_dell_annullo
+D19 rifiuto 'chiusa dall'utente' senza la nota dell'annullo
+    -> 1 failed, 77 passed in 2.49s
+       ROSSO test_c_annullo_fatto_poi_la_copertura_chiuderebbe_mike_rifiuto_che_lo_dice
+
+mutazioni 19, catturate 19, NON catturate: []
+ripristino verificato sha256 d4056041f55e4f32eff97200cc7f32cd189f0e0bc054c9d7321aad7d07e5edc3
+dopo il ripristino: 78 passed in 2.18s
