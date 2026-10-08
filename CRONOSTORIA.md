@@ -5307,3 +5307,10 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   riproducibile da solo, gia' visto dal PC sulla b5547eb = PREESISTENTE, reperto aperto per l'utente), 35760084 OK 32, KO 1 (`auto-live`
   AL1, atteso), NE 18. Controllo scalper sulla cima 597ea3a (C7 + W3b): 28/28 scenari identici al DOPO di W3b
   (`AUDIT_2026-10-08/controllo_scalper_597ea3a/`). Suite complete sulla d0cf8b94 in `AUDIT_2026-10-08/suite_cloud/`.
+- 08/10 DIFETTO TROVATO DALLE SUITE CLOUD E CORRETTO (codice di produzione, `Betfair/stream/frammenti_mercato.py`): la memoria «visto
+  dal» dei frammenti di mercato era indicizzata per `id(stream)`; un frammento chiuso da flumine (non da `_chiudi`) lasciava la voce e un
+  frammento NUOVO con lo stesso id() ne ereditava il tempo (sembrava muto/in attesa da troppo: test
+  `test_auto_follow_rifiuto_betfair_rientra_e_dichiara` rosso a caso nel cloud, 20/20 rosso da solo su quella macchina). Ora la voce
+  porta un riferimento debole allo stream e un id() riciclato riparte da adesso (lo `stream_id` NON va bene come chiave: cambia
+  all'iscrizione, primo tentativo scartato perche' 2 test esistenti diventavano rossi). Test nuovo deterministico (id() forzato uguale)
+  `test_frammenti_id_riciclato_2026_10_08.py`; mutazione senza controllo d'identita' -> rosso; test dei frammenti 40/40, collegati 86/86.

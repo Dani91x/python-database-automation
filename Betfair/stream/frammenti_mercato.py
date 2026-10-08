@@ -65,9 +65,10 @@ import logging
 import os
 import re
 import threading
+import weakref
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from flumine.streams.historicalstream import HistoricalStream
 from flumine.streams.marketstream import MarketStream
@@ -339,6 +340,15 @@ class CapacitaInsufficiente(_SC.NonPronto):
 # ---------------------------------------------------------------------------
 # il gestore (usato dal thread dell'auto-follow)
 # ---------------------------------------------------------------------------
+def _riferimento(oggetto: Any) -> Callable[[], Any]:
+    """Un riferimento che non tiene in vita ``oggetto`` (weakref); se l'oggetto non lo
+    consente (finti dei test), un riferimento normale: l'esito e' lo stesso."""
+    try:
+        return weakref.ref(oggetto)
+    except TypeError:
+        return lambda: oggetto
+
+
 def _avvia_thread(stream: Any) -> None:
     stream.start()
 
@@ -365,7 +375,13 @@ class GestoreFrammenti:
         self._avvia = avvia_stream
         self._sottoscrivi = sottoscrivi or _SC.sottoscrivi
         self._modello: Optional[Dict[str, Any]] = None
-        self._visto_dal: Dict[int, float] = {}      # id(stream) -> prima volta visto
+        # id(stream) -> (riferimento debole allo stream, prima volta visto). 08/10: il
+        # riferimento serve a riconoscere un id() RICICLATO: un frammento chiuso da
+        # flumine (non da ``_chiudi``) lascia la sua voce, e un frammento nuovo con lo
+        # stesso id() ne ereditava il «dal» (test instabile
+        # `test_auto_follow_rifiuto_betfair_rientra_e_dichiara`). Lo stream_id non va
+        # bene come chiave: cambia all'iscrizione.
+        self._visto_dal: Dict[int, Tuple[Callable[[], Any], float]] = {}
         self._rifiuto_mono: Optional[float] = None
         self.conti = {"aperture": 0, "chiusure": 0, "rifiuti": 0, "muti": 0,
                       "risottoscrizioni": 0}
@@ -496,7 +512,7 @@ class GestoreFrammenti:
         for st in list(getattr(framework, "strategies", None) or []):
             if base is None or base in list(getattr(st, "streams", None) or []):
                 st.streams = list(st.streams) + [s]
-        self._visto_dal[id(s)] = self._ora()
+        self._visto_dal[id(s)] = (_riferimento(s), self._ora())
         self._avvia(s)
         self.conti["aperture"] += 1
         self.ultimo_evento = "aperto frammento %s (%d mercati)" % (sid, len(ids))
@@ -541,7 +557,7 @@ class GestoreFrammenti:
         fr = self.frammenti(framework)
         for s in fr:
             self._ricorda_modello(s)
-            self._visto_dal.setdefault(id(s), self._ora())
+            self._dal_visto(s, self._ora())
         if not fr:
             # nessun frammento vivo: framework non ancora nato o GIA' fermato
             # (``Flumine.__exit__`` -> ``streams.stop()`` li chiude tutti).
@@ -574,6 +590,15 @@ class GestoreFrammenti:
             raise _SC.NonPronto("%d frammenti non ancora connessi" % in_attesa)
         return len(self.frammenti(framework))
 
+    def _dal_visto(self, s: Any, ora: float) -> float:
+        """Da quando il frammento ``s`` e' visto (``ora`` se e' la prima volta, o se
+        la voce trovata sotto il suo id() era di un ALTRO frammento: id() riciclato)."""
+        voce = self._visto_dal.get(id(s))
+        if voce is not None and voce[0]() is s:
+            return voce[1]
+        self._visto_dal[id(s)] = (_riferimento(s), ora)
+        return ora
+
     def _vivo(self, s: Any, ora: float) -> bool:
         """Il frammento ha ricevuto un messaggio (anche heartbeat) entro ``MUTO_S``."""
         li = getattr(s, "_listener", None)
@@ -602,7 +627,7 @@ class GestoreFrammenti:
         fr = self.frammenti(framework)
         for s in fr:
             self._ricorda_modello(s)
-            dal = self._visto_dal.setdefault(id(s), ora)
+            dal = self._dal_visto(s, ora)
             li = getattr(s, "_listener", None)
             errore = str(getattr(li, "ultimo_errore", None) or "")
             mai_autenticato = not bool(getattr(li, "autenticato_una_volta", False))
