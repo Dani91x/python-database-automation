@@ -1,0 +1,41 @@
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.42 @ 1.09 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: gamba under_entry-0-1 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35797769: gamba under_entry-0-2 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35797769: gamba under_entry-0-3 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: gamba under_entry-0-1 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35797769: gamba under_entry-0-2 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35797769: gamba under_entry-0-3 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: posizione chiusa DALL'UTENTE fuori dall'app (fuori dall'app (stream ordini)) -> il bot non gestisce piu' questa partita
+WARNING:mike:[mike] 35797769: P&L interno +4.37 contro Betfair +4.60: vince Betfair
+CRITICAL:mike:[mike] 35797769: COPERTURA BLOCCATA dopo 1 rifiuti 'CANCELLED_NOT_PLACED' (over_cover-1-6)
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU35/UNDER banca 0.09 @ 1.26 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: COPERTURA BLOCCATA dopo 1 rifiuti 'CANCELLED_NOT_PLACED' (over_cover-1-6)
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU35/UNDER banca 0.02 @ 1.8 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU35/UNDER banca 0.13 @ 1.49; OU45/UNDER punta 0.24 @ 1.18 (chiusura manuale: l'ordine che chiude e' sotto il minimo Betfair .it) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: Betfair ha RIFIUTATO la lay appoggiata under_green-0-2 (EXPIRED): nessun ordine a mercato
+CRITICAL:mike:[mike] 35797769: Betfair ha RIFIUTATO la lay appoggiata ko_green-0-3 (EXPIRED): nessun ordine a mercato
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.36 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/OVER: nessun prezzo (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/OVER banca 0.12 @ 75.0 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.27 @ 1.02 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: aperture FERME (live_kill_switch_attivo, live): nessuna riproposizione finche' la causa non cambia
+WARNING:mike:[mike] 35797769: aperture RIPRESE (prima: live_kill_switch_attivo)
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.26 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] lettura del feed FALLITA: si ritenta a ogni giro, nessuna partita viene data per sparita
+WARNING:mike:[mike] lettura del feed RIPRESA dopo 713 s
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35797769: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.38 @ 1.01 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+
+real	31m58.706s
+user	31m51.356s
+sys	0m0.583s
+RC=0
+mike 35797769 rc in .err, secondi=1918

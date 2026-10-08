@@ -1,0 +1,20 @@
+WARNING:safe.execution:[safe.exec] punta 2.17 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.17 dichiarato (trade 2)
+WARNING:safe.execution:[safe.exec] punta 2.38 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.38 dichiarato (trade 5)
+CRITICAL:safe.bot:[safe.bot] 35797769: partita CHIUSA DALL'UTENTE (cashout) -> il bot non gestisce piu' nulla su di essa
+WARNING:safe.execution:[safe.exec] punta 2.17 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.17 dichiarato (trade 2)
+WARNING:safe.execution:[safe.exec] punta 2.17 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.17 dichiarato (trade 2)
+WARNING:safe.execution:[safe.exec] punta 2.17 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.17 dichiarato (trade 3)
+WARNING:safe.execution:[safe.exec] punta 2.29 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.29 dichiarato (trade 2)
+CRITICAL:safe.bot:[safe.bot] 35797769: partita CHIUSA DALL'UTENTE (cashout) -> il bot non gestisce piu' nulla su di essa
+CRITICAL:safe.bot:[safe.bot] 35797769: partita CHIUSA DALL'UTENTE (fuori_app) -> il bot non gestisce piu' nulla su di essa
+WARNING:safe.execution:[safe.exec] punta 2.17 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.17 dichiarato (trade 2)
+WARNING:safe.execution:[safe.exec] punta 6.02 -> 6.00 (multiplo di 0,50 per difetto): residuo 0.02 dichiarato (trade 1)
+WARNING:safe.execution:[safe.exec] punta 3.98 -> 3.50 (multiplo di 0,50 per difetto): residuo 0.48 dichiarato (trade 2)
+WARNING:safe.execution:[safe.exec] punta 6.02 -> 6.00 (multiplo di 0,50 per difetto): residuo 0.02 dichiarato (trade 1)
+WARNING:safe.execution:[safe.exec] punta 3.98 -> 3.50 (multiplo di 0,50 per difetto): residuo 0.48 dichiarato (trade 2)
+
+real	23m36.647s
+user	23m35.439s
+sys	0m0.437s
+RC=0
+safe_punta 35797769 rc in .err, secondi=1416

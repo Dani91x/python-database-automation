@@ -1,0 +1,16 @@
+WARNING:safe.execution:[safe.exec] punta 2.39 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.39 dichiarato (trade 2)
+WARNING:safe.execution:[safe.exec] punta 2.39 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.39 dichiarato (trade 2)
+WARNING:safe.execution:[safe.exec] punta 2.39 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.39 dichiarato (trade 2)
+WARNING:safe.execution:[safe.exec] punta 2.39 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.39 dichiarato (trade 3)
+WARNING:safe.execution:[safe.exec] punta 2.39 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.39 dichiarato (trade 2)
+WARNING:flumine.strategy.runnercontext:Trade 'e2b563e6-8522-4854-a508-2058d869fecc' not present in RunnerContext live_trades on reset
+WARNING:safe.execution:[safe.exec] punta 6.23 -> 6.00 (multiplo di 0,50 per difetto): residuo 0.23 dichiarato (trade 1)
+WARNING:safe.execution:[safe.exec] punta 3.77 -> 3.50 (multiplo di 0,50 per difetto): residuo 0.27 dichiarato (trade 2)
+WARNING:safe.execution:[safe.exec] punta 6.23 -> 6.00 (multiplo di 0,50 per difetto): residuo 0.23 dichiarato (trade 1)
+WARNING:safe.execution:[safe.exec] punta 3.77 -> 3.50 (multiplo di 0,50 per difetto): residuo 0.27 dichiarato (trade 2)
+
+real	7m7.963s
+user	7m4.461s
+sys	0m0.372s
+RC=0
+safe_base 35760084 rc in .err, secondi=428
