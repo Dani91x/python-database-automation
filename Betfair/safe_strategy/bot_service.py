@@ -59,6 +59,7 @@ from Betfair.safe_strategy import proposte_opportunita as PO
 from Betfair.safe_strategy import risk as RK
 from Betfair.stream import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
 from Betfair.stream import avvio_app as AA
+from Betfair.stream import esiti_ordini_canale as _EO  # 08/10 (W3a): conto dal canale
 from Betfair.stream import flusso_prezzi as _FP
 from Betfair.stream.trading import stato_mercato as _SM
 
@@ -1854,6 +1855,148 @@ def _conto_e_dovuto(market_id: str, now_ts: float) -> bool:
     return last is None or now_ts - float(last) >= CONTO_EVERY_S
 
 
+def _verdetto_di_conto(righe: list[dict[str, Any]], market_id: str, sel: int,
+                       refs: set, atteso: float, *, db: Any = None,
+                       modo: str = "live") -> dict[str, Any]:
+    """L'ARITMETICA del verdetto sulla posizione di conto di UNA posizione del
+    bot, UNA sola (estratta il 08/10, W3a, senza cambiarla: la usano la REST, il
+    canale del conto e la fotografia paper). ``verdetto``: ``non_ritrovate``,
+    ``intera``, ``ridotta``, ``chiusa``; dal 08/10 (seconda tappa)
+    ``in_verifica``: un ordine altrui di proprietario IGNOTO
+    (``db.proprietari_bot_conto`` illeggibile), nessun verdetto al buio. Gli
+    ordini di un ALTRO bot (regole del cantiere W2, ``SorveglianzaConto.
+    separa_altrui``) non sono dell'utente: si tolgono."""
+    mio = _netto_su_selezione(righe, market_id, sel, solo_refs=refs)
+    sulla_sel = [o for o in righe or [] if isinstance(o, dict)
+                 and str(o.get("market_id") or "") == str(market_id)
+                 and str(o.get("selection_id") or "") == str(int(sel))]
+    parti = _CONTO.separa_altrui(
+        sulla_sel, del_bot=lambda o: str(o.get("customer_order_ref") or "") in refs,
+        leggi=(_EO.lettore_proprietari(db) if db is not None else None), modo=modo)
+    conto = _netto_su_selezione(parti["bot"] + parti["altrui"], market_id, sel)
+    out: dict[str, Any] = {"mio": mio, "conto": conto}
+    if parti["altri_bot"]:
+        out["ordini_di_altri_bot"] = parti["altri_bot"]
+    if abs(mio) + _CONTO_EPS < abs(atteso):
+        out["verdetto"] = "non_ritrovate"
+        return out
+    if parti["ignoti"]:
+        out.update({"verdetto": "in_verifica", "ordini_ignoti": parti["ignoti"],
+                    "errore": parti["errore"]})
+        return out
+    # 08/10 (W3a, reperto W2): il verdetto si giudica sulla parte DIREZIONALE
+    # dell'esposizione, ordini del bot contro ordini dell'utente, con la
+    # funzione UNICA dei bot e del worker W2 (``esiti_ordini_canale.
+    # verdetto_posizione``): un green-up dell'utente su una posizione SUA non
+    # tocca il bot. Dati incompleti -> la size di prima.
+    v = _EO.verdetto_posizione(atteso=atteso, conto_size=conto, righe_bot=parti["bot"],
+                               righe_altrui=parti["altrui"], eps=_CONTO_EPS)
+    out.update({"vivo": v["vivo"], "verdetto": v["verdetto"], "metro": v["metro"]})
+    return out
+
+
+def _aggiorna_verifica_safe(db: Any, tr: dict[str, Any], market_id: str, sel: int,
+                            v: dict[str, Any], *, fonte: str) -> None:
+    """08/10 (W3a, seconda tappa) - La posizione di Safe e' IN VERIFICA (ordine
+    altrui di proprietario ignoto: nessun verdetto, nessun ordine nuovo del bot
+    sulla partita) o non piu'. Detto UNA volta all'ingresso e una all'uscita
+    (kind ``posizione_di_conto`` di sempre)."""
+    eid = str(tr.get("event_id") or "")
+    if not eid:
+        return
+    chiave = f"t{tr.get('id')}"
+    if v.get("verdetto") == "in_verifica":
+        if _CONTO.metti_in_verifica(eid, chiave, {
+                "market_id": market_id, "selection_id": sel,
+                "ordini_ignoti": v.get("ordini_ignoti"), "errore": v.get("errore")}):
+            _log(db, "posizione_di_conto",
+                 {"event_id": eid, "trade_id": tr.get("id"), "market_id": market_id,
+                  "selection_id": sel, "verdetto": "in_verifica", "fonte": fonte,
+                  "ordini_ignoti": v.get("ordini_ignoti"), "errore": v.get("errore"),
+                  "critical": True,
+                  "nota": "sulla selezione del bot c'e' un ordine ALTRUI di cui il DB non "
+                          "dice il proprietario: nessun verdetto al buio e nessun ordine "
+                          "nuovo del bot sulla partita finche' non si sa"})
+    elif _CONTO.togli_verifica(eid, chiave):
+        _log(db, "posizione_di_conto",
+             {"event_id": eid, "trade_id": tr.get("id"), "verdetto": "verificato",
+              "fonte": fonte, "nota": "proprietario degli ordini altrui saputo: il bot "
+                                      "riprende"})
+
+
+def _evento_in_verifica(event_id: Any) -> bool:
+    """08/10 (W3a, seconda tappa): la partita ha una posizione IN VERIFICA?"""
+    return str(event_id or "") in _CONTO.eventi_in_verifica()
+
+
+# 08/10 (W3a, ordine dell'utente: «i bot devono essere al corrente degli ordini
+# esterni [...] nel minor tempo possibile») - IL CANALE DEL CONTO, lo STESSO
+# meccanismo di Mike e Omega (``esiti_ordini_canale.SorveglianzaConto``): il
+# runner LIVE pubblica gli ordini del conto che lo stream ordini gli porta
+# (``conto``), il runner PAPER il blotter dei suoi ordini (``conto_paper``). In
+# LIVE la fotografia SVEGLIA la lettura (la REST si rilegge subito, fuori dalla
+# cadenza ``CONTO_EVERY_S`` e dal tetto per ciclo, e decide lei); in PAPER la
+# fotografia E' il blotter del runner (fonte di verita' del paper). Senza
+# canale: identico a prima.
+ENV_SAFE_CONTO_CANALE = "SAFE_CONTO_CANALE"
+_CONTO = _EO.SorveglianzaConto("safe", ENV_SAFE_CONTO_CANALE)
+#: i market_id dove Safe ha una posizione da difendere (la sveglia del giro)
+_MERCATI_CONTO: set = set()
+
+
+def _mercato_del_conto_interessa(market_id: str, _modo: str) -> bool:
+    return str(market_id) in _MERCATI_CONTO
+
+
+_CONTO.interessa(_mercato_del_conto_interessa)
+
+
+def _segnale_dal_canale(tr: dict[str, Any], market_id: str, sel: int, refs: set,
+                        atteso: float, modo: str,
+                        ref_per_bet: Optional[dict[str, str]] = None,
+                        db: Any = None) -> Optional[dict[str, Any]]:
+    """La fotografia NUOVA del mercato dice che la posizione del bot non e' piu'
+    intera? Torna il SEGNALE (verdetto con la STESSA aritmetica + righe),
+    altrimenti ``None``. Firma anti-ripetizione per posizione."""
+    chiave = f"t{tr.get('id')}"
+    fotografie, nuove = _CONTO.fotografie(chiave, [market_id], modo=modo)
+    # 08/10 (W3a): in PAPER una posizione IN VERIFICA si rigiudica a ogni giro
+    if not nuove and not (modo == _EO.MODO_PAPER
+                          and chiave in _CONTO.in_verifica(tr.get("event_id"))):
+        return None
+    foto = fotografie.get(str(market_id)) or {}
+    righe = [_omega_market._riga_corrente(o) for o in foto.get("ordini") or []]
+    if ref_per_bet is not None:
+        righe = _EO.con_ref_del_bot(righe, ref_per_bet)
+    v = _verdetto_di_conto(righe, market_id, sel, refs, atteso, db=db, modo=modo)
+    if modo == _EO.MODO_PAPER and db is not None:
+        # in paper questa E' la valutazione che conta (blotter del runner)
+        _aggiorna_verifica_safe(db, tr, market_id, sel, v, fonte="blotter paper del runner")
+    altrui = round(v["conto"] - v["mio"], 2)
+    chiave_firma = chiave if modo == _EO.MODO_LIVE else f"{modo}|{chiave}"
+    if v["verdetto"] in ("chiusa", "ridotta"):
+        verdetto = v["verdetto"]
+    elif v["verdetto"] == "non_ritrovate" and abs(altrui) > _CONTO_EPS:
+        verdetto = "da_confrontare"
+    elif v["verdetto"] == "in_verifica":
+        # live: la REST rilegge subito e registra la verifica; paper: gia' fatto
+        verdetto = "da_confrontare" if modo == _EO.MODO_LIVE else "in_verifica"
+    else:
+        _CONTO.dimentica_firma(chiave_firma)
+        return None
+    if _CONTO.firma_ripetuta(chiave_firma, (verdetto, round(v["conto"], 2), altrui)):
+        return None
+    return {"fonte": ("stream ordini" if modo == _EO.MODO_LIVE
+                      else "blotter paper del runner"),
+            "verdetto_dal_canale": verdetto, "righe": righe, "verdetto": v,
+            **_CONTO.tempi(fotografie)}
+
+
+def _segnale_in_breve(segnale: dict[str, Any]) -> dict[str, Any]:
+    return {k: segnale.get(k) for k in ("fonte", "verdetto_dal_canale", "ricevuto_ms",
+                                         "publish_time_ms")}
+
+
 def _sorveglia_posizione_di_conto(*, db, market, parents: list[dict[str, Any]],
                                   closings: dict[int, list[dict]], now: datetime,
                                   params: dict[str, Any]) -> int:
@@ -1866,16 +2009,31 @@ def _sorveglia_posizione_di_conto(*, db, market, parents: list[dict[str, Any]],
       niente;
     * se si ritrovano ma il netto di conto non contiene piu' la sua posizione,
       la posizione l'ha chiusa qualcun altro: ``chiuso_dall_utente`` (fuori app);
-    * se la contiene solo in PARTE, lo si DICE e basta: una copertura parziale
-      dell'utente non autorizza il bot a smettere di proteggere il resto.
-    In PAPER non esiste nessun conto da leggere: si esce subito.
+    * se la contiene solo in PARTE: dal 08/10 (W3a, ordine dell'utente «quando
+      intervengo io [...] i bot lo sanno e non fanno altro») anche una
+      riduzione parziale e' un intervento dell'utente: stesse conseguenze della
+      chiusura (marcatore con ``verdetto='ridotta'``). Prima: lo si diceva e il
+      bot continuava a proteggere il resto.
+    In PAPER non esiste nessun conto da leggere: dal 08/10 la fonte e' la
+    fotografia del blotter del runner paper (``_sorveglia_conto_paper``).
     """
+    _MERCATI_CONTO.clear()
+    # 08/10 (W3a): una verifica su una partita dove Safe non ha piu' posizioni
+    # aperte (o gia' chiusa dall'utente) non ha piu' niente da fermare
+    _vivi = {str(t.get("event_id") or "") for t in parents or []
+             if e_del_bot(t) and str(t.get("status") or "") == "open"
+             and not marcatore_utente(t) and not evento_chiuso_dall_utente(t.get("event_id"))}
+    for _ev in _CONTO.eventi_in_verifica() - _vivi:
+        _CONTO.togli_verifica(_ev)
+    chiuse = 0
+    if _CONTO.attivo():
+        chiuse += _sorveglia_conto_paper(db=db, market=market, parents=parents,
+                                         closings=closings, now=now, params=params)
     leggi_conto = getattr(market, "posizione_di_conto", None)
     if not callable(leggi_conto):
-        return 0
+        return chiuse
     now_ts = now.timestamp()
     per_mercato: dict[str, list[dict[str, Any]]] = {}
-    chiuse = 0
     for tr in parents or []:
         if str(tr.get("mode") or "live").lower() != "live":
             continue                      # il paper non ha un conto da guardare
@@ -1896,11 +2054,21 @@ def _sorveglia_posizione_di_conto(*, db, market, parents: list[dict[str, Any]],
         atteso = _posizione_attesa_safe(tr, mie)
         if abs(atteso) <= _CONTO_EPS:
             continue
+        refs = _refs_di_safe(tr, mie)
+        _MERCATI_CONTO.add(market_id)
+        # 08/10: il canale del conto, PRIMA della cadenza e del tetto per ciclo
+        segnale = (_segnale_dal_canale(tr, market_id, sel, refs, atteso, _EO.MODO_LIVE,
+                                       db=db)
+                   if _CONTO.attivo() else None)
         if market_id not in per_mercato:
-            if not _conto_e_dovuto(market_id, now_ts):
-                continue
-            if len(per_mercato) >= CONTO_MERCATI_PER_CICLO:
-                continue              # tetto del ciclo: si riprende al giro dopo
+            if segnale is None:
+                # 08/10 (W3a): una posizione IN VERIFICA si rilegge alla cadenza
+                # (CONTO_EVERY_S, 30 s: gia' il respiro della lettura dei
+                # proprietari), mai di piu'
+                if not _conto_e_dovuto(market_id, now_ts):
+                    continue
+                if len(per_mercato) >= CONTO_MERCATI_PER_CICLO:
+                    continue              # tetto del ciclo: si riprende al giro dopo
             try:
                 # vivi + regolati insieme, in una chiamata sola: la
                 # selezione la filtra ``_netto_su_selezione`` come prima
@@ -1909,45 +2077,141 @@ def _sorveglia_posizione_di_conto(*, db, market, parents: list[dict[str, Any]],
             except Exception as ex:  # noqa: BLE001 — rete: si riprova, non si inventa
                 logger.warning("[safe.bot] posizione di conto non letta su %s: %s",
                                market_id, str(ex)[:120])
+                if segnale is not None:
+                    _CONTO.dimentica_firma(f"t{tr.get('id')}")
                 continue
         righe = per_mercato[market_id]
-        refs = _refs_di_safe(tr, mie)
-        mio = _netto_su_selezione(righe, market_id, sel, solo_refs=refs)
-        conto = _netto_su_selezione(righe, market_id, sel)
+        v = _verdetto_di_conto(righe, market_id, sel, refs, atteso, db=db)
+        # 08/10 (W3a, seconda tappa): proprietario degli ordini altrui ignoto ->
+        # in verifica (nessun verdetto, nessun ordine nuovo); saputo -> si toglie
+        _aggiorna_verifica_safe(db, tr, market_id, sel, v,
+                                fonte="posizione di conto riletta via REST")
+        if v["verdetto"] == "in_verifica":
+            continue
+        mio, conto = v["mio"], v["conto"]
         dettaglio = {"event_id": str(tr.get("event_id") or ""), "trade_id": tr.get("id"),
                      "market_id": market_id, "selection_id": sel, "atteso": atteso,
                      "mio_sul_conto": mio, "netto_di_conto": conto,
                      "altrui": round(conto - mio, 2)}
-        if abs(mio) + _CONTO_EPS < abs(atteso):
+        if v.get("ordini_di_altri_bot"):
+            dettaglio["ordini_di_altri_bot"] = v["ordini_di_altri_bot"]
+        if v["verdetto"] == "non_ritrovate":
             _log(db, "posizione_di_conto", {**dettaglio, "verdetto": "gambe_non_ritrovate",
                                             "critical": True,
                                             "nota": "gli ordini del bot non si ritrovano "
                                                     "sul conto: e' riconciliazione, non "
                                                     "una chiusura dell'utente"})
             continue
-        # quanto della posizione del bot SOPRAVVIVE dentro il netto di conto
-        vivo = (min(atteso, max(0.0, conto)) if atteso > 0
-                else max(atteso, min(0.0, conto)))
-        if abs(vivo) > _CONTO_EPS:
-            if abs(vivo) + _CONTO_EPS < abs(atteso):
+        if v["verdetto"] == "intera":
+            if segnale is not None and segnale.get("verdetto_dal_canale") in ("chiusa",
+                                                                              "ridotta"):
                 _log(db, "posizione_di_conto",
-                     {**dettaglio, "verdetto": "ridotta_dall_utente", "critical": True,
-                      "ancora_viva": round(vivo, 2),
-                      "nota": "il conto contiene solo in PARTE la posizione del bot: "
-                              "si dichiara, il bot continua a proteggere il resto"})
+                     {**dettaglio, "verdetto": "canale_non_confermato",
+                      "segnale": _segnale_in_breve(segnale),
+                      "nota": "lo stream ordini diceva la posizione chiusa o ridotta, la "
+                              "posizione di CONTO riletta via REST no: vince il conto, "
+                              "il bot continua"})
             continue
-        _log(db, "posizione_di_conto", {**dettaglio, "verdetto": "chiusa_dall_utente",
-                                        "critical": True,
-                                        "nota": "la posizione di CONTO non contiene piu' "
-                                                "quella del bot: l'ha chiusa l'utente "
-                                                "con un ordine suo, fuori dall'app"})
-        _stato_da_settlement_reale(db, tr, righe, refs, params, now)
+        if v["verdetto"] == "ridotta":
+            _log(db, "posizione_di_conto",
+                 {**dettaglio, "verdetto": "ridotta_dall_utente", "critical": True,
+                  "ancora_viva": round(v["vivo"], 2),
+                  "nota": "il conto contiene solo in PARTE la posizione del bot: e' un "
+                          "intervento dell'utente (08/10), il bot smette di gestire la "
+                          "partita"})
+            dettaglio["ancora_viva"] = round(v["vivo"], 2)
+        else:
+            _log(db, "posizione_di_conto", {**dettaglio, "verdetto": "chiusa_dall_utente",
+                                            "critical": True,
+                                            "nota": "la posizione di CONTO non contiene "
+                                                    "piu' quella del bot: l'ha chiusa "
+                                                    "l'utente con un ordine suo, fuori "
+                                                    "dall'app"})
+        dettaglio["verdetto"] = v["verdetto"]
+        if segnale is not None:
+            dettaglio.update({"dove": "fuori dall'app (stream ordini)",
+                              "conferma": "posizione di conto riletta via REST",
+                              "segnale": _segnale_in_breve(segnale),
+                              "latenza_ms": _CONTO.latenza_ms(now_ts, segnale)})
+        if v["verdetto"] == "chiusa":
+            # la posizione non c'e' piu': lo stato lo dice il settlement vero.
+            # RIDOTTA: la riga del bot resta viva e marcata, la regola
+            # ``settle_open`` dal WINNER come ogni riga marcata.
+            _stato_da_settlement_reale(db, tr, righe, refs, params, now)
         eid = str(tr.get("event_id") or "")
         segna_chiuso_dall_utente(db, event_id=eid, righe=_tutte_le_righe(db, eid),
                                  come="fuori_app", now=now,
                                  dettaglio={k: dettaglio[k] for k in
                                             ("trade_id", "market_id", "selection_id",
-                                             "atteso", "netto_di_conto", "altrui")})
+                                             "atteso", "netto_di_conto", "altrui",
+                                             "verdetto", "ancora_viva", "dove",
+                                             "conferma", "segnale", "latenza_ms")
+                                            if k in dettaglio})
+        chiuse += 1
+    return chiuse
+
+
+def _sorveglia_conto_paper(*, db, market, parents: list[dict[str, Any]],
+                           closings: dict[int, list[dict]], now: datetime,
+                           params: dict[str, Any]) -> int:
+    """08/10 (W3a) - IL PAPER E' LO SPECCHIO DEL LIVE. In prova l'intervento
+    esterno e' l'ordine MANUALE dell'app (ladder del runner paper): la
+    fotografia del blotter paper del mercato (``conto_paper``) e' la fonte di
+    verita' (ogni ordine paper del runner, quelli di Safe e quelli manuali).
+    Stessa aritmetica (``_verdetto_di_conto``): gli ordini di Safe si
+    riconoscono per ``bet_id`` (``con_ref_del_bot``: il ref del runner diventa
+    il ``safe-t<id>`` della riga). Un runner riavviato ha un blotter vuoto: le
+    gambe non si ritrovano e NON si decide niente."""
+    now_ts = now.timestamp()
+    chiuse = 0
+    for tr in parents or []:
+        if str(tr.get("mode") or "live").lower() != "paper":
+            continue
+        if not e_del_bot(tr) or str(tr.get("status") or "") != "open":
+            continue
+        if marcatore_utente(tr) or evento_chiuso_dall_utente(tr.get("event_id")):
+            continue
+        market_id = str(tr.get("market_id") or "")
+        try:
+            sel = int(tr.get("selection_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not market_id or not sel:
+            continue
+        mie = closings.get(int(tr["id"]), [])
+        atteso = _posizione_attesa_safe(tr, mie)
+        if abs(atteso) <= _CONTO_EPS:
+            continue
+        _MERCATI_CONTO.add(market_id)
+        refs = _refs_di_safe(tr, mie)
+        prefisso = "safe_tennis-t" if XE.is_tennis(tr) else "safe-t"
+        ref_per_bet = {str(r.get("bet_id")): f"{prefisso}{int(r['id'])}"
+                       for r in [tr, *mie] if r.get("bet_id") and r.get("id") is not None}
+        segnale = _segnale_dal_canale(tr, market_id, sel, refs, atteso, _EO.MODO_PAPER,
+                                      ref_per_bet=ref_per_bet, db=db)
+        if segnale is None or segnale["verdetto_dal_canale"] not in ("chiusa", "ridotta"):
+            continue
+        v = segnale["verdetto"]
+        dettaglio = {"event_id": str(tr.get("event_id") or ""), "trade_id": tr.get("id"),
+                     "market_id": market_id, "selection_id": sel, "atteso": atteso,
+                     "mio_sul_conto": v["mio"], "netto_di_conto": v["conto"],
+                     "altrui": round(v["conto"] - v["mio"], 2),
+                     "verdetto": v["verdetto"],
+                     "dove": "dall'app (ordine manuale sul runner paper)",
+                     "conferma": "blotter paper del runner (fonte di verita' del paper)",
+                     "segnale": _segnale_in_breve(segnale),
+                     "latenza_ms": _CONTO.latenza_ms(now_ts, segnale)}
+        if v["verdetto"] == "ridotta":
+            dettaglio["ancora_viva"] = round(v.get("vivo") or 0.0, 2)
+        _log(db, "posizione_di_conto",
+             {**dettaglio, "verdetto": ("chiusa_dall_utente" if v["verdetto"] == "chiusa"
+                                        else "ridotta_dall_utente"), "critical": True,
+              "nota": "un ordine manuale dell'app ha chiuso o ridotto la posizione del bot "
+                      "sul runner paper: il bot non gestisce piu' questa partita (paper = "
+                      "specchio del live)"})
+        eid = str(tr.get("event_id") or "")
+        segna_chiuso_dall_utente(db, event_id=eid, righe=_tutte_le_righe(db, eid),
+                                 come="app_paper", now=now, dettaglio=dettaglio)
         chiuse += 1
     return chiuse
 
@@ -4235,6 +4499,8 @@ def _exit_candidates(open_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # uscite su una posizione finita: 282 `exit_hold` misurati su 35797769.
         if marcatore_utente(t) or evento_chiuso_dall_utente(t.get("event_id")):
             continue
+        if _evento_in_verifica(t.get("event_id")):
+            continue        # 08/10 (W3a): conto in verifica, nessuna uscita nuova
         # 04/10/2026 (decisione dell'utente "IL RESIDUO RESTA RICORDATO E LO CHIUDO
         # IO"): residuo dichiarato NON piazzabile (``execution.RESIDUO_KEY``, gia'
         # detto una volta col CRITICAL e la proposta): il bot non lo ritenta.
@@ -4537,6 +4803,14 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
                               "reason": "partita_chiusa_dall_utente",
                               "nota": "gamba di combo NON chiusa dal bot: la "
                                       "posizione l'ha gia' chiusa l'utente"})
+            continue
+        if _evento_in_verifica(leg.get("event_id")):
+            # 08/10 (W3a, seconda tappa): ordine altrui di proprietario ignoto
+            _log(db, "skip", {"event_id": str(leg.get("event_id") or ""),
+                              "trade_id": leg.get("id"), "mode": leg.get("mode"),
+                              "reason": "conto_in_verifica",
+                              "nota": "gamba di combo NON chiusa adesso: sulla partita c'e' "
+                                      "un ordine altrui di proprietario ignoto"})
             continue
         # F2 (25/09) - D2 estesa alla chiusura solidale (era la sola strada
         # rimasta senza): mercato sospeso/chiuso/senza prezzi -> nessuna gamba
@@ -6075,6 +6349,18 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
                               "nota": "l'utente ha chiuso questa partita: il bot non "
                                       "piazza piu' nulla finche' non preme «Riprendi»"})
             return X.PlaceOutcome("error", None, 0.0, None, motivo)
+        if _evento_in_verifica(row.get("event_id")):
+            # 08/10 (W3a, seconda tappa): ordine altrui di proprietario IGNOTO
+            # sulla partita (DB illeggibile): nessun ordine nuovo finche' non si
+            # sa. NON e' un rifiuto del mercato: nessun tentativo consumato, si
+            # riprova (stessa regola del runner non raggiungibile)
+            motivo = "conto_in_verifica"
+            _place_fail_senza_runner(
+                db, trade_id, row, motivo, now,
+                nota="ordine altrui di proprietario ignoto sulla partita (DB "
+                     "illeggibile): nessun ordine nuovo del bot finche' non si sa "
+                     "(nessun tentativo consumato, si riprova)")
+            return X.PlaceOutcome("error", None, 0.0, None, motivo)
     try:
         size = float(row["size"])
     except (TypeError, ValueError):
@@ -6278,7 +6564,10 @@ _SENZA_RUNNER_LOG_S = 60.0
 
 
 def _place_fail_senza_runner(db, trade_id: int, row: dict[str, Any], err: str,
-                             now: datetime) -> None:
+                             now: datetime,
+                             nota: str = ("paper: runner non raggiungibile, ordine non "
+                                          "eseguito (nessun tentativo consumato, si "
+                                          "riprova)")) -> None:
     """CANTIERE P (28/09) - paper, runner NON raggiungibile: NON e' un rifiuto
     del mercato (brief standard par. 2 punti 6-7: nessuna partita idonea resta
     fuori per limiti tecnici NOSTRI; resilienza). La riga si chiude come ogni
@@ -6313,8 +6602,7 @@ def _place_fail_senza_runner(db, trade_id: int, row: dict[str, Any], err: str,
             "signal_key": row.get("signal_key"), "strategy": row.get("strategy"),
             "mode": row.get("mode"), "reason": err, "critical": True,
             "next_retry_at": place_meta["next_retry_at"],
-            "nota": "paper: runner non raggiungibile, ordine non eseguito "
-                    "(nessun tentativo consumato, si riprova)"})
+            "nota": nota})
 
 
 #: 04/10/2026 - BLOCCHI DI CATENA in corso, per (sport, modalita'): la catena
@@ -7177,6 +7465,13 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
                                         "reason": "partita_chiusa_dall_utente",
                                         "come": mk_chiuso.get("come"),
                                         "quando": mk_chiuso.get("quando")})
+            continue
+        if _evento_in_verifica(event_id):
+            # 08/10 (W3a, seconda tappa): ordine altrui di proprietario ignoto
+            # sulla partita: nessuna riserva, nessun ordine finche' non si sa
+            _log_skip(db, now, params, {"event_id": str(event_id),
+                                        "signal_key": str(key), "strategy": variant,
+                                        "reason": "conto_in_verifica"})
             continue
         # da qui in poi la MODALITA' e' quella della variante, non del servizio
         mode_s = _modalita_di(variant)
@@ -9499,6 +9794,9 @@ _CANALE_SCAN: dict[str, Any] = {"client": None, "cache": None, "righe_db": [],
 #: La sveglia del ciclo. La alza la UI con un messaggio di sola sveglia sul
 #: canale 47335 (nessun parametro d'ordine: il comando resta la riga sul DB).
 _SVEGLIA = threading.Event()
+# 08/10 (W3a): la sveglia del conto alza lo stesso evento (il pavimento fra due
+# giri lo applica gia' l'attesa: ``_minimo_fra_due_giri``)
+_CONTO.su_sveglia(lambda _m, _mo: _SVEGLIA.set())
 #: Quante sveglie sono arrivate e quante ne sono state rifiutate.
 _CONTI_SVEGLIA: dict[str, Any] = {"sveglie": 0, "rifiutate": 0, "installata": False}
 #: Intervallo MINIMO fra due giri, anche con la sveglia alzata. Un ciclo a
@@ -10625,6 +10923,18 @@ def _pubblica_stato(stats: dict, now_iso: str, control: Any = None) -> None:
         logger.debug("[safe.bot] publish stato KO: %s", str(ex)[:120])
 
 
+def _avvia_conto_dal_canale() -> bool:
+    """08/10 (W3a): il lettore del conto su ENTRAMBI i runner (Safe gira calcio
+    e tennis nello stesso processo). Non solleva mai."""
+    try:
+        from Betfair.stream.tennis_live import canale_bot_tennis as _CBT
+
+        porte = [_EO.porta(), _CBT.porta_runner()]
+    except Exception:  # noqa: BLE001 - senza il modulo tennis resta il calcio
+        porte = [_EO.porta()]
+    return _CONTO.avvia(etichetta="[safe.bot]", topic=_EO.TOPIC_CONTO_TUTTI, porte=porte)
+
+
 def _avvia_esiti_ordini() -> bool:
     """23/09 (``ESITI_ORDINI_CANALE``, spento di serie): il lettore degli esiti
     degli ordini in coda. E' QUELLO di Omega (``omega_service.
@@ -10931,6 +11241,11 @@ def main() -> None:
     # F5 (24/09): il client del canale di COMANDO del runner, dietro
     # ``SAFE_ORDINI_VIA_CANALE`` (spento di serie: non parte niente).
     _avvia_porta_ordini()
+    # 08/10 (W3a): la posizione di conto dal canale dei runner (calcio 47331 e
+    # tennis 47332: stream ordini LIVE + blotter PAPER), lo stesso lettore di
+    # Mike e Omega. ``SAFE_CONTO_CANALE=0`` lo spegne; senza runner resta la
+    # REST a cadenza, come prima.
+    _avvia_conto_dal_canale()
     # FASE A — PRIMA di qualunque ciclo: se l'app e' stata riaperta, il bot Safe
     # si ferma (e le 4 strategie tornano tutte in prova). Da qui in poi la
     # guardia e' attiva: finche' il controllo non riesce, ``run_once`` non apre
@@ -11007,7 +11322,11 @@ def main() -> None:
             _pulisci_errore_di_ciclo()
         # l'attesa si interrompe appena il trader clicca: il ciclo dopo
         # parte dalla corsia preferenziale delle chiusure.
-        sveglia = _SVEGLIA if _CONTI_SVEGLIA.get("installata") else None
+        # 08/10 (W3a): anche la SVEGLIA DEL CONTO (un intervento dell'utente su
+        # una partita di Safe, dallo stream ordini o dal blotter paper) la alza:
+        # con il canale del conto la si passa anche senza la sveglia della UI.
+        sveglia = (_SVEGLIA if (_CONTI_SVEGLIA.get("installata") or _CONTO.attivo())
+                   else None)
         # C6 a (23/09): con ``SAFE_BOT_GIRO_VELOCE`` acceso l'attesa fa
         # anche i giri veloci (memoria, zero letture); spento, e' quella di
         # oggi, riga per riga.
@@ -11068,6 +11387,9 @@ def svuota_le_cache() -> None:
     _CONSAPEVOLEZZA_SCRITTA.clear()
     _MARKET_MISSING.clear()
     _CONTO_LETTO_A.clear()
+    # 08/10 (W3a): la sorveglianza del conto dal canale e' memoria di PROCESSO
+    _CONTO.azzera()
+    _MERCATI_CONTO.clear()
     _EVENTI_CHIUSI.clear()
     _EXIT_WAIT_AT.clear()
     _FEED_BLIND_LOG.clear()

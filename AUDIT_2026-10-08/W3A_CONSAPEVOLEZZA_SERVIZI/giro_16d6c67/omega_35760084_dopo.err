@@ -1,0 +1,3 @@
+CRITICAL:omega.service:[omega] il lettore degli aggregati non separa le modalita': paper e live SOMMATI nelle decisioni (catalogo 7.21)
+CRITICAL:omega.service:[omega] evento 35760084: posizione ridotta DALL'UTENTE fuori dall'app -> il bot non gestisce piu' questa partita
+CRITICAL:omega.service:[omega] evento 35760084: posizione ridotta DALL'UTENTE fuori dall'app -> il bot non gestisce piu' questa partita

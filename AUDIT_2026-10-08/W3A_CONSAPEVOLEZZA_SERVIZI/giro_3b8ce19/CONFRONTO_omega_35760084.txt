@@ -1,0 +1,38 @@
+== base: IDENTICO
+== giornata-reale: IDENTICO
+== apertura: IDENTICO
+== paper: IDENTICO
+== cap-stretto: IDENTICO
+== bot-fermo: IDENTICO
+== feed-stantio: IDENTICO
+== esiti-ignoti: IDENTICO
+== riavvio: IDENTICO
+== manuale-e-bot: IDENTICO
+== cashout-globale: IDENTICO
+== proposta-approvata: IDENTICO
+== uscite-automatiche: IDENTICO
+== v4: IDENTICO
+== v4-riavvio: IDENTICO
+== v4-bot-fermo: IDENTICO
+== v3: IDENTICO
+== rifiuti-betfair: IDENTICO
+== chiuso-fuori-app: IDENTICO
+== chiusura-abbinata-in-parte: IDENTICO
+== chiuso-fuori-app-canale: NUOVO (solo DOPO)
+   OK  35760084 [chiuso-fuori-app-canale]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+== ridotto-fuori-app-canale: NUOVO (solo DOPO)
+   OK  35760084 [ridotto-fuori-app-canale]  tick=483985 decisioni=  438 azioni=   0 stati=running [COMPLETE]
+== TESTA: DIVERSA
+   -SCENARI: base, giornata-reale, apertura, paper, cap-stretto, bot-fermo, feed-stantio, esiti-ignoti, riavvio, manuale-e-bot, cashout-globale, proposta-approvata, uscite-automatiche, v4, v4-riavvio, v4-bot-fermo, v3, rifiuti-betfair, chiuso-fuori-app, chiusura-abbinata-in-parte
+   +SCENARI: base, giornata-reale, apertura, paper, cap-stretto, bot-fermo, feed-stantio, esiti-ignoti, riavvio, manuale-e-bot, cashout-globale, proposta-approvata, uscite-automatiche, v4, v4-riavvio, v4-bot-fermo, v3, rifiuti-betfair, chiuso-fuori-app, chiuso-fuori-app-canale, ridotto-fuori-app-canale, chiusura-abbinata-in-parte
+== CODA (copertura dei controlli, esito): DIVERSA
+   -ESITO: 20 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+   +ESITO: 22 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+   -     A1  x456     una gamba che non parte lascia SEMPRE scritto il perche' (§14.2: d
+   +     A1  x678     una gamba che non parte lascia SEMPRE scritto il perche' (§14.2: d
+   -     B2  x8818    la barra della giornata e' coerente: target partita = 2 x target g
+   -     B4  x456     feed STANTIO (riga oltre `DECISION_MAX_AGE_S`): nessuna apertura i
+   +     B2  x9694    la barra della giornata e' coerente: target partita = 2 x target g
+   +     B4  x458     feed STANTIO (riga oltre `DECISION_MAX_AGE_S`): nessuna apertura i
+   -     J5  x8818    grafia snake_case ovunque: mai una chiave camelCase nelle righe de
+   +     J5  x9694    grafia snake_case ovunque: mai una chiave camelCase nelle righe de

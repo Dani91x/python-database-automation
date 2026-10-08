@@ -832,18 +832,54 @@ def test_normalizzazione_dal_current_order_vero():
 
 
 def test_effetto_sui_bot():
-    # posizione del bot +10 intera prima; copertura LAY 6 su netto 15 -> 9: ridotta
-    e = EFB.effetto_sui_bot({"mike": 10.0}, 15.0, -6.0)
-    assert [(x["bot"], x["verdetto"], x["viva_dopo"]) for x in e] == [("mike", "ridotta", 9.0)]
-    # copertura che lascia il netto >= posizione: nessun effetto
-    assert EFB.effetto_sui_bot({"mike": 10.0}, 15.0, -5.0) == []
-    assert EFB.effetto_sui_bot({"mike": 10.0}, 15.0, -4.69) == []
-    # netto che passa sotto zero: chiusa
-    e = EFB.effetto_sui_bot({"mike": 2.0}, 12.0, -33.33)
-    assert e[0]["verdetto"] == "chiusa"
-    # bot LAY (-5,26): una copertura LAY lo lascia intero, una BACK grande lo riduce
-    assert EFB.effetto_sui_bot({"omega": -5.26}, -0.26, -6.0) == []
-    assert EFB.effetto_sui_bot({"omega": -5.26}, -10.26, 6.0)[0]["verdetto"] == "ridotta"
+    """08/10 (W3a): ``effetto_sui_bot`` prevede il verdetto dei bot con la LORO
+    funzione (``esiti_ordini_canale.verdetto_posizione``, in ESPOSIZIONE): conta la
+    parte direzionale degli ordini dell'utente, non il netto in size."""
+    mike = [ordine("M1", "BACK", 10.0, 1.50, csr="mike", cor="mike-t1")]
+    sito = [ordine("S1", "BACK", 5.0, 1.50)]
+    # green-up dell'utente del SUO back col prezzo sceso (LAY 5,36 @1,40): in size
+    # il netto scende a 9,64 ma la direzione dell'utente va a ~0 -> Mike intero
+    assert EFB.effetto_sui_bot({"mike": mike}, sito,
+                               EFB.riga_copertura("lay", 5.36, 1.40)) == []
+    # secondo esempio del coordinatore: Mike back 2, sito back 10 @5,0, copertura
+    # LAY 33,33 @1,50 -> in size "chiusa" (falso), in esposizione intero
+    assert EFB.effetto_sui_bot({"mike": [ordine("M2", "BACK", 2.0, 1.50, csr="mike")]},
+                               [ordine("S2", "BACK", 10.0, 5.0)],
+                               EFB.riga_copertura("lay", 33.33, 1.50)) == []
+    # una copertura che e' DIREZIONALE contro Mike (posizione dell'utente sull'ALTRO
+    # esito, coperta sulla selezione di Mike): LAY 6 @1,50 -> 15-9 = 6 di 15: ridotta
+    e = EFB.effetto_sui_bot({"mike": mike}, [], EFB.riga_copertura("lay", 6.0, 1.50))
+    assert [(x["bot"], x["verdetto"], x["viva_dopo"]) for x in e] == [("mike", "ridotta", 4.0)]
+    # ... LAY 20 @1,50 -> direzione -30 contro +15: chiusa
+    e = EFB.effetto_sui_bot({"mike": mike}, [], EFB.riga_copertura("lay", 20.0, 1.50))
+    assert [(x["bot"], x["verdetto"]) for x in e] == [("mike", "chiusa")]
+    # bot LAY (Omega -5,26 @3): una copertura LAY lo lascia intero, una BACK che ne
+    # annulla la size lo chiude (stessa etichetta del verdetto vero: «a pari size»)
+    omega = [ordine("O1", "LAY", 5.26, 3.0, csr="omega")]
+    assert EFB.effetto_sui_bot({"omega": omega}, [], EFB.riga_copertura("lay", 6.0, 2.5)) == []
+    e = EFB.effetto_sui_bot({"omega": omega}, [], EFB.riga_copertura("back", 6.0, 2.5))
+    assert [(x["bot"], x["verdetto"]) for x in e] == [("omega", "chiusa")]
+    # posizione del bot sotto la tolleranza: nessuna voce
+    assert EFB.effetto_sui_bot({"mike": [ordine("M3", "BACK", 0.04, 1.5)]}, [],
+                               EFB.riga_copertura("lay", 20.0, 1.50)) == []
+
+
+def test_effetto_sui_bot_e_il_verdetto_vero_dei_bot_sono_la_stessa_funzione(monkeypatch):
+    """Nessuna copia dell'aritmetica: se si cambia ``verdetto_posizione``, cambiano
+    insieme la previsione del worker e il verdetto dei bot."""
+    from Betfair.stream import esiti_ordini_canale as EO
+
+    chiamate: List[str] = []
+    vera = EO.verdetto_posizione
+
+    def spia(**kw: Any) -> Dict[str, Any]:
+        chiamate.append("x")
+        return vera(**kw)
+
+    monkeypatch.setattr(EO, "verdetto_posizione", spia)
+    EFB.effetto_sui_bot({"mike": [ordine("M1", "BACK", 10.0, 1.50)]}, [],
+                        EFB.riga_copertura("lay", 6.0, 1.50))
+    assert len(chiamate) == 2                         # prima e dopo la copertura
 
 
 # ===========================================================================
@@ -871,13 +907,17 @@ def test_contratto_con_i_verdetti_dei_bot():
     from Betfair.safe_strategy import bot_service as SS
 
     assert EFB.EPS_VERDETTO_BOT >= max(MS._CONTO_EPS, OS.CONTO_EPS, SS._CONTO_EPS)
-    formula = ("vivo = (min(atteso, max(0.0, conto)) if atteso > 0\n"
-               "                else max(atteso, min(0.0, conto)))")
-    for f in (MS._verdetto_di_conto, OS.sorveglia_posizione_di_conto,
-              SS._sorveglia_posizione_di_conto):
+    # 08/10 (W3a): la formula non e' piu' ricopiata in ogni bot: i tre verdetti e la
+    # previsione del worker chiamano la STESSA funzione
+    for f in (MS._verdetto_di_conto, OS._verdetto_di_conto, SS._verdetto_di_conto,
+              EFB.effetto_sui_bot):
         src = inspect.getsource(f)
-        norm = " ".join(src.split())
-        assert " ".join(formula.split()) in norm, f.__name__
+        assert "verdetto_posizione(" in src, f.__name__
+        assert "vivo = (min(atteso" not in src, f.__name__
+    from Betfair.stream import esiti_ordini_canale as EO
+
+    assert EFB.vivo_nel_conto(10.0, 9.64) == EO.vivo_in_size(10.0, 9.64) == 9.64
+    assert EFB.TABELLA_CODA == wk._TABLE
 
 
 # ===========================================================================
@@ -941,39 +981,54 @@ def test_mike_resta_intera_quando_la_copertura_non_supera_la_puntata(lay_under, 
     assert (chiuse, parziali, non_rit) == ([], [], [])
 
 
-def test_mike_ridotta_quando_il_prezzo_e_sceso_il_worker_lo_dice(monkeypatch):
-    """Prezzo sceso (lay 1,40): la copertura del sito e' LAY 5,36 > 5 di puntata e il
-    netto di conto scende a 9,64 < 10. Il verdetto VERO di Mike dice "ridotta" (solo
-    una dichiarazione, Mike continua a proteggere): il worker lo PREVEDE e lo scrive
-    nell'esito (``bot_toccati_nel_verdetto``), con gli stessi numeri."""
+def test_mike_intera_quando_il_prezzo_e_sceso_green_up_dell_utente(monkeypatch):
+    """Prezzo sceso (lay 1,40): la copertura del sito e' LAY 5,36 e il netto di conto
+    IN SIZE scende a 9,64 < 10. 08/10 (W3a, reperto del coordinatore): il verdetto
+    VERO di Mike e' in ESPOSIZIONE e giudica solo le gambe del bot contro gli ordini
+    dell'utente: il green-up dell'utente del SUO back ha direzione ~0 -> Mike INTERA
+    (prima «ridotta» 9,64, falso; e dal 08/10 una riduzione FERMA il bot). Il worker,
+    con la STESSA funzione, non annuncia effetti."""
     m = mercato_ou(lay_under=1.40, back_under=1.39)
     prima = [MIKE_BACK, ordine("S1", "BACK", 5.0, 1.50, sel=UNDER)]
     r = esegui(Sb(), framework(m, Conto(prima)), riga_greenup(sel=UNDER))
     assert r["status"] == "done", r.get("error")
     assert piazzati(m) == [("LAY", 1.4, 5.36)]
-    effetti = r["result"]["bot_toccati_nel_verdetto"]
-    assert [(e["bot"], e["verdetto"], e["viva_dopo"]) for e in effetti] == \
-        [("mike", "ridotta", 9.64)]
+    assert "bot_toccati_nel_verdetto" not in r["result"]
     chiuse, parziali, _nr = _verdetto_mike(_righe_bot(_con_copertura(prima, m)), monkeypatch)
-    assert chiuse == []
-    assert [(p["verdetto"], p["ancora_viva"]) for p in parziali] == \
-        [("ridotta_dall_utente", 9.64)]
+    assert chiuse == [] and parziali == []
 
 
-def test_mike_non_viene_mai_dichiarata_chiusa_dalla_copertura(monkeypatch):
+def test_mike_non_viene_dichiarata_chiusa_dal_green_up_dell_utente(monkeypatch):
     """Mike BACK Under 2 @1,50; il sito BACK Under 10 @5,0 (W 40, L -10). Lay 1,50:
-    la copertura sarebbe LAY 33,33 e porterebbe il netto di conto a -21,33: il
-    verdetto VERO di Mike direbbe "chiusa dall'utente" e Mike smetterebbe di
-    proteggere una posizione che nessuno ha chiuso. Il worker RIFIUTA (nessun ordine)."""
+    la copertura e' LAY 33,33. In SIZE il netto andrebbe a -21,33 («chiusa», falso);
+    08/10 (W3a): in ESPOSIZIONE la direzione dell'utente va a 0 e Mike resta INTERA,
+    quindi il worker NON rifiuta piu' una copertura che i bot accettano."""
     m = mercato_ou(lay_under=1.50, back_under=1.49)
     mike2 = ordine("M1", "BACK", 2.0, 1.50, csr="mike", cor="mike-t1", sel=UNDER)
     prima = [mike2, ordine("S1", "BACK", 10.0, 5.0, sel=UNDER)]
     r = esegui(Sb(), framework(m, Conto(prima)), riga_greenup(sel=UNDER))
+    assert r["status"] == "done", r.get("error")
+    assert piazzati(m) == [("LAY", 1.5, 33.33)]
+    assert "bot_toccati_nel_verdetto" not in r["result"]
+    chiuse, parziali, _n = _verdetto_mike(_righe_bot(_con_copertura(prima, m)), monkeypatch,
+                                          abbinato=2.0)
+    assert chiuse == [] and parziali == []
+
+
+def test_il_worker_rifiuta_ancora_la_copertura_che_chiuderebbe_mike(monkeypatch):
+    """La copertura che DAVVERO chiuderebbe Mike si rifiuta ancora: l'utente ha un
+    LAY sull'OVER (l'altro esito del mercato a due esiti) e la sua posizione si copre
+    sulla selezione di Mike (Under) con un LAY: per il verdetto di Mike, che guarda
+    la sua selezione, quel LAY e' un ordine dell'utente CONTRO la sua posizione
+    (direzione -30 contro +15): «chiusa dall'utente». Il worker RIFIUTA (nessun
+    ordine), e il verdetto VERO di Mike con quella copertura lo conferma."""
+    m = mercato_ou(lay_under=1.50, back_under=1.49)
+    prima = [MIKE_BACK, ordine("S1", "LAY", 10.0, 3.0, sel=OVER)]
+    r = esegui(Sb(), framework(m, Conto(prima)), riga_greenup(sel=UNDER))
     assert r["status"] == "error" and piazzati(m) == []
     assert "CHIUSA DALL'UTENTE" in r["error"] and "mike" in r["error"]
-    # la prova che il rifiuto serve: con la copertura il verdetto VERO dice "chiusa"
-    ipotetica = prima + [ordine("H", "LAY", 33.33, 1.50, csr="live", sel=UNDER)]
-    chiuse, _p, _n = _verdetto_mike(_righe_bot(ipotetica), monkeypatch, abbinato=2.0)
+    ipotetica = prima + [ordine("H", "LAY", 20.0, 1.50, csr="live", sel=UNDER)]
+    chiuse, _p, _n = _verdetto_mike(_righe_bot(ipotetica), monkeypatch)
     assert [c["verdetto"] for c in chiuse] == ["chiusa_dall_utente"]
 
 
@@ -1050,25 +1105,27 @@ def test_omega_intera_dopo_la_copertura_del_sito_sul_suo_stesso_lato():
     assert _verdetto_omega(_righe_bot(_con_copertura(prima, m))) == []
 
 
-def test_omega_ridotta_la_previsione_del_worker_coincide_col_verdetto_vero():
+def test_omega_intera_la_previsione_del_worker_coincide_col_verdetto_vero():
     """Omega LAY Under 5,26; il sito LAY Under 5 @3 (W -10, L +5); miglior back 2,5:
-    copertura BACK 6,00. Il netto passa da -10,26 a -4,26: il verdetto VERO di Omega
-    dice "ridotta" (dichiarazione, Omega continua a proteggere) e il worker l'aveva
-    scritto nell'esito."""
+    copertura BACK 6,00. In SIZE il netto passa da -10,26 a -4,26 («ridotta», falso);
+    08/10 (W3a): in ESPOSIZIONE la direzione dell'utente (LAY 5 @3 + BACK 6 @2,5) va
+    a 0 e Omega resta INTERA. Il worker, con la STESSA funzione, non annuncia
+    effetti e il verdetto VERO di Omega e' muto."""
     m = mercato_ou(lay_under=2.52, back_under=2.5)
     prima = [_omega_lay(), ordine("S1", "LAY", 5.0, 3.0, sel=UNDER)]
     r = esegui(Sb(omega_trades=[{"id": 1, "bet_id": "O1", "mode": "live"}]),
                framework(m, Conto(prima)), riga_greenup(sel=UNDER))
     assert r["status"] == "done", r.get("error")
     assert piazzati(m) == [("BACK", 2.5, 6.0)]
-    eff = r["result"]["bot_toccati_nel_verdetto"]
-    assert [(e["bot"], e["verdetto"]) for e in eff] == [("omega", "ridotta")]
-    assert _verdetto_omega(_righe_bot(_con_copertura(prima, m))) == ["ridotta_dall_utente"]
+    assert "bot_toccati_nel_verdetto" not in r["result"]
+    assert _verdetto_omega(_righe_bot(_con_copertura(prima, m))) == []
 
 
-def test_safe_stessa_aritmetica_del_netto():
-    """Safe: la sua funzione VERA del netto sulle righe normalizzate e la formula del
-    vivo (contratto sopra) danno lo stesso verdetto che il worker prevede."""
+def test_safe_stessa_aritmetica_del_verdetto():
+    """Safe: la sua funzione VERA del verdetto sulle righe normalizzate dice quello
+    che il worker prevede. 08/10 (W3a): il netto IN SIZE scende a 9,64 ma la
+    direzione dell'utente (BACK 5 @1,50 + LAY 5,36 @1,40) va a 0: Safe INTERA, e
+    il worker non annuncia effetti (prima «ridotta» 9,64, falso)."""
     from Betfair.safe_strategy import bot_service as SS
 
     m = mercato_ou(lay_under=1.40, back_under=1.39)
@@ -1077,11 +1134,10 @@ def test_safe_stessa_aritmetica_del_netto():
     r = esegui(Sb(safe_strategy_trades=[{"id": 4, "bet_id": "F1", "mode": "live"}]),
                framework(m, Conto(prima)), riga_greenup(sel=UNDER))
     assert r["status"] == "done", r.get("error")
-    eff = r["result"]["bot_toccati_nel_verdetto"]
-    assert [(e["bot"], e["verdetto"], e["viva_dopo"]) for e in eff] == \
-        [("safe", "ridotta", 9.64)]
+    assert "bot_toccati_nel_verdetto" not in r["result"]
     righe = _righe_bot(_con_copertura(prima, m))
     mio = SS._netto_su_selezione(righe, MKT, UNDER, solo_refs={"safe-t4"})
     conto = SS._netto_su_selezione(righe, MKT, UNDER)
-    assert (mio, conto) == (10.0, 9.64)
-    assert EFB.vivo_nel_conto(mio, conto) == 9.64
+    assert (mio, conto) == (10.0, 9.64)               # la size dice «ridotta» ...
+    v = SS._verdetto_di_conto(righe, MKT, UNDER, {"safe-t4"}, 10.0)
+    assert (v["verdetto"], v["metro"]) == ("intera", "esposizione")   # ... il verdetto no

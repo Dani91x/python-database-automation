@@ -52,6 +52,16 @@ def _sb() -> Any:
     return get_supabase_client()
 
 
+def proprietari_bot_conto(bet_ids: list[str], modo: str = "live") -> dict[str, str]:
+    """08/10 (W3a) - bet_id -> motivo, per gli ordini che il DB dice di un BOT
+    (modo 'live' o 'paper'). La lettura UNICA del cantiere W2
+    (``esposizione_fuori_bot.proprietari_bot``). SOLA LETTURA; SOLLEVA se una
+    lettura fallisce (la selezione resta in verifica)."""
+    from Betfair.stream.trading import esposizione_fuori_bot as _EFB
+
+    return _EFB.proprietari_bot(_sb(), bet_ids, mode=modo)
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 

@@ -403,6 +403,21 @@ class DbMemoria:
             self.senza_dato.append(voce)
         return {}
 
+    def proprietari_bot_conto(self, bet_ids: List[str], modo: str = "live") -> Dict[str, str]:
+        """08/10 (W3a) - STESSA FIRMA E STESSO TIPO di ``proprietari_bot_conto`` dei
+        tre moduli DB di produzione (``esposizione_fuori_bot.proprietari_bot``):
+        bet_id -> motivo per gli ordini di un BOT. Nel replay le tabelle degli
+        altri bot non esistono e un solo bot gira: dizionario VUOTO (il vero con
+        nessuna riga trovata), l'ordine dell'utente resta dell'utente. Il limite si
+        dichiara nel referto."""
+        voce = ("proprietari_bot_conto", "tabelle degli altri bot e coda del runner "
+                                         "(proprietari degli ordini altrui sul conto): "
+                                         "non sono nel replay, un ordine non del bot "
+                                         "si decide dai riferimenti (nessun altro bot)")
+        if bet_ids and voce not in self.senza_dato:
+            self.senza_dato.append(voce)
+        return {}
+
     def __getattr__(self, nome: str):
         # un metodo che il servizio chiama e che qui manca NON deve passare
         # inosservato: si registra e si risponde None.
@@ -1027,6 +1042,9 @@ class MercatoFlumine:
             # stessa cosa di `avg_price_matched`, con la grafia per esteso: un
             # consumatore che cerca l'una o l'altra trova sempre (15/09)
             "average_price_matched": getattr(sim, "average_price_matched", None) or None,
+            # 08/10 (W3a): la chiave additiva di `omega_market._riga_corrente`.
+            # Il banco non conosce il `customerStrategyRef` (come `rfs` sul canale)
+            "customer_strategy_ref": None,
         }
 
     def _costa_una_lettura(self) -> None:
@@ -1073,10 +1091,13 @@ class MercatoFlumine:
             "size_matched": float(getattr(sim, "size_matched", 0.0) or 0.0),
             "avg_price_matched": getattr(sim, "average_price_matched", None) or None,
             "size_remaining": float(getattr(ordine, "size_remaining", 0.0) or 0.0),
-            # la produzione non torna ne' ``size_lapsed`` ne' ``size_cancelled``
-            # su questa strada (listCurrentOrders per betId e i regolati non li
-            # portano): non si aggiungono qui, o il banco sarebbe piu' generoso
-            # del vero.
+            # la produzione non tornava ne' ``size_lapsed`` ne' ``size_cancelled``
+            # su questa strada. 08/10 (W3a): ora li torna
+            # (``omega_market.order_state_by_bet_id``: ``sizeCancelled`` e
+            # ``sizeLapsed`` del corrente), e il banco li espone uguali dal
+            # blotter di flumine (additivo).
+            "size_cancelled": float(getattr(ordine, "size_cancelled", 0.0) or 0.0),
+            "size_lapsed": float(getattr(ordine, "size_lapsed", 0.0) or 0.0),
             "matched_date": None,
             "placed_date": None,
             # 02/10/2026: le stesse chiavi d'identita' della produzione
@@ -1290,6 +1311,30 @@ class MercatoFlumine:
         self.ordini_utente[str(customer_ref)[:32]] = ordine
         self._attendi_betfair(mercato)
         return ordine
+
+    def annulla_come_utente(self, ref: str) -> Optional[Dict[str, float]]:
+        """08/10 (W3a) - L'UTENTE ANNULLA DAL SITO un ordine del BOT ancora vivo.
+
+        Non e' un finto: lo STESSO ``Market.cancel_order`` di flumine che usa
+        ``cancel_order_live`` (cancel_latency, ``size_cancelled`` vero), ma
+        chiesto da qualcuno che non e' il bot: il bot non ne sa niente finche'
+        non rilegge l'ordine (``order_state_by_bet_id`` / correnti con
+        ``size_cancelled``). Torna i numeri dell'ordine dopo l'annullo, o
+        ``None`` se l'ordine non c'e' o non e' annullabile."""
+        ordine = self.ordini.get(str(ref))
+        if ordine is None:
+            return None
+        mercato = self.s.mercati.get(str(getattr(ordine, "market_id", "") or ""))
+        if mercato is None:
+            return None
+        try:
+            if mercato.cancel_order(ordine) is False:
+                return None
+        except Exception:  # noqa: BLE001 - non annullabile (gia' completo)
+            return None
+        self._attendi_betfair(mercato)
+        return {**self._numeri(ordine),
+                "size_cancelled": float(getattr(ordine, "size_cancelled", 0.0) or 0.0)}
 
     # ------------------------------------------------- traccia forense
     def fills(self) -> Dict[str, List[List[Any]]]:
@@ -3229,3 +3274,77 @@ def _replay_evento(*, event_id: str, cartella: str, servizio: Callable[..., Any]
     esito.fill_attraversati = len(motore.fill_attraversati)
     esito.senza_futuro = motore.senza_futuro
     return esito
+
+
+# ===========================================================================
+# 08/10 (W3a) - IL CONTO SUL CANALE, PER TUTTI I BOT (porta additiva)
+# ===========================================================================
+# Cio' che fa il runner in produzione quando un ordine del conto cambia:
+#   * LIVE: lo stream ordini di Betfair porta TUTTI gli ordini del conto sul
+#     mercato (bot e utente, anche dal sito) -> cache VERA di
+#     ``betfairlightweight`` (``OrderBookCache``) -> produttore VERO
+#     ``esiti_ordini_canale.pubblica_conto_da_evento`` -> topic ``conto``;
+#   * PAPER: il blotter della strategia paper del runner (ordini dei bot e
+#     MANUALI dell'app) -> produttore VERO ``pubblica_conto_paper`` -> topic
+#     ``conto_paper``. Nel banco il "runner paper" e' il flumine simulato: il
+#     blotter del ``Market`` contiene ogni ordine del mercato.
+# Il messaggio e' serializzato come lo serializza ``local_channel`` e il client
+# VERO del bot (``ClientEsiti``) lo incassa. Nessun ordine scritto a mano.
+def pubblica_conto_al_client(mercato: "MercatoFlumine", market_id: str, pt_ms: int,
+                             client: Any, *, modo: str = "live") -> int:
+    """Pubblica la fotografia del conto del mercato e la fa incassare al client
+    del bot. Torna quanti messaggi sono entrati in memoria."""
+    from types import SimpleNamespace
+
+    from .. import esiti_ordini_canale as _EO
+
+    if client is None:
+        return 0
+    testi: List[str] = []
+
+    def _pubblica(t: str, d: Any) -> None:
+        testi.append(json.dumps({"t": t, "d": d}, default=str))
+
+    if modo == _EO.MODO_PAPER:
+        m = mercato.s.mercati.get(str(market_id))
+        blotter = getattr(m, "blotter", None) if m is not None else None
+        ordini = list(blotter) if blotter is not None else []
+        if not _EO.pubblica_conto_paper(market_id, ordini, _pubblica, adesso_ms=int(pt_ms)):
+            return 0
+    else:
+        from betfairlightweight.streaming.cache import OrderBookCache
+
+        per_sel = mercato.ordini_conto_come_stream(market_id, int(pt_ms))
+        if not per_sel:
+            return 0
+        cache = OrderBookCache(str(market_id), int(pt_ms), False)
+        cache.update_cache({"id": str(market_id),
+                            "orc": [{"id": sid, "uo": uo} for sid, uo in per_sel.items()]},
+                           int(pt_ms))
+        co = cache.create_resource(0)
+        co.client = SimpleNamespace(paper_trade=False)     # il client REALE
+        _EO.pubblica_conto_da_evento(SimpleNamespace(event=[co]), _pubblica,
+                                     adesso_ms=int(pt_ms))
+    return sum(1 for t in testi if client.incassa(t))
+
+
+def latenza_dal_canale(dettaglio: Optional[Dict[str, Any]], ms_canale: Optional[int],
+                       ms_primo_giro: Optional[int]) -> Optional[str]:
+    """IL CONTROLLO DELLA LATENZA AL PRIMO GIRO DOPO IL CANALE (come R3-CANALE di
+    Mike, 30/09), per ogni bot: il verdetto ``chiuso_dall_utente`` deve venire
+    dal canale (``dove`` con ``stream ordini`` o ``runner paper``) e la latenza
+    misurata dal bot (``latenza_ms.dal_runner``) non deve superare l'attesa del
+    primo giro del servizio dopo la pubblicazione piu' la tolleranza di 1 s
+    (le letture di conferma). ``None`` = conforme, altrimenti il motivo."""
+    if ms_canale is None:
+        return None
+    d = dettaglio or {}
+    dove = str(d.get("dove") or "")
+    lat = (d.get("latenza_ms") or {}).get("dal_runner")
+    attesa = (int(ms_primo_giro) - int(ms_canale)) if ms_primo_giro is not None else None
+    if ("stream ordini" not in dove and "runner paper" not in dove) \
+            or not isinstance(lat, (int, float)) or attesa is None \
+            or lat > attesa + 1000:
+        return (f"verdetto {dove!r} latenza {lat} ms, primo giro dopo il canale a "
+                f"{attesa} ms")
+    return None

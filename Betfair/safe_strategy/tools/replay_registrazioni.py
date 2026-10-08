@@ -136,9 +136,14 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # che la chiude. Il bot non lo vede fra i propri ordini (ref diverso): deve
     # accorgersene dalla POSIZIONE DI CONTO e non fare altro.
     "chiusura-fuori-app": {},
-    # variante: l'utente chiude solo META' della posizione. Il bot lo DICHIARA
-    # e continua a proteggere il resto (non e' un cash-out).
+    # variante: l'utente chiude solo META' della posizione. Fino al 07/10 il bot
+    # lo DICHIARAVA e continuava; dal 08/10 (W3a, ordine dell'utente «quando
+    # intervengo io [...] i bot lo sanno e non fanno altro») anche la riduzione
+    # e' un intervento: il bot si ferma (T14 giudica da quell'istante).
     "chiusura-fuori-app-ridotta": {},
+    # 08/10 (W3a): la chiusura fuori dall'app, vista dal CANALE del conto al
+    # primo giro (la REST conferma subito, fuori dalla cadenza di 30 s)
+    "chiusura-fuori-app-canale": {},
     # RIFIUTO DICHIARATO DI BETFAIR (`ok=False`) sul lato che Safe usa per
     # APRIRE (lay). Non tocca un parametro: i primi N piazzamenti tornano con
     # un report NEGATIVO, come quando Betfair rifiuta l'istruzione (prezzo non
@@ -188,6 +193,9 @@ SCENARIO_CASHOUT_GLOBALE = "cashout-globale"
 SCENARIO_SELEZIONE = "selezione-aggiuntiva"
 SCENARIO_FUORI_APP = "chiusura-fuori-app"
 SCENARIO_FUORI_APP_RIDOTTA = "chiusura-fuori-app-ridotta"
+# 08/10 (W3a): la chiusura fuori dall'app vista ANCHE dal canale del conto
+# (runner LIVE -> stream ordini -> topic ``conto`` -> client VERO di Safe)
+SCENARIO_FUORI_APP_CANALE = "chiusura-fuori-app-canale"
 SCENARIO_RIFIUTI = "rifiuti-betfair"
 SCENARIO_TIMEOUT_ACCETTATO = "timeout-dopo-accettazione"
 # UN solo rifiuto, e non tre come per Mike. Sulle registrazioni della Safe i
@@ -239,10 +247,13 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                         "accorgersene dalla posizione di CONTO, scrivere "
                         "`chiuso_dall_utente` e non fare altro (T14)",
     SCENARIO_FUORI_APP_RIDOTTA: "come sopra ma il trader chiude solo META' della "
-                                "posizione: il bot lo DICHIARA "
-                                "(`ridotta_dall_utente`) e continua a proteggere "
-                                "il resto — una copertura parziale non e' un "
-                                "cash-out",
+                                "posizione: dal 08/10 e' un intervento dell'utente, "
+                                "il bot lo DICHIARA (`ridotta_dall_utente`) e non fa "
+                                "altro (T14)",
+    SCENARIO_FUORI_APP_CANALE: "come `chiusura-fuori-app`, ma la chiusura arriva ANCHE "
+                               "dal canale del conto (stream ordini del runner LIVE): "
+                               "verdetto al primo giro dopo il canale, confermato "
+                               "dalla REST fuori cadenza (T14, T14-CANALE, 08/10)",
     SCENARIO_RIFIUTI: "Betfair RIFIUTA (`ok=False`) i primi piazzamenti sul lato "
                       "LAY, quello con cui Safe APRE: la riga non deve mai restare "
                       "viva su un ordine che non esiste (difetto 2 del 15/09)",
@@ -974,6 +985,20 @@ def _crea_strategia():
             # CHIUSURA FUORI DALL'APP: "intera" | "ridotta" | None
             self.fuori_app: Optional[str] = kw.pop("fuori_app", None)
             self.fuori_app_fatta: Optional[Dict[str, Any]] = None
+            # 08/10 (W3a): il canale del conto (client VERO di Safe, nessun socket)
+            self.conto_canale = bool(kw.pop("conto_canale", False))
+            self._client_conto: Optional[Any] = None
+            self._abbinato_sul_canale = 0.0
+            self.canale_ms: Optional[int] = None
+            self.giro_dopo_canale_ms: Optional[int] = None
+            self.messaggi_canale = 0
+            if self.conto_canale:
+                from ...stream import esiti_ordini_canale as _EO
+
+                memoria = _EO.MemoriaConto()
+                BS._CONTO.installa(memoria)
+                self._client_conto = _EO.ClientEsiti(memoria, topic=_EO.TOPIC_CONTO_TUTTI,
+                                                     porta_ws=1)
             self.chiuso_dall_utente: Dict[str, float] = {}
             self.richiesta_fatta = False
             self.cashout_chiesto = False
@@ -1057,6 +1082,8 @@ def _crea_strategia():
             # scanner ma non sono cio' che il bot guarda.
             if mtype in ("MATCH_ODDS", "CORRECT_SCORE"):
                 self.referto.tick += 1
+            if self.conto_canale:
+                self._conto_sul_canale(pt_ms)
             if pt_ms - self._ultimo_ms < self.ogni_ms:
                 return
             self._ultimo_ms = pt_ms
@@ -1105,6 +1132,13 @@ def _crea_strategia():
             # 2-quinquies) L'UTENTE CHIUDE FUORI DALL'APP, su Betfair
             if self.fuori_app and self.fuori_app_fatta is None:
                 self._forse_chiudi_fuori_app(pt_ms / 1000.0)
+            if self.conto_canale:
+                # 08/10: l'abbinamento dell'ordine dell'utente va sul canale
+                # prima che il servizio giri
+                self._conto_sul_canale(pt_ms)
+                if (self.canale_ms is not None and self.giro_dopo_canale_ms is None
+                        and int(pt_ms) >= int(self.canale_ms)):
+                    self.giro_dopo_canale_ms = int(pt_ms)
             # 3) IL CICLO INTERO del servizio
             self.aperture_nel_giro = 0
             self._attivita_a_inizio_giro = len(self.db.attivita)
@@ -1275,6 +1309,13 @@ def _crea_strategia():
             lato_utente = "back" if lato_bot == "lay" else "lay"
             size = round(float(tr.get("size") or 0.0)
                          * (0.5 if self.fuori_app == "ridotta" else 1.0), 2)
+            if self.conto_canale and lato_utente == "back":
+                # 08/10 (W3a): la PUNTA dell'utente dal sito rispetta la regola
+                # delle punte .it (>= 1,00, multipli di 0,50: il banco rifiuta
+                # le altre): per chiudere tutto si arrotonda per eccesso
+                import math
+
+                size = max(1.0, math.ceil(size * 2.0) / 2.0)
             if size < 0.01:
                 return
             ordine = self.mercato.place_order_utente(
@@ -1291,10 +1332,38 @@ def _crea_strategia():
                          "modo": self.fuori_app}
             self.db.log("replay_chiusura_fuori_app", dettaglio)
             self.fuori_app_fatta = dettaglio
-            # l'istante da cui T14 giudica: SOLO per la chiusura INTERA (una
-            # copertura parziale non e' un cash-out e il bot deve continuare)
-            if ordine is not None and self.fuori_app == "intera":
+            # l'istante da cui T14 giudica. 08/10 (W3a): ANCHE per la riduzione
+            # (prima solo per la chiusura INTERA): una riduzione dell'utente e' un
+            # intervento, e da li' il bot non fa altro
+            if ordine is not None and self.fuori_app in ("intera", "ridotta"):
                 self.chiuso_dall_utente[self.event_id] = float(adesso)
+            if ordine is not None:
+                dettaglio["ref"] = f"utente-fuori-app-{tr.get('id')}"
+
+        def _conto_sul_canale(self, pt_ms: int) -> None:
+            """08/10 (W3a) - Cio' che fa il runner LIVE quando lo stream ordini porta
+            un abbinamento dell'ordine dell'utente: pubblica il conto del mercato
+            (porta del banco comune ``pubblica_conto_al_client``) e il client di
+            Safe lo incassa. Il giro di Safe e' di ~2 s: la sveglia del conto
+            alza ``_SVEGLIA`` (``bot_service``), che nel banco coincide col giro
+            successivo alla sua cadenza."""
+            fatta = self.fuori_app_fatta or {}
+            ordine = self.mercato.ordini_utente.get(str(fatta.get("ref") or ""))
+            if ordine is None:
+                return
+            sim = getattr(ordine, "simulated", None)
+            abbinato = float(getattr(sim, "size_matched", 0.0) or 0.0)
+            if abbinato <= self._abbinato_sul_canale + 1e-9:
+                return
+            self._abbinato_sul_canale = abbinato
+            from ...stream.backtest.banco_comune import pubblica_conto_al_client
+
+            n = pubblica_conto_al_client(self.mercato, str(fatta.get("market_id") or ""),
+                                         int(pt_ms), self._client_conto)
+            self.messaggi_canale += n
+            if n and self.canale_ms is None:
+                self.canale_ms = int(pt_ms)
+            BS._SVEGLIA.clear()
 
         def _verifica_consapevolezza(self) -> None:
             """I controlli K su questo giro: righe del database contro ordini veri."""
@@ -1437,6 +1506,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       manuale_sul_bot: bool = False,
                       cashout_globale: bool = False,
                       fuori_app: Optional[str] = None,
+                      conto_canale: bool = False,
                       mode: str = "live",
                       status: str = "running",
                       scenario: str = "base",
@@ -1457,6 +1527,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     # catalogo §7. Si azzera all'INIZIO, non solo alla fine: un replay che
     # esplode a meta' lascerebbe le cache sporche al successivo.
     _pulisci_cache_di_processo()
+    # 08/10 (W3a): il canale del conto lo monta SOLO lo scenario che lo esercita
+    BS._CONTO.installa(None)
 
     raw = os.path.join(data_dir, str(event_id), f"{event_id}.raw.jsonl")
     ref = CERT.Referto(event_id=str(event_id))
@@ -1482,6 +1554,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         ordine_manuale=ordine_manuale, doppia_lay=doppia_lay,
         manuale_sul_bot=manuale_sul_bot, cashout_globale=cashout_globale,
         timeout_accettato=timeout_accettato, fuori_app=fuori_app,
+        conto_canale=conto_canale,
         scenario_proposte=scenario_proposte, dal_ms=dal_ms,
         market_filter={"markets": [raw]},
         # I TETTI DI FLUMINE VANNO APERTI: il rischio lo governa la Safe coi suoi
@@ -1805,6 +1878,8 @@ def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,
             f"nei TOTALI DI PAGINA, che e' il comportamento voluto. Le uscite "
             f"le filtravano gia' (`_exit_candidates`: `origin != 'auto'` -> "
             f"scartata): il bot non tocca le righe del trader.")
+    if getattr(strategia, "conto_canale", False):
+        _nota_conto_canale(out, strategia)
     if strategia.chiuso_dall_utente:
         out.note.append(
             "[CHIUSO IL 16/09] l'utente ha chiuso a mano tutte le operazioni "
@@ -2030,8 +2105,9 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         doppia_lay=(scenario == SCENARIO_DUE_LAY),
         manuale_sul_bot=(scenario == SCENARIO_MANUALE_E_BOT),
         cashout_globale=(scenario == SCENARIO_CASHOUT_GLOBALE),
-        fuori_app=("intera" if scenario == SCENARIO_FUORI_APP else
-                   ("ridotta" if scenario == SCENARIO_FUORI_APP_RIDOTTA else None)),
+        fuori_app=("intera" if scenario in (SCENARIO_FUORI_APP, SCENARIO_FUORI_APP_CANALE)
+                   else ("ridotta" if scenario == SCENARIO_FUORI_APP_RIDOTTA else None)),
+        conto_canale=(scenario == SCENARIO_FUORI_APP_CANALE),
         mode=mode, status=status, scenario=scenario,
         chiusura_parziale=(scenario == CP.SCENARIO),
         scenario_proposte=(scenario if scenario in PM.SCENARI_CALCIO else None),
@@ -2040,6 +2116,39 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         ref.note.insert(0, "VARIANTE DEI PARAMETRI (la strategia non cambia): "
                         + ", ".join("%s=%s" % kv for kv in sorted(sost.items())))
     return ref
+
+
+def _nota_conto_canale(out: CERT.Referto, st: Any) -> None:
+    """08/10 (W3a): che cosa ha visto Safe dal canale del conto, e quando. Il
+    verdetto deve arrivare AL PRIMO giro dopo la pubblicazione (T14-CANALE, come
+    R3-CANALE di Mike)."""
+    from ...stream.backtest.banco_comune import latenza_dal_canale
+
+    chiusi = [p for k, p, *_r in (st.db.attivita or []) if k == "chiuso_dall_utente"]
+    visto = dict(chiusi[0]) if chiusi else {}
+    attesa = (st.giro_dopo_canale_ms - st.canale_ms
+              if st.canale_ms is not None and st.giro_dopo_canale_ms is not None else None)
+    out.note.append(
+        f"canale del conto: messaggi {st.messaggi_canale} | verdetto "
+        f"{visto.get('verdetto')!r} '{visto.get('dove')}' | latenza dallo stream al "
+        f"verdetto {(visto.get('latenza_ms') or {}).get('dal_runner')} ms, di cui "
+        f"{attesa} ms di attesa del primo giro (cadenza della REST "
+        f"{BS.CONTO_EVERY_S:.0f} s)")
+    if st.canale_ms is None:
+        # nessuna posizione della Safe -> nessun intervento dell'utente da
+        # pubblicare: lo scenario NON ha esercitato cio' per cui esiste (NE,
+        # mai OK; il campo lo legge `certifica.segno_referto` con getattr)
+        nel = list(getattr(out, "non_esercitato", None) or [])
+        nel.append("canale del conto mai sollecitato: la Safe non ha aperto una "
+                   "posizione da chiudere (T14-CANALE non giudicato)")
+        out.non_esercitato = nel
+        return
+    motivo = latenza_dal_canale(visto, st.canale_ms, st.giro_dopo_canale_ms)
+    if motivo:
+        out.violazioni.append(CERT.Violazione(
+            "T14-CANALE", "l'intervento dell'utente arrivato dallo stream ordini si vede "
+                          "al primo giro del servizio, confermato dal conto (08/10)",
+            motivo, "LIVE"))
 
 
 def main(argv: Optional[List[str]] = None) -> int:

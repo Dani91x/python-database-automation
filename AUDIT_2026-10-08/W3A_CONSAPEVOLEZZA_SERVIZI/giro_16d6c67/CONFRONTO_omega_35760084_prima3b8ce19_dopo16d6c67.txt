@@ -1,0 +1,77 @@
+== base: IDENTICO
+== giornata-reale: IDENTICO
+== apertura: IDENTICO
+== paper: IDENTICO
+== cap-stretto: IDENTICO
+== bot-fermo: IDENTICO
+== feed-stantio: IDENTICO
+== esiti-ignoti: IDENTICO
+== riavvio: IDENTICO
+== manuale-e-bot: IDENTICO
+== cashout-globale: IDENTICO
+== proposta-approvata: IDENTICO
+== uscite-automatiche: IDENTICO
+== v4: IDENTICO
+== v4-riavvio: IDENTICO
+== v4-bot-fermo: IDENTICO
+== v3: IDENTICO
+== rifiuti-betfair: IDENTICO
+== chiuso-fuori-app: IDENTICO
+== chiusura-abbinata-in-parte: IDENTICO
+== chiuso-fuori-app-canale: NUOVO (solo DOPO)
+   OK  35760084 [chiuso-fuori-app-canale]  tick=481805 decisioni=  467 azioni=   2 stati=running [COMPLETE]
+== ridotto-fuori-app-canale: NUOVO (solo DOPO)
+   OK  35760084 [ridotto-fuori-app-canale]  tick=482411 decisioni=  467 azioni=   2 stati=running [COMPLETE]
+== TESTA: DIVERSA
+   -SCENARI: base, giornata-reale, apertura, paper, cap-stretto, bot-fermo, feed-stantio, esiti-ignoti, riavvio, manuale-e-bot, cashout-globale, proposta-approvata, uscite-automatiche, v4, v4-riavvio, v4-bot-fermo, v3, rifiuti-betfair, chiuso-fuori-app, chiusura-abbinata-in-parte
+   +SCENARI: base, giornata-reale, apertura, chiuso-fuori-app-canale, ridotto-fuori-app-canale, paper, cap-stretto, bot-fermo, feed-stantio, esiti-ignoti, riavvio, manuale-e-bot, cashout-globale, proposta-approvata, uscite-automatiche, v4, v4-riavvio, v4-bot-fermo, v3, rifiuti-betfair, chiuso-fuori-app, chiusura-abbinata-in-parte
+== CODA (copertura dei controlli, esito): DIVERSA
+   -ESITO: 20 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+   +ESITO: 22 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+   -     A1  x456     una gamba che non parte lascia SEMPRE scritto il perche' (§14.2: d
+   -     A2  x6       mai il punteggio CORRENTE ne' un risultato piu' vicino di `model_m
+   -     A3  x6       P del modello entro `model_p_max_pct` e SOTTO la probabilita' impl
+   -     A4  x6       quota nella banda [price_min, price_max] e liquidita' almeno pari 
+   -     A5  x2416    la catena lambda dichiara la sua FONTE (§14.2: fixture -> evento -
+   +     A1  x584     una gamba che non parte lascia SEMPRE scritto il perche' (§14.2: d
+   +     A2  x8       mai il punteggio CORRENTE ne' un risultato piu' vicino di `model_m
+   +     A3  x8       P del modello entro `model_p_max_pct` e SOTTO la probabilita' impl
+   +     A4  x8       quota nella banda [price_min, price_max] e liquidita' almeno pari 
+   +     A5  x2418    la catena lambda dichiara la sua FONTE (§14.2: fixture -> evento -
+   -     A7  x6       solo scoreline numeriche: gli aggregati restano fuori se `include_
+   -     B1  x6       target di GAMBA = (G - R) / gambe ancora piazzabili (§14.2)
+   -     B2  x8818    la barra della giornata e' coerente: target partita = 2 x target g
+   -     B4  x456     feed STANTIO (riga oltre `DECISION_MAX_AGE_S`): nessuna apertura i
+   -     B3  x3       obiettivo raggiunto (R >= G con `stop_on_goal`): nessuna NUOVA ape
+   +     A7  x8       solo scoreline numeriche: gli aggregati restano fuori se `include_
+   +     B1  x8       target di GAMBA = (G - R) / gambe ancora piazzabili (§14.2)
+   +     B2  x9752    la barra della giornata e' coerente: target partita = 2 x target g
+   +     B4  x458     feed STANTIO (riga oltre `DECISION_MAX_AGE_S`): nessuna apertura i
+   +     B3  x9       obiettivo raggiunto (R >= G con `stop_on_goal`): nessuna NUOVA ape
+   -     E1  x108     MAI due lay vive o in volo sullo stesso mercato e selezione: se si
+   +     E1  x324     MAI due lay vive o in volo sullo stesso mercato e selezione: se si
+   -  ?? E5  x0       una chiusura fatta dall'UTENTE FUORI DALL'APP (un ordine suo su Be
+   +     E5  x218     una chiusura fatta dall'UTENTE FUORI DALL'APP (un ordine suo su Be
+   -     J3  x1       il riferimento del piazzamento e' quello PER GAMBA (`omega-t<id>`,
+   +     J3  x3       il riferimento del piazzamento e' quello PER GAMBA (`omega-t<id>`,
+   -     J5  x8818    grafia snake_case ovunque: mai una chiave camelCase nelle righe de
+   +     J5  x9752    grafia snake_case ovunque: mai una chiave camelCase nelle righe de
+   -     F1  x6       settlement: la commissione si applica UNA volta sola, sul netto vi
+   +     F1  x12      settlement: la commissione si applica UNA volta sola, sul netto vi
+   -     K1  x577     cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+   -     K2  x577     una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+   -     K3  x577     il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+   -     K4  x577     ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+   -     K5  x577     una riga APERTA che dichiara un `bet_id` ha sempre quel l'ordine a
+   -     K6  x577     il RESIDUO non abbinato e' dichiarato: una riga aperta con meno de
+   -     K7  x577     il RESIDUO, il CHIESTO e l'ISTANTE di Betfair non restano NULL sul
+   +     K1  x799     cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+   +     K2  x799     una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+   +     K3  x799     il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+   +     K4  x799     ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+   +     K5  x799     una riga APERTA che dichiara un `bet_id` ha sempre quel l'ordine a
+   +     K6  x799     il RESIDUO non abbinato e' dichiarato: una riga aperta con meno de
+   +     K7  x799     il RESIDUO, il CHIESTO e l'ISTANTE di Betfair non restano NULL sul
+   -?? MAI SOLLECITATI: 38 controlli su 52. Su questi il referto NON dice «sano», dice «non lo so»:
+   +?? MAI SOLLECITATI: 37 controlli su 52. Su questi il referto NON dice «sano», dice «non lo so»:
+   -     E5: una chiusura fatta dall'UTENTE FUORI DALL'APP (un ordine suo su Betfair) il bot la VEDE, e da li' in poi non gestisce piu' una posizione che non esiste (ordine dell'utente 16/09 sera)

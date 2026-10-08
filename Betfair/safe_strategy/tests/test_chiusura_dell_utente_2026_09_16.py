@@ -375,17 +375,26 @@ def test_l_utente_puo_avere_operazioni_SUE_sulla_stessa_selezione():
     assert verdetti == []          # niente da dire: la posizione c'e' ancora
 
 
-def test_copertura_solo_parziale_dell_utente_si_dichiara_e_basta():
+def test_copertura_solo_parziale_dell_utente_ferma_il_bot_dal_08_10():
+    """Fino al 07/10: si dichiarava e il bot continuava a proteggere il resto.
+    08/10 (W3a, ordine dell'utente: «quando intervengo io [...] su un'operazione
+    dei bot, i bot lo sanno e non fanno altro»): una riduzione PARZIALE e' un
+    intervento dell'utente, stesse conseguenze della chiusura (marcatore con
+    ``verdetto='ridotta'``). La riga del bot resta viva: la regola il
+    settlement vero."""
     db = FakeDB(mode="live")
     riga = _riga(db, size=4.0, liability=124.0)
     mercato = MercatoConConto(vivi=[
         _ordine(f"safe-t{riga['id']}", "lay", 4.0),
         _ordine("utente-1", "back", 3.0),      # ne copre 3 su 4
     ])
-    assert _sorveglia(db, mercato, riga) == 0
+    assert _sorveglia(db, mercato, riga) == 1
     verdetti = [p.get("verdetto") for k, p in db.activity if k == "posizione_di_conto"]
     assert verdetti == ["ridotta_dall_utente"]
-    assert S.evento_chiuso_dall_utente("1.1") is None
+    mk = S.evento_chiuso_dall_utente("1.1")
+    assert mk is not None and mk["come"] == "fuori_app"
+    assert mk["verdetto"] == "ridotta" and mk["ancora_viva"] == -1.0
+    assert str(db.get_trade(riga["id"]).get("status")) == "open"
 
 
 def test_gambe_non_ritrovate_e_riconciliazione_non_chiusura():

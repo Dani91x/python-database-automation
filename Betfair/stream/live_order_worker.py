@@ -2288,29 +2288,12 @@ def _proprietari_bot(sb: Any, bet_ids: List[str]) -> Dict[str, str]:
     riga di coda del runner (bot che ha piazzato dalla coda e non ha ancora scritto il
     bet_id nella sua tabella). Letture a blocchi (lunghezza dell'URL PostgREST, come
     ``reconcile_worker._BLOCCO_IN``). Solleva se una lettura fallisce: mai un "fuori
-    bot" dedotto da una lettura KO."""
-    ids = sorted({str(b) for b in bet_ids if str(b or "").strip()})
-    out: Dict[str, str] = {}
-    for i in range(0, len(ids), _EFB_BLOCCO_IN):
-        blocco = ids[i:i + _EFB_BLOCCO_IN]
-        for tabella in _EFB.TABELLE_BOT:
-            res = (sb.table(tabella).select("bet_id").eq("mode", "live")
-                   .in_("bet_id", blocco).execute())
-            for r in getattr(res, "data", None) or []:
-                out.setdefault(str(r.get("bet_id")), f"tabella:{tabella}")
-        res = (sb.table("betfair_live_orders").select("bet_id,source").eq("mode", "live")
-               .in_("bet_id", blocco).execute())
-        for r in getattr(res, "data", None) or []:
-            src = str(r.get("source") or "").strip().lower()
-            if src not in _EFB.SOURCE_SPECCHIO_A_MANO:
-                out.setdefault(str(r.get("bet_id")), f"specchio:{src or '?'}")
-        res = (sb.table(_TABLE).select("bet_id,client_ref,params").eq("mode", "live")
-               .in_("bet_id", blocco).execute())
-        for r in getattr(res, "data", None) or []:
-            motivo = _EFB.motivo_bot_da_coda(r)
-            if motivo:
-                out.setdefault(str(r.get("bet_id")), motivo)
-    return out
+    bot" dedotto da una lettura KO.
+
+    08/10 (W3a): la lettura e' UNA, ``esposizione_fuori_bot.proprietari_bot`` (la
+    usano anche Mike, Omega e Safe, col loro ``modo``); qui il modo e' sempre LIVE."""
+    return _EFB.proprietari_bot(sb, bet_ids, mode="live", tabella_coda=_TABLE,
+                                blocco=_EFB_BLOCCO_IN)
 
 
 def _classifica_conto(sb: Any, ordini: List[Dict[str, Any]]) -> Dict[int, Optional[str]]:
@@ -2338,15 +2321,22 @@ def _classifica_conto(sb: Any, ordini: List[Dict[str, Any]]) -> Dict[int, Option
     return out
 
 
-def _netti_per_bot(ordini: List[Dict[str, Any]],
-                   classe: Dict[int, Optional[str]]) -> Dict[str, float]:
-    """Netto (size) delle gambe abbinate di OGNI bot sulla selezione."""
+def _ordini_per_bot(ordini: List[Dict[str, Any]],
+                    classe: Dict[int, Optional[str]]) -> Dict[str, List[Dict[str, Any]]]:
+    """Gli ordini di OGNI bot sulla selezione (la sua posizione, per il suo
+    verdetto: ``_EFB.effetto_sui_bot``)."""
     per_bot: Dict[str, List[Dict[str, Any]]] = {}
     for o in ordini:
         motivo = classe.get(id(o))
         if motivo:
             per_bot.setdefault(_EFB.bot_di(motivo), []).append(o)
-    return {b: _EFB.netto_size(v) for b, v in per_bot.items()}
+    return per_bot
+
+
+def _netti_per_bot(ordini: List[Dict[str, Any]],
+                   classe: Dict[int, Optional[str]]) -> Dict[str, float]:
+    """Netto (size) delle gambe abbinate di OGNI bot sulla selezione."""
+    return {b: _EFB.netto_size(v) for b, v in _ordini_per_bot(ordini, classe).items()}
 
 
 def _do_greenup_fuori_bot(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
@@ -2459,12 +2449,15 @@ def _do_greenup_fuori_bot(sb: Any, flumine: Any, request_row: Dict[str, Any], mo
                 f"greenup {_EFB.FUORI_BOT}: ordine dell'app {o.get('betId')} "
                 f"{side.upper()} ancora non abbinato ({o.get('sizeRemaining')}) sul lato "
                 "della copertura: nessun secondo ordine (annullarlo o attendere)")
-    # 4) i verdetti di conto dei bot (aritmetica a size): la copertura non deve far
-    # credere a un bot che l'utente gli abbia CHIUSO la posizione (smetterebbe di
-    # proteggerla). "Ridotta" si dichiara nell'esito, "chiusa" si rifiuta.
-    delta = float(plan.size) if side == "back" else -float(plan.size)
-    effetti = _EFB.effetto_sui_bot(_netti_per_bot(qui, classe), _EFB.netto_size(qui),
-                                   delta)
+    # 4) i verdetti di conto dei bot: la copertura non deve far credere a un bot
+    # che l'utente gli abbia CHIUSO la posizione (smetterebbe di proteggerla).
+    # "Ridotta" si dichiara nell'esito, "chiusa" si rifiuta. 08/10 (W3a): la
+    # previsione usa la STESSA funzione dei bot (``esiti_ordini_canale.
+    # verdetto_posizione``, in esposizione) e, come i bot, conta come «altrui» i
+    # soli ordini fuori bot: una copertura che i bot accetterebbero non si rifiuta.
+    effetti = _EFB.effetto_sui_bot(_ordini_per_bot(qui, classe), fuori,
+                                   _EFB.riga_copertura(side, float(plan.size),
+                                                       float(plan.price)))
     chiuse = [e for e in effetti if e["verdetto"] == "chiusa"]
     if chiuse:
         e = chiuse[0]
@@ -2477,7 +2470,7 @@ def _do_greenup_fuori_bot(sb: Any, flumine: Any, request_row: Dict[str, Any], mo
         extra["bot_toccati_nel_verdetto"] = effetti
         nota += "; ATTENZIONE: " + ", ".join(
             f"{e['bot']} vedra' la sua posizione ridotta ({e['viva_prima']:.2f}->"
-            f"{e['viva_dopo']:.2f}, aritmetica a size)" for e in effetti)
+            f"{e['viva_dopo']:.2f}, metro {e.get('metro')})" for e in effetti)
     hedge_order, hedge_price, hedge_size = _costruisci_chiusura(
         market, strategy=strategy, selection_id=selection_id, handicap=handicap,
         side=side, price=plan.price, size=plan.size, persistence=persistence,

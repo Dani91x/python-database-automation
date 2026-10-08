@@ -31,6 +31,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from Betfair.safe_strategy import execution as X
 from Betfair.stream import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
 from Betfair.stream import avvio_app as AA
+from Betfair.stream import esiti_ordini_canale as _EO  # 08/10 (W3a): conto dal canale
 from Betfair.stream import local_channel as _lc
 from Betfair.stream import sveglia_canale as _SV
 from Betfair.stream.trading import stato_mercato as _SM
@@ -724,6 +725,8 @@ ESITO_RIFIUTATO = "rifiutato"                        # Betfair / runner ha detto
 ESITO_NON_ABBINATO_FOK = "non_abbinato_fok"          # tutto-o-niente non abbinato
 ESITO_CANCELLATO_DA_BETFAIR = "cancellato_da_betfair"  # LAPSE (sospensione, in gioco)
 ESITO_FERMATO_DA_NOI = "fermato_da_noi"              # mai partito: freno/modo/runner nostri
+# 08/10 (W3a): annullato dall'UTENTE (sito o app) senza che Mike lo chiedesse
+ESITO_ANNULLATO_DALL_UTENTE = "annullato_dall_utente"
 
 
 def _esito_del_rifiuto(nota: Any, error_code: Any, fermo_nostro: bool) -> str:
@@ -1840,6 +1843,15 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
             continue
         # -- terminale ---------------------------------------------------------
         ignoto_prima = bool(meta.pop("runner_esito_ignoto", False))
+        # 08/10 (W3a): la lay appoggiata ANNULLATA sul runner senza che Mike lo
+        # chiedesse (gamba viva, nessun annullo richiesto, nessun esito ignoto):
+        # e' l'utente dall'app (ladder del runner paper), come il sito in live
+        numeri_ann = {"size_cancelled": _num_evento(e, "size_cancelled"),
+                      "size_piazzata": _num_evento(e, "size"),
+                      "size_matched": round(abbinato, 2), "bet_id": bet_id}
+        annullo_esterno = (appoggiata and leg.is_live and not ignoto_prima
+                           and not meta.get("annullo_richiesto")
+                           and _annullato_da_altri(leg, numeri_ann) > 0.009)
         meta.update({"canale_fase": fase, "canale_seq": seq})
         meta.pop("reason", None)
         meta.pop("err", None)
@@ -1862,6 +1874,9 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
                                           (ESITO_CANCELLATO_DA_BETFAIR if fase == "scaduto"
                                            else ESITO_RITIRATO_DA_NOI) if appoggiata else
                                           ESITO_NON_ABBINATO_FOK)})
+            if annullo_esterno:
+                meta.update({"reason": "annullato_dall_utente",
+                             "esito_ordine": ESITO_ANNULLATO_DALL_UTENTE})
             campi["status"] = "error"
             # D1-ter: un ordine passato da esito IGNOTO (fase ``errore``) e poi
             # morto non e' un «no» del mercato a questa richiesta: niente
@@ -1918,6 +1933,8 @@ def _segui_ordini_paper_su_runner(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any
                 nf.update({"conteggio": int(freno.get("conteggio") or 0),
                            "max": int(freno.get("max") or 0)})
             db.log("no_fill", nf, eid)
+        if annullo_esterno:
+            _annota_annullo_esterno(db, eid, leg, numeri_ann, fonte="runner_paper")
         n += 1
     return n
 
@@ -2663,7 +2680,8 @@ def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, An
         riga_bet = _trade_row_for_leg(db, eid, leg)
         letto = (_rileggi_per_bet_id(market=market, leg=leg, riga=riga_bet, eid=eid)
                  if riga_bet is not None else None)
-        if letto is not None and letto[0] in (_ESITO_SCADUTO, _ESITO_ABBINATO, _ESITO_PARZIALE):
+        if letto is not None and letto[0] in (_ESITO_SCADUTO, _ESITO_ABBINATO, _ESITO_PARZIALE,
+                                              _ESITO_ANNULLATO):
             _applica_esito_riapertura(db=db, event_id=eid, leg=leg, esito=letto[0],
                                       numeri={**letto[1], "fonte": "fuori_dai_correnti"})
             return
@@ -2694,6 +2712,17 @@ def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, An
     residuo = (round(float(residuo_betfair), 2) if residuo_betfair is not None
                else round(max(0.0, float(leg.size) - matched), 2))
     aggiornato_al = campo_ordine(o, "matched_date") or campo_ordine(o, "placed_date")
+    # 08/10 (W3a): una parte dell'ordine ANNULLATA da un altro (sito o app),
+    # mentre il resto e' ancora vivo: e' un intervento dell'utente (la partita
+    # si ferma a fine sorveglianza delle gambe, prima della decisione)
+    numeri_ann: Dict[str, Any] = {"size_cancelled": _num_ordine(o, "size_cancelled", 0.0),
+                                  "size_matched": round(matched, 2),
+                                  "size_remaining": residuo,
+                                  "bet_id": campo_ordine(o, "bet_id")}
+    if campo_ordine(o, "size_requested") is not None:
+        numeri_ann["size_piazzata"] = campo_ordine(o, "size_requested")
+    if _annullato_da_altri(leg, numeri_ann) > 0.009:
+        _annota_annullo_esterno(db, eid, leg, numeri_ann, fonte="betfair")
     if matched <= float(leg.matched) + 1e-9:
         return                      # nessun progresso: si aspetta, come in paper
     leg.matched = matched
@@ -2737,6 +2766,8 @@ _ESITO_SCADUTO = "scaduto"
 _ESITO_ABBINATO = "abbinato"
 _ESITO_PARZIALE = "parziale"
 _ESITO_IGNOTO = "ignoto"
+#: 08/10 (W3a): l'ordine e' stato ANNULLATO da qualcuno che non e' Mike
+_ESITO_ANNULLATO = "annullato_dall_utente"
 
 
 def _gambe_appoggiate_vive(ctx: E.MatchCtx, params: Dict[str, Any]) -> List[E.Leg]:
@@ -2769,6 +2800,15 @@ def _classifica_ordine(leg: E.Leg, o: Dict[str, Any]) -> tuple:
               "betfair_updated_at": campo_ordine(o, "matched_date") or campo_ordine(o, "placed_date"),
               # M8.14: il motivo di Betfair, vuoto se la lettura non lo porta
               "lapse_status_reason_code": campo_ordine(o, "lapse_status_reason_code")}
+    # 08/10 (W3a): la size PIAZZATA sull'ordine (``priceSize.size``), per non
+    # scambiare il taglio del place-and-trim di Mike per un annullo esterno
+    piazzata = campo_ordine(o, "size_requested")
+    if piazzata is not None:
+        numeri["size_piazzata"] = piazzata
+    if _annullato_da_altri(leg, numeri) > 0.009:
+        # un annullo che Mike non ha chiesto: intervento dell'utente, MAI una
+        # scadenza (prima diventava ``scaduto`` e il motore ri-appoggiava)
+        return (_ESITO_ANNULLATO, numeri)
     if residuo > 0.009 and stato != "EXECUTION_COMPLETE":
         return (_ESITO_VIVO, numeri)
     if abbinato >= float(leg.size) - 0.009:
@@ -2828,7 +2868,18 @@ def _rileggi_per_bet_id(*, market: Any, leg: E.Leg, riga: Dict[str, Any], eid: s
     return (esito, numeri)
 
 
-def _chiudi_gamba_scaduta(db: Any, event_id: str, leg: E.Leg, numeri: Dict[str, Any]) -> None:
+def _chiudi_gamba_annullata(db: Any, event_id: str, leg: E.Leg,
+                            numeri: Dict[str, Any]) -> None:
+    """08/10 (W3a): la gamba il cui ordine l'ha ANNULLATO l'utente si chiude per
+    quello che e' (stessa scrittura della scaduta), col motivo vero."""
+    _chiudi_gamba_scaduta(db, event_id, leg, numeri, fase="cancelled",
+                          motivo="annullato_dall_utente",
+                          esito=ESITO_ANNULLATO_DALL_UTENTE)
+
+
+def _chiudi_gamba_scaduta(db: Any, event_id: str, leg: E.Leg, numeri: Dict[str, Any],
+                          *, fase: str = "lapsed", motivo: str = "lapsed_alla_sospensione",
+                          esito: str = ESITO_CANCELLATO_DA_BETFAIR) -> None:
     """La gamba e' morta alla sospensione: si chiude PER QUELLO CHE E'.
 
     Non e' un errore del bot e non e' «mai piazzata»: l'ordine e' esistito, e
@@ -2849,9 +2900,9 @@ def _chiudi_gamba_scaduta(db: Any, event_id: str, leg: E.Leg, numeri: Dict[str, 
     if r is None:
         return
     meta = dict(r.get("meta") or {})
-    meta.update({"phase": "lapsed", "reason": "lapsed_alla_sospensione",
+    meta.update({"phase": fase, "reason": motivo,
                  # M8.13/M8.14 (29/09): chi l'ha tolto dal mercato, e perche'
-                 "esito_ordine": ESITO_CANCELLATO_DA_BETFAIR})
+                 "esito_ordine": esito})
     if numeri.get("lapse_status_reason_code"):
         meta["lapse_status_reason_code"] = numeri.get("lapse_status_reason_code")
     campi: Dict[str, Any] = {"meta": meta}
@@ -2889,6 +2940,16 @@ def _applica_esito_riapertura(*, db: Any, event_id: str, leg: E.Leg, esito: str,
     ignoto        -> ``pending_reconcile`` (§4.11), MAI una gamba nuova.
     """
     comune = {"leg": leg.ref, "role": leg.role, "esito": esito, **numeri}
+    if esito == _ESITO_ANNULLATO:
+        # 08/10 (W3a): annullato da qualcuno che non e' Mike (sito o app). La
+        # parte abbinata e' una posizione; il residuo NON si ri-appoggia: la
+        # partita si ferma (``_ANNULLI_ESTERNI`` -> ``chiuso_dall_utente``,
+        # prima della decisione di questo stesso giro).
+        db.log("rilettura_alla_riapertura", {**comune}, event_id)
+        if float(numeri.get("size_remaining") or 0.0) <= 0.009:
+            _chiudi_gamba_annullata(db, event_id, leg, numeri)
+        _annota_annullo_esterno(db, event_id, leg, numeri, fonte="betfair")
+        return
     if esito == _ESITO_VIVO:
         db.log("rilettura_alla_riapertura",
                {**comune, "nota": "l'ordine appoggiato e' ancora vivo sul book: "
@@ -2963,16 +3024,20 @@ _CONTO_LETTO_A: Dict[str, float] = {}
 # conferma. Canale giu' o assente = la REST ogni ``reconcile_every_s``, come
 # prima. In PAPER niente di tutto questo (non c'e' un conto da leggere).
 ENV_MIKE_CONTO_CANALE = "MIKE_CONTO_CANALE"
-_CONTO_CANALE: Dict[str, Any] = {"memoria": None, "client": None}
+# 08/10 (W3a): il meccanismo e' stato ESTRATTO, senza cambiarlo, in
+# ``esiti_ordini_canale.SorveglianzaConto`` perche' Omega e Safe usino lo
+# stesso. I nomi di modulo di Mike restano: sono gli STESSI oggetti.
+_CONTO = _EO.SorveglianzaConto("mike", ENV_MIKE_CONTO_CANALE)
+_CONTO_CANALE: Dict[str, Any] = _CONTO.canale
 #: "event_id|market_id" -> versione della fotografia gia' valutata
-_CONTO_VISTO: Dict[str, int] = {}
+_CONTO_VISTO: Dict[str, int] = _CONTO.visto
 #: event_id -> il segnale del canale in attesa della conferma REST
-_CONTO_SEGNALE: Dict[str, Dict[str, Any]] = {}
+_CONTO_SEGNALE: Dict[str, Dict[str, Any]] = _CONTO.segnale
 #: event_id -> la firma dell'ultimo verdetto del canale gia' mandato alla REST.
 #: Lo stream ordini ripubblica la STESSA fotografia (snap ogni 3 s di flumine
 #: con ordini vivi): una riduzione parziale gia' confermata non deve far
 #: rileggere la REST a ogni snap.
-_CONTO_FIRMA: Dict[str, tuple] = {}
+_CONTO_FIRMA: Dict[str, tuple] = _CONTO.firma
 
 
 # ---------------------------------------------------------------------------
@@ -3007,7 +3072,10 @@ _CACHE_DI_PROCESSO = ("_DAILY_STOP_LOGGED", "_LAST_HEARTBEAT", "_CONFIG_WARNED",
                       "_RIPIEGO_REST_ULTIMO", "_ULTIMO_STATO_SCANNER",
                       # 30/09: la posizione di conto dal canale (versioni viste
                       # e segnale in attesa di conferma REST)
-                      "_CONTO_VISTO", "_CONTO_SEGNALE", "_CONTO_FIRMA")
+                      "_CONTO_VISTO", "_CONTO_SEGNALE", "_CONTO_FIRMA",
+                      # 08/10 (W3a): gli annulli esterni in attesa dello stop
+                      # e i mercati della sveglia del conto
+                      "_ANNULLI_ESTERNI", "_MERCATI_CONTO")
 # 30/09 (banco): i due promemoria del flusso fermo (per partita, con l'ora del
 # giro) non sono dizionari: si azzerano col loro ``azzera`` qui sotto.
 _PROMEMORIA_DI_PROCESSO = ("_FLUSSO_CRITICO", "_FLUSSO_RIPIEGO")
@@ -3147,6 +3215,8 @@ def _verdetto_di_conto(*, ctx: E.MatchCtx, ev: Dict[str, Any], extra: Dict[str, 
                        cache: Optional[Dict[str, List[Dict[str, Any]]]],
                        righe_di: Callable[[str], Optional[List[Dict[str, Any]]]],
                        su_non_ritrovata: Optional[Callable[[Dict[str, Any]], None]] = None,
+                       modo: str = "live",
+                       in_verifica: Optional[List[Dict[str, Any]]] = None,
                        ) -> "tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]":
     """L'ARITMETICA del verdetto sulla posizione di conto, UNA sola (30/09).
 
@@ -3157,7 +3227,14 @@ def _verdetto_di_conto(*, ctx: E.MatchCtx, ev: Dict[str, Any], extra: Dict[str, 
     mercato che la fonte non conosce: quella selezione non si giudica. Ritorna
     ``(chiuse, parziali, non_ritrovate)`` e non scrive niente
     (``su_non_ritrovata`` e' la dichiarazione della REST, riga per riga,
-    nell'ordine di sempre)."""
+    nell'ordine di sempre).
+
+    08/10 (W3a, seconda tappa): gli ordini ALTRUI della selezione si dividono
+    (``_CONTO.separa_altrui``, regole del cantiere W2) in ordini dell'UTENTE (gli
+    unici che entrano nel verdetto) e ordini di un ALTRO bot (tolti: non sono un
+    intervento dell'utente). Proprietario non saputo (DB illeggibile): la
+    selezione non si giudica e va in ``in_verifica`` (lista del chiamante)."""
+    leggi_p = _EO.lettore_proprietari(db)
     mkts = ev.get("markets") or {}
     selezioni = dict(extra.get("selections") or {})
     chiuse: List[Dict[str, Any]] = []
@@ -3190,12 +3267,37 @@ def _verdetto_di_conto(*, ctx: E.MatchCtx, ev: Dict[str, Any], extra: Dict[str, 
             if su_non_ritrovata is not None:
                 su_non_ritrovata(dettaglio)
             continue
-        # quanto della posizione di Mike SOPRAVVIVE dentro il netto di conto
-        vivo = (min(atteso, max(0.0, conto)) if atteso > 0
-                else max(atteso, min(0.0, conto)))
-        if abs(vivo) <= _CONTO_EPS:
+        # 08/10 (W3a, seconda tappa): gli ordini di un ALTRO bot sulla selezione
+        # non sono dell'utente: si tolgono; proprietario ignoto -> in verifica
+        sulla_sel = [o for o in righe or []
+                     if str(o.get("market_id") or "") == market_id
+                     and str(o.get("selection_id") or "") == str(int(sel))]
+        parti = _CONTO.separa_altrui(
+            sulla_sel, del_bot=lambda o: str(o.get("customer_order_ref") or "") in refs,
+            leggi=leggi_p, modo=modo)
+        if parti["altri_bot"]:
+            dettaglio["ordini_di_altri_bot"] = parti["altri_bot"]
+            conto = _netto_su_selezione(parti["bot"] + parti["altrui"], market_id, int(sel))
+            dettaglio.update({"netto_di_conto": conto, "altrui": round(conto - mio, 2)})
+        if parti["ignoti"]:
+            if in_verifica is not None:
+                in_verifica.append({**dettaglio, "verdetto": "in_verifica",
+                                    "ordini_ignoti": parti["ignoti"],
+                                    "errore": parti["errore"]})
+            continue
+        # 08/10 (W3a, reperto W2): il verdetto si giudica sulla parte
+        # DIREZIONALE dell'esposizione, ordini di Mike contro ordini dell'utente,
+        # con la funzione UNICA dei bot e del worker W2
+        # (``esiti_ordini_canale.verdetto_posizione``): un green-up dell'utente su
+        # una posizione SUA non tocca Mike. Dati incompleti -> la size di prima.
+        v = _EO.verdetto_posizione(atteso=atteso, conto_size=conto, righe_bot=parti["bot"],
+                                   righe_altrui=parti["altrui"], eps=_CONTO_EPS)
+        dettaglio["metro"] = v["metro"]
+        vivo = v["vivo"]
+        toccata = v["verdetto"]
+        if toccata == "chiusa":
             chiuse.append({**dettaglio, "verdetto": "chiusa_dall_utente"})
-        elif abs(vivo) + _CONTO_EPS < abs(atteso):
+        elif toccata == "ridotta":
             parziali.append({**dettaglio, "verdetto": "ridotta_dall_utente",
                              "ancora_viva": round(vivo, 2)})
     return chiuse, parziali, non_ritrovate
@@ -3204,6 +3306,7 @@ def _verdetto_di_conto(*, ctx: E.MatchCtx, ev: Dict[str, Any], extra: Dict[str, 
 def _segnale_conto_dal_canale(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any],
                               extra: Dict[str, Any], eid: str,
                               cache: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+                              modo: str = "live",
                               ) -> Optional[Dict[str, Any]]:
     """30/09 - Il canale del conto (stream ordini del runner LIVE) ha portato
     una fotografia NUOVA di un mercato dove Mike ha una posizione e, con la
@@ -3217,42 +3320,52 @@ def _segnale_conto_dal_canale(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any],
     una decisione dal solo canale: una fotografia parziale (ordini dell'utente
     precedenti all'iscrizione dello stream) potrebbe far sembrare chiusa una
     posizione che non lo e'."""
-    mem = _CONTO_CANALE.get("memoria")
-    if mem is None:
+    if not _CONTO.attivo():
         return None
     mkts = ev.get("markets") or {}
-    fotografie: Dict[str, Dict[str, Any]] = {}
-    nuove = False
-    for (mercato, _selezione) in E.selezioni_da_sorvegliare(ctx.legs):
-        mid = str((mkts.get(mercato) or {}).get("market_id") or "")
-        if not mid or mid in fotografie:
-            continue
-        f = mem.mercato(mid)
-        if f is None:
-            continue
-        fotografie[mid] = f
-        chiave = f"{eid}|{mid}"
-        versione = int(f.get("versione") or 0)
-        if versione > int(_CONTO_VISTO.get(chiave) or 0):
-            nuove = True
-            _CONTO_VISTO[chiave] = versione
-    if not nuove:
+    # 08/10 (W3a): versioni, firma e tempi dal meccanismo UNICO
+    # (``esiti_ordini_canale.SorveglianzaConto``): stesse chiavi di prima
+    # ("event_id|market_id"), stesse regole.
+    fotografie, nuove = _CONTO.fotografie(
+        eid, [str((mkts.get(m) or {}).get("market_id") or "")
+              for (m, _s) in E.selezioni_da_sorvegliare(ctx.legs)], modo=modo)
+    # 08/10 (W3a): in PAPER la fotografia e' la verita': una selezione IN
+    # VERIFICA si rigiudica a ogni giro (la lettura del DB ha il suo respiro,
+    # ``RIPROVA_PROPRIETARI_S``), anche senza una fotografia nuova
+    if not nuove and not (modo == _EO.MODO_PAPER and _CONTO.in_verifica(eid)):
         return None
     from Betfair.omega import omega_market as _OM
 
-    righe = {mid: [_OM._riga_corrente(o) for o in (f.get("ordini") or [])]
-             for mid, f in fotografie.items()}
+    ref_per_bet = (_ref_per_bet_di_mike(ctx, db, eid, cache) if modo == _EO.MODO_PAPER
+                   else None)
+    righe: Dict[str, List[Dict[str, Any]]] = {}
+    for mid, f in fotografie.items():
+        r = [_OM._riga_corrente(o) for o in (f.get("ordini") or [])]
+        # PAPER: il runner da' ai suoi ordini il SUO ref (``awlq<id>``); Mike
+        # riconosce i suoi per ``bet_id`` (``con_ref_del_bot``) e l'aritmetica
+        # resta la stessa del live
+        righe[mid] = _EO.con_ref_del_bot(r, ref_per_bet) if ref_per_bet is not None else r
+    verifica: List[Dict[str, Any]] = []
     chiuse, parziali, non_ritrovate = _verdetto_di_conto(
-        ctx=ctx, ev=ev, extra=extra, db=db, eid=eid, cache=cache, righe_di=righe.get)
+        ctx=ctx, ev=ev, extra=extra, db=db, eid=eid, cache=cache, righe_di=righe.get,
+        modo=modo, in_verifica=verifica)
+    if modo == _EO.MODO_PAPER:
+        # in paper questa E' la valutazione che conta: la verifica si aggiorna qui
+        _aggiorna_verifica_mike(db, eid, verifica, fonte="blotter paper del runner")
     dubbi = [d for d in non_ritrovate if abs(float(d.get("altrui") or 0.0)) > _CONTO_EPS]
+    chiave_firma = eid if modo == _EO.MODO_LIVE else f"{eid}|{modo}"
     if chiuse:
         verdetto, selezioni = "chiusa", chiuse
     elif parziali:
         verdetto, selezioni = "ridotta", parziali
     elif dubbi:
         verdetto, selezioni = "da_confrontare", dubbi
+    elif verifica:
+        # 08/10 (W3a): un ordine altrui di proprietario ignoto (DB illeggibile):
+        # nessun verdetto, la selezione va IN VERIFICA (chi chiama lo registra)
+        verdetto, selezioni = "in_verifica", verifica
     else:
-        _CONTO_FIRMA.pop(eid, None)
+        _CONTO.dimentica_firma(chiave_firma)
         return None
     # la stessa situazione gia' mandata alla REST (snap ripetuti dello stream):
     # nessun segnale nuovo, resta la cadenza
@@ -3260,17 +3373,81 @@ def _segnale_conto_dal_canale(*, db: Any, ctx: E.MatchCtx, ev: Dict[str, Any],
         (str(d.get("market_id")), int(d.get("selection_id") or 0),
          float(d.get("netto_di_conto") or 0.0), float(d.get("altrui") or 0.0))
         for d in selezioni))
-    if _CONTO_FIRMA.get(eid) == firma:
+    if _CONTO.firma_ripetuta(chiave_firma, firma):
         return None
-    _CONTO_FIRMA[eid] = firma
-    ricevuti = [f.get("ricevuto_ms") for f in fotografie.values()
-                if isinstance(f.get("ricevuto_ms"), (int, float))]
-    pubblicati = [f.get("publish_time_ms") for f in fotografie.values()
-                  if isinstance(f.get("publish_time_ms"), (int, float))]
-    return {"fonte": "stream ordini", "verdetto_dal_canale": verdetto,
+    tempi = _CONTO.tempi(fotografie)
+    return {"fonte": ("stream ordini" if modo == _EO.MODO_LIVE
+                      else "blotter paper del runner"),
+            "verdetto_dal_canale": verdetto,
             "selezioni": selezioni,
-            "ricevuto_ms": int(max(ricevuti)) if ricevuti else None,
-            "publish_time_ms": int(max(pubblicati)) if pubblicati else None}
+            "chiuse": chiuse, "parziali": parziali, "in_verifica": verifica,
+            "ricevuto_ms": tempi["ricevuto_ms"],
+            "publish_time_ms": tempi["publish_time_ms"]}
+
+
+def _aggiorna_verifica_mike(db: Any, eid: str, verifica: List[Dict[str, Any]], *,
+                            fonte: str) -> None:
+    """08/10 (W3a, seconda tappa) - Le selezioni di Mike IN VERIFICA dopo una
+    valutazione completa del conto (REST in live, blotter in paper): un ordine
+    altrui di proprietario IGNOTO (DB illeggibile) -> nessun verdetto e nessun
+    ordine nuovo di Mike sulla partita finche' non si sa (``_decidi_e_piazza``
+    toglie i piazzamenti). Lo si scrive UNA volta all'ingresso e una all'uscita."""
+    nuove = {f"{d.get('market_id')}:{d.get('selection_id')}": d for d in verifica or []}
+    prima = _CONTO.in_verifica(eid)
+    for chiave, d in nuove.items():
+        if _CONTO.metti_in_verifica(eid, chiave, d):
+            # kind di sempre (``posizione_di_conto``, gia' dichiarato in UI) con
+            # il verdetto nuovo: nessun kind muto
+            db.log("posizione_di_conto",
+                   {**d, "verdetto": "in_verifica", "fonte": fonte, "critical": True,
+                    "nota": "sulla selezione di Mike c'e' un ordine ALTRUI di cui il DB non "
+                            "dice il proprietario (utente o un altro bot?): nessun verdetto "
+                            "al buio e nessun ordine nuovo di Mike su questa partita finche' "
+                            "non si sa"}, eid)
+    for chiave in prima:
+        if chiave not in nuove and _CONTO.togli_verifica(eid, chiave):
+            db.log("posizione_di_conto", {"verdetto": "verificato", "selezione": chiave,
+                                          "fonte": fonte,
+                                          "nota": "proprietario degli ordini altrui saputo: "
+                                                  "Mike riprende"}, eid)
+
+
+def _ferma_piazzamenti_in_verifica(d: E.Decision, *, ctx: E.MatchCtx, eid: str, db: Any,
+                                   extra: Dict[str, Any], params: Dict[str, Any],
+                                   now_ts: float) -> E.Decision:
+    """08/10 (W3a, seconda tappa) - Con una selezione della partita IN VERIFICA
+    (``_aggiorna_verifica_mike``) la decisione perde TUTTI i piazzamenti: restano
+    gli annulli (ridurre il rischio e' sempre permesso), lo stato non avanza, e lo
+    si dice (al piu' una riga per cadenza)."""
+    in_verifica = _CONTO.in_verifica(eid)
+    if not in_verifica or not any(a.kind == "place" for a in d.actions):
+        return d
+    _log_throttled(db, extra, params, now_ts, "posizione_di_conto",
+                   {"verdetto": "in_verifica", "selezioni": sorted(in_verifica),
+                    "reason": "ordini_nuovi_fermi",
+                    "nota": "ordini nuovi di Mike FERMI: sulla partita c'e' un ordine "
+                            "altrui di proprietario ignoto (DB illeggibile)"}, eid)
+    return E.Decision(ctx.state, [a for a in d.actions if a.kind != "place"],
+                      "conto in verifica: nessun ordine nuovo finche' non si sa di chi "
+                      "e' l'ordine altrui")
+
+
+def _ref_per_bet_di_mike(ctx: E.MatchCtx, db: Any, eid: str,
+                         cache: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+                         ) -> Dict[str, str]:
+    """08/10 (W3a, PAPER): ``bet_id`` -> il ref con cui Mike riconosce la
+    gamba (lo stesso di ``_refs_di_mike``: il ref della riga ``mike-t<id>`` se
+    c'e', altrimenti quello della gamba). Il ``bet_id`` e' l'unica chiave che
+    Mike e il runner paper hanno in comune."""
+    out: Dict[str, str] = {}
+    for l in ctx.legs:
+        if l.archived:
+            continue
+        r = _trade_row_for_leg(db, eid, l, cache)
+        if r is None or not r.get("bet_id"):
+            continue
+        out[str(r.get("bet_id"))] = str(ref_ordine_di_riga(r) or l.ref)
+    return out
 
 
 def _sorveglia_posizione_di_conto(*, db: Any, market: Any, ctx: E.MatchCtx,
@@ -3288,15 +3465,43 @@ def _sorveglia_posizione_di_conto(*, db: Any, market: Any, ctx: E.MatchCtx,
       e' una riconciliazione, non una chiusura dell'utente: si dichiara e basta;
     * se si ritrovano ma il NETTO di conto non contiene piu' la sua posizione,
       la posizione e' stata chiusa da qualcun altro: ``chiuso_dall_utente``;
-    * se la contiene solo in parte, lo si DICE e non si fa nulla (una copertura
-      parziale dell'utente non autorizza il bot a smettere di proteggere).
+    * se la contiene solo in parte: dal 08/10 (W3a, ordine dell'utente «QUANDO
+      INTERVENGO IO [...] SU UN'OPERAZIONE DEI BOT, I BOT LO SANNO E NON FANNO
+      ALTRO») anche una riduzione PARZIALE e' un intervento dell'utente: stesse
+      conseguenze della chiusura (``come='ridotta'``). Prima: si dichiarava e
+      Mike continuava, e una sua chiusura successiva poteva rovesciare la
+      copertura dell'utente.
+
+    08/10 (W3a): in PAPER la fonte di verita' e' il BLOTTER del runner paper
+    (``conto_paper``): un ordine MANUALE dell'app sulla partita di Mike si vede
+    dalla fotografia (``_sorveglia_conto_paper``). Senza canale paper: niente,
+    come prima.
     """
-    if str(mode) == "paper":
-        return False
     eid = str(ev["event_id"])
     if ctx.chiuso_dall_utente:
         _CONTO_SEGNALE.pop(eid, None)
+        _ANNULLI_ESTERNI.pop(eid, None)
+        _MERCATI_CONTO.pop(eid, None)
+        _CONTO.togli_verifica(eid)
         return False
+    if not E.open_selections(ctx.legs):
+        _CONTO.togli_verifica(eid)      # niente da difendere: niente da verificare
+    # 08/10 (W3a): i mercati dove Mike ha una posizione da difendere, per la
+    # SVEGLIA del giro (``_mercato_del_conto_interessa``: solo memoria)
+    if E.open_selections(ctx.legs):
+        mkts_c = ev.get("markets") or {}
+        _MERCATI_CONTO[eid] = {str((mkts_c.get(m) or {}).get("market_id") or "")
+                               for (m, _s) in E.selezioni_da_sorvegliare(ctx.legs)} - {""}
+    else:
+        _MERCATI_CONTO.pop(eid, None)
+    # 08/10 (W3a): un ordine appoggiato di Mike annullato da un ALTRO (sito o
+    # app), visto dalla rilettura dell'ordine: e' un intervento dell'utente
+    if eid in _ANNULLI_ESTERNI:
+        return _ferma_per_annullo_esterno(db=db, market=market, ctx=ctx, eid=eid,
+                                          cache=cache, now_ts=now_ts)
+    if str(mode) == "paper":
+        return _sorveglia_conto_paper(db=db, market=market, ctx=ctx, ev=ev, extra=extra,
+                                      eid=eid, now_ts=now_ts, cache=cache)
     # 30/09: il canale del conto, PRIMA della cadenza (e' li' per saltarla)
     nuovo = _segnale_conto_dal_canale(db=db, ctx=ctx, ev=ev, extra=extra, eid=eid,
                                       cache=cache)
@@ -3338,10 +3543,11 @@ def _sorveglia_posizione_di_conto(*, db: Any, market: Any, ctx: E.MatchCtx,
                                               "conto: e' riconciliazione, non una "
                                               "chiusura dell'utente"}, eid)
 
+    verifica: List[Dict[str, Any]] = []
     try:
         chiuse, parziali, _non_ritrovate = _verdetto_di_conto(
             ctx=ctx, ev=ev, extra=extra, db=db, eid=eid, cache=cache, righe_di=_leggi,
-            su_non_ritrovata=_dichiara_non_ritrovata)
+            su_non_ritrovata=_dichiara_non_ritrovata, in_verifica=verifica)
     except _ContoNonLetto as ex:
         logger.warning("[mike] %s: posizione di conto non letta su %s: %s",
                        eid, ex.market_id, str(ex.causa)[:120])
@@ -3349,57 +3555,178 @@ def _sorveglia_posizione_di_conto(*, db: Any, market: Any, ctx: E.MatchCtx,
         return False
     # la REST ha risposto: il segnale del canale (se c'era) e' stato giudicato
     _CONTO_SEGNALE.pop(eid, None)
+    # 08/10 (W3a, seconda tappa): le selezioni con un ordine altrui di
+    # proprietario ignoto restano IN VERIFICA (nessun ordine nuovo di Mike)
+    _aggiorna_verifica_mike(db, eid, verifica, fonte="posizione di conto riletta via REST")
     for d in parziali:
         db.log("posizione_di_conto", {**d, "critical": True,
                                       "nota": "il conto contiene solo in PARTE la posizione "
-                                              "di Mike: si dichiara, il bot continua a "
-                                              "proteggere quello che resta"}, eid)
-    if not chiuse:
-        if segnale is not None and segnale.get("verdetto_dal_canale") == "chiusa":
+                                              "di Mike: e' un intervento dell'utente "
+                                              "(08/10), Mike smette di gestire la "
+                                              "partita"}, eid)
+    if not chiuse and not parziali:
+        if segnale is not None and segnale.get("verdetto_dal_canale") in ("chiusa", "ridotta"):
             db.log("posizione_di_conto",
                    {"verdetto": "canale_non_confermato", "segnale": segnale,
-                    "nota": "lo stream ordini diceva la posizione chiusa, la posizione "
-                            "di CONTO riletta via REST no: vince il conto, Mike continua "
-                            "a gestire la partita"}, eid)
+                    "nota": "lo stream ordini diceva la posizione chiusa o ridotta, la "
+                            "posizione di CONTO riletta via REST no: vince il conto, Mike "
+                            "continua a gestire la partita"}, eid)
         return False
     dettaglio_chiusura: Dict[str, Any] = {
-        "dove": "fuori dall'app", "selezioni": chiuse, "critical": True,
-        "nota": "la posizione di CONTO sul mercato non contiene piu' la posizione di "
-                "Mike: l'ha chiusa l'utente con un ordine suo. Da qui in poi Mike non "
-                "gestisce piu' questa partita (niente coperture, green-up, "
+        "dove": "fuori dall'app", "selezioni": chiuse + parziali, "critical": True,
+        "come": "chiusa" if chiuse else "ridotta",
+        "nota": "la posizione di CONTO sul mercato non contiene piu' (tutta) la posizione "
+                "di Mike: l'utente e' intervenuto con un ordine suo. Da qui in poi Mike "
+                "non gestisce piu' questa partita (niente coperture, green-up, "
                 "re-ingressi); il P&L lo contabilizza il regolamento vero."}
     if segnale is not None:
         # 30/09: vista dallo stream ordini, confermata dalla REST nello stesso giro
-        ora_ms = float(now_ts) * 1000.0
-        ric = segnale.get("ricevuto_ms")
-        pub = segnale.get("publish_time_ms")
         dettaglio_chiusura.update({
             "dove": "fuori dall'app (stream ordini)",
             "conferma": "posizione di conto riletta via REST",
             "segnale": {k: segnale.get(k) for k in ("fonte", "verdetto_dal_canale",
                                                      "ricevuto_ms", "publish_time_ms")},
-            "latenza_ms": {
-                "dal_runner": (int(round(ora_ms - float(ric)))
-                               if isinstance(ric, (int, float)) else None),
-                "da_betfair": (int(round(ora_ms - float(pub)))
-                               if isinstance(pub, (int, float)) else None)}})
-    db.log("chiuso_dall_utente", dettaglio_chiusura, eid)
-    logger.critical("[mike] %s: posizione chiusa DALL'UTENTE fuori dall'app (%s) -> "
-                    "il bot non gestisce piu' questa partita", eid,
-                    dettaglio_chiusura["dove"])
+            "latenza_ms": _CONTO.latenza_ms(now_ts, segnale)})
+    return _chiuso_dall_utente_mike(db=db, market=market, ctx=ctx, eid=eid, cache=cache,
+                                    dettaglio=dettaglio_chiusura,
+                                    motivo="chiuso_dall_utente_fuori_app")
+
+
+def _chiuso_dall_utente_mike(*, db: Any, market: Any, ctx: E.MatchCtx, eid: str,
+                             cache: Optional[Dict[str, List[Dict[str, Any]]]],
+                             dettaglio: Dict[str, Any], motivo: str) -> bool:
+    """LE CONSEGUENZE dell'intervento dell'utente sulla partita di Mike, UNE per
+    tutte le strade (REST, canale, blotter paper, annullo esterno): attivita'
+    ``chiuso_dall_utente`` con ``dove``/``come``, annullo delle gambe VIVE,
+    nessun ordine nuovo (niente coperture, green-up, re-ingressi)."""
+    db.log("chiuso_dall_utente", dettaglio, eid)
+    logger.critical("[mike] %s: intervento DELL'UTENTE (%s, %s) -> il bot non gestisce "
+                    "piu' questa partita", eid, dettaglio.get("dove"), dettaglio.get("come"))
     # le gambe ancora VIVE (ordini appoggiati) vanno tolte dal mercato: se si
     # abbinassero aprirebbero una posizione nuova su una partita che non e' piu'
     # del bot. Annullare RIDUCE il rischio: e' sempre permesso.
     for leg in list(ctx.legs):
         if leg.is_live:
-            _mark_trade_cancelled(db, eid, leg, "chiuso_dall_utente_fuori_app",
-                                  cache, market=market)
+            _mark_trade_cancelled(db, eid, leg, motivo, cache, market=market)
     ctx.chiuso_dall_utente = True
     ctx.no_reentry = True
     ctx.reentry_allowed = False
     ctx.reentry_done = True
     ctx.flatten_pending = False
+    _ANNULLI_ESTERNI.pop(eid, None)
     return True
+
+
+def _sorveglia_conto_paper(*, db: Any, market: Any, ctx: E.MatchCtx, ev: Dict[str, Any],
+                           extra: Dict[str, Any], eid: str, now_ts: float,
+                           cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> bool:
+    """08/10 (W3a) - IL PAPER E' LO SPECCHIO DEL LIVE. In prova l'intervento
+    esterno e' l'ordine MANUALE dell'app (ladder del runner, client paper): il
+    runner paper pubblica la fotografia del suo blotter sul mercato
+    (``conto_paper``) e Mike la giudica con la STESSA aritmetica
+    (``_verdetto_di_conto``), riconoscendo i suoi ordini per ``bet_id``.
+
+    CONFERMA: in paper la fotografia E' la fonte di verita' (il blotter del
+    runner contiene ogni ordine paper dalla sua partenza, quelli di Mike e quelli
+    manuali); non c'e' un conto da rileggere. Un runner riavviato ha un blotter
+    vuoto: gli ordini di Mike non si ritrovano e NON si decide niente
+    (conservativo, come le "gambe non ritrovate" del live). Senza canale paper:
+    nessuna lettura, identico a prima."""
+    if not E.open_selections(ctx.legs):
+        return False
+    segnale = _segnale_conto_dal_canale(db=db, ctx=ctx, ev=ev, extra=extra, eid=eid,
+                                        cache=cache, modo=_EO.MODO_PAPER)
+    if segnale is None:
+        return False
+    chiuse = list(segnale.get("chiuse") or [])
+    parziali = list(segnale.get("parziali") or [])
+    if not chiuse and not parziali:
+        return False          # da_confrontare: in paper non c'e' altro da rileggere
+    dettaglio = {
+        "dove": "dall'app (ordine manuale sul runner paper)",
+        "come": "chiusa" if chiuse else "ridotta", "selezioni": chiuse + parziali,
+        "conferma": "blotter paper del runner (fonte di verita' del paper)",
+        "segnale": {k: segnale.get(k) for k in ("fonte", "verdetto_dal_canale",
+                                                 "ricevuto_ms", "publish_time_ms")},
+        "latenza_ms": _CONTO.latenza_ms(now_ts, segnale), "critical": True,
+        "nota": "un ordine manuale dell'app ha chiuso o ridotto la posizione di Mike "
+                "sul runner paper: Mike non gestisce piu' questa partita (paper = "
+                "specchio del live)"}
+    return _chiuso_dall_utente_mike(db=db, market=market, ctx=ctx, eid=eid, cache=cache,
+                                    dettaglio=dettaglio,
+                                    motivo="chiuso_dall_utente_app_paper")
+
+
+# 08/10 (W3a) - L'ORDINE APPOGGIATO ANNULLATO DA UN ALTRO. Prima: un annullo
+# fatto dal sito (o dall'app, fuori dai comandi di Mike) veniva letto come una
+# scadenza (``_classifica_ordine`` -> ``scaduto``) e il motore poteva
+# ri-appoggiare. Un annullo che Mike non ha chiesto e' un intervento
+# dell'utente: chi rilegge l'ordine lo annota qui (event_id -> dettaglio) e
+# ``_sorveglia_posizione_di_conto`` (o la fine della sorveglianza delle gambe,
+# PRIMA della decisione) ferma la partita.
+_ANNULLI_ESTERNI: Dict[str, Dict[str, Any]] = {}
+
+#: 08/10 (W3a): event_id -> i market_id dove Mike ha una posizione da difendere
+_MERCATI_CONTO: Dict[str, set] = {}
+
+
+def _mercato_del_conto_interessa(market_id: str, _modo: str) -> bool:
+    """La SVEGLIA del conto: una fotografia nuova su un mercato dove Mike ha una
+    posizione fa ripartire il giro (solo memoria, nessuna lettura)."""
+    return any(str(market_id) in s for s in list(_MERCATI_CONTO.values()))
+
+
+_CONTO.interessa(_mercato_del_conto_interessa)
+
+
+def _annullato_da_altri(leg: E.Leg, numeri: Dict[str, Any]) -> float:
+    """Quanto dell'ordine e' stato ANNULLATO da qualcuno che non e' Mike.
+    ``size_cancelled`` meno il taglio del place-and-trim (l'ordine piazzato
+    piu' grande della gamba e ridotto da Mike al suo importo: ``size`` chiesta
+    sull'ordine meno ``leg.size``)."""
+    try:
+        annullato = float(numeri.get("size_cancelled") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+    try:
+        piazzato = float(numeri.get("size_piazzata") or 0.0)
+    except (TypeError, ValueError):
+        piazzato = 0.0
+    taglio = max(0.0, piazzato - float(leg.size or 0.0)) if piazzato > 0 else 0.0
+    return round(max(0.0, annullato - taglio), 2)
+
+
+def _annota_annullo_esterno(db: Any, event_id: str, leg: E.Leg, numeri: Dict[str, Any],
+                            fonte: str) -> None:
+    """Annota l'annullo esterno (una volta per partita) e lo dice."""
+    eid = str(event_id)
+    if eid in _ANNULLI_ESTERNI:
+        return
+    det = {"leg": leg.ref, "role": leg.role, "fonte": fonte,
+           "annullato_da_altri": _annullato_da_altri(leg, numeri),
+           **{k: numeri.get(k) for k in ("size_matched", "size_cancelled", "size_piazzata",
+                                         "bet_id") if numeri.get(k) is not None}}
+    _ANNULLI_ESTERNI[eid] = det
+    db.log("posizione_di_conto", {**det, "verdetto": "annullato_dall_utente",
+                                  "critical": True,
+                                  "nota": "l'ordine appoggiato di Mike e' stato annullato "
+                                          "da qualcuno che non e' Mike (sito o app): "
+                                          "e' un intervento dell'utente, non una "
+                                          "scadenza"}, eid)
+
+
+def _ferma_per_annullo_esterno(*, db: Any, market: Any, ctx: E.MatchCtx, eid: str,
+                               cache: Optional[Dict[str, List[Dict[str, Any]]]],
+                               now_ts: float) -> bool:
+    det = _ANNULLI_ESTERNI.get(eid) or {}
+    dettaglio = {"dove": ("dall'app (runner paper)" if det.get("fonte") == "runner_paper"
+                          else "fuori dall'app"),
+                 "come": "annullata", "ordine": det, "critical": True,
+                 "nota": "un ordine appoggiato di Mike e' stato annullato dall'utente: "
+                         "Mike non lo ri-appoggia e non gestisce piu' questa partita"}
+    return _chiuso_dall_utente_mike(db=db, market=market, ctx=ctx, eid=eid, cache=cache,
+                                    dettaglio=dettaglio,
+                                    motivo="chiuso_dall_utente_annullo")
 
 
 def _sorveglia_sospensione(*, db: Any, market: Any, ctx: E.MatchCtx, snap: E.Snapshot,
@@ -4630,6 +4957,13 @@ def _sorveglia_gambe(*, db: Any, market: Any, ctx: E.MatchCtx, ev: Dict[str, Any
             # ``_segui_ordini_paper_su_runner`` qui sopra. Il fill «simulato in
             # casa» quando il best back scendeva sotto il prezzo non esiste piu'.
             continue
+    # 08/10 (W3a): un annullo esterno visto QUI (rilettura della lay appoggiata)
+    # ferma la partita in QUESTO giro, prima della decisione: il motore non
+    # deve ri-appoggiare un ordine che l'utente ha tolto
+    eid_g = str(ev["event_id"])
+    if eid_g in _ANNULLI_ESTERNI and not ctx.chiuso_dall_utente:
+        _ferma_per_annullo_esterno(db=db, market=market, ctx=ctx, eid=eid_g, cache=cache,
+                                   now_ts=now.timestamp())
 
 
 def _sorveglia_senza_dati(*, db: Any, market: Any, ctx: E.MatchCtx, ev: Dict[str, Any],
@@ -5235,7 +5569,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         leg = next((l for l in ctx.legs if l.ref == item["ref"]), None)
         if leg is None or not leg.is_live:
             continue
-        if now_ts < float(item["earliest_at"]):
+        if now_ts < float(item["earliest_at"]) or _CONTO.in_verifica(ev["event_id"]):
+            # 08/10 (W3a): conto IN VERIFICA -> la differita aspetta (nessun ordine)
             still.append(item)
             continue
         book = snap.book(leg.market, leg.selection)
@@ -5263,6 +5598,11 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     _aggiorna_aperture_ferme(db, ctx, mode, ev["event_id"])
     d = E.decide(ctx, snap, params)
     approvazione_id = _approvazione_eseguita(approvazione_prima, d)
+    # 08/10 (W3a, seconda tappa): una selezione IN VERIFICA (ordine altrui di
+    # proprietario ignoto, DB illeggibile) -> NESSUN ordine nuovo di Mike sulla
+    # partita finche' non si sa: restano gli annulli, lo stato non avanza.
+    d = _ferma_piazzamenti_in_verifica(d, ctx=ctx, eid=str(ev["event_id"]), db=db,
+                                       extra=extra, params=params, now_ts=now_ts)
     # IL TETTO DELLE PARTITE, APPLICATO DOVE NASCONO I SOLDI (13/09).
     # ``max_open_matches`` era controllato solo quando si ARMA una partita, e
     # lo stato ``WATCH`` non contava: il conto si rifaceva da zero a ogni giro,
@@ -6787,45 +7127,22 @@ _PORTA_CANALE = 47333
 def installa_conto_canale(memoria: Any) -> None:
     """La memoria delle fotografie del conto dal canale (``MemoriaConto``), o
     ``None`` per toglierla. La usano ``avvia_conto_dal_canale``, il banco e i
-    test (senza socket)."""
-    _CONTO_CANALE["memoria"] = memoria
-    _CONTO_VISTO.clear()
-    _CONTO_SEGNALE.clear()
-    _CONTO_FIRMA.clear()
+    test (senza socket). 08/10 (W3a): e' ``SorveglianzaConto.installa``, lo
+    stesso meccanismo di Omega e Safe."""
+    _CONTO.installa(memoria)
 
 
 def avvia_conto_dal_canale() -> bool:
     """30/09 - accende il lettore del conto sul canale del runner calcio
-    (``/lettore/conto``, stessa porta degli esiti: ``LIVE_LOCAL_WS_PORT`` o
-    47331). ACCESO di serie (regola dell'utente del 25/09: i canali al
-    millisecondo sono la via principale); ``MIKE_CONTO_CANALE=0`` lo spegne.
-    Non solleva MAI: senza ``websockets`` o senza runner resta la REST a
-    cadenza, come prima."""
-    import os
+    (stessa porta degli esiti: ``LIVE_LOCAL_WS_PORT`` o 47331). ACCESO di serie
+    (regola dell'utente del 25/09: i canali al millisecondo sono la via
+    principale); ``MIKE_CONTO_CANALE=0`` lo spegne. Non solleva MAI: senza
+    ``websockets`` o senza runner resta la REST a cadenza, come prima.
 
-    grezzo = (os.environ.get(ENV_MIKE_CONTO_CANALE) or "").strip().lower()
-    if grezzo in ("0", "false", "no", "off"):
-        logger.info("[mike] conto dal canale SPENTO (%s=%s): chiusure dell'utente "
-                    "viste dalla REST ogni reconcile_every_s.", ENV_MIKE_CONTO_CANALE, grezzo)
-        return False
-    if _CONTO_CANALE.get("client") is not None:
-        return True
-    try:
-        import websockets  # noqa: F401  - solo per sapere se c'e'
-        from Betfair.stream import esiti_ordini_canale as _EO
-
-        memoria = _EO.MemoriaConto()
-        client = _EO.ClientEsiti(memoria, topic=_EO.TOPIC_CONTO)
-        installa_conto_canale(memoria)
-        _CONTO_CANALE["client"] = client
-        client.avvia()
-        logger.info("[mike] posizione di conto dallo stream ordini del runner: %s "
-                    "(la REST resta la conferma e il ripiego)", client.url)
-        return True
-    except Exception as ex:  # noqa: BLE001 - il canale e' un'accelerazione
-        logger.warning("[mike] conto dal canale NON avviato (%s): chiusure dell'utente "
-                       "viste dalla REST ogni reconcile_every_s.", str(ex)[:160])
-        return False
+    08/10 (W3a): il lettore ascolta ANCHE la fotografia PAPER
+    (``/lettore/conto,conto_paper``): in prova un ordine manuale dell'app sulla
+    partita di Mike si vede come in live si vede quello dal sito."""
+    return _CONTO.avvia(etichetta="[mike]", topic=_EO.TOPIC_CONTO_TUTTI)
 
 
 def _avvia_canale() -> None:
@@ -6858,6 +7175,8 @@ def _avvia_canale() -> None:
 # vuoto ``idle_cycle_s``). A interruttore spento la dormita resta
 # ``time.sleep(interval)``, la stessa istruzione di oggi.
 _SVEGLIA = _SV.Sveglia("mike")
+# 08/10 (W3a): con la sveglia accesa, anche il conto la alza (pavimento UI)
+_CONTO.su_sveglia(lambda _m, _mo: _SVEGLIA.alza("conto", minimo_s=_SV.MINIMO_UI_S))
 _ASCOLTO_SCAN: Optional[_SV.AscoltoScan] = None
 
 
@@ -6989,6 +7308,12 @@ def _dormi_o_sveglia(pausa: float, params: Any) -> None:
     """La dormita del ciclo. A interruttore SPENTO e' ``time.sleep(pausa)``,
     la stessa identica istruzione di oggi."""
     if _ASCOLTO_SCAN is None and not _client_scan_alza_sveglia():
+        if _CONTO.attivo():
+            # 08/10 (W3a): la stessa dormita, interrotta dalla sveglia del conto
+            # (un intervento dell'utente su una partita di Mike), mai sotto il
+            # pavimento della UI (1 s)
+            _CONTO.dormi(pausa, minimo_s=_SV.MINIMO_UI_S)
+            return
         time.sleep(pausa)
         return
     _SVEGLIA.attendi(pausa, _pavimento_sveglia(params))

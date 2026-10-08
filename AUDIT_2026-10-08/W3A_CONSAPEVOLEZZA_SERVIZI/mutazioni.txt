@@ -1,0 +1,23 @@
+M1 verdetto in esposizione spento (torna la size) [Betfair/stream/esiti_ordini_canale.py]: ROSSO | 1 failed, 12 passed in 1.01s | sha 855364bc4de7dad2 -> ripristino 855364bc4de7dad2 OK
+M2 Mike: la riduzione parziale non ferma [Betfair/mike/service.py]: ROSSO | 1 failed in 0.14s | sha b486c750afc3907b -> ripristino b486c750afc3907b OK
+M3 Omega: la riduzione parziale non ferma [Betfair/omega/omega_service.py]: ROSSO | 1 failed, 4 passed in 1.34s | sha f24ef12057c5802d -> ripristino f24ef12057c5802d OK
+M4 Safe: la riduzione parziale non ferma [Betfair/safe_strategy/bot_service.py]: ROSSO | 1 failed, 4 passed in 1.58s | sha d108ab3f4703a6d5 -> ripristino d108ab3f4703a6d5 OK
+M5 Omega: il canale non salta la cadenza [Betfair/omega/omega_service.py]: ROSSO | 1 failed in 1.26s | sha f24ef12057c5802d -> ripristino f24ef12057c5802d OK
+M6 Safe: il canale non salta cadenza e tetto [Betfair/safe_strategy/bot_service.py]: ROSSO | 1 failed in 1.33s | sha d108ab3f4703a6d5 -> ripristino d108ab3f4703a6d5 OK
+M7 Mike: l'annullo esterno torna una scadenza [Betfair/mike/service.py]: ROSSO | 1 failed, 2 passed in 0.16s | sha b486c750afc3907b -> ripristino b486c750afc3907b OK
+M8 Mike: il taglio del place-and-trim contato come annullo [Betfair/mike/service.py]: ROSSO | 1 failed, 3 passed in 0.15s | sha b486c750afc3907b -> ripristino b486c750afc3907b OK
+M9 paper accettato sul topic live [Betfair/stream/esiti_ordini_canale.py]: ROSSO | 1 failed, 1 passed in 0.16s | sha 855364bc4de7dad2 -> ripristino 855364bc4de7dad2 OK
+M10 memoria senza modo (paper e live sulla stessa chiave) [Betfair/stream/esiti_ordini_canale.py]: ROSSO | 1 failed in 0.34s | sha 855364bc4de7dad2 -> ripristino 855364bc4de7dad2 OK
+M11 sveglia a ogni fotografia (snap compresi) [Betfair/stream/esiti_ordini_canale.py]: ROSSO | 1 failed, 4 passed in 0.17s | sha 855364bc4de7dad2 -> ripristino 855364bc4de7dad2 OK
+M12 dormita senza pavimento [Betfair/stream/esiti_ordini_canale.py]: ROSSO | 1 failed, 5 passed in 0.26s | sha 855364bc4de7dad2 -> ripristino 855364bc4de7dad2 OK
+M13 runner paper pubblica anche senza cambi [Betfair/stream/engine/live_trading_strategy.py]: ROSSO | 1 failed, 11 passed in 0.22s | sha 48cd9639ad9ec1f0 -> ripristino 48cd9639ad9ec1f0 OK
+M14 runner paper non pubblica [Betfair/stream/engine/live_trading_strategy.py]: ROSSO | 1 failed, 11 passed in 0.18s | sha 48cd9639ad9ec1f0 -> ripristino 48cd9639ad9ec1f0 OK
+M15 Mike: in paper il conto non si guarda [Betfair/mike/service.py]: ROSSO | 1 failed, 6 passed in 0.91s | sha b486c750afc3907b -> ripristino b486c750afc3907b OK
+M16 Omega: in paper il conto non si guarda [Betfair/omega/omega_service.py]: ROSSO | 1 failed, 5 passed in 1.27s | sha f24ef12057c5802d -> ripristino f24ef12057c5802d OK
+M17 Safe: in paper il conto non si guarda [Betfair/safe_strategy/bot_service.py]: ROSSO | 1 failed, 5 passed in 1.49s | sha d108ab3f4703a6d5 -> ripristino d108ab3f4703a6d5 OK
+M18 ordini del bot non riconosciuti per bet_id in paper [Betfair/stream/esiti_ordini_canale.py]: ROSSO | 1 failed, 10 passed in 0.44s | sha 855364bc4de7dad2 -> ripristino 855364bc4de7dad2 OK
+M19 Omega: la dormita ignora la sveglia del conto [Betfair/omega/omega_service.py]: ROSSO | 1 failed, 9 passed in 1.27s | sha f24ef12057c5802d -> ripristino f24ef12057c5802d OK
+M20 sportello per bet_id senza sizeCancelled (prod) [Betfair/omega/omega_market.py]: ROSSO | 1 failed, 4 passed in 1.06s | sha 339cce6d7aa32bfb -> ripristino 339cce6d7aa32bfb OK
+M21 sveglia della Safe non collegata al conto [Betfair/safe_strategy/bot_service.py]: ROSSO | 1 failed, 10 passed in 1.55s | sha d108ab3f4703a6d5 -> ripristino d108ab3f4703a6d5 OK
+M22 la sorveglianza legge la fotografia di un altro modo (paper e live mescolati) [Betfair/stream/esiti_ordini_canale.py]: ROSSO | 1 failed, 9 passed in 1.30s | sha 855364bc4de7dad2 -> ripristino 855364bc4de7dad2 OK
+DOPO IL RIPRISTINO: VERDE | 77 passed in 1.48s

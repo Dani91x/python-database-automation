@@ -204,6 +204,43 @@ class LiveTradingStrategy(BaseStrategy):
             self._mirror_orders(market, orders)
         except Exception as ex:  # noqa: BLE001 - lo specchio non deve mai propagare
             logger.warning("[live-strategy] specchio ordini KO: %s", str(ex)[:200])
+        if self.mode == "paper":
+            self._pubblica_conto_paper(market)
+
+    # ------------------------------------------------------------------
+    # 08/10 (W3a) - IL CONTO PAPER sul canale (additivo, solo pubblicazione)
+    # ------------------------------------------------------------------
+    def _pubblica_conto_paper(self, market: Any) -> None:
+        """Il gemello PAPER di ``esiti_ordini_canale.osserva_conto_su_flumine``
+        (30/09, solo LIVE). In prova l'unico intervento esterno possibile e'
+        l'ordine MANUALE dell'app sul client paper del runner: i bot lo devono
+        sapere come in live sanno dell'ordine dal sito. A ogni cambio degli
+        ordini paper di un mercato si pubblica la fotografia di TUTTI gli ordini
+        della strategia paper su quel mercato (bot e manuali) sul topic gemello
+        ``conto_paper`` (``modo='paper'``: mai sul topic del live). Solo se la
+        fotografia e' CAMBIATA (write-on-change, come lo specchio). Mai
+        solleva: il canale e' un'accelerazione, lo specchio resta la verita'."""
+        try:
+            from .. import esiti_ordini_canale as _EO
+            from .. import local_channel as _LC
+
+            market_id = _val(market, "market_id")
+            blotter = _val(market, "blotter")
+            if not market_id or blotter is None:
+                return
+            ordini = [o for o in list(blotter.strategy_orders(self))
+                      if str(_val(o, "market_id") or market_id) == str(market_id)]
+            firma = tuple(sorted((str(_val(o, "bet_id")), self._order_signature(o))
+                                 for o in ordini if _val(o, "bet_id")))
+            cache = self.__dict__.setdefault("_conto_paper_sig", {})
+            if cache.get(str(market_id)) == firma:
+                return
+            if len(cache) > 2000:
+                cache.clear()       # un tetto: il processo vive giorni
+            cache[str(market_id)] = firma
+            _EO.pubblica_conto_paper(market_id, ordini, _LC.publish)
+        except Exception as ex:  # noqa: BLE001 - il canale non ferma mai lo specchio
+            logger.debug("[live-strategy] conto paper KO: %s", str(ex)[:160])
 
     # ------------------------------------------------------------------
     # E34/D33 — P&L REALIZZATO alla chiusura del mercato (solo PAPER qui).

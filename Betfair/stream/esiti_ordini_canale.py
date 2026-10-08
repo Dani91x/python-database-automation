@@ -58,7 +58,7 @@ import threading
 import time
 from contextlib import nullcontext
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Iterable, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .canale_bot import VALORI_ACCESI, acceso
 
@@ -72,6 +72,14 @@ __all__ = [
     # 30/09: la posizione di conto dallo stream ordini del runner LIVE
     "TOPIC_CONTO", "PERCORSO_CONTO", "FONTE_CONTO", "ordine_del_conto", "payload_conto",
     "pubblica_conto_da_evento", "osserva_conto_su_flumine", "MemoriaConto",
+    # 08/10 (W3a): la fotografia PAPER e la sorveglianza unica dei bot
+    "MODO_LIVE", "MODO_PAPER", "TOPIC_CONTO_PAPER", "TOPIC_CONTO_TUTTI",
+    "PERCORSO_CONTO_TUTTI", "modo_della_fotografia", "ordine_paper_del_conto",
+    "payload_conto_paper", "pubblica_conto_paper", "con_ref_del_bot",
+    "SorveglianzaConto", "direzione_di_conto", "verdetto_in_esposizione",
+    # 08/10 (W3a, seconda tappa): un verdetto per tutti, ordini di altri bot
+    "vivo_in_size", "verdetto_posizione", "ProprietariConto", "lettore_proprietari",
+    "RIPROVA_PROPRIETARI_S",
 ]
 
 #: L'interruttore. Assente = SPENTO, sempre.
@@ -243,7 +251,11 @@ class ClientEsiti:
         self.memoria = memoria
         # 30/09: lo stesso client legge anche la POSIZIONE DI CONTO (``conto``,
         # Mike). Di serie ``order``: Omega e Safe non cambiano di una riga.
+        # 08/10 (W3a): piu' topic separati da virgola (``conto,conto_paper``),
+        # la stessa grammatica del lettore di ``local_channel``
+        # (``/lettore/<topic>[,<topic>...]``).
         self.topic = str(topic)
+        self._accettati = frozenset(t for t in self.topic.split(",") if t)
         self._su_terminale = su_terminale
         self.porta = int(porta_ws) if porta_ws is not None else porta()
         self.host = host
@@ -317,9 +329,16 @@ class ClientEsiti:
             msg = json.loads(grezzo) if isinstance(grezzo, (str, bytes, bytearray)) else grezzo
         except (ValueError, TypeError):
             return False
-        if not isinstance(msg, dict) or msg.get("t") != self.topic:
+        if not isinstance(msg, dict) or msg.get("t") not in self._accettati:
             return False                    # hello e altro: non sono righe
         riga = msg.get("d")
+        # 08/10 (W3a): la fotografia del conto PAPER viaggia sul suo topic
+        # gemello e porta ``modo='paper'``; quella del runner LIVE sul topic di
+        # sempre (``modo`` 'live' o assente, 30/09). Una che dice il contrario
+        # del suo topic non entra: paper e live MAI mischiati.
+        if msg.get("t") in (TOPIC_CONTO, TOPIC_CONTO_PAPER) and \
+                not _modo_coerente(str(msg.get("t")), riga):
+            return False
         if not self.memoria.ricevi(riga):
             return False
         if terminale(riga) and self._su_terminale is not None:
@@ -659,6 +678,39 @@ TOPIC_CONTO = "conto"
 PERCORSO_CONTO = _PREFISSO_LETTORE + TOPIC_CONTO
 FONTE_CONTO = "stream_ordini"
 
+# 08/10 (W3a, ordine dell'utente: «i bot devono essere al corrente degli
+# ordini esterni [...] nel minor tempo possibile»). IL PAPER E' LO SPECCHIO DEL
+# LIVE: in prova l'intervento esterno possibile e' l'ordine MANUALE dell'app
+# (ladder del runner, simulato sul client PAPER). Il runner PAPER pubblica la
+# fotografia dei SUOI ordini del mercato (bot e manuali, blotter della
+# strategia paper) sul topic GEMELLO ``conto_paper``, con ``modo='paper'``:
+# stesso formato di ``conto`` (grafia di ``listCurrentOrders``), mai sullo
+# stesso topic (un lettore del 30/09 non vede mai una fotografia paper).
+MODO_LIVE = "live"
+MODO_PAPER = "paper"
+TOPIC_CONTO_PAPER = "conto_paper"
+FONTE_CONTO_PAPER = "blotter_paper"
+#: il lettore dei bot: le due fotografie su UNA connessione
+TOPIC_CONTO_TUTTI = TOPIC_CONTO + "," + TOPIC_CONTO_PAPER
+PERCORSO_CONTO_TUTTI = _PREFISSO_LETTORE + TOPIC_CONTO_TUTTI
+
+
+def modo_della_fotografia(foto: Any) -> str:
+    """``paper`` o ``live``. Una fotografia senza ``modo`` e' quella del runner
+    LIVE del 30/09 (lo stream ordini del conto)."""
+    m = foto.get("modo") if isinstance(foto, dict) else None
+    return MODO_PAPER if m == MODO_PAPER else MODO_LIVE
+
+
+def _modo_coerente(topic: str, payload: Any) -> bool:
+    """Il ``modo`` della fotografia e' quello del suo topic?"""
+    if not isinstance(payload, dict):
+        return False
+    m = payload.get("modo")
+    if topic == TOPIC_CONTO_PAPER:
+        return m == MODO_PAPER
+    return m in (None, MODO_LIVE)
+
 #: (grafia Betfair di ``listCurrentOrders``, attributo di ``CurrentOrder``)
 _CAMPI_ORDINE_CONTO: Tuple[Tuple[str, str], ...] = (
     ("betId", "bet_id"), ("marketId", "market_id"), ("selectionId", "selection_id"),
@@ -728,6 +780,9 @@ def payload_conto(ordini_mercato: Any, *, ricevuto_ms: int) -> Optional[Dict[str
         return None
     pt = getattr(ordini_mercato, "publish_time", None)
     return {"market_id": market_id, "ordini": ordini, "fonte": FONTE_CONTO,
+            # 08/10 (W3a), chiave ADDITIVA: di chi e' questa fotografia. Lo
+            # stream ordini del conto e' sempre e solo il LIVE.
+            "modo": MODO_LIVE,
             "ricevuto_ms": int(ricevuto_ms),
             # 30/09 (UI), chiave ADDITIVA: l'istante in cui abbiamo LETTO gli
             # ordini del conto (= ``ricevuto_ms``, arrivo del messaggio dello
@@ -781,26 +836,62 @@ def osserva_conto_su_flumine(framework: Any, pubblica: Callable[[str, Any], None
                 "(topic %s)", TOPIC_CONTO)
     return True
 
+def _impronta(ordini: Any) -> tuple:
+    """Il CONTENUTO di una fotografia (per ordine: id, stato, abbinato, residuo,
+    annullato, scaduto, invalidato), senza gli istanti. Lo stream ordini
+    ripubblica la STESSA fotografia (snap ogni 3 s di flumine con ordini vivi):
+    solo una fotografia DIVERSA da quella di prima puo' svegliare un bot."""
+    out = []
+    for o in ordini or []:
+        if not isinstance(o, dict):
+            continue
+        numeri = []
+        for k in ("sizeMatched", "sizeRemaining", "sizeCancelled", "sizeLapsed",
+                  "sizeVoided"):
+            try:
+                numeri.append(round(float(o.get(k) or 0.0), 2))
+            except (TypeError, ValueError):
+                numeri.append(0.0)
+        out.append((str(o.get("betId")), str(o.get("status")), *numeri))
+    return tuple(sorted(out))
+
 
 class MemoriaConto:
     """L'ULTIMA fotografia degli ordini del conto per mercato (dal canale).
 
     Thread-safe: scrive il thread del client, legge il giro del bot. Ogni
     fotografia nuova alza la ``versione`` del mercato: chi legge sa se c'e'
-    qualcosa di nuovo senza confrontare le righe."""
+    qualcosa di nuovo senza confrontare le righe.
+
+    08/10 (W3a): le fotografie sono tenute per ``(modo, mercato)``: quella del
+    runner LIVE (stream ordini del conto) e quella del runner PAPER (blotter
+    della strategia paper) dello stesso mercato non si sovrascrivono MAI.
+    ``mercato(market_id)`` resta la fotografia LIVE (il contratto del 30/09).
+    ``avvisa(market_id, modo)`` (se impostato) e' chiamato FUORI dal lucchetto
+    quando arriva una fotografia dal CONTENUTO diverso dalla precedente: e' la
+    sveglia del giro del bot (``SorveglianzaConto``)."""
 
     def __init__(self, max_mercati: int = 500,
-                 orologio: Optional[Callable[[], float]] = None) -> None:
+                 orologio: Optional[Callable[[], float]] = None,
+                 avvisa: Optional[Callable[[str, str], None]] = None) -> None:
         self._mercati: Dict[str, Dict[str, Any]] = {}
+        self._impronte: Dict[str, tuple] = {}
         self._lock = threading.Lock()
         self._max = max(1, int(max_mercati))
         self._orologio = orologio or time.time
         self._versione = 0
         self._conti: Dict[str, int] = {"ricevute": 0, "tenute": 0, "scartate": 0,
                                        "vecchie": 0}
+        self.avvisa = avvisa
+
+    @staticmethod
+    def _chiave(market_id: Any, modo: str) -> str:
+        # la chiave LIVE e' il market_id nudo, come il 30/09
+        return str(market_id) if modo == MODO_LIVE else "%s|%s" % (modo, market_id)
 
     def ricevi(self, payload: Any) -> bool:
-        """Un messaggio ``conto``. NON SOLLEVA MAI."""
+        """Un messaggio ``conto`` (o ``conto_paper``). NON SOLLEVA MAI."""
+        cambiata = False
         with self._lock:
             self._conti["ricevute"] += 1
             if not isinstance(payload, dict):
@@ -811,7 +902,9 @@ class MemoriaConto:
             if not mid or not isinstance(ordini, list):
                 self._conti["scartate"] += 1
                 return False
-            prima = self._mercati.get(str(mid))
+            modo = modo_della_fotografia(payload)
+            chiave = self._chiave(mid, modo)
+            prima = self._mercati.get(chiave)
             pt = payload.get("publish_time_ms")
             pt_prima = prima.get("publish_time_ms") if prima is not None else None
             if (isinstance(pt, (int, float)) and isinstance(pt_prima, (int, float))
@@ -820,21 +913,33 @@ class MemoriaConto:
                 self._conti["vecchie"] += 1
                 return False
             self._versione += 1
-            self._mercati.pop(str(mid), None)
-            self._mercati[str(mid)] = {
-                "ordini": [dict(o) for o in ordini if isinstance(o, dict)],
+            self._mercati.pop(chiave, None)
+            righe = [dict(o) for o in ordini if isinstance(o, dict)]
+            self._mercati[chiave] = {
+                "ordini": righe,
                 "ricevuto_ms": payload.get("ricevuto_ms"),
                 "publish_time_ms": pt, "arrivato_s": float(self._orologio()),
-                "versione": self._versione}
+                "versione": self._versione, "modo": modo}
+            impronta = _impronta(righe)
+            cambiata = self._impronte.get(chiave) != impronta
+            self._impronte[chiave] = impronta
             while len(self._mercati) > self._max:
-                self._mercati.pop(next(iter(self._mercati)))
+                via = next(iter(self._mercati))
+                self._mercati.pop(via)
+                self._impronte.pop(via, None)
             self._conti["tenute"] += 1
-            return True
+        avvisa = self.avvisa
+        if cambiata and avvisa is not None:
+            try:
+                avvisa(str(mid), modo)
+            except Exception:  # noqa: BLE001 - avvisare non ferma il client
+                pass
+        return True
 
-    def mercato(self, market_id: Any) -> Optional[Dict[str, Any]]:
-        """La fotografia del mercato (copia), o ``None``."""
+    def mercato(self, market_id: Any, modo: str = MODO_LIVE) -> Optional[Dict[str, Any]]:
+        """La fotografia del mercato (copia) nel ``modo`` chiesto, o ``None``."""
         with self._lock:
-            f = self._mercati.get(str(market_id))
+            f = self._mercati.get(self._chiave(market_id, modo))
             if f is None:
                 return None
             return {**f, "ordini": [dict(o) for o in f["ordini"]]}
@@ -843,8 +948,748 @@ class MemoriaConto:
         with self._lock:
             c_era = bool(self._mercati)
             self._mercati.clear()
+            self._impronte.clear()
             return c_era
 
     def stato(self) -> Dict[str, Any]:
         with self._lock:
             return {**self._conti, "mercati": len(self._mercati)}
+
+
+# ===========================================================================
+# 08/10 (W3a) - LA FOTOGRAFIA DEL CONTO PAPER (runner PAPER)
+# ===========================================================================
+# Il paper e' lo SPECCHIO del live: cio' che lo stream ordini del conto porta
+# al runner LIVE (``pubblica_conto_da_evento``), in prova lo sa il BLOTTER
+# della strategia paper del runner, che contiene OGNI ordine paper del mercato
+# (quelli dei bot mandati in coda e quelli MANUALI dell'app). Stessa grafia
+# (``listCurrentOrders``, le chiavi di ``_CAMPI_ORDINE_CONTO`` + ``priceSize``),
+# stesso normalizzatore dal lato del bot (``omega_market._riga_corrente``).
+# ``customerOrderRef`` e' il ref che il runner ha dato all'ordine (``awlq<id>``,
+# ``live_order_build._create_order``): il bot riconosce i SUOI per ``bet_id``
+# (``con_ref_del_bot``), come Omega fa gia' in live.
+_STATI_VIVI_FLUMINE = frozenset({"PENDING", "EXECUTABLE", "CANCELLING", "UPDATING",
+                                 "REPLACING"})
+
+
+def _attr(obj: Any, nome: str) -> Any:
+    """getattr difensivo: alcune property di flumine sollevano negli stati di
+    confine (stessa regola di ``live_trading_strategy._val``)."""
+    try:
+        return getattr(obj, nome)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _numero(v: Any) -> float:
+    try:
+        return round(float(v or 0.0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def ordine_paper_del_conto(ordine: Any) -> Optional[Dict[str, Any]]:
+    """UN ordine flumine del client PAPER -> la grafia di ``listCurrentOrders``.
+    ``None`` per un ordine senza ``bet_id`` (Betfair non lo conoscerebbe)."""
+    bet_id = _attr(ordine, "bet_id")
+    if not bet_id:
+        return None
+    ot = _attr(ordine, "order_type")
+    stato = _attr(ordine, "status")
+    stato = getattr(stato, "name", None) or (str(stato) if stato is not None else None)
+    residuo = _numero(_attr(ordine, "size_remaining"))
+    vivo = stato in _STATI_VIVI_FLUMINE and residuo > 0
+    ref = None
+    for fonte in ("context", "notes"):
+        d = _attr(ordine, fonte)
+        if isinstance(d, dict) and d.get("customer_order_ref"):
+            ref = str(d.get("customer_order_ref"))
+            break
+    if ref is None:
+        ref = _attr(ordine, "customer_order_ref")
+    lato = _attr(ordine, "side")
+    risposte = _attr(ordine, "responses")
+    sid = _attr(ordine, "selection_id")
+    medio = _attr(ordine, "average_price_matched")
+    return {
+        "betId": str(bet_id), "marketId": _attr(ordine, "market_id"),
+        "selectionId": int(sid) if sid is not None else None,
+        "handicap": _attr(ordine, "handicap"),
+        "side": str(lato).upper() if lato is not None else None,
+        "status": "EXECUTABLE" if vivo else "EXECUTION_COMPLETE",
+        "orderType": "LIMIT",
+        "persistenceType": _attr(ot, "persistence_type") if ot is not None else None,
+        "sizeMatched": _numero(_attr(ordine, "size_matched")),
+        "sizeRemaining": residuo,
+        "sizeCancelled": _numero(_attr(ordine, "size_cancelled")),
+        "sizeLapsed": _numero(_attr(ordine, "size_lapsed")),
+        "sizeVoided": _numero(_attr(ordine, "size_voided")),
+        "averagePriceMatched": (float(medio) if isinstance(medio, (int, float))
+                                and not isinstance(medio, bool) and medio > 0 else None),
+        "customerOrderRef": ref,
+        "customerStrategyRef": None,
+        "placedDate": _in_json(_attr(risposte, "date_time_placed")
+                               if risposte is not None else None),
+        "matchedDate": None,
+        "priceSize": ({"price": _attr(ot, "price"), "size": _attr(ot, "size")}
+                      if ot is not None else None),
+    }
+
+
+def payload_conto_paper(market_id: Any, ordini: Iterable[Any], *,
+                        ricevuto_ms: int) -> Optional[Dict[str, Any]]:
+    """Il messaggio ``conto_paper`` per UN mercato: tutti gli ordini paper del
+    blotter su quel mercato. ``None`` senza mercato."""
+    if not market_id:
+        return None
+    righe = []
+    for o in ordini or []:
+        r = ordine_paper_del_conto(o)
+        if r is None:
+            continue
+        if r.get("marketId") and str(r["marketId"]) != str(market_id):
+            continue
+        righe.append(r)
+    return {"market_id": str(market_id), "ordini": righe, "fonte": FONTE_CONTO_PAPER,
+            "modo": MODO_PAPER, "ricevuto_ms": int(ricevuto_ms),
+            "pnl_letto_at": _iso_ms(int(ricevuto_ms)),
+            # nessuno stream: l'istante e' quello del blotter
+            "publish_time_ms": int(ricevuto_ms), "snap": False}
+
+
+def pubblica_conto_paper(market_id: Any, ordini: Iterable[Any],
+                         pubblica: Callable[[str, Any], None], *,
+                         adesso_ms: Optional[int] = None) -> bool:
+    """Pubblica la fotografia PAPER del mercato sul topic gemello. ``True`` se
+    pubblicata."""
+    quando = int(adesso_ms if adesso_ms is not None else time.time() * 1000)
+    p = payload_conto_paper(market_id, ordini, ricevuto_ms=quando)
+    if p is None:
+        return False
+    pubblica(TOPIC_CONTO_PAPER, p)
+    return True
+
+
+# ===========================================================================
+# 08/10 (W3a, reperto del coordinatore dal cantiere W2) - IL VERDETTO DI CONTO
+# IN ESPOSIZIONE, non in size.
+# ===========================================================================
+# I tre verdetti (Mike, Omega, Safe) confrontavano il NETTO IN SIZE della
+# selezione (BACK - LAY di tutti gli ordini, bot e utente) con la posizione del
+# bot. Con il prezzo mosso un green-up CORRETTO della sola parte dell'utente
+# (ordini suoi dal sito o dall'app) sposta il netto in size senza toccare il
+# bot: Mike back 10, sito back 5 @1,50 coperto con lay 5,36 @1,40 -> netto 9,64
+# -> «ridotta» (FALSO); Mike back 2, sito back 10 @5,0 coperto con lay 33,33
+# @1,50 -> netto -21,33 -> «chiusa» (FALSO, e il bot abbandonerebbe la sua
+# posizione). Da quando la «ridotta» ferma il bot, quel falso va tolto.
+#
+# LA REGOLA (una, per i tre bot): si separano gli ordini del BOT (riconosciuti
+# per ref/bet_id, come sempre) da quelli ALTRUI, e si misura la parte
+# DIREZIONALE dell'esposizione di ciascuno: la differenza fra il profitto se la
+# selezione vince e quello se perde, che per ogni ordine abbinato vale
+# ``+size*prezzo`` (back) o ``-size*prezzo`` (lay) (``flumine.utils.
+# calculate_matched_exposure``: win - lose). Un green-up dell'utente su una
+# posizione SUA ha parte direzionale ~0 e non tocca il bot; un ordine dell'utente
+# che chiude (o riduce) la posizione del bot ha parte direzionale OPPOSTA. Quanto
+# della parte direzionale del bot sopravvive (la stessa formula ``vivo`` di
+# sempre, sulla direzione invece che sulla size) decide intera/ridotta/chiusa;
+# il risultato si riporta in size equivalente al prezzo medio del bot. Se gli
+# ordini altrui annullano il netto IN SIZE della posizione del bot (chiusura
+# «a pari size» a un prezzo diverso) l'etichetta resta «chiusa» come prima.
+# Dati che mancano (un abbinato senza prezzo medio, posizione del bot mista in
+# segno): ``None`` = il chiamante usa l'aritmetica in size di prima (nessun
+# prezzo inventato: difetto 3 del catalogo).
+def _prezzo_medio(r: Dict[str, Any]) -> Optional[float]:
+    for k in ("avg_price_matched", "average_price_matched", "averagePriceMatched",
+              "price_matched", "priceMatched"):
+        v = r.get(k)
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if f > 1.0:
+            return f
+    return None
+
+
+def _abbinato_riga(r: Dict[str, Any]) -> float:
+    for k in ("size_matched", "size_settled", "sizeMatched"):
+        v = r.get(k)
+        if v is None:
+            continue
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+def direzione_di_conto(righe: Iterable[Dict[str, Any]]) -> Optional[float]:
+    """La parte DIREZIONALE dell'esposizione abbinata delle righe (win - lose):
+    ``+size*prezzo`` per un back, ``-size*prezzo`` per un lay. Un ordine che
+    compare in due liste (correnti e regolati) conta una volta (per ``bet_id``).
+    ``None`` se un abbinato non ha un prezzo medio leggibile."""
+    per_bet: Dict[str, Tuple[float, float, str]] = {}
+    senza_bet = []
+    for r in righe or []:
+        if not isinstance(r, dict):
+            continue
+        s = _abbinato_riga(r)
+        if s <= 0:
+            continue
+        p = _prezzo_medio(r)
+        if p is None:
+            return None
+        lato = str(r.get("side") or "").lower()
+        bid = str(r.get("bet_id") or r.get("betId") or "")
+        if bid:
+            prima = per_bet.get(bid)
+            if prima is None or s > prima[0]:
+                per_bet[bid] = (s, p, lato)
+        else:
+            senza_bet.append((s, p, lato))
+    tot = 0.0
+    for s, p, lato in list(per_bet.values()) + senza_bet:
+        tot += s * p if lato == "back" else -s * p
+    return round(tot, 4)
+
+
+def verdetto_in_esposizione(*, atteso: float, righe_bot: Iterable[Dict[str, Any]],
+                            righe_altrui: Iterable[Dict[str, Any]], eps: float,
+                            conto_size: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """Il verdetto sulla posizione del bot (``atteso`` in size, segno del lato)
+    dalla parte DIREZIONALE degli ordini del bot e di quelli altrui. Torna
+    ``{"verdetto": "intera"|"ridotta"|"chiusa", "vivo": size equivalente,
+    "direzione_bot", "direzione_altrui", "metro": "esposizione"}`` oppure
+    ``None`` (il chiamante resta sull'aritmetica in size)."""
+    if abs(atteso) <= eps:
+        return None
+    b = direzione_di_conto(righe_bot)
+    u = direzione_di_conto(righe_altrui)
+    if b is None or u is None or b * atteso <= 0:
+        return None
+    p_ref = b / atteso                       # prezzo medio del bot (> 0)
+    vivo_d = min(b, max(0.0, b + u)) if b > 0 else max(b, min(0.0, b + u))
+    eps_d = eps * p_ref
+    if abs(vivo_d) + eps_d >= abs(b):
+        verdetto = "intera"
+    elif abs(vivo_d) <= eps_d:
+        verdetto = "chiusa"
+    else:
+        verdetto = "ridotta"
+    if verdetto == "ridotta" and conto_size is not None:
+        vivo_size = (min(atteso, max(0.0, conto_size)) if atteso > 0
+                     else max(atteso, min(0.0, conto_size)))
+        if abs(vivo_size) <= eps:
+            verdetto = "chiusa"      # chiusa a pari size, a un prezzo diverso
+    return {"verdetto": verdetto, "vivo": round(vivo_d / p_ref, 2),
+            "direzione_bot": round(b, 2), "direzione_altrui": round(u, 2),
+            "metro": "esposizione"}
+
+
+def vivo_in_size(atteso: float, conto: float) -> float:
+    """Quanto della posizione del bot (``atteso``, in size col segno del lato)
+    SOPRAVVIVE nel netto di conto ``conto``: la formula dei tre verdetti dal
+    16/09 (Mike ``_verdetto_di_conto``, Omega e Safe idem)."""
+    return (min(atteso, max(0.0, conto)) if atteso > 0
+            else max(atteso, min(0.0, conto)))
+
+
+def verdetto_posizione(*, atteso: float, conto_size: float,
+                       righe_bot: Iterable[Dict[str, Any]],
+                       righe_altrui: Iterable[Dict[str, Any]],
+                       eps: float) -> Dict[str, Any]:
+    """IL VERDETTO di conto sulla posizione di UN bot, UNA funzione per tutti
+    (seconda tappa W3a, 08/10): i tre bot (Mike, Omega, Safe) la chiamano dopo
+    il loro controllo «gambe non ritrovate», e la chiama ``esposizione_fuori_bot.
+    effetto_sui_bot`` (worker del green-up fuori bot, W2) per PREVEDERE cosa
+    diranno i bot dopo una copertura: nessuna copia dell'aritmetica.
+
+    Prima la parte DIREZIONALE (``verdetto_in_esposizione``); se i dati non
+    bastano (abbinato senza prezzo medio, posizione del bot mista) l'aritmetica
+    in SIZE di sempre: ``chiusa`` se non sopravvive niente, ``ridotta`` se
+    sopravvive meno dell'atteso, altrimenti ``intera``. ``righe_altrui`` sono
+    SOLO gli ordini dell'utente (sito e app): quelli di un ALTRO bot si tolgono
+    prima (``SorveglianzaConto.separa_altrui``) e non entrano nemmeno in
+    ``conto_size``."""
+    righe_bot = list(righe_bot or [])
+    righe_altrui = list(righe_altrui or [])
+    esp = verdetto_in_esposizione(atteso=atteso, righe_bot=righe_bot,
+                                  righe_altrui=righe_altrui, eps=eps,
+                                  conto_size=conto_size)
+    if esp is not None:
+        return dict(esp)
+    vivo = vivo_in_size(atteso, conto_size)
+    if abs(vivo) <= eps:
+        verdetto = "chiusa"
+    elif abs(vivo) + eps < abs(atteso):
+        verdetto = "ridotta"
+    else:
+        verdetto = "intera"
+    return {"verdetto": verdetto, "vivo": vivo, "metro": "size"}
+
+
+# ===========================================================================
+# 08/10 (W3a, seconda tappa) - DI CHI E' UN ORDINE ALTRUI: utente o un ALTRO bot
+# ===========================================================================
+# Un ordine di un ALTRO bot sulla stessa selezione (Omega su una selezione di
+# Mike, due varianti della Safe sulla stessa partita) NON e' un intervento
+# dell'utente: non deve fermare il bot ne' entrare nel verdetto come «altrui».
+# La classificazione e' quella del cantiere W2, nessuna regola nuova:
+#   1. riferimenti dell'ordine (``esposizione_fuori_bot.motivo_bot_da_riferimenti``:
+#      ``customerStrategyRef`` diverso da assente/'live', ``customerOrderRef`` con
+#      il prefisso di un bot), senza DB;
+#   2. poi il DB per i soli ``bet_id`` mai visti (``esposizione_fuori_bot.
+#      proprietari_bot``: tabelle dei bot, specchio, riga della coda del runner
+#      con ``motivo_bot_da_coda``), letto dal bot con ``db.proprietari_bot_conto``.
+# Esiti in memoria per (modo, bet_id): una lettura per bet_id nuovo, fuori dal
+# percorso degli ordini (la fa la sorveglianza del conto, non il piazzamento).
+# DB illeggibile: l'ordine resta IGNOTO -> nessun verdetto «chiuso dall'utente»
+# al buio; il bot mette la selezione IN VERIFICA e non piazza ordini nuovi su
+# quella partita finche' non sa (come W3b, ``ConfermaBot``). Una lettura fallita
+# si ritenta dopo ``RIPROVA_PROPRIETARI_S``.
+RIPROVA_PROPRIETARI_S = 30.0
+MAX_PROPRIETARI = 5000
+#: l'esito "dell'utente" nella memoria dei proprietari (stringa vuota: nessun bot)
+_DELL_UTENTE = ""
+
+
+def _motivo_da_riferimenti(r: Dict[str, Any], prefissi: Tuple[str, ...]) -> Optional[str]:
+    """La prima cernita di W2 su una riga NORMALIZZATA (snake_case) o camelCase."""
+    from .trading.esposizione_fuori_bot import motivo_bot_da_riferimenti
+
+    csr = r.get("customer_strategy_ref", r.get("customerStrategyRef"))
+    cor = r.get("customer_order_ref", r.get("customerOrderRef"))
+    return motivo_bot_da_riferimenti({"customerStrategyRef": csr, "customerOrderRef": cor},
+                                     prefissi)
+
+
+class ProprietariConto:
+    """La memoria «di chi e' questo ordine» di UN bot: (modo, bet_id) ->
+    motivo del bot o utente. Mai un'eccezione verso chi chiede."""
+
+    def __init__(self, *, riprova_s: float = RIPROVA_PROPRIETARI_S,
+                 orologio: Callable[[], float] = time.monotonic,
+                 max_esiti: int = MAX_PROPRIETARI) -> None:
+        self._riprova_s = float(riprova_s)
+        self._orologio = orologio
+        self._max = int(max_esiti)
+        self._esiti: Dict[Tuple[str, str], str] = {}
+        self._errori: Dict[Tuple[str, str], Tuple[str, float]] = {}
+        self._prefissi: Optional[Tuple[str, ...]] = None
+        self._lock = threading.Lock()
+        self.letture = 0
+
+    def _pref(self) -> Tuple[str, ...]:
+        if self._prefissi is None:
+            from .trading.esposizione_fuori_bot import prefissi_ref_bot
+
+            self._prefissi = tuple(prefissi_ref_bot())
+        return self._prefissi
+
+    def classifica(self, righe: Iterable[Dict[str, Any]], *,
+                   leggi: Optional[Callable[[List[str], str], Any]],
+                   modo: str = MODO_LIVE) -> Dict[str, Any]:
+        """Le righe NON del bot (gia' separate dalle sue) divise in ``tenute``
+        (dell'utente, piu' quelle senza abbinato che non spostano il verdetto),
+        ``altri_bot`` ([{bet_id, motivo}]) e ``ignoti`` ([bet_id]: DB
+        illeggibile). ``leggi=None``: il bot non ha la lettura del DB (finto di
+        un test): contano i soli riferimenti, come prima del 08/10."""
+        tenute: List[Dict[str, Any]] = []
+        altri: List[Dict[str, str]] = []
+        da_leggere: List[Tuple[Dict[str, Any], str]] = []
+        modo = str(modo or MODO_LIVE)
+        for r in righe or []:
+            if not isinstance(r, dict):
+                continue
+            if _abbinato_riga(r) <= 0:
+                tenute.append(r)              # niente abbinato: non sposta niente
+                continue
+            bid = str(r.get("bet_id") or r.get("betId") or "").strip()
+            try:
+                motivo = _motivo_da_riferimenti(r, self._pref())
+            except Exception:  # noqa: BLE001 - regole non caricabili: si va al DB
+                motivo = None
+            if motivo:
+                altri.append({"bet_id": bid, "motivo": motivo})
+                continue
+            if not bid or leggi is None:
+                tenute.append(r)
+                continue
+            with self._lock:
+                esito = self._esiti.get((modo, bid))
+            if esito is None:
+                da_leggere.append((r, bid))
+            elif esito:
+                altri.append({"bet_id": bid, "motivo": esito})
+            else:
+                tenute.append(r)
+        errore: Optional[str] = None
+        if da_leggere:
+            ora = self._orologio()
+            with self._lock:
+                nuovi = sorted({b for _r, b in da_leggere
+                                if not ((modo, b) in self._errori
+                                        and ora - self._errori[(modo, b)][1]
+                                        < self._riprova_s)})
+            if nuovi:
+                try:
+                    self.letture += 1
+                    dei_bot = leggi(list(nuovi), modo)
+                    if not isinstance(dei_bot, dict):
+                        raise TypeError("lettura dei proprietari: risposta %s"
+                                        % type(dei_bot).__name__)
+                    with self._lock:
+                        for b in nuovi:
+                            m = dei_bot.get(b)
+                            self._esiti[(modo, b)] = str(m) if m else _DELL_UTENTE
+                            self._errori.pop((modo, b), None)
+                        while len(self._esiti) > self._max:
+                            self._esiti.pop(next(iter(self._esiti)))
+                except Exception as ex:  # noqa: BLE001 - DB illeggibile: nessun esito
+                    with self._lock:
+                        for b in nuovi:
+                            self._errori[(modo, b)] = (str(ex)[:200] or type(ex).__name__,
+                                                       ora)
+        ignoti: List[str] = []
+        for r, bid in da_leggere:
+            with self._lock:
+                esito = self._esiti.get((modo, bid))
+                err = self._errori.get((modo, bid))
+            if esito is None:
+                ignoti.append(bid)
+                if err is not None and errore is None:
+                    errore = err[0]
+            elif esito:
+                altri.append({"bet_id": bid, "motivo": esito})
+            else:
+                tenute.append(r)
+        return {"tenute": tenute, "altri_bot": altri, "ignoti": sorted(set(ignoti)),
+                "errore": errore}
+
+    def azzera(self) -> bool:
+        with self._lock:
+            c_era = bool(self._esiti or self._errori)
+            self._esiti.clear()
+            self._errori.clear()
+            return c_era
+
+    def stato(self) -> Dict[str, Any]:
+        with self._lock:
+            return {"esiti": len(self._esiti), "errori": len(self._errori),
+                    "letture": self.letture}
+
+
+def lettore_proprietari(db: Any) -> Optional[Callable[[List[str], str], Any]]:
+    """La lettura del DB «di chi sono questi bet_id» del bot
+    (``db.proprietari_bot_conto(bet_ids, modo)``, stessa firma nei tre
+    moduli di produzione), o ``None`` se il ``db`` non la espone."""
+    fn = getattr(db, "proprietari_bot_conto", None)
+    return fn if callable(fn) else None
+
+
+def con_ref_del_bot(righe: Iterable[Dict[str, Any]],
+                    ref_per_bet: Dict[str, str]) -> list:
+    """Le righe normalizzate della fotografia PAPER con il ref del BOT al posto
+    di quello del runner, per gli ordini che il bot riconosce per ``bet_id``
+    (l'unica chiave che il bot e il runner hanno in comune: il ``bet_id`` lo
+    scrive il runner e il bot lo salva sulla sua riga). Cosi' l'aritmetica del
+    verdetto, che riconosce gli ordini del bot per ref, resta UNA."""
+    out = []
+    for r in righe or []:
+        if not isinstance(r, dict):
+            continue
+        bid = str(r.get("bet_id") or "")
+        if bid and bid in ref_per_bet:
+            r = dict(r, customer_order_ref=ref_per_bet[bid])
+        out.append(r)
+    return out
+
+
+# ===========================================================================
+# 08/10 (W3a) - LA SORVEGLIANZA DEL CONTO DAL CANALE: UNA, PER TUTTI I BOT
+# ===========================================================================
+# Il meccanismo del 30/09 di Mike (``mike/service.py``), estratto senza
+# cambiarlo perche' Omega e Safe lo usino con la LORO aritmetica di verdetto:
+#   * la memoria delle fotografie e il client lettore (``canale``);
+#   * le versioni gia' valutate per (chiave, mercato) (``visto``);
+#   * la firma anti-ripetizione dell'ultimo segnale (``firma``): gli snap
+#     ripetuti dello stream non rigenerano un segnale gia' giudicato;
+#   * il segnale in attesa della conferma (``segnale``);
+#   * la SVEGLIA del giro (08/10): una fotografia dal contenuto NUOVO su un
+#     mercato che interessa al bot (``interessa``) alza ``sveglia``; il giro del
+#     bot riparte invece di aspettare la sua cadenza.
+# La DECISIONE resta del bot: in LIVE la conferma e' la REST della posizione di
+# conto (mai una decisione dal solo canale, 30/09); in PAPER la fotografia E'
+# il blotter del runner, cioe' la fonte di verita' del paper.
+class SorveglianzaConto:
+    """Lo stato di processo della sorveglianza del conto di UN bot."""
+
+    def __init__(self, nome: str, env: str) -> None:
+        self.nome = str(nome)
+        self.env = str(env)
+        self.canale: Dict[str, Any] = {"memoria": None, "client": None}
+        #: "chiave|market_id" (o "chiave|paper|market_id") -> versione valutata
+        self.visto: Dict[str, int] = {}
+        #: chiave -> il segnale del canale in attesa della conferma
+        self.segnale: Dict[str, Dict[str, Any]] = {}
+        #: chiave -> la firma dell'ultimo segnale mandato alla conferma
+        self.firma: Dict[str, tuple] = {}
+        self.sveglia = threading.Event()
+        self._interessa: Optional[Callable[[str, str], bool]] = None
+        self._avvisi: list = []
+        self.conti: Dict[str, int] = {"fotografie_cambiate": 0, "sveglie": 0}
+        #: 08/10 (W3a, seconda tappa): di chi sono gli ordini altrui
+        self.proprietari = ProprietariConto()
+        #: evento -> {chiave della selezione: dettaglio} delle selezioni IN
+        #: VERIFICA (ordine altrui di proprietario ignoto, DB illeggibile)
+        self.verifica: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    # ------------------------------------------------------------ memoria
+    def memoria(self) -> Any:
+        return self.canale.get("memoria")
+
+    def installa(self, memoria: Any) -> None:
+        """La memoria delle fotografie (``MemoriaConto``), o ``None`` per
+        toglierla. Svuota versioni, segnali e firme (come Mike dal 30/09)."""
+        self.canale["memoria"] = memoria
+        self.visto.clear()
+        self.segnale.clear()
+        self.firma.clear()
+        self.sveglia.clear()
+        if memoria is not None and hasattr(memoria, "avvisa"):
+            memoria.avvisa = self._su_fotografia
+
+    # ------------------------------------------------------------- sveglia
+    def interessa(self, fn: Optional[Callable[[str, str], bool]]) -> None:
+        """``fn(market_id, modo)``: questo mercato interessa al bot ADESSO?
+        (deve rispondere dalla SOLA memoria: una sveglia che costa una lettura
+        e' il contrario di una sveglia)."""
+        self._interessa = fn
+
+    def su_sveglia(self, cb: Callable[[str, str], None]) -> None:
+        """Un'azione in piu' a ogni sveglia (es. ``Sveglia.alza`` del bot)."""
+        if cb not in self._avvisi:
+            self._avvisi.append(cb)
+
+    def _su_fotografia(self, market_id: str, modo: str) -> None:
+        self.conti["fotografie_cambiate"] += 1
+        fn = self._interessa
+        try:
+            ok = True if fn is None else bool(fn(str(market_id), str(modo)))
+        except Exception:  # noqa: BLE001 - nel dubbio non si sveglia
+            ok = False
+        if not ok:
+            return
+        self.conti["sveglie"] += 1
+        self.sveglia.set()
+        for cb in list(self._avvisi):
+            try:
+                cb(str(market_id), str(modo))
+            except Exception:  # noqa: BLE001 - svegliare non ferma il client
+                pass
+
+    def sveglia_alzata(self) -> bool:
+        """La sveglia e' alzata? (e la si consuma)."""
+        if self.sveglia.is_set():
+            self.sveglia.clear()
+            return True
+        return False
+
+    def dormi(self, pausa: float, *, minimo_s: float = 1.0,
+              dormi: Callable[[float], None] = time.sleep,
+              adesso: Callable[[], float] = time.monotonic) -> bool:
+        """``time.sleep(pausa)`` che si interrompe alla sveglia del conto, ma
+        MAI prima di ``minimo_s`` dall'inizio della dormita (il pavimento: una
+        raffica di fotografie non fa girare il bot a vuoto). ``True`` se
+        svegliato prima della cadenza."""
+        pausa = max(0.0, float(pausa))
+        inizio = adesso()
+        if not self.sveglia.wait(pausa):
+            return False
+        self.sveglia.clear()
+        resto = min(float(minimo_s), pausa) - (adesso() - inizio)
+        if resto > 0:
+            dormi(resto)
+        return True
+
+    # -------------------------------------------------------------- client
+    def acceso(self) -> bool:
+        """ACCESO di serie (regola dell'utente del 25/09: i canali al
+        millisecondo sono la via principale); ``<ENV>=0`` lo spegne."""
+        grezzo = (os.environ.get(self.env) or "").strip().lower()
+        return grezzo not in ("0", "false", "no", "off")
+
+    def avvia(self, *, etichetta: Optional[str] = None,
+              topic: str = TOPIC_CONTO, porte: Optional[Iterable[int]] = None) -> bool:
+        """Accende il lettore sul canale del runner calcio (stessa porta degli
+        esiti: ``LIVE_LOCAL_WS_PORT`` o 47331). Non solleva MAI: senza
+        ``websockets`` o senza runner resta la REST a cadenza, come prima.
+        ``porte`` (08/10): piu' runner (calcio e tennis) nella STESSA memoria
+        (i market_id non si ripetono fra sport); il primo client resta in
+        ``canale['client']``, tutti in ``canale['clienti']``."""
+        tag = etichetta or "[%s]" % self.nome
+        if not self.acceso():
+            logger.info("%s conto dal canale SPENTO (%s=%s): chiusure dell'utente "
+                        "viste dalla REST alla cadenza.", tag, self.env,
+                        (os.environ.get(self.env) or "").strip().lower())
+            return False
+        if self.canale.get("client") is not None:
+            return True
+        try:
+            import websockets  # noqa: F401  - solo per sapere se c'e'
+
+            memoria = MemoriaConto()
+            lista = list(porte) if porte is not None else [None]
+            clienti = [ClientEsiti(memoria, topic=topic, porta_ws=p) for p in lista]
+            self.installa(memoria)
+            self.canale["client"] = clienti[0]
+            self.canale["clienti"] = clienti
+            for client in clienti:
+                client.avvia()
+                logger.info("%s posizione di conto dallo stream ordini del runner: %s "
+                            "(la REST resta la conferma e il ripiego)", tag, client.url)
+            return True
+        except Exception as ex:  # noqa: BLE001 - il canale e' un'accelerazione
+            logger.warning("%s conto dal canale NON avviato (%s): chiusure dell'utente "
+                           "viste dalla REST alla cadenza.", tag, str(ex)[:160])
+            return False
+
+    def attivo(self) -> bool:
+        return self.memoria() is not None
+
+    # ---------------------------------------------------------- fotografie
+    def fotografie(self, chiave: str, market_ids: Iterable[Any], *,
+                   modo: str = MODO_LIVE) -> Tuple[Dict[str, Dict[str, Any]], bool]:
+        """Le fotografie dei mercati dati nel ``modo`` chiesto e se almeno una
+        e' NUOVA per ``chiave`` (versione mai valutata: la si timbra)."""
+        mem = self.memoria()
+        fotografie: Dict[str, Dict[str, Any]] = {}
+        nuove = False
+        if mem is None:
+            return fotografie, False
+        for mid in market_ids:
+            mid = str(mid or "")
+            if not mid or mid in fotografie:
+                continue
+            f = mem.mercato(mid, modo) if modo != MODO_LIVE else mem.mercato(mid)
+            if f is None:
+                continue
+            fotografie[mid] = f
+            k = ("%s|%s" % (chiave, mid) if modo == MODO_LIVE
+                 else "%s|%s|%s" % (chiave, modo, mid))
+            versione = int(f.get("versione") or 0)
+            if versione > int(self.visto.get(k) or 0):
+                nuove = True
+                self.visto[k] = versione
+        return fotografie, nuove
+
+    def firma_ripetuta(self, chiave: str, firma: tuple) -> bool:
+        """La stessa situazione gia' mandata alla conferma? (se no la si
+        ricorda)."""
+        if self.firma.get(chiave) == firma:
+            return True
+        self.firma[chiave] = firma
+        return False
+
+    def dimentica_firma(self, chiave: str) -> None:
+        self.firma.pop(chiave, None)
+
+    @staticmethod
+    def tempi(fotografie: Dict[str, Dict[str, Any]]) -> Dict[str, Optional[int]]:
+        """Gli istanti del segnale: arrivo al runner e publish di Betfair."""
+        ricevuti = [f.get("ricevuto_ms") for f in fotografie.values()
+                    if isinstance(f.get("ricevuto_ms"), (int, float))]
+        pubblicati = [f.get("publish_time_ms") for f in fotografie.values()
+                      if isinstance(f.get("publish_time_ms"), (int, float))]
+        return {"ricevuto_ms": int(max(ricevuti)) if ricevuti else None,
+                "publish_time_ms": int(max(pubblicati)) if pubblicati else None}
+
+    @staticmethod
+    def latenza_ms(now_ts: float, segnale: Dict[str, Any]) -> Dict[str, Optional[int]]:
+        """Dal runner e da Betfair al verdetto, in millisecondi."""
+        ora_ms = float(now_ts) * 1000.0
+        ric = segnale.get("ricevuto_ms")
+        pub = segnale.get("publish_time_ms")
+        return {"dal_runner": (int(round(ora_ms - float(ric)))
+                               if isinstance(ric, (int, float)) else None),
+                "da_betfair": (int(round(ora_ms - float(pub)))
+                               if isinstance(pub, (int, float)) else None)}
+
+    # ------------------------------------------- ordini altrui e verifica
+    def separa_altrui(self, righe: Iterable[Dict[str, Any]], *,
+                      del_bot: Callable[[Dict[str, Any]], bool],
+                      leggi: Optional[Callable[[List[str], str], Any]],
+                      modo: str = MODO_LIVE) -> Dict[str, Any]:
+        """Le righe di UNA selezione divise per il verdetto: ``bot`` (del bot,
+        come le riconosce lui), ``altrui`` (SOLO dell'utente, piu' le non
+        abbinate), ``altri_bot`` (tolte: ordini di un ALTRO bot), ``ignoti``
+        (proprietario non saputo: DB illeggibile) ed ``errore``."""
+        proprie: List[Dict[str, Any]] = []
+        altre: List[Dict[str, Any]] = []
+        for r in righe or []:
+            if not isinstance(r, dict):
+                continue
+            (proprie if del_bot(r) else altre).append(r)
+        cls = self.proprietari.classifica(altre, leggi=leggi, modo=modo)
+        return {"bot": proprie, "altrui": cls["tenute"], "altri_bot": cls["altri_bot"],
+                "ignoti": cls["ignoti"], "errore": cls["errore"]}
+
+    def metti_in_verifica(self, evento: Any, chiave: str, dettaglio: Dict[str, Any]) -> bool:
+        """La selezione ``chiave`` dell'evento e' IN VERIFICA (nessun verdetto,
+        nessun ordine nuovo). ``True`` se e' una notizia (prima non lo era)."""
+        ev = str(evento or "")
+        gia = self.verifica.setdefault(ev, {})
+        nuova = str(chiave) not in gia
+        gia[str(chiave)] = dict(dettaglio or {})
+        return nuova
+
+    def togli_verifica(self, evento: Any, chiave: Optional[str] = None) -> bool:
+        """Fine della verifica della selezione (o di tutto l'evento con
+        ``chiave=None``). ``True`` se c'era."""
+        ev = str(evento or "")
+        if ev not in self.verifica:
+            return False
+        if chiave is None:
+            self.verifica.pop(ev, None)
+            return True
+        c_era = self.verifica[ev].pop(str(chiave), None) is not None
+        if not self.verifica[ev]:
+            self.verifica.pop(ev, None)
+        return c_era
+
+    def in_verifica(self, evento: Any) -> Dict[str, Dict[str, Any]]:
+        return dict(self.verifica.get(str(evento or "")) or {})
+
+    def eventi_in_verifica(self) -> set:
+        return {e for e, d in self.verifica.items() if d}
+
+    # --------------------------------------------------------------- stato
+    def azzera(self) -> List[str]:
+        """Memoria di PROCESSO (difetto 37 del catalogo): il banco riparte
+        pulito. Torna i nomi di cio' che ha svuotato."""
+        fatti: List[str] = []
+        if self.proprietari.azzera():
+            fatti.append("proprietari")
+        for nome in ("visto", "segnale", "firma", "verifica"):
+            d = getattr(self, nome)
+            if d:
+                d.clear()
+                fatti.append(nome)
+        self.sveglia.clear()
+        mem = self.memoria()
+        try:
+            if mem is not None and mem.azzera():
+                fatti.append("memoria")
+        except Exception:  # noqa: BLE001 - mai far fallire un azzeramento
+            pass
+        return fatti
+
+    def stato(self) -> Dict[str, Any]:
+        client = self.canale.get("client")
+        mem = self.memoria()
+        return {"conti": dict(self.conti),
+                "client": client.stato() if client is not None else None,
+                "memoria": mem.stato() if mem is not None else None,
+                "proprietari": self.proprietari.stato(),
+                "in_verifica": sorted(self.eventi_in_verifica())}

@@ -1,0 +1,86 @@
+== base: IDENTICO
+== taker: IDENTICO
+== cap-stretto: IDENTICO
+== bot-fermo: IDENTICO
+== senza-seconda-puntata: IDENTICO
+== feed-stantio: IDENTICO
+== esiti-ignoti: IDENTICO
+== taker-esiti-ignoti: IDENTICO
+== riavvio: IDENTICO
+== gol-precoce: IDENTICO
+== cashout-globale: IDENTICO
+== chiuso-fuori-app: IDENTICO
+== copertura-rifiutata: IDENTICO
+== copertura-rifiutata-legacy: IDENTICO
+== copertura-legacy: IDENTICO
+== cashout-dopo-copertura: IDENTICO
+== rifiuti-betfair: IDENTICO
+== chiusura-abbinata-in-parte: IDENTICO
+== ko-green-parziale: IDENTICO
+== fermo-copertura: IDENTICO
+== lettura-dati-ko: IDENTICO
+== firma-dopo-gol-decisivo: IDENTICO
+== firma-dopo-gol-decisivo-senza-chiusura: IDENTICO
+== uscite-in-perdita-firmate: IDENTICO
+== uscite-automatiche: IDENTICO
+== punteggio-ko: IDENTICO
+== ridotto-fuori-app: NUOVO (solo DOPO)
+   OK  35760084 [ridotto-fuori-app]  tick= 56220 decisioni= 5882 azioni=   1 stati=WATCH,PRE_ENTRY_PENDING,SETTLING,SETTLED [COMPLETE]
+== manuale-app-paper <canale>: NUOVO (solo DOPO)
+   OK  35760084 [manuale-app-paper] <canale>  tick= 56223 decisioni= 5883 azioni=   1 stati=WATCH,PRE_ENTRY_PENDING,SETTLING,SETTLED [COMPLETE]
+== annullato-dal-sito: NUOVO (solo DOPO)
+   OK  35760084 [annullato-dal-sito]  tick= 56210 decisioni= 5881 azioni=   2 stati=WATCH,PRE_ENTRY_PENDING,PRE_OPEN,SETTLING,SETTLED [COMPLETE]
+== TESTA: DIVERSA
+   -SCENARI: base, taker, cap-stretto, bot-fermo, senza-seconda-puntata, feed-stantio, esiti-ignoti, taker-esiti-ignoti, riavvio, gol-precoce, cashout-globale, chiuso-fuori-app, copertura-rifiutata, copertura-rifiutata-legacy, copertura-legacy, cashout-dopo-copertura, rifiuti-betfair, chiusura-abbinata-in-parte, ko-green-parziale, fermo-copertura, lettura-dati-ko, firma-dopo-gol-decisivo, firma-dopo-
+   +SCENARI: base, taker, cap-stretto, bot-fermo, senza-seconda-puntata, feed-stantio, esiti-ignoti, taker-esiti-ignoti, riavvio, gol-precoce, cashout-globale, chiuso-fuori-app, ridotto-fuori-app, manuale-app-paper, annullato-dal-sito, copertura-rifiutata, copertura-rifiutata-legacy, copertura-legacy, cashout-dopo-copertura, rifiuti-betfair, chiusura-abbinata-in-parte, ko-green-parziale, fermo-copert
+== CODA (copertura dei controlli, esito): DIVERSA
+   -ESITO: 26 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+   +ESITO: 29 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+   -     A1  x130250  lo stato prodotto deve essere uno stato dichiarato (§3)
+   +     A1  x147896  lo stato prodotto deve essere uno stato dichiarato (§3)
+   -     A3  x148     ogni decisione dichiara un motivo leggibile (§8)
+   +     A3  x152     ogni decisione dichiara un motivo leggibile (§8)
+   -     B2  x1504    feed stantio: nessun ingresso, le chiusure restano permesse (§5)
+   +     B2  x1522    feed stantio: nessun ingresso, le chiusure restano permesse (§5)
+   -     B4  x30      ingresso pre-match solo con la quota BACK Under 3.5 nella banda de
+   -     B5  x30      i cicli pre-match non superano `pre_max_cycles` (§3 Fase 1)
+   -     C1  x129     ogni ordine ha un prezzo dentro la scala Betfair e una size positi
+   -     C2  x129     Mike non inventa prezzi: nessun ordine su una linea assente dal fe
+   -     C3  x129     nessun ordine su un mercato che non e' APERTO (§3 Fase 1)
+   -     D1  x65      le esposizioni vengono dai FILL, mai dalla size chiesta: la gamba 
+   -     D2  x23      pre-match non si chiude mai in perdita: il green e' a quota MIGLIO
+   -     D3  x15361   pre-partita: la banca di green appoggiata resta fino al fischio, n
+   +     B4  x33      ingresso pre-match solo con la quota BACK Under 3.5 nella banda de
+   +     B5  x33      i cicli pre-match non superano `pre_max_cycles` (§3 Fase 1)
+   +     C1  x133     ogni ordine ha un prezzo dentro la scala Betfair e una size positi
+   +     C2  x133     Mike non inventa prezzi: nessun ordine su una linea assente dal fe
+   +     C3  x133     nessun ordine su un mercato che non e' APERTO (§3 Fase 1)
+   +     D1  x66      le esposizioni vengono dai FILL, mai dalla size chiesta: la gamba 
+   +     D2  x24      pre-match non si chiude mai in perdita: il green e' a quota MIGLIO
+   +     D3  x16352   pre-partita: la banca di green appoggiata resta fino al fischio, n
+   -     E1  x59837   con 3+ gol non si copre piu': la gestione passa al cash-out (§3 Fa
+   +     E1  x67763   con 3+ gol non si copre piu': la gestione passa al cash-out (§3 Fa
+   -     L1  x129     nessun ordine di CHIUSURA sotto il minimo Betfair .it (punta 1,00,
+   +     L1  x133     nessun ordine di CHIUSURA sotto il minimo Betfair .it (punta 1,00,
+   -     L3  x41      nessuna PUNTA da 1,00 in su che non sia un multiplo di 0,50: Betfa
+   +     L3  x44      nessuna PUNTA da 1,00 in su che non sia un multiplo di 0,50: Betfa
+   -     J2  x75      non si piazza una gamba di chiusura se ce n'e' gia' una IN VOLO co
+   -     J3  x127556  ogni gamba nasce con un riferimento suo, e nessun riferimento si r
+   +     J2  x76      non si piazza una gamba di chiusura se ce n'e' gia' una IN VOLO co
+   +     J3  x145118  ogni gamba nasce con un riferimento suo, e nessun riferimento si r
+   -     R3  x5854    se la posizione l'ha chiusa l'UTENTE fuori dall'app, il bot non em
+   +     R3  x23415   se la posizione l'ha chiusa l'UTENTE fuori dall'app, il bot non em
+   -     S2  x452     nessun piazzamento di copertura mentre il mercato della copertura 
+   +     S2  x524     nessun piazzamento di copertura mentre il mercato della copertura 
+   -     K1  x141357  cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+   -     K2  x141357  una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+   -     K3  x141357  il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+   -     K4  x141357  ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+   -     M1  x25985   con una linea DECISA dal punteggio e l'altra VIVA la partita non e
+   +     K1  x160719  cio' che il bot CREDE di una gamba coincide con cio' che il MERCAT
+   +     K2  x160719  una gamba il cui ordine Betfair ha RIFIUTATO non resta mai viva (d
+   +     K3  x160719  il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+   +     K4  x160719  ogni gamba di CHIUSURA dichiara la riga di apertura che chiude (di
+   +     M1  x29420   con una linea DECISA dal punteggio e l'altra VIVA la partita non e
+   -     RG1 x25      al regolamento il P&L della partita e l'esito di OGNI riga di mike
+   +     RG1 x28      al regolamento il P&L della partita e l'esito di OGNI riga di mike

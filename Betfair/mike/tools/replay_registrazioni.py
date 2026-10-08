@@ -221,6 +221,28 @@ SCENARIO_CHIUSO_FUORI_APP = "chiuso-fuori-app"
 # esce subito): lo scenario lo si esercita sulla CODA (Mike in live, la REST
 # servita da flumine), anche dentro ``--scenari tutti --trasporto canale``.
 TRASPORTO_OBBLIGATO: Dict[str, str] = {SCENARIO_CHIUSO_FUORI_APP: "coda"}
+# 08/10 (W3a, ordine dell'utente: «quando intervengo io [...] i bot lo sanno e
+# non fanno altro»). Due interventi in piu', con ordini VERI su flumine:
+#   * ``ridotto-fuori-app``: l'utente dal sito riduce a META' la posizione di
+#     Mike (una lay sua, nessun'altra posizione): e' un intervento, Mike si
+#     ferma (``come='ridotta'``), visto dal canale del conto al primo giro;
+#   * ``annullato-dal-sito``: l'utente annulla dal sito il primo ordine
+#     APPOGGIATO vivo di Mike (``MercatoFlumine.annulla_come_utente``): Mike non
+#     lo ri-appoggia e si ferma (``come='annullata'``).
+# Si leggono sul conto, quindi in LIVE (coda), come ``chiuso-fuori-app``.
+SCENARIO_RIDOTTO_FUORI_APP = "ridotto-fuori-app"
+SCENARIO_ANNULLATO_DAL_SITO = "annullato-dal-sito"
+TRASPORTO_OBBLIGATO.update({SCENARIO_RIDOTTO_FUORI_APP: "coda",
+                            SCENARIO_ANNULLATO_DAL_SITO: "coda"})
+# 08/10 (W3a) - PAPER = SPECCHIO DEL LIVE: in prova l'intervento esterno e' un
+# ordine MANUALE dell'app sul runner paper (qui: il flumine del banco, dove sta
+# anche l'ordine paper di Mike mandato sul canale di comando). Il runner paper
+# pubblica il blotter del mercato (``conto_paper``) e Mike si ferma al primo
+# giro. Mike in paper gira SOLO sul canale: lo scenario ci va sempre
+# (``certifica.trasporto_dello_scenario``: un trasporto obbligato 'canale' vale
+# anche senza ``--trasporto``).
+SCENARIO_MANUALE_PAPER = "manuale-app-paper"
+TRASPORTO_OBBLIGATO[SCENARIO_MANUALE_PAPER] = "canale"
 
 # RIFIUTO DICHIARATO DI BETFAIR (`ok=False`). Non tocca un parametro: i primi N
 # piazzamenti tornano con un report NEGATIVO, come quando Betfair rifiuta
@@ -515,6 +537,12 @@ def _crea_strategia():
             # flumine con un ref che non e' del bot.
             self.chiuso_fuori_app = bool(kw.pop("chiuso_fuori_app", False))
             self.chiusura_utente: Optional[Dict[str, Any]] = None
+            # 08/10 (W3a): la stessa chiusura, ma solo META' (riduzione), e
+            # l'annullo dal sito di un ordine appoggiato di Mike
+            self.ridotto_fuori_app = bool(kw.pop("ridotto_fuori_app", False))
+            self.annullo_dal_sito = bool(kw.pop("annullo_dal_sito", False))
+            self.manuale_paper = bool(kw.pop("manuale_paper", False))
+            self.annullo_utente: Optional[Dict[str, Any]] = None
             # 30/09: la chiusura arriva ANCHE dal canale del conto, come in
             # produzione (runner LIVE -> stream ordini -> topic ``conto`` ->
             # client di Mike). Memoria e client VERI, senza socket.
@@ -527,6 +555,13 @@ def _crea_strategia():
                 memoria = _EO.MemoriaConto()
                 S.installa_conto_canale(memoria)
                 self._client_conto = _EO.ClientEsiti(memoria, topic=_EO.TOPIC_CONTO)
+            elif self.manuale_paper and modo_del_banco() == "paper":
+                # 08/10 (W3a): il lettore di produzione (``conto,conto_paper``)
+                from ...stream import esiti_ordini_canale as _EO
+
+                memoria = _EO.MemoriaConto()
+                S.installa_conto_canale(memoria)
+                self._client_conto = _EO.ClientEsiti(memoria, topic=_EO.TOPIC_CONTO_TUTTI)
             # P4 (29/09, M8.3): il freno d'emergenza acceso durante la copertura
             self.fermo_copertura = bool(kw.pop("fermo_copertura", False))
             self.fermo: Dict[str, Any] = {}
@@ -877,6 +912,9 @@ def _crea_strategia():
             #      bot).
             if self.chiuso_fuori_app and self.chiusura_utente is None:
                 self._chiudi_come_utente(pt_ms)
+            # 08/10 (W3a): l'utente annulla dal sito un ordine appoggiato di Mike
+            if self.annullo_dal_sito and self.annullo_utente is None:
+                self._annulla_come_utente(pt_ms)
 
             # -- FIRMA DELL'UTENTE DOPO IL GOL DECISIVO (30/09) -------------
             if self.firma_dopo_gol and self.firma_fatta is None:
@@ -1185,6 +1223,29 @@ def _crea_strategia():
                 netto += size if str(r.get("side")) == "back" else -size
             if netto <= 0.01:
                 return
+            if self.ridotto_fuori_app or self.manuale_paper:
+                # 08/10 (W3a): la RIDUZIONE dal sito (una lay sola, META' della
+                # posizione di Mike) o, in PROVA, la chiusura con un ordine
+                # MANUALE dell'app sul runner paper (ref del runner ``awlq``)
+                suo_abbinato = 0.0
+                chiusura = self.mercato.place_order_utente(
+                    market_id=market_id, selection_id=int(sel), price=1000.0,
+                    size=round(netto * (0.5 if self.ridotto_fuori_app else 1.0), 2),
+                    side="lay",
+                    customer_ref=("awlq-app-manuale" if self.manuale_paper
+                                  else "utente-riduzione"))
+                abb = (float(getattr(getattr(chiusura, "simulated", None), "size_matched",
+                                     0.0) or 0.0) if chiusura is not None else 0.0)
+                self.chiusura_utente = {"ms": int(pt_ms), "market_id": market_id,
+                                        "selection_id": int(sel),
+                                        "posizione_del_bot": round(netto, 2),
+                                        "riduzione": bool(self.ridotto_fuori_app),
+                                        "manuale_app_paper": bool(self.manuale_paper),
+                                        "lay_di_riduzione_abbinata": round(abb, 2)}
+                self.chiusura_utente["sul_canale"] = self._pubblica_conto(market_id, pt_ms)
+                self.db.log("replay_chiusura_fuori_app", dict(self.chiusura_utente),
+                            self.event_id)
+                return
             # 1) la posizione SUA (stessa selezione, stesso lato): la posizione
             #    di conto la conterra' insieme a quella di Mike
             # un BACK si abbina accettando QUALUNQUE quota disponibile: prezzo
@@ -1214,6 +1275,27 @@ def _crea_strategia():
             self.db.log("replay_chiusura_fuori_app", dict(self.chiusura_utente),
                         self.event_id)
 
+        def _annulla_come_utente(self, pt_ms: int) -> None:
+            """08/10 (W3a) - L'utente annulla DAL SITO il primo ordine VIVO di
+            Mike (un appoggiato, a mercato da almeno un giro). Ordine VERO di
+            flumine, annullo VERO (``MercatoFlumine.annulla_come_utente``): Mike
+            lo scopre solo rileggendo l'ordine."""
+            for ref, o in list(self.mercato.ordini.items()):
+                if not self.mercato._vivo(o):
+                    continue
+                if not getattr(o, "bet_id", None):
+                    continue
+                numeri = self.mercato.annulla_come_utente(ref)
+                if numeri is None:
+                    continue
+                self.annullo_utente = {"ms": int(pt_ms), "ref": str(ref),
+                                       "bet_id": str(getattr(o, "bet_id", "")),
+                                       "ordini_prima": len(self.mercato.ordini),
+                                       **{k: round(float(v), 2) for k, v in numeri.items()}}
+                self.db.log("replay_annullo_dal_sito", dict(self.annullo_utente),
+                            self.event_id)
+                return
+
         def _pubblica_conto(self, market_id: str, pt_ms: int) -> int:
             """30/09 - Cio' che fa il runner LIVE quando lo stream ordini porta un
             cambio del conto: la cache VERA dello stream (``OrderBookCache`` di
@@ -1223,28 +1305,13 @@ def _crea_strategia():
             client VERO di Mike lo incassa. Torna quanti messaggi sono entrati."""
             if self._client_conto is None:
                 return 0
-            import json
-            from types import SimpleNamespace
+            # 08/10 (W3a): la STESSA porta del banco comune per tutti i bot
+            # (``banco_comune.pubblica_conto_al_client``: stesso codice di prima)
+            from ...stream.backtest.banco_comune import pubblica_conto_al_client
 
-            from betfairlightweight.streaming.cache import OrderBookCache
-
-            from ...stream import esiti_ordini_canale as _EO
-
-            per_sel = self.mercato.ordini_conto_come_stream(market_id, int(pt_ms))
-            if not per_sel:
-                return 0
-            cache = OrderBookCache(str(market_id), int(pt_ms), False)
-            cache.update_cache({"id": str(market_id),
-                                "orc": [{"id": sid, "uo": uo} for sid, uo in per_sel.items()]},
-                               int(pt_ms))
-            co = cache.create_resource(0)
-            co.client = SimpleNamespace(paper_trade=False)     # il client REALE
-            testi: List[str] = []
-            _EO.pubblica_conto_da_evento(
-                SimpleNamespace(event=[co]),
-                lambda t, d: testi.append(json.dumps({"t": t, "d": d}, default=str)),
-                adesso_ms=int(pt_ms))
-            return sum(1 for t in testi if self._client_conto.incassa(t))
+            return pubblica_conto_al_client(self.mercato, market_id, int(pt_ms),
+                                            self._client_conto,
+                                            modo=("paper" if self.manuale_paper else "live"))
 
         def coda_dopo_la_registrazione(self) -> int:
             """30/09 (ondata 2, revisione A6): IL SERVIZIO NON SI FERMA CON LO
@@ -1355,6 +1422,9 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       riavvia: bool = False,
                       cashout_utente: bool = False,
                       chiuso_fuori_app: bool = False,
+                      ridotto_fuori_app: bool = False,
+                      annullo_dal_sito: bool = False,
+                      manuale_paper: bool = False,
                       chiusura_parziale: bool = False,
                       fermo_copertura: bool = False,
                       lettura_ko: bool = False,
@@ -1454,6 +1524,9 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                           invecchia_s=invecchia_s, campioni_diff=campioni_diff,
                           riavvia=riavvia, cashout_utente=cashout_utente,
                           chiuso_fuori_app=chiuso_fuori_app,
+                          ridotto_fuori_app=ridotto_fuori_app,
+                          annullo_dal_sito=annullo_dal_sito,
+                          manuale_paper=manuale_paper,
                           fermo_copertura=fermo_copertura, lettura_ko=lettura_ko,
                           punteggio_ko=punteggio_ko, firma_dopo_gol=firma_dopo_gol,
                           chiusure_perse=chiusure_perse,
@@ -1675,8 +1748,11 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                 f"{float(strategia.params.get('reconcile_every_s') or 0.0):.0f} s")
             # il verdetto deve arrivare AL PRIMO giro dopo il canale: la sola
             # differenza ammessa e' il tempo delle due letture REST di conferma
+            # 08/10 (W3a): in PROVA il verdetto arriva dal blotter del runner paper
+            dove_atteso = ("dall'app (ordine manuale sul runner paper)"
+                           if strategia.manuale_paper else "fuori dall'app (stream ordini)")
             if sul_canale and (
-                    visto.get("dove") != "fuori dall'app (stream ordini)"
+                    visto.get("dove") != dove_atteso
                     or not isinstance(lat, (int, float)) or attesa_giro is None
                     or lat > attesa_giro + 1000):
                 out.violazioni.append(CERT.Violazione(
@@ -1685,6 +1761,47 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                                  "(30/09)",
                     f"verdetto {visto.get('dove')!r} latenza {lat} ms, primo giro dopo "
                     f"il canale a {attesa_giro} ms", "LIVE"))
+            # 08/10 (W3a): la RIDUZIONE dal sito e' un intervento dell'utente:
+            # Mike deve fermarsi con ``come='ridotta'``
+            if strategia.ridotto_fuori_app and (
+                    not chiusi or visto.get("come") != "ridotta"):
+                out.violazioni.append(CERT.Violazione(
+                    "R3-RIDOTTA", "una riduzione PARZIALE dal sito e' un intervento "
+                                  "dell'utente: il bot lo sa e non fa altro (08/10)",
+                    f"chiuso_dall_utente {'assente' if not chiusi else visto.get('come')!r}",
+                    "LIVE"))
+    if strategia.annullo_dal_sito:
+        # 08/10 (W3a): l'ordine appoggiato di Mike annullato dal sito
+        au = strategia.annullo_utente
+        if au is None:
+            out.note.append("scenario annullato-dal-sito: nessun ordine vivo di Mike da "
+                            "annullare su questa registrazione")
+        else:
+            chiusi = [p_ for k, p_, _e in strategia.db.attivita if k == "chiuso_dall_utente"]
+            visto = chiusi[0] if chiusi else {}
+            nuovi = len(strategia.mercato.ordini) - int(au.get("ordini_prima") or 0)
+            out.note.append(
+                f"scenario annullato-dal-sito: l'utente ha annullato dal sito l'ordine "
+                f"{au.get('ref')} (bet {au.get('bet_id')}, annullato "
+                f"{au.get('size_cancelled')}) | verdetto {visto.get('come')!r} "
+                f"'{visto.get('dove')}' | ordini piazzati da Mike dopo l'annullo: {nuovi} | "
+                f"R3 sollecitato {int(out.sollecitati.get('R3') or 0)} volte")
+            if visto.get("come") != "annullata":
+                out.violazioni.append(CERT.Violazione(
+                    "R3-ANNULLO", "un ordine appoggiato annullato dall'utente non e' una "
+                                  "scadenza: il bot lo sa, non lo ri-appoggia e non fa "
+                                  "altro (08/10)",
+                    f"chiuso_dall_utente {'assente' if not chiusi else visto.get('come')!r}",
+                    "LIVE"))
+            # nessun ordine nuovo dopo l'annullo: Mike lo rilegge e si ferma
+            # PRIMA della decisione dello stesso giro (un ri-appoggio sarebbe
+            # un ordine nuovo nel blotter)
+            out.contatori["ordini_dopo_annullo"] = int(nuovi)
+            if nuovi > 0:
+                out.violazioni.append(CERT.Violazione(
+                    "R3-ANNULLO", "dopo l'annullo dell'utente il bot non piazza piu' "
+                                  "niente su quella partita (08/10)",
+                    f"{nuovi} ordini nuovi di Mike dopo l'annullo dal sito", "LIVE"))
     if strategia.fermo_copertura:
         # P4 (M8.3): che cosa e' successo alla copertura durante e dopo il fermo
         ferme = sum(1 for k, p_, _e in strategia.db.attivita
@@ -1852,6 +1969,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         "cashout_utente": int(bool(strategia.cashout_fatto)
                               and "errore" not in (strategia.cashout_fatto or {})),
         "chiusura_utente": int(strategia.chiusura_utente is not None),
+        # 08/10 (W3a): l'annullo dal sito di un ordine appoggiato di Mike
+        "annullo_utente": int(strategia.annullo_utente is not None),
         "fermo": int("dal" in strategia.fermo),
         "lettura_ko": int("dal" in strategia.ko),
         "punteggio_ko": int("dal" in strategia.pko),
@@ -1917,6 +2036,20 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                                "flumine con un ref che non e' di Mike, piu' una posizione sua "
                                "sulla stessa selezione): il bot lo scopre dalla POSIZIONE DI "
                                "CONTO e non gestisce piu' quella partita (§15.7-ter, R3)",
+    # 08/10 (W3a, ordine dell'utente: «quando intervengo io [...] i bot lo sanno
+    # e non fanno altro»)
+    SCENARIO_RIDOTTO_FUORI_APP: "l'utente RIDUCE dal sito META' della posizione di Mike "
+                                "(una lay vera su flumine, ref suo): e' un intervento, Mike "
+                                "lo vede dal canale del conto al primo giro e si ferma "
+                                "(come='ridotta', R3, R3-CANALE, R3-RIDOTTA)",
+    SCENARIO_MANUALE_PAPER: "IN PROVA (paper sul canale): l'utente chiude la posizione di "
+                            "Mike con un ordine MANUALE dell'app sul runner paper; il "
+                            "runner pubblica il blotter (`conto_paper`) e Mike si ferma al "
+                            "primo giro, senza REST (R3, R3-CANALE, 08/10)",
+    SCENARIO_ANNULLATO_DAL_SITO: "l'utente ANNULLA dal sito il primo ordine appoggiato vivo "
+                                 "di Mike (annullo vero di flumine): non e' una scadenza, "
+                                 "Mike non lo ri-appoggia e si ferma (come='annullata', R3, "
+                                 "R3-ANNULLO)",
     SCENARIO_COVER_RIFIUTATA: "copertura come BANCA Under 4,5: Betfair rifiuta SEMPRE le "
                               "banche sul mercato 4,5 (CANCELLED_NOT_PLACED): sollecita il "
                               "FRENO fail-closed (S1) e il ritmo minimo fra due tentativi",
@@ -2081,7 +2214,11 @@ def causa_non_esercitato(scenario: str, ref: CERT.Referto) -> Optional[str]:
     def zero(*codici: str) -> bool:
         return not any(int(s.get(k) or 0) for k in codici)
 
-    if scenario == SCENARIO_CHIUSO_FUORI_APP:
+    if scenario == SCENARIO_ANNULLATO_DAL_SITO:
+        if not c.get("annullo_utente"):
+            return "nessun ordine vivo di Mike da annullare dal sito su questa registrazione"
+    elif scenario in (SCENARIO_CHIUSO_FUORI_APP, SCENARIO_RIDOTTO_FUORI_APP,
+                      SCENARIO_MANUALE_PAPER):
         if not c.get("chiusura_utente"):
             return "l'utente non ha avuto una posizione del bot da chiudere"
         if zero("R3"):
@@ -2319,7 +2456,11 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
         riavvia=(scenario == SCENARIO_RIAVVIO),
         cashout_utente=(scenario in (SCENARIO_CASHOUT_GLOBALE, SCENARIO_CASHOUT_DOPO_COPERTURA)),
         cashout_dopo_copertura=(scenario == SCENARIO_CASHOUT_DOPO_COPERTURA),
-        chiuso_fuori_app=(scenario == SCENARIO_CHIUSO_FUORI_APP),
+        chiuso_fuori_app=(scenario in (SCENARIO_CHIUSO_FUORI_APP, SCENARIO_RIDOTTO_FUORI_APP,
+                                       SCENARIO_MANUALE_PAPER)),
+        manuale_paper=(scenario == SCENARIO_MANUALE_PAPER),
+        ridotto_fuori_app=(scenario == SCENARIO_RIDOTTO_FUORI_APP),
+        annullo_dal_sito=(scenario == SCENARIO_ANNULLATO_DAL_SITO),
         chiusura_parziale=(scenario in (CP.SCENARIO, SCENARIO_KO_GREEN_PARZIALE)),
         solo_banca_fischio=(scenario == SCENARIO_KO_GREEN_PARZIALE),
         fermo_copertura=(scenario == SCENARIO_FERMO_COPERTURA),

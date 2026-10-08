@@ -36,6 +36,13 @@ RICONOSCIMENTO "ORDINE DI UN BOT" - nessuna regola nuova, si riusano quelle che 
     ``client_ref`` con il prefisso di un bot, o ``params.source`` di un bot, o
     ``params.comando`` di un attore che non sia il desktop.
 
+08/10 (W3a, seconda tappa): la lettura del DB (``proprietari_bot``) sta QUI, UNA,
+con il ``modo`` (live o paper): la usa il worker (``live_order_worker.
+_proprietari_bot``) e la usano Mike, Omega e Safe (``db.proprietari_bot_conto``)
+per non scambiare l'ordine di un ALTRO bot per un intervento dell'utente.
+``effetto_sui_bot`` prevede il verdetto dei bot con la LORO funzione
+(``esiti_ordini_canale.verdetto_posizione``, in esposizione), non con una copia.
+
 Codice ASCII-only, commenti in italiano.
 """
 from __future__ import annotations
@@ -66,6 +73,48 @@ SOURCE_SCALPER = "scalper"
 #: la tolleranza PIU' LARGA dei verdetti di conto dei bot (Mike e Safe 0,05; Omega
 #: 0,01): sotto, il bot dice "piatta". Un test di contratto la confronta con le loro.
 EPS_VERDETTO_BOT = 0.05
+
+#: la coda dei comandi del runner (``live_order_worker._TABLE``: un test di
+#: contratto le confronta)
+TABELLA_CODA = "betfair_live_order_requests"
+#: bet_id per lettura del DB (lunghezza dell'URL PostgREST, come
+#: ``reconcile_worker._BLOCCO_IN``)
+BLOCCO_IN = 100
+
+
+def proprietari_bot(sb: Any, bet_ids: Iterable[str], *, mode: str = "live",
+                    tabella_coda: str = TABELLA_CODA,
+                    blocco: int = BLOCCO_IN) -> Dict[str, str]:
+    """bet_id -> motivo, per gli ordini che il DB dice dei BOT (``mode`` 'live' o
+    'paper'). Le regole della RPC ``get_live_orders_account_open`` (tabelle dei bot,
+    source dello specchio) piu' la riga di coda del runner (bot che ha piazzato
+    dalla coda e non ha ancora scritto il bet_id nella sua tabella). Letture a
+    blocchi. SOLLEVA se una lettura fallisce: mai un "fuori bot" dedotto da una
+    lettura KO. (Spostata qui dal worker il 08/10, W3a: stessa funzione per il
+    worker e per i bot.)"""
+    ids = sorted({str(b) for b in bet_ids or [] if str(b or "").strip()})
+    out: Dict[str, str] = {}
+    modo = str(mode or "live")
+    for i in range(0, len(ids), max(1, int(blocco))):
+        pezzo = ids[i:i + max(1, int(blocco))]
+        for tabella in TABELLE_BOT:
+            res = (sb.table(tabella).select("bet_id").eq("mode", modo)
+                   .in_("bet_id", pezzo).execute())
+            for r in getattr(res, "data", None) or []:
+                out.setdefault(str(r.get("bet_id")), f"tabella:{tabella}")
+        res = (sb.table("betfair_live_orders").select("bet_id,source").eq("mode", modo)
+               .in_("bet_id", pezzo).execute())
+        for r in getattr(res, "data", None) or []:
+            src = str(r.get("source") or "").strip().lower()
+            if src not in SOURCE_SPECCHIO_A_MANO:
+                out.setdefault(str(r.get("bet_id")), f"specchio:{src or '?'}")
+        res = (sb.table(tabella_coda).select("bet_id,client_ref,params").eq("mode", modo)
+               .in_("bet_id", pezzo).execute())
+        for r in getattr(res, "data", None) or []:
+            motivo = motivo_bot_da_coda(r)
+            if motivo:
+                out.setdefault(str(r.get("bet_id")), motivo)
+    return out
 
 
 def attori_bot() -> frozenset:
@@ -235,33 +284,61 @@ def netto_size(ordini: Iterable[Dict[str, Any]]) -> float:
 
 def vivo_nel_conto(atteso: float, conto: float) -> float:
     """Quanto della posizione di un bot (``atteso``) SOPRAVVIVE nel netto di conto: la
-    formula identica dei tre verdetti (Mike ``_verdetto_di_conto``, Omega
-    ``sorveglia_posizione_di_conto``, Safe ``_sorveglia_posizione_di_conto``)."""
-    return (min(atteso, max(0.0, conto)) if atteso > 0
-            else max(atteso, min(0.0, conto)))
+    STESSA funzione dei tre verdetti (``esiti_ordini_canale.vivo_in_size``)."""
+    from ..esiti_ordini_canale import vivo_in_size
+
+    return vivo_in_size(atteso, conto)
 
 
-def effetto_sui_bot(netti_bot: Dict[str, float], conto_prima: float,
-                    delta: float) -> List[Dict[str, Any]]:
-    """Che cosa diranno i verdetti di conto dei bot dopo una copertura che sposta il
-    netto di conto della selezione di ``delta`` (BACK +size, LAY -size).
+#: gravita' dei verdetti (per dire se una copertura PEGGIORA il verdetto di un bot)
+_GRAVITA = {"intera": 0, "ridotta": 1, "chiusa": 2}
 
-    ``netti_bot``: bot -> netto delle sue gambe abbinate sul conto (la sua posizione).
-    Torna una voce per ogni bot la cui posizione, dopo, sopravvive MENO di prima:
-    ``verdetto`` = ``chiusa`` (non sopravvive piu') o ``ridotta``. Lista vuota = nessun
-    bot vedra' la sua posizione toccata."""
+
+def riga_copertura(side: str, size: float, price: float) -> Dict[str, Any]:
+    """La copertura che il worker sta per piazzare, come se fosse abbinata al suo
+    prezzo: una riga del conto (camelCase) da dare al verdetto dei bot."""
+    return {"betId": "copertura", "side": str(side or "").upper(),
+            "sizeMatched": float(size), "averagePriceMatched": float(price),
+            "customerStrategyRef": STRATEGIA_MANUALE_APP}
+
+
+def effetto_sui_bot(ordini_bot: Dict[str, List[Dict[str, Any]]],
+                    ordini_fuori: List[Dict[str, Any]],
+                    copertura: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Che cosa diranno i verdetti di conto dei bot dopo la ``copertura`` (riga di
+    ``riga_copertura``), con la LORO funzione: ``esiti_ordini_canale.
+    verdetto_posizione`` (parte direzionale dell'esposizione, ripiego in size).
+
+    ``ordini_bot``: bot -> i SUOI ordini sulla selezione (camelCase), cioe' la sua
+    posizione; ``ordini_fuori``: gli ordini dell'utente (sito + app) sulla selezione.
+    Gli ordini di un ALTRO bot non sono «altrui» per nessun bot (08/10, W3a): non
+    entrano. Una voce per ogni bot il cui verdetto, dopo, e' PEGGIORE di prima o la
+    cui posizione sopravvive meno: ``verdetto`` = ``chiusa`` o ``ridotta``. Lista
+    vuota = nessun bot vedra' la sua posizione toccata."""
+    from ..esiti_ordini_canale import verdetto_posizione
+
     out: List[Dict[str, Any]] = []
-    dopo_conto = round(conto_prima + delta, 2)
-    for bot, mio in sorted(netti_bot.items()):
+    fuori = list(ordini_fuori or [])
+    delta = netto_size([copertura])
+    for bot, mie in sorted((ordini_bot or {}).items()):
+        mie = list(mie or [])
+        mio = netto_size(mie)
         if abs(mio) <= EPS_VERDETTO_BOT:
             continue
-        prima = vivo_nel_conto(mio, conto_prima)
-        dopo = vivo_nel_conto(mio, dopo_conto)
-        if abs(dopo) + 0.01 >= abs(prima):
+        conto_prima = round(mio + netto_size(fuori), 2)
+        conto_dopo = round(conto_prima + delta, 2)
+        prima = verdetto_posizione(atteso=mio, conto_size=conto_prima, righe_bot=mie,
+                                   righe_altrui=fuori, eps=EPS_VERDETTO_BOT)
+        dopo = verdetto_posizione(atteso=mio, conto_size=conto_dopo, righe_bot=mie,
+                                  righe_altrui=fuori + [copertura], eps=EPS_VERDETTO_BOT)
+        peggio = _GRAVITA.get(dopo["verdetto"], 0) > _GRAVITA.get(prima["verdetto"], 0)
+        meno = abs(float(dopo["vivo"])) + 0.01 < abs(float(prima["vivo"]))
+        if dopo["verdetto"] == "intera" or not (peggio or meno):
             continue
-        verdetto = "chiusa" if abs(dopo) <= EPS_VERDETTO_BOT else "ridotta"
         out.append({"bot": bot, "posizione": round(mio, 2),
-                    "viva_prima": round(prima, 2), "viva_dopo": round(dopo, 2),
-                    "netto_conto_prima": round(conto_prima, 2),
-                    "netto_conto_dopo": dopo_conto, "verdetto": verdetto})
+                    "viva_prima": round(float(prima["vivo"]), 2),
+                    "viva_dopo": round(float(dopo["vivo"]), 2),
+                    "netto_conto_prima": conto_prima, "netto_conto_dopo": conto_dopo,
+                    "verdetto_prima": prima["verdetto"],
+                    "verdetto": dopo["verdetto"], "metro": dopo.get("metro")})
     return out

@@ -166,6 +166,9 @@ SCENARI_SCARTATI: Dict[str, Dict[str, str]] = {
         "firma-dopo-gol-decisivo": _UTENTE,
         "firma-dopo-gol-decisivo-senza-chiusura": _UTENTE,
         "uscite-in-perdita-firmate": _UTENTE, "punteggio-ko": _GUASTO,
+        # 08/10 (W3a): interventi dell'utente dal sito / dall'app
+        "ridotto-fuori-app": _UTENTE, "annullato-dal-sito": _UTENTE,
+        "manuale-app-paper": _UTENTE,
     },
     "omega": {
         "bot-fermo": _UTENTE, "v4-bot-fermo": _UTENTE, "feed-stantio": _GUASTO,
@@ -174,6 +177,8 @@ SCENARI_SCARTATI: Dict[str, Dict[str, str]] = {
         "manuale-e-bot": _UTENTE, "cashout-globale": _UTENTE,
         "proposta-approvata": _UTENTE, "rifiuti-betfair": _GUASTO,
         "chiuso-fuori-app": _UTENTE, "chiusura-abbinata-in-parte": _GUASTO,
+        # 08/10 (W3a): interventi dell'utente dal sito, visti dal canale del conto
+        "chiuso-fuori-app-canale": _UTENTE, "ridotto-fuori-app-canale": _UTENTE,
     },
     "safe_tennis": {
         "paper-iniettata": _INIETTATO, "catalogo-assente": _GUASTO,
@@ -224,6 +229,8 @@ _SAFE_CALCIO_SCARTATI = {
     "proposta-approvata": _INIETTATO, "proposta-scaduta": _INIETTATO,
     "proposta-anomalia-effimera": _INIETTATO, "combos-automatiche": _INIETTATO,
     "combos-gamba-automatica": _INIETTATO,
+    # 08/10 (W3a): l'intervento dell'utente dal sito, visto dal canale del conto
+    "chiusura-fuori-app-canale": _UTENTE,
 }
 for _b in ("safe_base", "safe_esatto", "safe_punta"):
     SCENARI_SCARTATI[_b] = dict(_SAFE_CALCIO_SCARTATI)

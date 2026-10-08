@@ -197,20 +197,27 @@ def test_una_posizione_ancora_viva_non_viene_toccata():
     assert not db.trades[0]["meta"].get("chiuso_dall_utente")
 
 
-def test_una_chiusura_PARZIALE_dell_utente_non_spegne_la_protezione():
-    """R10: sul book sottile la chiusura si abbina a meta'. La posizione e'
-    ancora aperta, e il bot deve continuare a proteggere quel che resta."""
+def test_una_chiusura_PARZIALE_dell_utente_ferma_il_bot_dal_08_10():
+    """R10: sul book sottile la chiusura dell'utente si abbina a meta'. Fino al
+    07/10 il bot continuava a proteggere quel che restava. 08/10 (W3a, ordine
+    dell'utente: «quando intervengo io [...] su un'operazione dei bot, i bot lo
+    sanno e non fanno altro»): una riduzione PARZIALE e' un intervento
+    dell'utente, stesse conseguenze della chiusura (``come='ridotta'``). La
+    diagnosi della riduzione resta scritta com'era."""
     db = DbFinto([_lay_del_bot()])
     market = MercatoFinto([
         _riga_rest(bet_id="100000000001", side="LAY", size=5.26, ref=REF_BOT),
         _riga_rest(bet_id="900000000002", side="BACK", size=2.00, ref="utente-1"),
     ])
     assert S.sorveglia_posizione_di_conto(params=_params(), market=market, db=db,
-                                          now=ADESSO) == 0
-    assert "chiuso_dall_utente" not in db.kinds()
+                                          now=ADESSO) == 1
+    assert "chiuso_dall_utente" in db.kinds()
     d = db.payload("diagnosi")
     assert d and d["verdetto"] == "ridotta_dall_utente"
     assert d["ancora_viva"] == pytest.approx(-3.26, abs=0.01)
+    marcatore = db.trades[0]["meta"].get("chiuso_dall_utente")
+    assert marcatore and marcatore["come"] == "ridotta"
+    assert marcatore["ancora_viva"] == pytest.approx(-3.26, abs=0.01)
 
 
 def test_operazioni_SUE_sulla_stessa_selezione_non_sono_una_chiusura():

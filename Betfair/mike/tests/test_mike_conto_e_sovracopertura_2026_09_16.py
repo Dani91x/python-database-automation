@@ -53,8 +53,9 @@ PAR = C.merge_params(None)
 def ordine_conto(*, ref: str, side: str, abbinato: float, bet_id: str = "B",
                  market_id: str = MERCATO_35, selection_id: int = SEL_UNDER_35,
                  stato: str = "EXECUTION_COMPLETE", residuo: float = 0.0,
-                 prezzo: float = 1.50) -> Dict[str, Any]:
-    """UN ordine come lo restituisce `omega_market` (snake_case, mai camelCase)."""
+                 prezzo: float = 1.50, csr: Optional[str] = None) -> Dict[str, Any]:
+    """UN ordine come lo restituisce `omega_market` (snake_case, mai camelCase).
+    08/10 (W3a): con la chiave additiva ``customer_strategy_ref`` del vero."""
     return {
         "bet_id": bet_id, "market_id": market_id, "selection_id": selection_id,
         "side": side, "status": stato, "size_matched": abbinato,
@@ -63,6 +64,7 @@ def ordine_conto(*, ref: str, side: str, abbinato: float, bet_id: str = "B",
         "size_voided": 0.0, "matched_date": "2026-09-16T19:00:00Z",
         "placed_date": "2026-09-16T18:59:00Z", "price_requested": prezzo,
         "size_requested": abbinato, "average_price_matched": prezzo,
+        "customer_strategy_ref": csr,
     }
 
 
@@ -490,17 +492,23 @@ def test_le_gambe_di_Mike_che_NON_si_ritrovano_NON_spengono_il_bot():
     assert db.payload("posizione_di_conto")["verdetto"] == "gambe_non_ritrovate"
 
 
-def test_la_chiusura_PARZIALE_dellutente_si_dichiara_e_basta():
-    """Una lay da 4 su 10: il bot continua a proteggere quello che resta."""
+def test_la_chiusura_PARZIALE_dellutente_ferma_il_bot_dal_08_10():
+    """Una lay da 4 su 10. Fino al 07/10: si dichiarava e il bot continuava.
+    08/10 (W3a, ordine dell'utente: «quando intervengo io [...] i bot lo sanno e
+    non fanno altro»): una riduzione parziale e' un intervento dell'utente,
+    stesse conseguenze della chiusura (``come='ridotta'``)."""
     db = DbFinto()
     mercato = MercatoConto(morti=[
         ordine_conto(ref="mike-t1", side="back", abbinato=10.0),
         ordine_conto(ref="utente-chiusura", side="lay", abbinato=4.0, bet_id="U1"),
     ])
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
-    assert _sorveglia(mercato, ctx, db=db) is False
-    assert ctx.chiuso_dall_utente is False
+    assert _sorveglia(mercato, ctx, db=db) is True
+    assert ctx.chiuso_dall_utente is True and ctx.no_reentry is True
     assert db.payload("posizione_di_conto")["verdetto"] == "ridotta_dall_utente"
+    p = db.payload("chiuso_dall_utente")
+    assert p["come"] == "ridotta" and p["dove"] == "fuori dall'app"
+    assert p["selezioni"][0]["ancora_viva"] == 6.0
 
 
 def test_la_rete_giu_non_decide_niente_e_si_riprova_al_giro_dopo():
@@ -672,9 +680,11 @@ def test_il_banco_espone_order_state_by_bet_id_con_le_chiavi_del_vero():
     st = m.order_state_by_bet_id("B7")
     # LE STESSE CHIAVI di `omega_market.order_state_by_bet_id`, nemmeno una in piu'
     # 02/10 (riconciliazione tradotti): anche i termini CHIESTI dell'ordine.
+    # 08/10 (W3a): e chi l'ha tolto dal mercato (annullato / scaduto), come il vero.
     assert set(st) == {"found", "size_matched", "avg_price_matched",
                        "size_remaining", "matched_date", "placed_date",
-                       "selection_id", "side", "price_requested", "size_requested"}
+                       "selection_id", "side", "price_requested", "size_requested",
+                       "size_cancelled", "size_lapsed"}
     assert st["found"] is True and st["size_remaining"] == 0.0
 
 

@@ -1,0 +1,28 @@
+WARNING:flumine.controls:Order has violated: MARKET_VALIDATION Error: Market is not open
+CRITICAL:mike:[mike] 35760084: Betfair ha RIFIUTATO la lay appoggiata ko_green-0-3 (EXPIRED): nessun ordine a mercato
+CRITICAL:mike:[mike] 35760084: gamba under_entry-0-1 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35760084: gamba under_entry-0-2 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35760084: gamba under_entry-0-3 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35760084: gamba under_entry-0-1 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35760084: gamba under_entry-0-2 con esito IGNOTO → riconciliazione (nessun rientro)
+CRITICAL:mike:[mike] 35760084: gamba under_entry-0-3 con esito IGNOTO → riconciliazione (nessun rientro)
+WARNING:flumine.controls:Order has violated: MARKET_VALIDATION Error: Market is not open
+CRITICAL:mike:[mike] 35760084: Betfair ha RIFIUTATO la lay appoggiata ko_green-0-6 (EXPIRED): nessun ordine a mercato
+CRITICAL:mike:[mike] 35760084: intervento DELL'UTENTE (fuori dall'app (stream ordini), chiusa) -> il bot non gestisce piu' questa partita
+CRITICAL:mike:[mike] 35760084: intervento DELL'UTENTE (fuori dall'app (stream ordini), ridotta) -> il bot non gestisce piu' questa partita
+CRITICAL:mike:[mike] 35760084: intervento DELL'UTENTE (dall'app (ordine manuale sul runner paper), chiusa) -> il bot non gestisce piu' questa partita
+CRITICAL:mike:[mike] 35760084: intervento DELL'UTENTE (fuori dall'app, annullata) -> il bot non gestisce piu' questa partita
+WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/mike non disponibile (socket del banco chiuso)
+CRITICAL:mike:[mike] 35760084: COPERTURA BLOCCATA dopo 1 rifiuti 'CANCELLED_NOT_PLACED' (over_cover-0-5)
+CRITICAL:mike:[mike] 35760084: COPERTURA BLOCCATA dopo 1 rifiuti 'CANCELLED_NOT_PLACED' (over_cover-0-5)
+CRITICAL:mike:[mike] 35760084: chiusura parziale: residuo scoperto su OU35/UNDER banca 0.05 @ 1.77; OU45/UNDER punta 0.42 @ 1.3 (chiusura manuale: l'ordine che chiude e' sotto il minimo Betfair .it) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35760084: Betfair ha RIFIUTATO la lay appoggiata under_green-0-2 (EXPIRED): nessun ordine a mercato
+CRITICAL:mike:[mike] 35760084: Betfair ha RIFIUTATO la lay appoggiata ko_green-0-3 (EXPIRED): nessun ordine a mercato
+CRITICAL:mike:[mike] 35760084: aperture FERME (live_kill_switch_attivo, live): nessuna riproposizione finche' la causa non cambia
+WARNING:mike:[mike] 35760084: aperture RIPRESE (prima: live_kill_switch_attivo)
+CRITICAL:mike:[mike] lettura del feed FALLITA: si ritenta a ogni giro, nessuna partita viene data per sparita
+WARNING:mike:[mike] lettura del feed RIPRESA dopo 720 s
+CRITICAL:mike:[mike] 35760084: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.25 @ 3.95 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35760084: chiusura parziale: residuo scoperto su OU45/UNDER punta 0.25 @ 3.95 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35760084: chiusura parziale: residuo scoperto su OU35/UNDER: nessun prezzo; OU45/UNDER punta 0.01 @ 2.58 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente
+CRITICAL:mike:[mike] 35760084: chiusura parziale: residuo scoperto su OU35/UNDER banca 0.04 @ 8.8; OU45/UNDER punta 0.06 @ 2.54 (nessun ordine piazzabile: sotto il minimo Betfair .it o senza prezzo) - stato LIVE_CLOSING, proposta all'utente

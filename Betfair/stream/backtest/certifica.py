@@ -104,9 +104,16 @@ def trasporto_dello_scenario(obbligati: Dict[str, str], scenario: str,
     """Il trasporto su cui gira lo scenario: quello richiesto, salvo che il bot
     dichiari per quello scenario un trasporto obbligato e si sia chiesto il solo
     ``canale`` (con ``entrambi`` la coda c'e' gia', e il canale resta per la
-    parita')."""
+    parita').
+
+    08/10 (W3a), additivo: uno scenario che esiste SOLO sul canale (obbligato
+    ``canale``: Mike in PAPER) ci va anche quando il trasporto non e' stato
+    chiesto (``--scenari tutti`` di sempre); gli obbligati ``coda`` restano
+    come prima."""
     if richiesto == "canale" and scenario in (obbligati or {}):
         return str(obbligati[scenario])
+    if richiesto is None and (obbligati or {}).get(scenario) == "canale":
+        return "canale"
     return tr
 
 

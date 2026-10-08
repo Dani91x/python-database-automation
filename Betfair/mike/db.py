@@ -212,6 +212,17 @@ def trades_for_event(event_id: str) -> list[dict[str, Any]]:
             .order("placed_at", desc=False).execute().data or [])
 
 
+def proprietari_bot_conto(bet_ids: list[str], modo: str = "live") -> dict[str, str]:
+    """08/10 (W3a) - bet_id -> motivo, per gli ordini che il DB dice di un BOT
+    (modo 'live' o 'paper'). La lettura UNICA del cantiere W2
+    (``esposizione_fuori_bot.proprietari_bot``: tabelle dei bot, specchio, riga
+    della coda del runner). SOLA LETTURA; SOLLEVA se una lettura fallisce (chi
+    chiama tiene la selezione in verifica, mai un "utente" dedotto da un guasto)."""
+    from Betfair.stream.trading import esposizione_fuori_bot as _EFB
+
+    return _EFB.proprietari_bot(_sb(), bet_ids, mode=modo)
+
+
 def proprietari_bet(bet_ids: list[str]) -> dict[str, str]:
     """30/09 (P&L REALE DEL CONTO) - bet_id -> chi l'ha piazzato, per le
     scommesse regolate sui mercati di Mike che NON sono righe di Mike. Stessa

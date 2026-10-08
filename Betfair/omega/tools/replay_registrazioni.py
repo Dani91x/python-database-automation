@@ -1022,6 +1022,14 @@ SCENARI: Dict[str, Dict[str, Any]] = {
     # lo scenario non aspetta due minuti di tempo di mercato per provare una
     # cosa che in produzione ha la sua cadenza dichiarata.
     "chiuso-fuori-app": dict(_APRE, conto_every_s=0.0),
+    # 08/10 (W3a): la stessa chiusura (e la RIDUZIONE a meta') vista dal CANALE
+    # del conto, con la cadenza VERA della REST (``conto_every_s`` di
+    # produzione, 120 s): il canale sveglia il giro e fa rileggere la REST
+    # subito. Motore v2 e banda allargata come ``apertura``: e' lo scenario in
+    # cui su 35760084 Omega apre davvero (senza posizione non c'e' niente da
+    # chiudere e lo scenario non sarebbe esercitato).
+    "chiuso-fuori-app-canale": dict(_APRE, strategy_version=2),
+    "ridotto-fuori-app-canale": dict(_APRE, strategy_version=2),
     # ---- V4 (17/09): IL MOTORE DI DEFAULT, SUL PERCORSO DI PRODUZIONE ----
     # Dal 17/09 `strategy_version` vale 3 di default: non c'e' niente da
     # accendere qui. Il servizio sceglie e dimensiona con `omega_v3`
@@ -1102,6 +1110,17 @@ SCENARI_DESCRITTI: Dict[str, str] = {
                 "giornata-reale + banda di quota allargata a 500 (manopola della "
                 "whitelist): su 35760084 l'unico risultato sovrapprezzato dal "
                 "mercato e' il '3 - 3' a 300, fuori dal price_max di 120",
+    # 08/10 (W3a): i due scenari del canale subito dopo `apertura` (prima del
+    # cantiere 7 uno scenario v2 LIVE dopo `paper` non apriva piu': cache di
+    # processo non azzerate, RB-5; l'ordine resta, ora e' solo leggibilita').
+    "chiuso-fuori-app-canale": "MOTORE v2 (come `apertura`): l'utente chiude dal SITO la "
+                               "posizione del bot; il runner LIVE la pubblica sul canale "
+                               "del conto, il canale SVEGLIA il giro e la REST conferma "
+                               "subito, fuori dalla cadenza di 120 s (E5, E5-CANALE, 08/10)",
+    "ridotto-fuori-app-canale": "MOTORE v2 (come `apertura`): l'utente RIDUCE dal sito "
+                                "META' della posizione del bot: e' un intervento, il bot "
+                                "si ferma al primo giro dopo il canale (come='ridotta', "
+                                "E5, E5-CANALE, E5-RIDOTTA, 08/10)",
     "paper": "MOTORE v2 LEGACY in modalita' PAPER, stessi parametri di `apertura`: "
              "il paper passa dalla PORTA DEL RUNNER del banco (canale di comando "
              "-> MotoreOrdini -> flumine, bet delay e FOK come il live); si "
@@ -1280,6 +1299,7 @@ def _crea_strategia():
                      lay_manuale: bool = False, cashout_globale: bool = False,
                      chiude_fuori_app: bool = False, firma_proposte: bool = False,
                      ogni_ms: int = 0, riavvia: bool = False,
+                     conto_canale: bool = False, ridotto: bool = False,
                      dal_ms: Optional[int] = None, **kw: Any) -> None:
             self.event_id = str(event_id)
             # 07/10 (Applica bot): l'istante in cui l'utente ACCENDE Omega; fino a
@@ -1313,6 +1333,24 @@ def _crea_strategia():
             self.fuori_app_giro: Optional[int] = None
             self.fuori_app_dettaglio: Dict[str, Any] = {}
             self.fuori_app_ordini: List[Any] = []
+            # 08/10 (W3a): la chiusura (o la RIDUZIONE a meta') dell'utente arriva
+            # ANCHE dal canale del conto (runner LIVE -> stream ordini -> topic
+            # ``conto`` -> client VERO di Omega), e il canale SVEGLIA il giro
+            self.ridotto = bool(ridotto)
+            self.conto_canale = bool(conto_canale)
+            self._client_conto: Optional[Any] = None
+            self._abbinato_sul_canale = 0.0
+            self.canale_ms: Optional[int] = None
+            self.giro_dopo_canale_ms: Optional[int] = None
+            self.messaggi_canale = 0
+            self.sveglie_conto = 0
+            if self.conto_canale:
+                from ...stream import esiti_ordini_canale as _EO
+
+                memoria = _EO.MemoriaConto()
+                S._CONTO.installa(memoria)
+                self._client_conto = _EO.ClientEsiti(memoria, topic=_EO.TOPIC_CONTO_TUTTI,
+                                                     porta_ws=1)
             # scenario `chiusura-abbinata-in-parte`: la sorveglianza CP del
             # banco comune (None in tutti gli altri scenari)
             self.sorveglianza_cp: Optional[CP.Sorveglianza] = None
@@ -1393,6 +1431,8 @@ def _crea_strategia():
             self.mercato.ora_ms = pt_ms
             self.banco.applica_book(market_book)
             self.referto.tick += 1
+            if self.conto_canale:
+                self._conto_sul_canale(pt_ms)
             if pt_ms < self._prossimo_giro_ms:
                 return
             self._ultimo_ms = pt_ms
@@ -1467,6 +1507,13 @@ def _crea_strategia():
             #    rileggendo la POSIZIONE DI CONTO.
             if self.scenario_fuori_app and not self.fuori_app_fatto:
                 self._chiudi_fuori_app()
+            if self.conto_canale:
+                # 08/10: un abbinamento dell'ordine dell'utente in QUESTO giro va
+                # sul canale prima che il servizio giri
+                self._conto_sul_canale(pt_ms)
+                if (self.canale_ms is not None and self.giro_dopo_canale_ms is None
+                        and int(pt_ms) >= int(self.canale_ms)):
+                    self.giro_dopo_canale_ms = int(pt_ms)
             # 2-septies) IL TRADER FIRMA LA PROPOSTA (scenario
             #    `proposta-approvata`). E' il gesto della Control Room, fatto
             #    come lo fa la RPC vera: 'proposed' -> 'pending', payload
@@ -1706,10 +1753,21 @@ def _crea_strategia():
             market_id = str(riga.get("market_id") or "")
             sid = int(riga.get("selection_id") or 0)
             size = round(float(riga.get("size") or 0.0), 2)
+            if self.ridotto:
+                # 08/10 (W3a): la RIDUZIONE dal sito: meta' della posizione
+                size = round(size * 0.5, 2)
             residuo = round(size - self._abbinato_fuori_app(), 2)
             if not market_id or residuo <= 0.01:
                 return
             lato = "back" if str(riga.get("side") or "lay").lower() == "lay" else "lay"
+            if self.conto_canale and lato == "back":
+                # 08/10 (W3a): la PUNTA dell'utente dal sito rispetta la regola
+                # delle punte .it (>= 1,00, multipli di 0,50: il banco rifiuta le
+                # altre, INVALID_BET_SIZE): per chiudere tutto si arrotonda per
+                # eccesso, per ridurre per difetto
+                passo = (math.floor if self.ridotto else math.ceil)(residuo * 2.0) / 2.0
+                residuo = max(1.0, passo)
+                size = round(self._abbinato_fuori_app() + residuo, 2)
             book = self.mercato.read_book(market_id)
             prezzo = None
             for r in ((book or {}).get("runners") or []):
@@ -1736,6 +1794,33 @@ def _crea_strategia():
             }
             self.db.log("replay_chiuso_fuori_app", dict(self.fuori_app_dettaglio))
             self._verifica_fuori_app()
+
+        def _conto_sul_canale(self, pt_ms: int) -> None:
+            """08/10 (W3a) - Cio' che fa il runner LIVE quando lo stream ordini porta
+            un abbinamento dell'ordine dell'utente: pubblica il conto del mercato
+            (porta del banco comune ``pubblica_conto_al_client``) e il client di
+            Omega lo incassa. Se la memoria alza la SVEGLIA di Omega, il giro
+            successivo non aspetta la cadenza: parte al primo book dopo il
+            pavimento di 1 s dall'ultimo giro (``_dormi_o_sveglia`` di produzione:
+            fette di 1 s)."""
+            if not self.fuori_app_ordini:
+                return
+            abbinato = self._abbinato_fuori_app()
+            if abbinato <= self._abbinato_sul_canale + 1e-9:
+                return
+            self._abbinato_sul_canale = abbinato
+            from ...stream.backtest.banco_comune import pubblica_conto_al_client
+
+            mid = str(self.fuori_app_dettaglio.get("market_id") or "")
+            n = pubblica_conto_al_client(self.mercato, mid, int(pt_ms), self._client_conto)
+            self.messaggi_canale += n
+            self._verifica_fuori_app()
+            if n and self.fuori_app_fatto and self.canale_ms is None:
+                self.canale_ms = int(pt_ms)
+            if S._CONTO.sveglia_alzata():
+                self.sveglie_conto += 1
+                self._prossimo_giro_ms = min(self._prossimo_giro_ms,
+                                             max(int(pt_ms), self._ultimo_ms + 1000))
 
         def _abbinato_fuori_app(self) -> float:
             tot = 0.0
@@ -2103,9 +2188,13 @@ def _certifica_evento(event_id: str, *, data_dir: str,
                       guasti: int = 0, rifiuti: int = 0,
                       riavvia: bool = False,
                       chiusura_parziale: bool = False,
+                      conto_canale: bool = False, ridotto: bool = False,
                       dal_ms: Optional[int] = None) -> CERT.Referto:
     """Fa rivivere a Omega una partita registrata e ritorna il referto."""
     from flumine import FlumineSimulation
+
+    # 08/10 (W3a): il canale del conto lo monta SOLO lo scenario che lo esercita
+    S._CONTO.installa(None)
 
     par = omega_config.resolve_params(dict(params or {}))
     raw = os.path.join(data_dir, str(event_id), f"{event_id}.raw.jsonl")
@@ -2140,6 +2229,7 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         lay_manuale=lay_manuale, cashout_globale=cashout_globale,
         chiude_fuori_app=chiude_fuori_app, firma_proposte=firma_proposte,
         ogni_ms=ogni_ms, riavvia=riavvia, dal_ms=dal_ms,
+        conto_canale=conto_canale, ridotto=ridotto,
         market_filter={"markets": [raw]},
         # I TETTI DI FLUMINE VANNO APERTI: qui il rischio lo governa Omega coi
         # suoi parametri, ed e' quello che si vuole misurare.
@@ -2192,6 +2282,8 @@ def _certifica_evento(event_id: str, *, data_dir: str,
         strategia.giri_dopo_la_partita()
 
     out = strategia.chiudi()
+    if conto_canale:
+        _nota_conto_canale(out, strategia)
     # 07/10: le righe ``betfair_live_orders`` + ``_ms`` (contratto del banco)
     out.ordini_specchio = specchio.chiudi(VB.mercati_del_quadro(quadro))
     out.ordini_piazzati = len(strategia.mercato.ordini)
@@ -2648,6 +2740,54 @@ def _porta_del_runner_per_il_paper(mode: str) -> Iterator[None]:
     with TRA.contesto("omega", "canale"):
         yield
 
+# 08/10 (W3a) - gli scenari del canale del conto
+SCENARIO_CHIUSO_CANALE = "chiuso-fuori-app-canale"
+SCENARIO_RIDOTTO_CANALE = "ridotto-fuori-app-canale"
+SCENARI_CONTO_CANALE = (SCENARIO_CHIUSO_CANALE, SCENARIO_RIDOTTO_CANALE)
+
+
+def _nota_conto_canale(out: CERT.Referto, st: Any) -> None:
+    """08/10 (W3a): che cosa ha visto Omega dal canale del conto, e quando. Il
+    verdetto deve arrivare AL PRIMO giro dopo la pubblicazione (E5-CANALE, come
+    R3-CANALE di Mike); nella riduzione deve dire ``come='ridotta'``
+    (E5-RIDOTTA)."""
+    from ...stream.backtest.banco_comune import latenza_dal_canale
+
+    chiusi = [p for k, p, _e in (st.db.attivita or [])
+              if k == "chiuso_dall_utente" and (p or {}).get("selezioni")]
+    visto = dict(chiusi[0]) if chiusi else {}
+    sel0 = ((visto.get("selezioni") or [{}])[0]) or {}
+    dett = {"dove": visto.get("dove"), "latenza_ms": sel0.get("latenza_ms")}
+    attesa = (st.giro_dopo_canale_ms - st.canale_ms
+              if st.canale_ms is not None and st.giro_dopo_canale_ms is not None else None)
+    out.note.append(
+        f"canale del conto: messaggi {st.messaggi_canale} | sveglie del giro "
+        f"{st.sveglie_conto} | verdetto {visto.get('come')!r} '{visto.get('dove')}' | "
+        f"latenza dallo stream al verdetto {(sel0.get('latenza_ms') or {}).get('dal_runner')} "
+        f"ms, di cui {attesa} ms di attesa del primo giro (cadenza della REST "
+        f"{float(st.params.get('conto_every_s') or 0.0):.0f} s)")
+    if st.canale_ms is None:
+        # nessuna posizione del bot -> nessun intervento dell'utente da
+        # pubblicare: lo scenario NON ha esercitato cio' per cui esiste (NE, mai OK)
+        # (il Referto di Omega non ha il campo: lo legge `certifica.segno_referto`
+        # con getattr, come quello di Mike)
+        nel = list(getattr(out, "non_esercitato", None) or [])
+        nel.append("canale del conto mai sollecitato: Omega non ha aperto una "
+                   "posizione da chiudere/ridurre (E5-CANALE non giudicato)")
+        out.non_esercitato = nel
+        return
+    motivo = latenza_dal_canale(dett, st.canale_ms, st.giro_dopo_canale_ms)
+    if motivo:
+        out.violazioni.append(CERT.Violazione(
+            "E5-CANALE", "l'intervento dell'utente arrivato dallo stream ordini si vede al "
+                         "primo giro del servizio, confermato dal conto (08/10)",
+            motivo, "LIVE"))
+    if st.ridotto and visto.get("come") != "ridotta":
+        out.violazioni.append(CERT.Violazione(
+            "E5-RIDOTTA", "una riduzione PARZIALE dal sito e' un intervento dell'utente: "
+                          "il bot lo sa e non fa altro (08/10)",
+            f"chiuso_dall_utente {visto.get('come')!r}", "LIVE"))
+
 
 def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
                        ogni_ms: int = 0, campioni_diff: int = 0,
@@ -2680,7 +2820,9 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             goal=goal, ferma_su_posizione=(scenario in ("bot-fermo", "v4-bot-fermo")),
             lay_manuale=(scenario == "manuale-e-bot"),
             cashout_globale=(scenario in ("cashout-globale", CP.SCENARIO)),
-            chiude_fuori_app=(scenario == "chiuso-fuori-app"),
+            chiude_fuori_app=(scenario in ("chiuso-fuori-app",) + SCENARI_CONTO_CANALE),
+            conto_canale=(scenario in SCENARI_CONTO_CANALE),
+            ridotto=(scenario == SCENARIO_RIDOTTO_CANALE),
             firma_proposte=(scenario == "proposta-approvata"),
             ogni_ms=int(ogni_ms or 0), invecchia_s=vecchio,
             guasti=(QUANTI_GUASTI if scenario == "esiti-ignoti" else 0),

@@ -209,7 +209,10 @@ def test_trasporto_obbligato_solo_col_canale_richiesto():
 def test_registro_mike_dichiara_il_trasporto_obbligato():
     from Betfair.stream.backtest import registro_bot as REG
 
-    assert REG.bot("mike").trasporto_obbligato() == {"chiuso-fuori-app": "coda"}
+    # 08/10 (W3a): tre scenari nuovi, due sul conto live (coda) e uno in paper (canale)
+    assert REG.bot("mike").trasporto_obbligato() == {
+        "chiuso-fuori-app": "coda", "ridotto-fuori-app": "coda",
+        "annullato-dal-sito": "coda", "manuale-app-paper": "canale"}
     assert REG.bot("omega").trasporto_obbligato() == {}
 
 

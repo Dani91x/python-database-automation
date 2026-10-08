@@ -228,12 +228,20 @@ def test_la_rete_giu_alla_conferma_non_decide_e_riprova_al_giro_dopo():
 
 
 def test_la_stessa_fotografia_non_fa_rileggere_la_REST_due_volte():
-    """Una riduzione PARZIALE dell'utente: il canale la segnala, la REST la
-    conferma e la dichiara (come sempre). Al giro dopo, senza fotografie nuove,
-    nessuna REST fuori cadenza."""
+    """Il canale segnala una riduzione PARZIALE che la REST NON conferma (il
+    conto ha un back dell'utente di prima dell'iscrizione dello stream: la
+    posizione di Mike e' intera). Al giro dopo, senza fotografie nuove,
+    nessuna REST fuori cadenza.
+
+    08/10 (W3a): prima questo test usava una riduzione parziale CONFERMATA e
+    asseriva che Mike continuasse; dall'ordine dell'utente dell'08/10 una
+    riduzione parziale confermata FERMA Mike (vedi
+    ``test_mike_w3a_consapevolezza_2026_10_08.py``). La proprieta' provata qui
+    (una fotografia gia' giudicata non fa rileggere la REST) resta la stessa."""
     client = _mike_col_canale()
     db = DbFinto()
-    mercato = MercatoConto(morti=[dict(MIKE_BACK)])
+    back_utente_vecchio = ordine_conto(ref=None, side="back", abbinato=4.0, bet_id="U0")
+    mercato = MercatoConto(morti=[dict(MIKE_BACK), back_utente_vecchio])
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
     t0 = KO + 1000.0
     _giro(mercato, ctx, t0, db=db)
@@ -244,7 +252,7 @@ def test_la_stessa_fotografia_non_fa_rileggere_la_REST_due_volte():
     letture = len(mercato.letture)
     assert _giro(mercato, ctx, t0 + 1.0, db=db) is False
     assert len(mercato.letture) == letture + 2
-    assert db.payload("posizione_di_conto")["verdetto"] == "ridotta_dall_utente"
+    assert db.payload("posizione_di_conto")["verdetto"] == "canale_non_confermato"
     assert _giro(mercato, ctx, t0 + 2.0, db=db) is False
     assert len(mercato.letture) == letture + 2, "nessuna fotografia nuova: niente REST"
 
@@ -253,10 +261,17 @@ def test_lo_snap_ripetuto_dello_stream_non_fa_rileggere_la_REST():
     """flumine rifa' la fotografia di ogni mercato aperto ogni 3 s quando ha
     ordini vivi (``OrderStream.handle_output``, ``SNAP_DELTA``): la STESSA
     riduzione parziale ripubblicata (versione nuova, stesso contenuto) non deve
-    far rileggere la REST a ogni snap. Una riduzione DIVERSA si'."""
+    far rileggere la REST a ogni snap. Una riduzione DIVERSA si'.
+
+    08/10 (W3a): il conto ha un back dell'utente di PRIMA dell'iscrizione dello
+    stream (4,00), cosi' la prima riduzione (4) NON e' confermata dalla REST e
+    Mike resta acceso: dall'08/10 una riduzione parziale confermata lo ferma, e
+    la proprieta' degli snap ripetuti va provata su un Mike ancora acceso."""
     client = _mike_col_canale()
     db = DbFinto()
-    mercato = MercatoConto(morti=[dict(MIKE_BACK)])
+    mercato = MercatoConto(morti=[dict(MIKE_BACK),
+                                  ordine_conto(ref=None, side="back", abbinato=4.0,
+                                               bet_id="U0")])
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=[gamba_ingresso()])
     t0 = KO + 1000.0
     _giro(mercato, ctx, t0, db=db)

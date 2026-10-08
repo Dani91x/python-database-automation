@@ -1495,6 +1495,12 @@ def order_state_by_bet_id(bet_id: str) -> dict:
                 "size_remaining": float(o.get("sizeRemaining") or 0.0),
                 "matched_date": o.get("matchedDate"),
                 "placed_date": o.get("placedDate"),
+                # 08/10 (W3a), chiavi ADDITIVE: chi l'ha tolto dal mercato. Un
+                # annullo che il bot non ha chiesto (sito, app) e' un intervento
+                # dell'utente, non una scadenza: senza ``sizeCancelled`` le due
+                # cose qui erano indistinguibili.
+                "size_cancelled": float(o.get("sizeCancelled") or 0.0),
+                "size_lapsed": float(o.get("sizeLapsed") or 0.0),
                 **_identita_ordine(o, (o.get("priceSize") or {}).get("price"),
                                    (o.get("priceSize") or {}).get("size")),
             }
@@ -1517,6 +1523,13 @@ def order_state_by_bet_id(bet_id: str) -> dict:
                     "matched_date": o.get("lastMatchedDate"),
                     "placed_date": o.get("placedDate"),
                     "settled_date": o.get("settledDate"),
+                    # 08/10 (W3a), chiavi ADDITIVE: lo stato del regolato e, per
+                    # un ordine ANNULLATO, quanto (``ClearedOrderSummary.
+                    # sizeCancelled``); per gli altri stati 0 (una scadenza non e'
+                    # un annullo).
+                    "bet_status": status,
+                    "size_cancelled": (float(o.get("sizeCancelled") or 0.0)
+                                       if status == "CANCELLED" else 0.0),
                     **_identita_ordine(o, o.get("priceRequested"), None),
                 }
     return {"found": False}
@@ -1559,6 +1572,11 @@ def _riga_corrente(o: dict) -> dict:
         # (15/09: una grafia scritta in un modo e letta in un altro e' costata
         # 32 ordini reali — qui si accettano entrambe per costruzione.)
         "average_price_matched": o.get("averagePriceMatched"),
+        # 08/10 (W3a): ADDITIVA. Il ``customerStrategyRef`` dell'ordine: con il
+        # ``customer_order_ref`` e' la prima cernita di W2 per dire se un ordine
+        # ALTRUI sulla posizione di conto e' dell'utente o di un ALTRO bot
+        # (``esposizione_fuori_bot.motivo_bot_da_riferimenti``).
+        "customer_strategy_ref": o.get("customerStrategyRef"),
     }
 
 

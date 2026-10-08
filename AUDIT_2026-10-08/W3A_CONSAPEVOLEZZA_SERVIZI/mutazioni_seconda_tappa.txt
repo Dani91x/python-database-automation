@@ -1,0 +1,16 @@
+N1 i riferimenti non riconoscono l'ordine di un altro bot [Betfair/stream/esiti_ordini_canale.py]: ROSSO | 1 failed, 15 passed in 0.33s | sha 855364bc4de7dad2 -> ripristino 855364bc4de7dad2 OK
+N2 il DB dice bot ma l'ordine resta dell'utente [Betfair/stream/esiti_ordini_canale.py]: ROSSO | 1 failed, 15 passed in 0.37s | sha 855364bc4de7dad2 -> ripristino 855364bc4de7dad2 OK
+N3 DB illeggibile: l'ordine passa per dell'utente (verdetto al buio) [Betfair/stream/esiti_ordini_canale.py]: ROSSO | 1 failed, 16 passed in 0.33s | sha 855364bc4de7dad2 -> ripristino 855364bc4de7dad2 OK
+N4 Mike: la selezione in verifica si giudica lo stesso [Betfair/mike/service.py]: ROSSO | 1 failed, 19 passed in 0.97s | sha b486c750afc3907b -> ripristino b486c750afc3907b OK
+N5 Mike: la verifica non ferma i piazzamenti [Betfair/mike/service.py]: ROSSO | 1 failed, 19 passed in 0.99s | sha b486c750afc3907b -> ripristino b486c750afc3907b OK
+N6 Omega: il gruppo in verifica si giudica lo stesso [Betfair/omega/omega_service.py]: ROSSO | 1 failed, 16 passed in 1.26s | sha f24ef12057c5802d -> ripristino f24ef12057c5802d OK
+N7 Omega: le aperture ignorano la verifica [Betfair/omega/omega_service.py]: ROSSO | 1 failed, 16 passed in 1.30s | sha f24ef12057c5802d -> ripristino f24ef12057c5802d OK
+N8 Omega: green-up e proposte ignorano la verifica [Betfair/omega/omega_service.py]: ROSSO | 1 failed, 16 passed in 1.30s | sha f24ef12057c5802d -> ripristino f24ef12057c5802d OK
+N9 Omega: il gruppo in verifica aspetta i 120 s della cadenza [Betfair/omega/omega_service.py]: ROSSO | 1 failed, 16 passed in 1.20s | sha f24ef12057c5802d -> ripristino f24ef12057c5802d OK
+N10 Safe: la posizione in verifica si giudica lo stesso [Betfair/safe_strategy/bot_service.py]: ROSSO | 1 failed, 17 passed in 1.49s | sha d108ab3f4703a6d5 -> ripristino d108ab3f4703a6d5 OK
+N11 Safe: _execute piazza anche in verifica [Betfair/safe_strategy/bot_service.py]: ROSSO | 1 failed, 17 passed in 1.42s | sha d108ab3f4703a6d5 -> ripristino d108ab3f4703a6d5 OK
+N12 Safe: il rifiuto in verifica consuma un tentativo [Betfair/safe_strategy/bot_service.py]: ROSSO | 1 failed, 17 passed in 1.41s | sha d108ab3f4703a6d5 -> ripristino d108ab3f4703a6d5 OK
+N13 W2: effetto_sui_bot torna all'aritmetica in size [Betfair/stream/trading/esposizione_fuori_bot.py]: ROSSO | 1 failed, 3 passed in 0.19s | sha 20e003d7a896b556 -> ripristino 20e003d7a896b556 OK
+N14 W2: la lettura dei proprietari ignora il modo [Betfair/stream/trading/esposizione_fuori_bot.py]: ROSSO | 1 failed, 19 passed in 0.19s | sha 20e003d7a896b556 -> ripristino 20e003d7a896b556 OK
+N15 W2: il worker non rifiuta piu' la copertura che chiuderebbe un bot [Betfair/stream/live_order_worker.py]: ROSSO | 1 failed, 54 passed in 0.62s | sha d8ccec730ebd4e5b -> ripristino d8ccec730ebd4e5b OK
+DOPO IL RIPRISTINO: VERDE | 77 passed in 1.40s
