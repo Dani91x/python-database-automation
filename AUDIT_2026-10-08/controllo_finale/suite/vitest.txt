@@ -1,0 +1,672 @@
+
+ RUN  v3.2.6 /home/user/python-database-automation/frontend
+
+ ✓ src/components/controlroom/useControlRoom.test.tsx (72 tests) 4808ms
+stderr | src/pages/Mike.test.tsx > Mike page — storico senza migrazione > non mostra "is not unique" nudo ma dice quale migrazione applicare
+[storico Mike] errore del database: function public.trading_daily_history(unknown) is not unique
+
+ ✓ src/pages/Mike.test.tsx (33 tests | 1 skipped) 6220ms
+   ✓ Mike page — sezioni e schede ferme > due sezioni fisse: PRE-MATCH per KO crescente, poi LIVE  488ms
+   ✓ Mike page — sezioni e schede ferme > le schede NON si muovono quando cambiano fase (e il realtime è debounced)  308ms
+   ✓ Mike page — Operazioni, Risultati, Attività, KPI > tab Trade: nota del tetto di 500 righe, ✋ sulle chiusure manuali e VOID per mercato  976ms
+ ✓ src/lib/interruttori.test.ts (74 tests) 39ms
+ ✓ src/lib/safeBot.test.ts (99 tests) 43ms
+ ✓ src/lib/safeStrategy.test.ts (89 tests) 62ms
+stderr | src/lib/mike.test.ts > mike storico: errore LEGGIBILE senza la migrazione (R2) > gli errori di firma/RPC diventano «aggiornamento dello storico da applicare», senza nomi del database
+[storico Mike] errore del database: function public.trading_daily_history(unknown, unknown) is not unique
+[storico Mike] errore del database: function public.trading_daily_history(unknown, unknown) is not unique
+[storico Mike] errore del database: function public.trading_daily_history(unknown, unknown) is not unique
+[storico Mike] errore del database: Could not find the function public.get_mike_daily(p_from, p_to)
+[storico Mike] errore del database: Could not find the function public.get_mike_daily(p_from, p_to)
+[storico Mike] errore del database: Could not find the function public.get_mike_daily(p_from, p_to)
+[storico Mike] errore del database: function get_mike_day_trades does not exist
+[storico Mike] errore del database: function get_mike_day_trades does not exist
+[storico Mike] errore del database: function get_mike_day_trades does not exist
+[storico Mike] errore del database: tabella non ammessa: mike_trades
+[storico Mike] errore del database: tabella non ammessa: mike_trades
+[storico Mike] errore del database: tabella non ammessa: mike_trades
+[storico Mike] errore del database: attribuzione non valida: placed
+[storico Mike] errore del database: attribuzione non valida: placed
+[storico Mike] errore del database: attribuzione non valida: placed
+
+stderr | src/lib/mike.test.ts > mike storico: errore LEGGIBILE senza la migrazione (R2) > withMikeHistoryError riscrive l’errore e lascia passare i dati
+[storico Mike] errore del database: function public.trading_day_trades(...) is not unique
+
+ ✓ src/lib/mike.test.ts (58 tests) 72ms
+ ✓ src/lib/controlRoom.test.ts (89 tests) 36ms
+ ✓ src/lib/dailyHistory.test.ts (76 tests) 54ms
+ ✓ src/components/safestrategy/BotParamsSheet.test.tsx (47 tests) 7482ms
+   ✓ BotParamsSheet — gruppi e valori > Rischio: legge params.risk (valori DB + default per i mancanti)  497ms
+   ✓ BotParamsSheet — gruppi e valori > 24/09 da «automatico» si torna ad «Avvisa e proponi» con un clic  304ms
+   ✓ BotParamsSheet — gruppi e valori > salvataggio: chiavi ignote preservate, toggles/risk/exits/variants espliciti  493ms
+   ✓ BotParamsSheet — H-14 varianti > salvare senza nessuna strategia selezionata viene RIFIUTATO  480ms
+   ✓ BotParamsSheet - 35 campo numerico svuotato: chiave assente, mai "" > nel foglio vero: si svuotano TUTTI i campi numerici e si salva -> nessuna chiave numerica, nessun ""  1326ms
+stderr | src/pages/ControlRoom.test.tsx > W1 - ritorno: solo i punti della Control Room > un punto della Control Room riapre la sua scheda e si consuma
+Not implemented: Window's scrollTo() method
+
+ ✓ src/pages/ControlRoom.test.tsx (146 tests) 18695ms
+   ✓ modalità — soldi veri o simulati, senza possibilità di equivoco > tutto in paper: il banner lo dice, e NON parla di soldi veri  408ms
+   ✓ W_T/P15 - Posizioni aperte da trader > due elenchi: LIVE sopra (Follo, Farul) e PROVA sotto (Milan-Inter); linguetta «2 LIVE · 1 prova»  364ms
+   ✓ TAB APERTE: stessa scheda di Live, comando di chiusura ancora raggiungibile (Task 5) > il comando Chiudi chiama vm.chiudi con la RIGA (bot, id, partita, modalita, stato) - B16  591ms
+   ✓ W1 - ritorno: solo i punti della Control Room > un punto del Cash Out: scheda di serie (Live) e il punto resta al Cash Out  325ms
+ ✓ src/components/controlroom/PannelloBot.test.tsx (48 tests) 1427ms
+ ✓ src/pages/Omega.test.tsx (40 tests) 5737ms
+   ✓ Omega dashboard > mostra header OMEGA e stato IN CORSA  389ms
+   ✓ Omega — green-up automatico > pannello parametri: gruppi, green-up, default del SERVIZIO e clamp dichiarato  374ms
+   ✓ Omega — green-up automatico > M-09: un valore fuori range viene clampato e DICHIARATO  319ms
+   ✓ Omega — green-up automatico > H-07: "Salva" manda i parametri del SERVIZIO + le modifiche, mai i default della UI  313ms
+ ✓ src/pages/SafeStrategy.test.tsx (28 tests) 6050ms
+   ✓ pagina Safe Strategy > mostra intestazione, stato bot e modalita PAPER  466ms
+   ✓ pagina Safe Strategy > la tab Trade elenca il trade aperto col cash out  391ms
+   ✓ Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2) > pagina LIVE ma trade paper: nessuna doppia conferma "soldi veri"  553ms
+   ✓ Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2) > pagina PAPER ma trade live: doppia conferma e avviso soldi veri  319ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > chip per tipo con conteggi; il filtro tipo isola la combinazione  346ms
+ ✓ src/lib/safeBot.contracts.test.ts (51 tests) 25ms
+ ✓ src/components/trading/designSystem.test.tsx (52 tests) 1181ms
+ ✓ src/lib/cashOutPartita.test.ts (37 tests) 19ms
+ ✓ src/components/controlroom/SchedaPartita.test.tsx (40 tests) 735ms
+ ✓ src/pages/CashOut.test.tsx (21 tests) 2180ms
+   ✓ una scatola per partita > il pulsante di Mike manda il comando di OGGI (vm.chiudi con la riga di Mike) dopo la conferma live  497ms
+   ✓ ordini fuori dai bot (sito, app) > con il prezzo: «se chiudo ora» con la stessa matematica; un clic arma, la conferma (inerte) manda sendGreenupFuoriBot per QUELLA selezione  462ms
+ ✓ src/components/live/LadderView.test.tsx (36 tests) 5156ms
+   ✓ LadderView > il column-picker nasconde una colonna e la persiste per-sport  467ms
+ ✓ src/lib/replayOperazioni.test.ts (29 tests) 78ms
+ ✓ src/lib/replayVerificaBarra.test.ts (41 tests) 445ms
+ ✓ src/components/controlroom/testata/FasciaStop.test.tsx (42 tests) 761ms
+ ↓ src/certification/mike.cert.test.tsx (6 tests | 6 skipped)
+ ✓ src/lib/posizioniChiuse.test.ts (46 tests) 20ms
+ ✓ src/components/mike/MikeMatchCard.test.tsx (31 tests) 1361ms
+ ✓ src/components/controlroom/ResiduiB17.schede.test.tsx (15 tests) 184ms
+ ✓ src/lib/replayVerificaBarra.classi.test.ts (20 tests) 452ms
+ ✓ src/pages/SafeStrategy.modalita.test.tsx (22 tests) 2943ms
+   ✓ CERT. 13/09 — la modalità mostrata è quella del SERVIZIO > i KPI del P&L dichiarano la modalità (paper e live non si sommano)  388ms
+   ✓ CERT. 13/09 — i filtri dicono quale è attivo > «Confidenza minima» e «Lato» hanno aria-pressed come gli altri  304ms
+ ✓ src/lib/omega.test.ts (43 tests) 48ms
+ ✓ src/pages/SafeStrategy.storico.test.tsx (17 tests) 3890ms
+   ✓ Safe Strategy — giornata operativa e uscite > il KPI "P&L oggi" dichiara la giornata operativa (Europe/Rome)  426ms
+   ✓ Safe Strategy — giornata operativa e uscite > la tabella trade mostra il badge di uscita su apertura e chiusura  348ms
+   ✓ Safe Strategy — giornata operativa e uscite > pannello parametri: sezione Uscite automatiche legge params.exits e li preserva al salvataggio  662ms
+   ✓ Safe Strategy — tab Trade: solo la giornata operativa (come Omega) > una posizione di ieri già regolata compare solo con "mostra tutte"; una di ieri ancora viva resta visibile  471ms
+   ✓ Safe Strategy — tab Storico > monta lo storico con i fetcher Safe; il filtro sport ricarica con lo sport  356ms
+   ✓ Safe Strategy — tab Storico > dal dettaglio di una posizione viva si torna al tab Trade dello sport  380ms
+ ✓ src/pages/StoricoSport.test.tsx (27 tests) 3050ms
+   ✓ storico calcio: i profitti per bot, separati per moneta > A-01 (01/10): NESSUNA cifra dell'altra moneta, in nessuna delle due viste  350ms
+ ✓ src/lib/liveOrders.test.ts (60 tests) 9073ms
+   ✓ sendCashoutEvent > fraction totale (default) → action cashout_event senza params  1002ms
+   ✓ sendCashoutEvent > fraction parziale → params.fraction arrotondata  1004ms
+   ✓ sendDutch v2 (target + pricing) > target → params.mode=target, target_profit, niente total_stake  1009ms
+   ✓ sendDutch v2 (target + pricing) > nominated → params.pricing e nominated_price presenti  1001ms
+   ✓ sendGreenup / sendCashoutAll / sendCashoutEvent — nuovi params > sendGreenup inoltra params.amount  1002ms
+   ✓ sendGreenup / sendCashoutAll / sendCashoutEvent — nuovi params > sendCashoutAll con equal → params.equal true  1002ms
+   ✓ sendGreenup / sendCashoutAll / sendCashoutEvent — nuovi params > sendCashoutAll equal + fraction parziale → entrambi  1001ms
+   ✓ sendGreenup / sendCashoutAll / sendCashoutEvent — nuovi params > sendCashoutAll senza equal → nessun params (comportamento storico)  1002ms
+   ✓ sendGreenup / sendCashoutAll / sendCashoutEvent — nuovi params > sendCashoutEvent con equal → params.equal true  1002ms
+ ✓ src/lib/storicoSport.test.ts (37 tests) 51ms
+ ↓ src/certification/safe.cert.test.tsx (6 tests | 6 skipped)
+ ✓ src/pages/Omega.certificazione.test.tsx (17 tests) 1354ms
+ ✓ src/components/replay/ApplicaBotPanel.test.tsx (18 tests) 958ms
+   ✓ ApplicaBotPanel > bot -> scenario -> parametri: un parametro cambiato e' evidenziato e parte da solo  487ms
+ ✓ src/components/trading/DayDetail.test.tsx (21 tests) 384ms
+ ✓ src/components/controlroom/useControlRoom.righeNuove.test.tsx (16 tests) 6081ms
+   ✓ anti-tempesta: al massimo una rilettura per bot ogni 2 s > 50 righe nuove in un colpo: una lettura subito, una sola allo scadere dei 2 s  2699ms
+   ✓ anti-tempesta: al massimo una rilettura per bot ogni 2 s > la stessa riga sconosciuta ripetuta chiede UNA rilettura sola  2360ms
+ ✓ src/components/controlroom/SchedaPropostaOpportunita.test.tsx (29 tests) 321ms
+ ✓ src/components/controlroom/comandiBot.test.ts (13 tests) 13ms
+ ✓ src/components/controlroom/useControlRoom.statoCanale.test.tsx (14 tests) 6074ms
+   ✓ voce 6 - i runner dal canale > ladder dal canale = in streaming  1021ms
+   ✓ voce 6 - i runner dal canale > battito del runner calcio: l'eta' torna a zero a ogni battito, mode e streaming dal battito  2034ms
+   ✓ voce 6 - i runner dal canale > battito storto (senza ts): non e' una notizia di vita  2214ms
+ ✓ src/components/controlroom/dettaglioRiga.test.tsx (31 tests) 107ms
+ ✓ src/lib/opportunities/tier0_arb.test.ts (34 tests) 16ms
+ ✓ src/components/safestrategy/OpportunityGroup.test.tsx (22 tests) 506ms
+ ✓ src/lib/esitoAbbinamento.test.ts (36 tests) 15ms
+ ✓ src/pages/SafeStrategy.audit.test.tsx (13 tests) 5414ms
+   ✓ C-01 / H-03 — una sola giornata, una sola liability > la giornata operativa è quella dichiarata dal DB (giorno di PIAZZAMENTO)  498ms
+   ✓ M-04 — UN solo toast per POSIZIONE regolata > green-up in utile: un toast con il P&L della POSIZIONE, non due per gamba  1428ms
+   ✓ M-21 — Annulla la riserva e vedi l esito > la riserva pending si annulla dalla tabella (kind cancel)  404ms
+   ✓ M-21 — Annulla la riserva e vedi l esito > richiesta rifiutata dal servizio: notifica col motivo  1426ms
+ ✓ src/components/omega/ManualPanel.test.tsx (23 tests) 24394ms
+   ✓ ManualPanel — il payload è ESATTAMENTE il runner scelto > LAY a TARGET: market_id/selection_id/runner_name dallo snapshot, target e size=null  2049ms
+   ✓ ManualPanel — il payload è ESATTAMENTE il runner scelto > modalità STAKE: size valorizzato e target null (mai entrambi)  1783ms
+   ✓ ManualPanel — il payload è ESATTAMENTE il runner scelto > BACK usa la quota BACK del runner, non quella lay  1824ms
+   ✓ ManualPanel — il payload è ESATTAMENTE il runner scelto > «suggerisci» sceglie il punteggio in fascia [20,120] con la quota più alta  1682ms
+   ✓ ManualPanel — in LIVE si passa SEMPRE dalla conferma > LIVE: il click apre il dialog e NON piazza; la conferma piazza  1832ms
+   ✓ ManualPanel — in LIVE si passa SEMPRE dalla conferma > LIVE: «Annulla» chiude il dialog senza piazzare nulla  1797ms
+   ✓ ManualPanel — in LIVE si passa SEMPRE dalla conferma > PAPER: nessun dialog, l’ordine va in coda subito  1669ms
+   ✓ ManualPanel — mai un ordine su quote vecchie > book più vecchio di 20 s: bottone SPENTO e motivo scritto  1637ms
+   ✓ ManualPanel — mai un ordine su quote vecchie > book fresco: nessun avviso e bottone attivo  1710ms
+   ✓ ManualPanel — mai un ordine su quote vecchie > l'età del book è mostrata accanto alle quote  1629ms
+   ✓ ManualPanel — anteprima del rischio: LAY ≠ BACK > LAY dice «Liability aperta» (stake × (quota−1)), BACK dice «Rischio» (= stake)  1718ms
+   ✓ ManualPanel — anteprima del rischio: LAY ≠ BACK > i numeri dell’anteprima sono nel formato del design system  1633ms
+   ✓ ManualPanel — niente richiesta senza i dati minimi > senza runner scelto il bottone è spento  1613ms
+   ✓ ManualPanel — niente richiesta senza i dati minimi > quota azzerata: bottone SPENTO col motivo e NESSUNA richiesta  1692ms
+ ✓ src/components/controlroom/useControlRoom.provaGiornata.test.tsx (10 tests) 2625ms
+   ✓ R_G - prestazioni: la prova non si ricalcola a ogni secondo > nowMs avanza nello stesso giorno: provaGiornata e' LO STESSO oggetto; al cambio di giorno cambia  2024ms
+ ✓ src/components/controlroom/PosizioniChiuse.raggruppamento.test.tsx (22 tests) 902ms
+ ✓ src/lib/replayRegistroFasi.test.ts (23 tests) 68ms
+ ✓ src/components/live/XHedgePanel.test.tsx (22 tests) 1633ms
+ ✓ src/components/tennis/TennisBotPanel.test.tsx (13 tests) 1565ms
+   ✓ TennisBotPanel — gate ordini reali (tennis_scalper) > 1) servizio PAPER: ARMA senza toccare nulla -> nessuna conferma, arma con dry_run=false (PAPER e' sempre simulato)  376ms
+ ✓ src/components/trading/EventPnlTable.test.tsx (35 tests) 444ms
+ ✓ src/components/omega/MissionPanel.test.tsx (17 tests) 1145ms
+   ✓ MissionPanel — pulsanti Statistiche / Trading > riga evento: "Statistiche" naviga alla scheda Dashboard con ?fixture=&from=omega  318ms
+ ✓ src/components/controlroom/EsitoAbbinamento.schede.test.tsx (11 tests) 126ms
+ ✓ src/components/safestrategy/SafeTradesTable.audit.test.tsx (27 tests) 566ms
+ ✓ src/lib/ladderAlMs.test.ts (18 tests) 29ms
+ ✓ src/lib/opportunities/tier1_quasi.test.ts (25 tests) 23ms
+ ✓ src/components/controlroom/PannelloBot.strumenti.test.tsx (45 tests) 1166ms
+ ✓ src/components/controlroom/testata/salvaStop.test.ts (24 tests) 22ms
+ ✓ src/components/controlroom/useChiusuraAlMs.parita.test.tsx (7 tests) 476ms
+ ✓ src/lib/localTransport.test.ts (14 tests) 21ms
+ ✓ src/lib/soldiVeriCatena.test.ts (24 tests) 16ms
+ ✓ src/components/controlroom/useControlRoom.righeCanale.test.tsx (11 tests) 763ms
+ ↓ src/certification/omega.cert.test.tsx (4 tests | 4 skipped)
+ ✓ src/lib/opportunities/tier2_micro.test.ts (33 tests) 50ms
+ ✓ src/lib/matching.test.ts (29 tests) 25ms
+ ✓ src/lib/tradeStatus.test.ts (35 tests) 22ms
+ ✓ src/components/trading/CashOutButton.test.tsx (28 tests) 1864ms
+ ✓ src/components/controlroom/aperte/cashOutPagina.test.ts (14 tests) 10ms
+ ✓ src/lib/runnerCanale.test.ts (28 tests) 9ms
+ ✓ src/components/live/RiskRulesPanel.test.tsx (14 tests) 1679ms
+ ✓ src/lib/certezzaChiusura.test.ts (15 tests) 15ms
+ ✓ src/fotografia/cssVeste.test.ts (9 tests) 126ms
+ ✓ src/components/live/ScalperPanel.test.tsx (12 tests) 936ms
+ ✓ src/lib/tennisReplay.test.ts (21 tests) 24ms
+ ✓ src/lib/interruttoriUscite.test.ts (21 tests) 17ms
+ ✓ src/components/trading/designGuard.test.ts (12 tests) 93ms
+ ✓ src/lib/righeCanale.test.ts (17 tests) 8ms
+ ✓ src/components/controlroom/useControlRoom.soldiVeri.test.tsx (11 tests) 781ms
+ ✓ src/lib/statoOrdine.test.ts (26 tests) 9ms
+ ✓ src/components/live/GridView.test.tsx (11 tests) 1038ms
+ ✓ src/components/controlroom/plancia.giornoPartita.test.tsx (4 tests) 588ms
+   ✓ punto 1: plancia, riassunto del gruppo e scheda Chiuse = stesso numero (giorno della PARTITA) > le TRE viste con gli stessi finti: plancia = riassunto del gruppo = scheda Chiuse  332ms
+ ✓ src/components/controlroom/useControlRoom.scalperCanale.test.tsx (7 tests) 531ms
+ ✓ src/pages/TennisReplay.test.tsx (11 tests) 1879ms
+   ✓ Replay Tennis — simulatore sulla partita vera > punteggio tennis al cursore, mercati per categoria, nessuna RPC del calcio  421ms
+   ✓ Replay Tennis — simulatore sulla partita vera > ladder training: «Applica bot» (fase 2) coi SOLI bot tennis, la richiesta parte per questa partita  468ms
+ ✓ src/components/controlroom/chiudiRiga.test.ts (35 tests) 16ms
+ ✓ src/pages/SafeStrategy.chiarezza.test.tsx (9 tests) 1826ms
+   ✓ salute del feed: la STESSA fonte di /omega e /mike > provider senza feed ma scanner vivo: feed VIVO e partite monitorate dallo scanner  574ms
+ ✓ src/components/controlroom/P13EsitiChiusura.test.tsx (13 tests) 156ms
+ ✓ src/lib/controlRoomProposte.test.ts (38 tests) 13ms
+ ✓ src/lib/chiuseGiornata.test.ts (15 tests) 26ms
+ ✓ src/lib/tennisReplayVerificaBarra.test.ts (17 tests | 1 skipped) 36ms
+ ✓ src/components/controlroom/B2GlossarioAuditCR.test.tsx (14 tests) 150ms
+ ✓ src/components/controlroom/QuoteMercato.test.tsx (17 tests) 126ms
+ ✓ src/lib/posizioniChiuse.raggruppamento.test.ts (21 tests) 21ms
+ ✓ src/lib/pnlUnicoConto.test.ts (6 tests) 20ms
+ ✓ src/components/controlroom/PropostaUscitaMike.test.tsx (12 tests) 129ms
+ ✓ src/components/omega/MissionCard.test.tsx (11 tests) 889ms
+   ✓ MissionCard — piazzamento manuale (money-critical) > PIAZZA LAY → payload requestManual con ESATTAMENTE i campi della suggestion  409ms
+ ✓ src/lib/replayVerificaBarraDb.test.ts (14 tests) 395ms
+ ✓ src/components/omega/MatchTradesTable.test.tsx (24 tests) 223ms
+ ✓ src/lib/statoBotCanale.test.ts (18 tests) 25ms
+ ✓ src/components/controlroom/CashOutGlobale.chiudiTutte.test.tsx (11 tests) 134ms
+ ✓ src/components/controlroom/SchedaPropostaOpportunita.alms.test.tsx (10 tests) 276ms
+ ✓ src/components/mike/MikeEventPnlTable.test.tsx (25 tests) 293ms
+ ✓ src/lib/omegaMatches.test.ts (20 tests) 24ms
+ ✓ src/components/controlroom/CashOutGlobale.test.tsx (8 tests) 79ms
+stderr | src/components/shell/AppShell.test.tsx > testata globale: sola lettura, nessun canale in piu' > «Torna alla grafica attuale» scrive ui.shell=off
+Not implemented: navigation to another Document
+
+stderr | src/components/shell/AppShell.test.tsx > «Prova la nuova grafica» (app attuale) > compare su ogni pagina interna e scrive ui.shell=v2
+Not implemented: navigation to another Document
+
+ ✓ src/components/shell/AppShell.test.tsx (15 tests) 943ms
+ ✓ src/components/mike/MikeMatchCard.cert.12set.test.tsx (18 tests) 888ms
+   ✓ MikeMatchCard — "Chiudi a mercato" ha la stessa protezione del cash out > PAPER: un click apre il DIALOG, non piazza nulla  322ms
+ ✓ src/components/controlroom/PosizioniChiuse.giornoPartita.test.tsx (13 tests) 763ms
+ ✓ src/components/controlroom/SchedaChiusuraOmega.test.tsx (14 tests) 220ms
+ ✓ src/lib/localChannel.test.ts (18 tests) 21ms
+ ✓ src/pages/MarketWatch.canale.test.tsx (8 tests) 278ms
+ ✓ src/lib/mikeRisultati.test.ts (25 tests) 17ms
+ ✓ src/components/controlroom/PosizioniChiuse.test.tsx (16 tests) 505ms
+ ✓ src/components/controlroom/EsitoChiusuraMike.test.tsx (16 tests) 92ms
+ ✓ src/components/trading/StoricoMikeGiornoRegolamento.test.tsx (13 tests) 937ms
+ ✓ src/fotografia/fotografia.test.tsx (28 tests) 82884ms
+   ✓ fotografia di parita' (guscio v2) > board: 'off' identica alla fase 0, 'v2' con le stesse pagine  2978ms
+   ✓ fotografia di parita' (guscio v2) > control-room: 'off' identica alla fase 0, 'v2' con le stesse pagine  4329ms
+   ✓ fotografia di parita' (guscio v2) > cash-out: 'off' identica alla fase 0, 'v2' con le stesse pagine  3094ms
+   ✓ fotografia di parita' (guscio v2) > dashboard: 'off' identica alla fase 0, 'v2' con le stesse pagine  2991ms
+   ✓ fotografia di parita' (guscio v2) > omega: 'off' identica alla fase 0, 'v2' con le stesse pagine  2668ms
+   ✓ fotografia di parita' (guscio v2) > safe-strategy: 'off' identica alla fase 0, 'v2' con le stesse pagine  2702ms
+   ✓ fotografia di parita' (guscio v2) > mike: 'off' identica alla fase 0, 'v2' con le stesse pagine  2995ms
+   ✓ fotografia di parita' (guscio v2) > segui-live: 'off' identica alla fase 0, 'v2' con le stesse pagine  2558ms
+   ✓ fotografia di parita' (guscio v2) > multi-ladder: 'off' identica alla fase 0, 'v2' con le stesse pagine  2321ms
+   ✓ fotografia di parita' (guscio v2) > market-watch: 'off' identica alla fase 0, 'v2' con le stesse pagine  2284ms
+   ✓ fotografia di parita' (guscio v2) > live-pnl: 'off' identica alla fase 0, 'v2' con le stesse pagine  2503ms
+   ✓ fotografia di parita' (guscio v2) > storico-calcio: 'off' identica alla fase 0, 'v2' con le stesse pagine  2769ms
+   ✓ fotografia di parita' (guscio v2) > storico-tennis: 'off' identica alla fase 0, 'v2' con le stesse pagine  2830ms
+   ✓ fotografia di parita' (guscio v2) > tennis: 'off' identica alla fase 0, 'v2' con le stesse pagine  2571ms
+   ✓ fotografia di parita' (guscio v2) > tennis-terminal: 'off' identica alla fase 0, 'v2' con le stesse pagine  2653ms
+   ✓ fotografia di parita' (guscio v2) > tennis-terminal-match: 'off' identica alla fase 0, 'v2' con le stesse pagine  2927ms
+   ✓ fotografia di parita' (guscio v2) > tennis-replay: 'off' identica alla fase 0, 'v2' con le stesse pagine  2368ms
+   ✓ fotografia di parita' (guscio v2) > trade-journal: 'off' identica alla fase 0, 'v2' con le stesse pagine  2436ms
+   ✓ fotografia di parita' (guscio v2) > report-personale: 'off' identica alla fase 0, 'v2' con le stesse pagine  3105ms
+   ✓ fotografia di parita' (guscio v2) > watchlist: 'off' identica alla fase 0, 'v2' con le stesse pagine  2732ms
+   ✓ fotografia di parita' (guscio v2) > analytics: 'off' identica alla fase 0, 'v2' con le stesse pagine  3175ms
+   ✓ fotografia di parita' (guscio v2) > match-replay: 'off' identica alla fase 0, 'v2' con le stesse pagine  2392ms
+   ✓ fotografia di parita' (guscio v2) > select-sport: 'off' identica alla fase 0, 'v2' con le stesse pagine  3134ms
+   ✓ fotografia di parita' (guscio v2) > ladder-popout: 'off' identica alla fase 0, 'v2' con le stesse pagine  2161ms
+   ✓ fotografia di parita' (guscio v2) > landing: 'off' identica alla fase 0, 'v2' con le stesse pagine  3248ms
+   ✓ fotografia di parita' (guscio v2) > check-email: 'off' identica alla fase 0, 'v2' con le stesse pagine  2241ms
+   ✓ fotografia di parita' (guscio v2) > reset-password: 'off' identica alla fase 0, 'v2' con le stesse pagine  2336ms
+   ✓ fotografia di parita' (guscio v2) > notfound: 'off' identica alla fase 0, 'v2' con le stesse pagine  2420ms
+ ✓ src/components/controlroom/testata/FasciaSoldiVeri.test.tsx (16 tests) 251ms
+ ✓ src/lib/safeStrategy.d5.test.ts (20 tests) 37ms
+ ✓ src/lib/omegaMissions.test.ts (19 tests) 234ms
+ ✓ src/components/omega/OmegaParamsSheet.test.tsx (13 tests) 6103ms
+   ✓ OmegaParamsSheet > mostra l'obiettivo di giornata corrente, letto dalla colonna dedicata  656ms
+   ✓ OmegaParamsSheet > salvare manda il NUOVO obiettivo e SOLO le chiavi cambiate, mai un default sopra un valore vivo  626ms
+   ✓ OmegaParamsSheet > passare ad automatiche CHIEDE CONFERMA; confermato e salvato manda uscite_protezione=automatico (resto invariato)  668ms
+   ✓ OmegaParamsSheet - reperto 2: campo numerico svuotato = chiave assente > nel foglio vero: svuotati TUTTI i campi numerici (non l'obiettivo) -> nessuna chiave numerica, nessun ""  2607ms
+ ✓ src/lib/omegaAudit1209.test.ts (19 tests) 42ms
+ ✓ src/lib/scalperControlRoom.test.ts (21 tests) 21ms
+ ↓ src/certification/realtime.cert.test.ts (7 tests | 7 skipped)
+ ✓ src/components/safestrategy/safeActivity.test.ts (19 tests) 27ms
+ ✓ src/lib/replayBarraSimboli.test.tsx (12 tests) 8677ms
+   ✓ barra e simboli — partita vera 35797769 > la griglia ha tanti passi quanti i bucket da 10 s con frame, e gli estremi sono primo e ultimo frame  900ms
+   ✓ barra e simboli — partita vera 35797769 > il calcio d'inizio sta al primo passo con ts >= primo frame in-gioco; la pagina si apre li'; PRE solo prima  461ms
+   ✓ barra e simboli — partita vera 35797769 > ogni simbolo sta alla posizione attesa e compare scorrendo proprio a quel passo  946ms
+   ✓ barra e simboli — partita vera 35797769 > i segmenti di sospensione sono esattamente i passi in cui il Match Odds e' SOSPESO, e il pannello concorda  1410ms
+   ✓ barra e simboli — partita vera 35797769 > il ladder del Match Odds al cursore e' l'ultimo frame <= istante del passo (prima/dopo ogni gol)  1238ms
+   ✓ barra e simboli — partita vera 35797769 > dopo un gol il ladder si riprezza nel verso giusto (casa segna: il back della casa scende; ospite: sale)  353ms
+   ✓ barra e simboli — partita vera 35760084 > la griglia ha tanti passi quanti i bucket da 10 s con frame, e gli estremi sono primo e ultimo frame  304ms
+   ✓ barra e simboli — partita vera 35760084 > ogni simbolo sta alla posizione attesa e compare scorrendo proprio a quel passo  1002ms
+   ✓ barra e simboli — partita vera 35760084 > i segmenti di sospensione sono esattamente i passi in cui il Match Odds e' SOSPESO, e il pannello concorda  928ms
+   ✓ barra e simboli — partita vera 35760084 > il ladder del Match Odds al cursore e' l'ultimo frame <= istante del passo (prima/dopo ogni gol)  705ms
+ ✓ src/components/trading/DailyCalendar.test.tsx (16 tests) 1293ms
+ ✓ src/components/controlroom/righeBot.test.ts (21 tests) 12ms
+ ✓ src/components/replay/RegistroFasi.test.tsx (12 tests) 799ms
+ ✓ src/components/controlroom/CashOutGlobale.montaggio.test.tsx (7 tests) 240ms
+ ✓ src/components/controlroom/RigaFreno.test.tsx (13 tests) 177ms
+ ✓ src/pages/Omega.storico.test.tsx (7 tests) 1632ms
+   ✓ Omega — tab Storico > monta calendario, performance e dettaglio con i fetcher dello storico  330ms
+   ✓ Omega — tab Storico > A-05: l'altra moneta si legge APPOSTA dal selettore, con p_mode esplicito  377ms
+ ✓ src/components/live/LiveControlsPanel.test.tsx (14 tests) 1200ms
+ ✓ src/lib/omegaProposte.test.ts (20 tests) 20ms
+ ✓ src/components/trading/StatoOrdine.montaggio.test.tsx (7 tests) 501ms
+ ✓ src/lib/flussoLineeMike.test.tsx (15 tests) 221ms
+ ✓ src/components/safestrategy/SafeTradesTable.exitStatus.test.tsx (9 tests) 178ms
+ ✓ src/components/live/posizioniCanale.pannelli.test.tsx (6 tests) 244ms
+ ✓ src/lib/interruttoriScalper.test.ts (12 tests) 17ms
+ ✓ src/lib/ladderConfig.test.ts (24 tests) 10ms
+ ✓ src/lib/replayVerificaBarra.partite.test.ts (17 tests) 650ms
+ ✓ src/components/controlroom/CashOutPartita.test.tsx (16 tests) 181ms
+ ✓ src/lib/opportunities/tier2_micro.adversarial.test.ts (12 tests) 14ms
+ ✓ src/components/controlroom/soloTennis.test.ts (24 tests) 10ms
+ ✓ src/components/controlroom/RigaOrdiniReali.canale.test.tsx (7 tests) 305ms
+ ✓ src/components/safestrategy/useSafeBot.test.tsx (10 tests) 323ms
+ ✓ src/lib/trainingLadder.test.ts (11 tests) 14ms
+ ✓ src/components/live/DutchingPanel.test.tsx (13 tests) 1305ms
+   ✓ DutchingPanel > l'anteprima book% si aggiorna al variare delle selezioni  335ms
+ ✓ src/components/safestrategy/SafeTradesTable.chiusura.test.tsx (11 tests) 451ms
+ ✓ src/components/omega/ManualPanel.cert.12set.test.tsx (14 tests) 10825ms
+   ✓ ManualPanel — anteprima del rischio mai negativa > senza quota valida: "—", non un rischio negativo  2084ms
+   ✓ ManualPanel — liquidità dei DUE lati e guardie di ingresso > la tabella mostra la liquidità BACK oltre a quella LAY  1649ms
+   ✓ ManualPanel — liquidità dei DUE lati e guardie di ingresso > BACK con liquidità 3 € e stake 10 €: bottone SPENTO col motivo  1897ms
+   ✓ ManualPanel — liquidità dei DUE lati e guardie di ingresso > BACK sotto il minimo Betfair (2 €): bottone SPENTO  1847ms
+   ✓ ManualPanel — la quota segue il LATO scelto > scegliendo il runner in LAY e poi passando a BACK, la quota diventa quella back  1701ms
+   ✓ ManualPanel — selezione non ATTIVA dichiarata > un runner RITIRATO porta il suo badge in italiano  1641ms
+ ✓ src/components/controlroom/testata/soldiVeri.test.ts (21 tests) 7ms
+ ✓ src/components/controlroom/fixPagine2609.giornata.test.tsx (10 tests) 58ms
+ ✓ src/components/controlroom/RigaOrdiniReali.test.tsx (28 tests) 164ms
+ ✓ src/pages/MarketWatch.test.tsx (5 tests) 409ms
+ ✓ src/lib/replayTimelineEvents.barra.test.ts (19 tests) 54ms
+ ✓ src/lib/ladderChart.test.ts (21 tests) 31ms
+ ✓ src/components/controlroom/SchedaPreMatch.test.tsx (14 tests) 224ms
+ ✓ src/lib/consapevolezzaOrdine.contratto.test.ts (14 tests) 19ms
+ ✓ src/lib/mikeRpc.test.ts (11 tests) 14ms
+ ✓ src/components/controlroom/useTennisVivo.test.ts (15 tests) 286ms
+ ✓ src/components/safestrategy/InvestAction.cert.12set.test.tsx (16 tests) 157ms
+ ✓ src/components/safestrategy/RiskPanel.test.tsx (14 tests) 279ms
+ ✓ src/lib/controlRoomCatena.test.ts (28 tests) 9ms
+ ✓ src/components/controlroom/BottoneChiudiRiga.test.tsx (17 tests) 576ms
+   ✓ B16 - il bottone chiama il SUO bot > riga omega: chiudi con bot/id/partita/modalita' DELLA RIGA  487ms
+ ✓ src/components/controlroom/BottoneChiudiMikeConferma.test.tsx (13 tests) 2247ms
+   ✓ D5 - Chiudi di Mike: un clic in paper, conferma in live > LIVE: la conferma manda la STESSA richiesta di sempre, una volta sola  435ms
+   ✓ D5 - Chiudi di Mike: un clic in paper, conferma in live > TUTTI i bot - omega: LIVE arma al primo clic, conferma manda la STESSA richiesta, annulla non manda; PAPER un clic  437ms
+   ✓ D5 - Chiudi di Mike: un clic in paper, conferma in live > TUTTI i bot - tennis_scalper: LIVE arma al primo clic, conferma manda la STESSA richiesta, annulla non manda; PAPER un clic  436ms
+   ✓ D5 - Chiudi di Mike: un clic in paper, conferma in live > TUTTI i bot - tennis_pro: LIVE arma al primo clic, conferma manda la STESSA richiesta, annulla non manda; PAPER un clic  431ms
+   ✓ D5 - Chiudi di Mike: un clic in paper, conferma in live > TUTTI i bot - safe: LIVE arma al primo clic, conferma manda la STESSA richiesta, annulla non manda; PAPER un clic  432ms
+ ✓ src/components/safestrategy/cards.audit.test.tsx (9 tests) 481ms
+ ✓ src/components/mike/MikeCashOutButton.test.tsx (13 tests) 832ms
+ ✓ src/lib/eventGroups.test.ts (21 tests) 14ms
+ ✓ src/components/controlroom/PannelloBotUscite.test.tsx (11 tests) 564ms
+ ✓ src/lib/chiusuraUtente.test.ts (23 tests) 8ms
+ ✓ src/components/controlroom/W_B2EsitiOmegaSafe.test.tsx (14 tests) 9ms
+ ✓ src/lib/provaGiornata.test.ts (9 tests) 19ms
+ ✓ src/lib/mikeCanaleLocale.test.ts (14 tests) 7ms
+ ✓ src/lib/replayVerificaBarraFixture.test.ts (8 tests) 4836ms
+   ✓ script verifica_barra_fixture.ts lanciato davvero > fixture vere: esce con 0; una fixture con il KickOff discorde: esce con 1 e la dice "solo per dati"; senza file: 2  4480ms
+ ✓ src/components/live/ladderAlMs.view.test.tsx (3 tests) 374ms
+ ✓ src/lib/scalperAuto.test.ts (14 tests) 16ms
+ ✓ src/components/live/TerminalPositionsRail.test.tsx (9 tests) 445ms
+ ✓ src/lib/useScanLiveFeed.test.ts (8 tests) 1135ms
+   ✓ useScanLiveFeedRows — la fotografia iniziale segue gli eventi > la fotografia NON sovrascrive una riga più fresca del realtime  515ms
+   ✓ useScanLiveFeedRows — la fotografia iniziale segue gli eventi > la cancellazione di una riga la toglie dalla mappa  469ms
+ ✓ src/lib/pnlRealeBetfair.test.ts (10 tests) 35ms
+ ✓ src/components/trading/TradingHistory.test.tsx (6 tests) 2992ms
+   ✓ TradingHistory > selezione di un altro giorno → nuovo dettaglio; periodo 90 gg allarga la finestra  629ms
+   ✓ TradingHistory — coerenza giorno ↔ trade mostrati (12/09) > mese lontano: la finestra tiene il MESE e dichiara il periodo fuori  1705ms
+ ✓ src/components/replay/TimelineSlider.test.tsx (12 tests) 218ms
+ ✓ src/components/controlroom/ResiduoScopertoMike.test.tsx (6 tests) 56ms
+ ✓ src/components/controlroom/ObiettivoHero.test.tsx (7 tests) 168ms
+ ✓ src/components/mike/MikeP6Blocco6Copertura.test.tsx (8 tests) 111ms
+ ✓ src/lib/replayVerificaBarraScript.test.ts (5 tests) 15778ms
+   ✓ script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > database coerente: esce con 0, referto per partita e riepilogo; SOLO richieste di lettura alle tre RPC  3004ms
+   ✓ script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > database con un difetto sul punteggio: esce con 1 e dice quale partita e quale codice  2908ms
+   ✓ script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > KickOff del feed discorde (dato): esce con 1, "INCOERENTE PER DATI" e "SOLO PER DATI"; --dettaglio stampa le prove  2902ms
+   ✓ script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > --evento filtra una sola partita; --json stampa un documento leggibile da una macchina  3288ms
+   ✓ script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > credenziali SOLO da ambiente: senza esce con 2 e lo dice; con la sola chiave anonima chiede anche l'utente  3673ms
+ ✓ src/components/omega/MissionCard.cert.12set.test.tsx (8 tests) 431ms
+ ✓ src/components/tennis/TennisBotServiceParamsSheet.test.tsx (9 tests) 2491ms
+   ✓ TennisBotServiceParamsSheet > senza parametri letti mostra i default del registro e lo DICHIARA  310ms
+   ✓ TennisBotServiceParamsSheet - reperto 2: campo numerico svuotato = chiave assente > tennis_scalper: OGNI campo numerico (7) svuotato -> chiave assente, il resto identico  695ms
+   ✓ TennisBotServiceParamsSheet - reperto 2: campo numerico svuotato = chiave assente > tennis_pro: OGNI campo numerico (5) svuotato -> chiave assente, il resto identico  378ms
+   ✓ TennisBotServiceParamsSheet - reperto 2: campo numerico svuotato = chiave assente > tennis_flb: OGNI campo numerico (5) svuotato -> chiave assente, il resto identico  377ms
+   ✓ TennisBotServiceParamsSheet - reperto 2: campo numerico svuotato = chiave assente > tennis_swing: OGNI campo numerico (5) svuotato -> chiave assente, il resto identico  368ms
+ ✓ src/pages/Mike.fixA.test.tsx (4 tests) 890ms
+   ✓ FIX-A — «Se chiudo ora» = somma dei netti delle card > la barra Operazioni scrive la somma delle card, non il bloccato  554ms
+ ✓ src/components/replay/AvvisoCoerenzaBarra.test.tsx (12 tests) 408ms
+ ✓ src/lib/canaleRunner.test.ts (14 tests) 6ms
+ ✓ src/components/trading/PerformancePanel.test.tsx (7 tests) 414ms
+ ✓ src/lib/saldoBetfair.test.ts (19 tests) 27ms
+ ✓ src/lib/composizioneConto.test.ts (8 tests) 12ms
+ ✓ src/components/safestrategy/SafeTradesTable.test.tsx (10 tests) 243ms
+ ✓ src/lib/workspace.test.ts (20 tests) 8ms
+ ✓ src/components/trading/CashOutButton.chiusura.test.tsx (8 tests) 685ms
+ ✓ src/components/tennis/TennisBotPanel.superficie.test.tsx (11 tests) 552ms
+ ✓ src/lib/opportunities/validate.test.ts (10 tests) 5ms
+ ✓ src/pages/SafeStrategy.fixA.test.tsx (5 tests) 1081ms
+   ✓ FIX-A — Safe: i numeri di una modalità, mai la somma > la pagina chiede gli aggregati PER MODALITÀ  395ms
+ ✓ src/lib/opportunities/tradeable.test.ts (16 tests) 10ms
+ ✓ src/components/trading/StatoOrdine.test.tsx (10 tests) 72ms
+ ✓ src/components/controlroom/chiudiRigaScalper.test.ts (23 tests) 10ms
+ ✓ src/components/live/XHedgePanel.canale.test.tsx (6 tests) 209ms
+ ✓ src/components/live/LadderView.botReplay.test.tsx (4 tests) 486ms
+ ✓ src/lib/chiusuraAlMs.test.ts (14 tests) 8ms
+ ✓ src/components/safestrategy/OpportunityGroup.cert.12set.test.tsx (14 tests) 129ms
+ ✓ src/lib/safeStrategy.secondoTempo.test.ts (13 tests) 14ms
+ ✓ src/components/controlroom/SchedaPropostaOpportunita.banda.test.tsx (4 tests) 117ms
+ ✓ src/components/mike/useMikeEventoAlMs.test.tsx (6 tests) 63ms
+ ✓ src/lib/nettoCiclo.test.ts (11 tests) 37ms
+ ✓ src/components/replay/RegistroOperazioniBot.test.tsx (8 tests) 1224ms
+   ✓ RegistroOperazioniBot > tennis (stesso componente): il riprezzo di Betfair e' una riga di registro  662ms
+ ✓ src/components/live/SelectionChartPanel.alms.test.tsx (3 tests) 99ms
+ ↓ src/certification/sessB/pagine.cert.test.tsx (7 tests | 7 skipped)
+ ✓ src/components/mike/MikeP6Blocco1.test.tsx (7 tests) 112ms
+ ✓ src/components/mike/MikeParamsSheet.riscontro.test.tsx (5 tests) 2038ms
+   ✓ pannello parametri di Mike: riscontro del salvataggio > salvataggio riuscito: «Parametri salvati alle HH:MM:SS» e pallino spento  969ms
+   ✓ pannello parametri di Mike: riscontro del salvataggio > M1 (review incrociata 30/09): rilettura NON aspettata: la bozza resta sui valori SALVATI, mai i vecchi  466ms
+   ✓ pannello parametri di Mike: riscontro del salvataggio > salvataggio fallito: l’errore testuale e le modifiche restano da salvare  320ms
+ ✓ src/lib/ladderBacktest.test.ts (8 tests) 10ms
+ ↓ src/certification/zz_dump.cert.test.tsx (3 tests | 3 skipped)
+ ✓ src/components/mike/MikeParamsSheet.test.tsx (8 tests) 3964ms
+   ✓ MikeParamsSheet > mostra tutti i gruppi del bot  470ms
+   ✓ MikeParamsSheet > il filtro competizioni è un campo di TESTO (non un numero)  423ms
+   ✓ MikeParamsSheet > un valore fuori limite viene clampato e DICHIARATO  328ms
+   ✓ MikeParamsSheet - reperto 2: campo numerico svuotato = chiave assente > nel foglio vero: svuotati TUTTI i campi numerici e salvato -> nessuna chiave numerica, il resto intero  2235ms
+ ↓ src/certification/migrations.cert.test.ts (3 tests | 3 skipped)
+ ✓ src/lib/signalContext.test.ts (23 tests) 11ms
+ ✓ src/lib/replayVerificaBarraImpronta.test.ts (10 tests) 81ms
+ ✓ src/lib/chiusuraUtente.contratto.test.ts (11 tests) 8ms
+ ✓ src/components/controlroom/StrisciaEsitoChiusura.test.tsx (7 tests) 51ms
+ ✓ src/lib/composizioneObiettivo.test.ts (10 tests) 8ms
+ ✓ src/components/controlroom/useTennisVivo.canale.test.ts (6 tests) 317ms
+ ✓ src/lib/ritorno.pagine.test.tsx (7 tests) 126ms
+ ✓ src/components/mike/MikeCashOutButton.chiusura.test.tsx (6 tests) 884ms
+   ✓ MIKE-01 — una chiusura che non parte si vede > il servizio rifiuta: dialog APERTO, motivo a schermo, posizione dichiarata aperta  375ms
+ ✓ src/lib/eventPnl.test.ts (13 tests) 6ms
+ ✓ src/lib/matchClock.test.ts (18 tests) 9ms
+ ✓ src/pages/TennisTerminal.test.tsx (5 tests) 1365ms
+   ✓ TennisTerminal - F-11: aprire la pagina non scrive > montata (follow CLOSED) nessuna rpc di scrittura e nessun insert/update  423ms
+   ✓ TennisTerminal - F-11: aprire la pagina non scrive > partita non seguita: la pagina lo dice e «Segui» la segue al clic  347ms
+ ✓ src/lib/depthFlow.test.ts (18 tests) 12ms
+ ✓ src/components/controlroom/PannelloBotScalper.test.tsx (6 tests) 361ms
+ ✓ src/components/omega/MatchTradesTable.chiusura.test.tsx (8 tests) 646ms
+ ✓ src/lib/applicaBot.test.ts (12 tests) 23ms
+ ✓ src/lib/replayBarraPunteggio.test.tsx (8 tests) 14398ms
+   ✓ punteggio al cursore — partita vera 35797769 > a OGNI passo della barra il tabellone e' il punteggio vero (intervallo e righe-evento compresi)  6534ms
+   ✓ punteggio al cursore — partita vera 35797769 > a fine replay («FT») mostra il risultato finale  404ms
+   ✓ punteggio al cursore — partita vera 35797769 > lungo l'intervallo il tabellone resta quello del primo tempo (mai 0-0 per via della riga FirstHalfEnd)  352ms
+   ✓ punteggio al cursore — partita vera 35797769 > ogni gol: il tabellone passa dal punteggio di prima a quello di dopo entro 2 passi dal simbolo, mai per 0-0  490ms
+   ✓ punteggio al cursore — partita vera 35760084 > a OGNI passo della barra il tabellone e' il punteggio vero (intervallo e righe-evento compresi)  5741ms
+   ✓ punteggio al cursore — partita vera 35760084 > ogni gol: il tabellone passa dal punteggio di prima a quello di dopo entro 2 passi dal simbolo, mai per 0-0  353ms
+ ✓ src/lib/scalperCanale.test.ts (7 tests) 11ms
+ ✓ src/components/live/SelectionChartPanel.test.tsx (5 tests) 382ms
+ ✓ src/components/controlroom/aperte/statoPartitaAperta.test.ts (8 tests) 8ms
+ ✓ src/components/controlroom/OrdiniContoPartita.test.tsx (9 tests) 99ms
+ ✓ src/lib/orderFlow.test.ts (13 tests) 8ms
+ ✓ src/lib/giornataCorsie.test.ts (7 tests) 6ms
+ ✓ src/lib/ladderMath.test.ts (23 tests) 24ms
+ ✓ src/lib/mediaUnder.test.ts (10 tests) 21ms
+ ✓ src/lib/opportunities/tier1_quasi.adversarial.test.ts (5 tests) 7ms
+ ✓ src/lib/fairOverlay.test.ts (16 tests) 7ms
+ ✓ src/components/controlroom/ProposteUsciteFlusso.test.tsx (9 tests) 74ms
+ ✓ src/lib/schedaAlMs.test.ts (11 tests) 14ms
+ ✓ src/lib/opportunities/tier0_arb.adversarial.test.ts (3 tests) 16ms
+ ✓ src/components/controlroom/pnlUnicoConto.viste.test.tsx (3 tests) 142ms
+ ✓ src/lib/trainingLadder.replay.test.tsx (2 tests) 548ms
+ ✓ src/components/controlroom/testata/TesseraRunner.test.tsx (7 tests) 44ms
+ ✓ src/lib/safeStrategy.q7q12.test.ts (13 tests) 9ms
+ ✓ src/lib/mediaUnderAttivaAdesso.test.ts (8 tests) 18ms
+ ✓ src/components/controlroom/testata/paroleImpianto.test.ts (13 tests) 8ms
+ ✓ src/components/controlroom/tennisAuto.test.ts (16 tests) 6ms
+ ✓ src/components/controlroom/DettaglioRigaView.test.tsx (6 tests) 103ms
+ ✓ src/lib/journalStats.test.ts (11 tests) 7ms
+ ✓ src/components/mike/MikeP6Blocco5.test.tsx (9 tests) 77ms
+ ✓ src/components/dashboard/DirezioneDashboard.quota.test.tsx (5 tests) 380ms
+ ✓ src/components/trading/SectionFilter.test.tsx (10 tests) 85ms
+ ✓ src/lib/format.test.ts (18 tests) 22ms
+ ✓ src/components/controlroom/NomiPartita.test.tsx (9 tests) 70ms
+ ✓ src/lib/safeBot.perModalita.test.ts (7 tests) 8ms
+ ✓ src/components/trading/zeroPerAssente.test.ts (7 tests) 15ms
+ ✓ src/components/controlroom/SplitSport.corsie.test.tsx (5 tests) 91ms
+ ✓ src/lib/ritorno.test.ts (14 tests) 50ms
+ ✓ src/components/controlroom/righeBot.provaArretrati.test.tsx (4 tests) 272ms
+ ✓ src/lib/apertoAdesso.test.ts (5 tests) 11ms
+ ✓ src/components/dashboard/DirezioneDashboard.eta.test.tsx (4 tests) 665ms
+   ✓ DirezioneDashboard - eta e quota > mostra "quota assente" sul mercato senza quota e la quota sul mercato che ce l'ha  354ms
+ ✓ src/lib/replayVerificaBarra.pagina.test.tsx (2 tests) 1876ms
+   ✓ pagina vera vs verificatore - partita 35760084 > stessi passi, stessa apertura, stessa lineetta del calcio d'inizio, stessi segmenti di sospensione, stessi simboli, stesso tabellone  1027ms
+   ✓ pagina vera vs verificatore - partita 35797769 > stessi passi, stessa apertura, stessa lineetta del calcio d'inizio, stessi segmenti di sospensione, stessi simboli, stesso tabellone  848ms
+ ✓ src/lib/rilettureMirate.test.ts (9 tests) 10ms
+ ✓ src/lib/usePosizioniCanale.test.tsx (6 tests) 40ms
+ ✓ src/lib/servants.test.ts (11 tests) 10ms
+ ✓ src/lib/vetoCampionati.test.ts (26 tests) 23ms
+ ✓ src/components/controlroom/RigaCapacitaMercati.test.tsx (5 tests) 76ms
+ ✓ src/lib/righeCanale.rilettura.test.ts (23 tests) 10ms
+ ✓ src/pages/SeguiLive.apertura.test.tsx (8 tests) 95ms
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > periodo DATI MATCH in gg/mm/aaaa (Roma), mai ISO grezzo
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > periodo DATI MATCH in gg/mm/aaaa (Roma), mai ISO grezzo
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > stagioni non caricate: avviso visibile scegliendo "Stagione" (non un menu vuoto muto)
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > stagioni non caricate: avviso visibile scegliendo "Stagione" (non un menu vuoto muto)
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+ ✓ src/components/dashboard/RitardiPanel.fixb.test.tsx (3 tests) 633ms
+   ✓ RitardiPanel - FIX-B > periodo DATI MATCH in gg/mm/aaaa (Roma), mai ISO grezzo  391ms
+ ✓ src/components/safestrategy/SafeTradesTable.modalita.test.tsx (5 tests) 159ms
+ ✓ src/lib/replayVerificaBarraLancio.test.ts (7 tests) 87ms
+ ✓ src/lib/rese.test.ts (14 tests) 25ms
+ ✓ src/components/controlroom/SchedaMike.test.tsx (8 tests) 96ms
+ ✓ src/components/controlroom/SchedaPreMatch.cashout.test.tsx (3 tests) 117ms
+ ✓ src/components/controlroom/MarchioSoldi.test.tsx (14 tests) 93ms
+ ✓ src/lib/fontePnl.test.ts (6 tests) 6ms
+ ✓ src/components/omega/MatchTradesTable.fixA.test.tsx (5 tests) 85ms
+ ✓ src/lib/live.valutaReplay.test.ts (6 tests) 5ms
+ ↓ src/certification/sessB/extra.cert.test.tsx (5 tests | 5 skipped)
+ ✓ src/components/controlroom/trovaEsitoUscita.test.ts (6 tests) 6ms
+ ✓ src/components/tennis-replay/TennisReplayList.test.tsx (5 tests) 106ms
+ ✓ src/lib/localChannel.token.test.ts (7 tests) 14ms
+ ✓ src/lib/opportunitaOrdine.test.ts (9 tests) 9ms
+ ✓ src/components/controlroom/useControlRoom.effettiviStantii.test.ts (9 tests) 7ms
+stderr | src/components/dashboard/rese.KO11.test.tsx > GoalsTabs - gol per minuto (U0029) > minuti presenti: nessun avviso
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+ ✓ src/components/dashboard/rese.KO11.test.tsx (6 tests) 120ms
+ ✓ src/components/omega/PartiteChiuseDallUtente.test.tsx (6 tests) 122ms
+ ✓ src/pages/Analytics.errori.test.tsx (4 tests) 984ms
+   ✓ Analytics - errore non e' "nessun dato" > timeout di get_analytics: messaggio di timeout, NESSUN "Nessun segnale settlato"  335ms
+   ✓ Analytics - errore non e' "nessun dato" > dati dal riepilogo: la pagina dice di quando sono (ora di Roma)  313ms
+ ✓ src/lib/opportunities/engine.test.ts (8 tests) 8ms
+ ✓ src/pages/LivePnl.fixA.test.tsx (3 tests) 365ms
+ ✓ src/test/codificaSorgenti.test.ts (3 tests) 97ms
+ ✓ src/lib/opportunities/helpers.test.ts (14 tests) 7ms
+ ✓ src/lib/safeStrategy.baseSecondoTempo.test.ts (6 tests) 16ms
+ ✓ src/lib/replayBot.test.ts (7 tests) 10ms
+ ✓ src/components/controlroom/fixPagine2609.varie.test.tsx (4 tests) 74ms
+ ✓ src/lib/comboPrezzoVivo.test.ts (9 tests) 8ms
+ ✓ src/components/controlroom/ObiettivoEditor.test.tsx (7 tests) 128ms
+ ✓ src/pages/TradeJournal.test.tsx (3 tests) 524ms
+ ✓ src/fotografia/cssGuscio.test.ts (3 tests) 43ms
+stderr | src/components/dashboard/MLPanel.verdetto.test.tsx > MLPanel - un solo verdetto > BTTS del referto: il verdetto e' la Previsione calibrata (No 52 %), nessuna "classe prevista" opposta
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/MLPanel.verdetto.test.tsx > MLPanel - un solo verdetto > BTTS del referto: il verdetto e' la Previsione calibrata (No 52 %), nessuna "classe prevista" opposta
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/MLPanel.verdetto.test.tsx > MLPanel - un solo verdetto > 1X2 concorde: 3/4 modelli con la Previsione, nessun avviso di divergenza
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+ ✓ src/components/dashboard/MLPanel.verdetto.test.tsx (2 tests) 454ms
+   ✓ MLPanel - un solo verdetto > BTTS del referto: il verdetto e' la Previsione calibrata (No 52 %), nessuna "classe prevista" opposta  378ms
+ ↓ src/certification/sessB/dashboard.cert.test.tsx (7 tests | 7 skipped)
+ ✓ src/test/forzaSupabaseFinto.test.ts (5 tests) 38ms
+ ✓ src/lib/kellySuggest.test.ts (12 tests) 8ms
+stderr | src/components/live/DepthPanel.test.tsx > DepthPanel > con storia sufficiente mostra il delta per lato
+The current testing environment is not configured to support act(...)
+
+ ✓ src/components/live/DepthPanel.test.tsx (5 tests) 173ms
+ ✓ src/components/live/LiveTradingPanel.test.tsx (2 tests) 392ms
+   ✓ LiveTradingPanel — fix audit #6 (submin vs FoK/persistence) > attivando il place-and-trim, FoK e Persistenza si disabilitano e azzerano (con nota)  302ms
+ ✓ src/pages/SeguiLive.clicAuto.test.tsx (2 tests) 191ms
+ ✓ src/lib/placedOrders.test.ts (13 tests) 27ms
+ ✓ src/lib/liveOrders.canaleUnico.risk.test.ts (3 tests) 12ms
+ ✓ src/lib/soldiVeriPuntiIngresso.test.ts (10 tests) 28ms
+ ✓ src/lib/replayTimelineEvents.test.ts (5 tests) 5ms
+ ✓ src/pages/LivePnl.test.tsx (3 tests) 187ms
+ ✓ src/lib/replayTimelineEvents.salti.test.ts (6 tests) 4ms
+ ✓ src/lib/liveSubscribe.test.ts (3 tests) 7ms
+ ✓ src/lib/riskMath.test.ts (16 tests) 5ms
+ ✓ src/lib/safeStrategyScan.localCanale.test.ts (7 tests) 6ms
+ ✓ src/lib/delayMercato.tennisReplay.test.ts (3 tests) 7ms
+ ✓ src/components/replay/TrainingTradesPanel.test.tsx (3 tests) 229ms
+ ✓ src/lib/opportunities/fill.test.ts (18 tests) 5ms
+ ✓ src/components/controlroom/InterruttoreUsciteSchede.test.tsx (2 tests) 1679ms
+   ✓ scheda parametri di Mike > uscite: componente comune, conferma per passare ad automatiche, poi Salva  1038ms
+   ✓ scheda parametri di Safe (tennis) > "le chiusure le approvo io" e' il componente comune: automatiche solo con conferma  640ms
+ ✓ src/components/safestrategy/InvestAction.test.tsx (5 tests) 291ms
+ ✓ src/lib/liveOrders.canaleUnico.test.ts (3 tests) 7ms
+ ✓ src/lib/opportunities/snapshot.test.ts (7 tests) 5ms
+ ✓ src/lib/safeBotChiusura.test.ts (6 tests) 13ms
+ ✓ src/components/safestrategy/MonitorCard.test.tsx (3 tests) 48ms
+ ✓ src/lib/tennisRegistry.test.ts (4 tests) 4ms
+ ✓ src/lib/uiShell.test.ts (9 tests) 13ms
+ ✓ src/lib/opportunities/arb_exec.test.ts (5 tests) 4ms
+ ✓ src/lib/multiLadder.test.ts (8 tests) 8ms
+ ✓ src/fotografia/uiDefault.test.ts (2 tests) 5ms
+ ✓ src/lib/mikeCoverForm.test.ts (4 tests) 4ms
+ ✓ src/lib/scanEventBuffer.test.ts (7 tests) 5ms
+ ✓ src/lib/replayVerificaBarra.avvisoPagina.test.tsx (4 tests) 1246ms
+   ✓ Match Replay - avviso di coerenza della barra, partita 35760084 > barra coerente: nessun avviso nella pagina  445ms
+ ✓ src/components/controlroom/OpportunitaColonna.test.tsx (5 tests) 114ms
+ ✓ src/components/dashboard/DecisionsView.errori.test.tsx (3 tests) 603ms
+   ✓ DecisionsView - errore non e' "nessun dato" > timeout di get_decisions: messaggio di timeout, NESSUN "Nessuna decisione"  311ms
+ ✓ src/components/live/StandaloneLadder.test.tsx (1 test) 56ms
+ ✓ src/lib/liveOrders.fuoriBot.test.ts (3 tests) 2016ms
+   ✓ sendGreenupFuoriBot > payload ESATTO del contratto W2 (piu' il client_ref di ogni comando)  1006ms
+   ✓ sendGreenupFuoriBot > sendGreenup e buildGreenupParams invariati (nessun `esposizione` di serie)  1005ms
+ ✓ src/lib/priceAxis.test.ts (8 tests) 29ms
+ ✓ src/components/mike/useMike.saveParams.test.tsx (2 tests) 36ms
+ ✓ src/lib/chiusuraUtente.campoLive.test.ts (3 tests) 4ms
+ ✓ src/lib/composizioneScalper.test.ts (3 tests) 4ms
+ ✓ src/components/trading/DayBar.aperto.test.tsx (3 tests) 175ms
+ ✓ src/components/controlroom/RigaOperazioneNomeTennis.test.tsx (3 tests) 68ms
+ ✓ src/components/trading/ModeBadge.test.tsx (5 tests) 54ms
+ ✓ src/lib/flussoPrezzi.test.tsx (4 tests) 28ms
+ ✓ src/lib/flussoStreamRunner.test.tsx (4 tests) 32ms
+ ✓ src/components/shell/navigazione.cashOut.test.ts (3 tests) 7ms
+ ✓ src/lib/manualeSitoBetfair.test.ts (6 tests) 4ms
+ ✓ src/components/mike/MikeMatchCard.fontePnl.test.tsx (2 tests) 144ms
+ ✓ src/lib/etaDato.test.ts (6 tests) 17ms
+ ✓ src/lib/toasts.test.ts (6 tests) 6ms
+ ✓ src/components/controlroom/UsciteColonna.test.tsx (4 tests) 107ms
+ ✓ src/lib/preGoal.test.ts (6 tests) 5ms
+ ✓ src/lib/ladderPopout.test.ts (3 tests) 7ms
+ ✓ src/lib/obiettivoEditor.test.ts (11 tests) 20ms
+ ✓ src/components/dashboard/MarketFrequencyPanel.fixb.test.tsx (2 tests) 478ms
+   ✓ MarketFrequencyPanel - stagioni non caricate > timeout di get_league_seasons: avviso "Stagioni non caricate" in modalita' Stagioni  389ms
+ ✓ src/lib/scalperFlusso.test.ts (2 tests) 3ms
+ ✓ src/lib/valutaProposta.banda.test.ts (20 tests) 22ms
+stderr | src/components/live/LiveAlertBanner.test.tsx > LiveAlertBanner — fix audit #24 > ack FALLITO: l'avviso RIENTRA nella lista (mai dismissal silenzioso)
+[LiveAlertBanner] ackAlert: Error: permission denied
+    at [90m/home/user/python-database-automation/frontend/[39msrc/components/live/LiveAlertBanner.test.tsx:42:32
+    at [90mfile:///home/user/python-database-automation/frontend/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///home/user/python-database-automation/frontend/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///home/user/python-database-automation/frontend/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///home/user/python-database-automation/frontend/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///home/user/python-database-automation/frontend/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+    at runSuite [90m(file:///home/user/python-database-automation/frontend/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///home/user/python-database-automation/frontend/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runFiles [90m(file:///home/user/python-database-automation/frontend/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1787:3[90m)[39m
+
+ ✓ src/components/live/LiveAlertBanner.test.tsx (2 tests) 256ms
+ ✓ src/components/controlroom/fixPagine2609.tick.test.ts (5 tests) 6ms
+ ✓ src/lib/flussoInterrotto.test.ts (3 tests) 5ms
+ ✓ src/components/controlroom/BottoneChiudiRiga.etichetta.test.tsx (2 tests) 46ms
+ ✓ src/lib/erroreRpc.test.ts (6 tests) 19ms
+ ✓ src/lib/valutaProposta.test.ts (37 tests) 28ms
+ ✓ src/components/dashboard/EtaDato.test.tsx (3 tests) 86ms
+ ✓ src/components/live/LiveMatchCard.origine.test.tsx (2 tests) 58ms
+ ✓ src/lib/runnerHealth.test.ts (7 tests) 6ms
+ ↓ src/certification/sessB/safetrade.cert.test.tsx (1 test | 1 skipped)
+ ✓ src/components/trading/DayBar.pnlReale.test.tsx (3 tests) 202ms
+ ✓ src/lib/omegaUscita.test.ts (22 tests) 9ms
+ ✓ src/lib/replay-pnl.formatValuta.test.ts (3 tests) 4ms
+
+ Test Files  367 passed | 10 skipped (377)
+      Tests  5447 passed | 51 skipped (5498)
+   Start at  15:53:57
+   Duration  307.43s (transform 23.11s, setup 66.37s, collect 98.81s, tests 363.79s, environment 277.85s, prepare 29.73s)
+
+EXIT=0 SECONDI=308
