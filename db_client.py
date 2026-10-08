@@ -73,16 +73,338 @@ def timeout_corrente() -> Optional[Any]:
 
 
 def get_supabase_client() -> Client:
-    """Ritorna il client Supabase del THREAD corrente (creato pigramente)."""
+    """Ritorna il client Supabase del THREAD corrente (creato pigramente).
+
+    08/10: il client si RICREA (connessione HTTP/2 nuova) dopo ``rinnova_client()``
+    (chiamata da ``con_ritentativi`` su una connessione terminata dal server) e, solo nei
+    processi che l'hanno chiesto con ``attiva_rinnovo_connessioni`` (Seasons Catchup),
+    ogni ``RINNOVO`` richieste: il server chiude la connessione HTTP/2 dopo 10.000
+    richieste (GOAWAY ``last_stream_id:19999``, run 37049359939 e 37141249749)."""
     voluto = _STATO["timeout"]
     client = getattr(_TLS, "client", None)
     if client is not None and getattr(_TLS, "timeout", None) is voluto:
-        return client
+        ogni = _STATO_RETE["rinnovo_ogni"]
+        contatore = getattr(_TLS, "contatore", None)
+        if not ogni or contatore is None or contatore[0] < ogni:
+            return client
+        _log_rete.warning("[RETE] client Supabase rinnovato dopo %d richieste (prevenzione GOAWAY "
+                          "a 10.000 richieste per connessione HTTP/2)", contatore[0])
+        STATISTICHE_RETE["rinnovi_client"] += 1
     if voluto is None:
         client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     else:
         client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
                                options=ClientOptions(postgrest_client_timeout=voluto))
+    try:
+        # marca: un client nato qui si risolve SEMPRE nel client corrente del thread
+        # (vedi _client_per), cosi' chi lo tiene in una variabile segue i rinnovi
+        client._db_client_prod = True  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001 - oggetti finti nei test
+        pass
     _TLS.client = client
     _TLS.timeout = voluto
+    _TLS.contatore = _installa_contatore(client) if _STATO_RETE["rinnovo_ogni"] else None
     return client
+
+
+# ---------------------------------------------------------------------------
+# 08/10/2026 - RESILIENZA DI RETE PostgREST (AUDIT_2026-10-08/action_catchup/REFERTO.md)
+# ---------------------------------------------------------------------------
+# Un SOLO punto per le chiamate PostgREST della catena Seasons Catchup
+# (seasons_catchup, season_gaps, per_fixture_backfill): `esegui_con_retry` e il
+# motore `con_ritentativi`. Fallimenti dell'action (1 su 4 run) visti nei log:
+#   - HTTP 520 con pagina HTML di Cloudflare (postgrest: APIError code 520,
+#     'JSON could not be generated', details = HTML): nessun ritentativo -> traceback;
+#   - <ConnectionTerminated error_code:0, last_stream_id:19999>: il server chiude la
+#     connessione HTTP/2 dopo 10.000 richieste e httpx solleva RemoteProtocolError
+#     sulla richiesta in volo.
+# Si ritentano SOLO i guasti di trasporto/gateway (classifica_guasto_rete). Mai i 4xx,
+# mai gli errori applicativi, mai il 57014 (statement timeout): quello ha gia' il suo
+# meccanismo (R-CATCHUP-2, dimezzamento e "degradata", season_gaps.riepilogo_lacune).
+# Non riusa Betfair/stream/net_retry.is_transient: li' il marcatore "timeout" prende
+# anche il 57014 ('canceling statement due to statement timeout') e le attese sono da
+# bot (0,15 s); toccarlo cambierebbe il comportamento dei bot.
+import logging as _logging
+import random as _random
+import time as _time
+from collections import Counter as _Counter
+from typing import Callable, Dict, Sequence, Tuple, TypeVar
+
+_log_rete = _logging.getLogger("db_client")
+_T = TypeVar("_T")
+
+#: attese tra un tentativo e il successivo (1 esecuzione + 5 ritentativi, ~62 s in tutto)
+ATTESE_RETE_S: Tuple[float, ...] = (2.0, 4.0, 8.0, 16.0, 32.0)
+#: dopo tanti guasti PERSISTENTI di fila (nessuna chiamata riuscita in mezzo) si smette di
+#: aspettare: un tentativo solo per chiamata finche' una non riesce (niente 62 s x N blocchi)
+INTERRUTTORE_DOPO_GUASTI = 2
+#: rinnovo preventivo del client (solo se attivato): ben sotto le 10.000 del server
+RINNOVO_DEFAULT = 5000
+#: motivo di stop scritto da per_fixture_backfill e letto da seasons_catchup
+MOTIVO_GUASTO_RETE = "guasto rete/gateway"
+
+_STATO_RETE: Dict[str, Any] = {"rinnovo_ogni": None, "guasti_di_fila": 0}
+STATISTICHE_RETE: Dict[str, Any] = {"ritentativi": 0, "riusciti_dopo_ritentativo": 0,
+                                    "guasti_persistenti": 0, "rinnovi_client": 0,
+                                    "per_classe": _Counter()}
+
+# PostgREST senza database (503/504 con JSON): PGRST000-003. Postgres in avvio/arresto o
+# connessioni esaurite (08xxx, 53300, 57P01, 57P03). NON 53100 (disco pieno: non passa
+# ritentando, e' un guasto vero che deve uscire).
+_CODICI_TRANSITORI = frozenset({"PGRST000", "PGRST001", "PGRST002", "PGRST003",
+                                "53300", "57P01", "57P03"})
+
+
+class GuastoRete(RuntimeError):
+    """Guasto di rete/gateway PERSISTENTE: tutti i tentativi falliti con un errore
+    transitorio. Chi lo riceve non scrive stati falsi: rinvia la lega-stagione."""
+
+    def __init__(self, classe: str, tentativi: int, etichetta: str, ultimo: BaseException) -> None:
+        self.classe = classe
+        self.tentativi = tentativi
+        self.etichetta = etichetta
+        self.ultimo = ultimo
+        super().__init__(f"{classe} persistente su {etichetta or 'PostgREST'} dopo {tentativi} "
+                         f"tentativi: {descrivi_errore(ultimo)}")
+
+
+def descrivi_errore(exc: BaseException) -> str:
+    """Descrizione CORTA (la pagina HTML di Cloudflare e' lunga 7.800 caratteri)."""
+    codice = getattr(exc, "code", None)
+    messaggio = getattr(exc, "message", None)
+    testo = f"{type(exc).__name__}"
+    if codice is not None or messaggio is not None:
+        testo += f" code={codice} message={messaggio}"
+        dettagli = str(getattr(exc, "details", None) or "")
+        i = dettagli.lower().find("<title>")
+        if i >= 0:
+            j = dettagli.lower().find("</title>", i)
+            testo += f" pagina='{dettagli[i + 7:j if j > i else i + 120]}'"
+        return testo[:300]
+    return f"{testo}: {str(exc)[:200]}"
+
+
+def _classe_di(exc: BaseException) -> Tuple[bool, Optional[str]]:
+    """(decisivo, classe) per UNA eccezione della catena."""
+    codice = getattr(exc, "code", None)
+    if type(exc).__name__ == "APIError" and hasattr(exc, "details"):
+        c = str(codice if codice is not None else "").strip()
+        msg = str(getattr(exc, "message", None) or "")
+        if c == "57014" or "statement timeout" in msg.lower():
+            return True, None                           # R-CATCHUP-2, non qui
+        if c.isdigit() and 500 <= int(c) <= 599:
+            return True, "gateway"                      # 5xx / 520-524 senza JSON
+        dettagli = (str(getattr(exc, "details", None) or "") + msg).lower()
+        if "<!doctype html" in dettagli or "<html" in dettagli:
+            return True, "gateway"                      # pagina HTML al posto del JSON
+        if c in _CODICI_TRANSITORI or c.startswith("08"):
+            return True, "gateway"
+        return True, None                               # 4xx e applicativi: mai
+    try:
+        import httpx
+    except ImportError:  # pragma: no cover - httpx e' una dipendenza di supabase
+        httpx = None  # type: ignore[assignment]
+    if httpx is not None:
+        if isinstance(exc, httpx.RemoteProtocolError):
+            return True, "connessione_terminata"        # GOAWAY/ConnectionTerminated, server disconnesso
+        if isinstance(exc, httpx.TimeoutException):
+            return True, "timeout_rete"                 # ConnectTimeout/ReadTimeout/WriteTimeout/PoolTimeout
+        if isinstance(exc, httpx.NetworkError):
+            return True, "connessione"                  # ConnectError/ReadError/WriteError/CloseError
+    modulo = type(exc).__module__ or ""
+    nome = type(exc).__name__
+    if modulo.startswith("h2"):
+        return True, "connessione_terminata"            # errori di protocollo HTTP/2 non mappati
+    if modulo.startswith("httpcore"):
+        if nome == "RemoteProtocolError":
+            return True, "connessione_terminata"
+        if nome.endswith("Timeout"):
+            return True, "timeout_rete"
+        if nome in ("ConnectError", "ReadError", "WriteError", "NetworkError"):
+            return True, "connessione"
+    return False, None
+
+
+def classifica_guasto_rete(exc: Optional[BaseException]) -> Optional[str]:
+    """'gateway' | 'connessione_terminata' | 'timeout_rete' | 'connessione', oppure None
+    (da NON ritentare: 4xx, 57014, errori applicativi, qualunque altra cosa)."""
+    visti = 0
+    corrente = exc
+    while corrente is not None and visti < 8:
+        decisivo, classe = _classe_di(corrente)
+        if decisivo:
+            return classe
+        succ = corrente.__cause__ if corrente.__cause__ is not None else corrente.__context__
+        corrente = succ if succ is not corrente else None
+        visti += 1
+    return None
+
+
+def rinnova_client() -> None:
+    """Il prossimo get_supabase_client() di questo thread crea un client NUOVO (connessione
+    HTTP/2 nuova). Il vecchio non si chiude: chi lo tiene ancora non deve trovarlo chiuso."""
+    if getattr(_TLS, "client", None) is not None:
+        _TLS.client = None
+        STATISTICHE_RETE["rinnovi_client"] += 1
+
+
+def _installa_contatore(client: Any) -> Optional[list]:
+    """Conta le richieste HTTP del client PostgREST (hook di httpx). None se non si puo'."""
+    contatore = [0]
+
+    def _conta(_richiesta: Any) -> None:
+        contatore[0] += 1
+    try:
+        client.postgrest.session.event_hooks["request"].append(_conta)
+    except Exception:  # noqa: BLE001 - client finti o versioni diverse: niente rinnovo preventivo
+        return None
+    return contatore
+
+
+def attiva_rinnovo_connessioni(ogni: Optional[int] = RINNOVO_DEFAULT) -> None:
+    """Rinnovo preventivo del client ogni `ogni` richieste, per TUTTO il processo.
+    Lo chiama solo il main del Seasons Catchup (i bot non cambiano)."""
+    _STATO_RETE["rinnovo_ogni"] = int(ogni) if ogni and int(ogni) > 0 else None
+    _TLS.client = None                                   # il prossimo nasce con il contatore
+
+
+def _client_per(sb: Any) -> Any:
+    """Il client da usare ORA: un client nato da get_supabase_client (o un ClientResiliente)
+    si risolve nel client corrente del thread, che dopo un rinnovo e' quello nuovo; un
+    oggetto qualsiasi (finti dei test, client altrui) resta se stesso."""
+    if sb is None or isinstance(sb, ClientResiliente) or getattr(sb, "_db_client_prod", False) is True:
+        return get_supabase_client()
+    return sb
+
+
+def con_ritentativi(fn: Callable[[], _T], *, etichetta: str = "",
+                    attese: Sequence[float] = ATTESE_RETE_S,
+                    dormi: Optional[Callable[[float], Any]] = None,
+                    casuale: Optional[Callable[[], float]] = None) -> _T:
+    """Esegue `fn` e la RIESEGUE (backoff esponenziale con jitter +-25%) SOLO sui guasti
+    transitori di rete/gateway. Errore non transitorio -> risale subito, identico.
+    Tutti i tentativi falliti -> GuastoRete (mai un traceback grezzo di httpx/postgrest).
+    Su una connessione terminata il client del thread viene ricreato prima di ritentare
+    (`fn` deve prendere il client con `_client_per`/`get_supabase_client` a ogni giro)."""
+    dormi = dormi or _time.sleep                         # risolto qui: i test patchano time.sleep
+    casuale = casuale or _random.random
+    if _STATO_RETE["guasti_di_fila"] >= INTERRUTTORE_DOPO_GUASTI:
+        attese = ()                                      # interruttore aperto: un tentativo solo
+    totale = len(attese) + 1
+    for i in range(totale):
+        try:
+            risultato = fn()
+        except Exception as e:
+            classe = classifica_guasto_rete(e)
+            if classe is None:
+                raise
+            STATISTICHE_RETE["per_classe"][classe] += 1
+            if i + 1 >= totale:
+                STATISTICHE_RETE["guasti_persistenti"] += 1
+                _STATO_RETE["guasti_di_fila"] += 1
+                _log_rete.error("[RETE] %s: %s PERSISTENTE dopo %d tentativi: %s", etichetta or "PostgREST",
+                                classe, totale, descrivi_errore(e))
+                raise GuastoRete(classe, totale, etichetta, e) from e
+            if classe == "connessione_terminata":
+                rinnova_client()
+            attesa = float(attese[i]) * (0.75 + 0.5 * float(casuale()))
+            STATISTICHE_RETE["ritentativi"] += 1
+            _log_rete.warning("[RETE] %s: %s (tentativo %d/%d): %s -> ritento tra %.1f s%s",
+                              etichetta or "PostgREST", classe, i + 1, totale, descrivi_errore(e), attesa,
+                              " con un client NUOVO" if classe == "connessione_terminata" else "")
+            dormi(attesa)
+            continue
+        if i:
+            STATISTICHE_RETE["riusciti_dopo_ritentativo"] += 1
+        _STATO_RETE["guasti_di_fila"] = 0
+        return risultato
+    raise RuntimeError("non raggiungibile")  # pragma: no cover
+
+
+def esegui_con_retry(query: Any, sb: Any = None, *, etichetta: str = "", **opzioni: Any) -> Any:
+    """`.execute()` PostgREST con i ritentativi di `con_ritentativi`.
+
+    query = FABBRICA ``lambda c: c.table(...)...`` (forma da preferire: a ogni tentativo
+    il builder si ricostruisce sul client corrente, quindi sul client NUOVO dopo una
+    connessione terminata) oppure un builder gia' fatto (si riesegue lo stesso: httpx
+    scarta da solo la connessione chiusa). Solo per operazioni IDEMPOTENTI (letture,
+    upsert, update, delete, RPC di lettura): un insert o una RPC che incrementa
+    contatori va ritentata come unita' (per_fixture_backfill._sostituisci_righe,
+    season_gaps.registra_esiti)."""
+    if isinstance(query, _Catena):
+        return query.execute()                           # ha gia' i suoi ritentativi
+    if hasattr(query, "execute"):
+        return con_ritentativi(query.execute, etichetta=etichetta, **opzioni)
+    return con_ritentativi(lambda: query(_client_per(sb)).execute(), etichetta=etichetta, **opzioni)
+
+
+# RPC che NON si possono riapplicare alla cieca (incrementano contatori): dal proxy si
+# eseguono una volta sola, chi le chiama gestisce l'unita' (season_gaps.registra_esiti).
+RPC_NON_IDEMPOTENTI = frozenset({"record_fixture_detail_checks"})
+
+
+class _Catena:
+    """Ricetta di una query PostgREST costruita su un ClientResiliente: registra i passi
+    (attributi e chiamate) e all'`.execute()` li RIPETE sul client corrente a ogni
+    tentativo. Un `insert` puro o una RPC non idempotente si esegue UNA volta sola."""
+
+    __slots__ = ("_passi",)
+
+    def __init__(self, passi: Tuple[Tuple[Any, ...], ...]) -> None:
+        self._passi = passi
+
+    def __getattr__(self, nome: str) -> "_Catena":
+        if nome.startswith("__"):
+            raise AttributeError(nome)
+        return _Catena(self._passi + (("attr", nome),))
+
+    def __call__(self, *args: Any, **kwargs: Any) -> "_Catena":
+        return _Catena(self._passi + (("call", args, kwargs),))
+
+    def _costruisci(self, client: Any) -> Any:
+        oggetto = client
+        for passo in self._passi:
+            oggetto = getattr(oggetto, passo[1]) if passo[0] == "attr" else oggetto(*passo[1], **passo[2])
+        return oggetto
+
+    def _idempotente(self) -> bool:
+        nomi = [p[1] for p in self._passi if p[0] == "attr"]
+        if "insert" in nomi:
+            return False
+        for i, p in enumerate(self._passi[:-1]):
+            if p == ("attr", "rpc"):
+                succ = self._passi[i + 1]
+                if succ[0] == "call" and succ[1] and succ[1][0] in RPC_NON_IDEMPOTENTI:
+                    return False
+        return True
+
+    def execute(self) -> Any:
+        etichetta = ".".join(str(p[1]) if p[0] == "attr" else (str(p[1][0]) if p[1] else "()")
+                             for p in self._passi[:3])
+        if not self._idempotente():
+            return self._costruisci(get_supabase_client()).execute()
+        return con_ritentativi(lambda: self._costruisci(get_supabase_client()).execute(), etichetta=etichetta)
+
+
+class ClientResiliente:
+    """Il client Supabase del Seasons Catchup: `table`/`from_`/`rpc`/`schema` restituiscono
+    ricette che all'`.execute()` passano da `con_ritentativi`, sempre sul client CORRENTE
+    del thread (quindi anche dopo un rinnovo). Copre senza toccarli i moduli della catena
+    che ricevono `sb` (season_aggregates, season_backfill, api_quota). Il resto degli
+    attributi va al client vero."""
+
+    def __getattr__(self, nome: str) -> Any:
+        if nome in ("table", "from_", "rpc", "schema"):
+            return _Catena((("attr", nome),))
+        if nome.startswith("__"):
+            raise AttributeError(nome)
+        return getattr(get_supabase_client(), nome)
+
+
+def riepilogo_rete() -> str:
+    """Una riga per il referto e il riepilogo del job."""
+    s = STATISTICHE_RETE
+    per_classe = ", ".join(f"{k} {v}" for k, v in sorted(s["per_classe"].items())) or "nessuno"
+    return (f"ritentativi {s['ritentativi']} (riusciti dopo un ritentativo {s['riusciti_dopo_ritentativo']}), "
+            f"guasti persistenti {s['guasti_persistenti']}, client rinnovati {s['rinnovi_client']}; "
+            f"errori transitori per classe: {per_classe}")
