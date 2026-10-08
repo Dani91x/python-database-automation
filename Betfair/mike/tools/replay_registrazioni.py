@@ -324,6 +324,20 @@ def _riavvia_processo() -> List[str]:
     return S.azzera_cache_di_processo()
 
 
+#: 08/10 (cantiere 11): lo stato di processo di `mike/dossier.py` che un
+#: processo nuovo ha vuoto (test `test_mike_banco_isolamento_2026_10_08.py`)
+STATO_DOSSIER_FRA_SCENARI = ("_EMPIRICAL_CACHE", "_EMPIRICAL_FAILED")
+
+
+def _dossier_nuovo() -> None:
+    """Il dossier di Mike come in un processo appena nato."""
+    from .. import dossier as _D
+
+    for nome in STATO_DOSSIER_FRA_SCENARI:
+        getattr(_D, nome).clear()
+    _D._AVVISATO["assente"] = False
+
+
 # le due linee che interessano a Mike, coi nomi di mercato Betfair
 _LINEE = {"OVER_UNDER_35": 3.5, "OVER_UNDER_45": 4.5}
 
@@ -1381,6 +1395,12 @@ def _certifica_evento(event_id: str, *, data_dir: str,
     # Misurato il 16/09 sera: `chiuso-fuori-app` dentro `--scenari tutti
     # --worker 3` non leggeva mai la posizione di conto e dava R1/R3 a zero.
     S.azzera_cache_di_processo()
+    # 08/10 (cantiere 11): anche la cache di processo del DOSSIER (tabella
+    # empirica HT->FT e i suoi tentativi falliti, con l'istante): senza, dal
+    # secondo scenario nello stesso processo `ht_ft_rows` non veniva piu'
+    # chiesta e la nota NON ESERCITABILE spariva (35760084, `--worker 1` contro
+    # `--worker 3`). Solo il banco: il servizio non la tocca.
+    _dossier_nuovo()
     # 30/09: il canale del conto lo monta SOLO lo scenario che lo esercita
     # (``chiuso-fuori-app``); nessun replay lo eredita da quello prima.
     S.installa_conto_canale(None)

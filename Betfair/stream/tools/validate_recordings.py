@@ -198,11 +198,43 @@ def _is_main_market_type(market_type: Any) -> bool:
     return "HALF" not in mt or mt == "HALF_TIME_FULL_TIME"
 
 
+# 08/10 (cantiere 11, velocita'): la passata sul raw si fa UNA volta per file e
+# per processo. `certifica` chiede il verdetto della registrazione in testa al
+# referto e di nuovo in ogni scenario (`qualita_registrazione`): sulla 35797769
+# (23 MB) erano ~0,5 s a lettura. La chiave e' il FILE COM'E' ADESSO (percorso,
+# dimensione, istante di modifica al ns) piu' la soglia: un raw che cresce (il
+# registratore scrive) o cambia e' un altro file e si rilegge. Chi chiama riceve
+# una COPIA: nessuno puo' sporcare la passata di un altro.
+_MEMORIA_SCAN: Dict[Tuple[str, int, int, float], RawScan] = {}
+_MEMORIA_SCAN_MAX = 16
+
+
 def scan_raw(path: str, gap_threshold_s: float = GAP_THRESHOLD_S) -> RawScan:
     """Una passata sul raw nativo: pt primo/ultimo, gap, kickoff, CLOSED visti.
 
     Tollerante alle righe corrotte (contate in ``bad_lines``, mai eccezioni).
+    Ricordata per processo finche' il file non cambia (vedi `_MEMORIA_SCAN`).
     """
+    import copy
+
+    try:
+        st = os.stat(path)
+        chiave: Optional[Tuple[str, int, int, float]] = (
+            os.path.abspath(path), int(st.st_size), int(st.st_mtime_ns), float(gap_threshold_s))
+    except OSError:
+        chiave = None   # file assente: `_scan_raw_lettura` si rompe come prima
+    if chiave is not None and chiave in _MEMORIA_SCAN:
+        return copy.deepcopy(_MEMORIA_SCAN[chiave])
+    scan = _scan_raw_lettura(path, gap_threshold_s)
+    if chiave is not None:
+        if len(_MEMORIA_SCAN) >= _MEMORIA_SCAN_MAX:
+            _MEMORIA_SCAN.clear()
+        _MEMORIA_SCAN[chiave] = copy.deepcopy(scan)
+    return scan
+
+
+def _scan_raw_lettura(path: str, gap_threshold_s: float = GAP_THRESHOLD_S) -> RawScan:
+    """La passata vera sul file (senza memoria): quella di sempre."""
     scan = RawScan()
     prev_pt: Optional[int] = None
     with open(path, "r", encoding="utf-8", errors="replace") as fh:

@@ -94,7 +94,24 @@ def _nuovo_livello(liv: Any, r: float) -> Any:
 def _livelli(livelli: Any, r: float) -> Any:
     if livelli is None or isinstance(livelli, _LivelliEur):
         return livelli
-    return _LivelliEur(_nuovo_livello(x, r) for x in livelli)
+    # 08/10 (cantiere 11, velocita'): il livello di flumine e' un `dict`
+    # {price, size} (`flumine/patching.py::EX`) e passa di qui milioni di volte
+    # per partita. Per lui la copia si fa qui, senza la chiamata e i controlli di
+    # forma di `_nuovo_livello`: stessa copia (`dict(liv)`), stesso arrotondamento,
+    # stesso ordine delle chiavi. Ogni altra forma (sottoclassi di dict comprese)
+    # passa da `_nuovo_livello` come prima. Equivalenza:
+    # `Betfair/stream/tests/test_banco_velocita_2026_10_08.py`.
+    out = _LivelliEur()
+    aggiungi = out.append
+    for liv in livelli:
+        if type(liv) is dict:
+            nuovo = dict(liv)
+            if nuovo.get("size") is not None:
+                nuovo["size"] = round(float(nuovo["size"]) * r, 2)
+            aggiungi(nuovo)
+        else:
+            aggiungi(_nuovo_livello(liv, r))
+    return out
 
 
 def _importo(v: Any, r: float) -> Any:

@@ -517,7 +517,16 @@ def _livelli_di_produzione(livelli: Any) -> List[_Livello]:
     """Da qualunque forma (dict flumine, lista grezza, PriceSize) a `.price/.size`."""
     out: List[_Livello] = []
     for liv in livelli or []:
-        out.append(_Livello(_offer_price(liv), _offer_size(liv)))
+        if type(liv) is dict:
+            # 08/10 (cantiere 11, velocita'): il livello di flumine, letto qui
+            # come lo leggono `_offer_price`/`_offer_size` (stesse chiavi, stesso
+            # `float`, None se manca) senza le due chiamate per livello
+            p = liv.get("price")
+            s = liv.get("size")
+            out.append(_Livello(float(p) if p is not None else None,
+                                float(s) if s is not None else None))
+        else:
+            out.append(_Livello(_offer_price(liv), _offer_size(liv)))
     return out
 
 

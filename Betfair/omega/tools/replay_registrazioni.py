@@ -1175,6 +1175,46 @@ def _riavvia_processo() -> List[str]:
     return azzerati
 
 
+# 08/10 (cantiere 11) - LO STATO DI PROCESSO CHE `svuota_le_cache` NON TOCCA.
+# Con `certifica --worker 1` i venti scenari di Omega girano nello STESSO
+# processo, uno dopo l'altro: questi dizionari di `omega_service` passavano
+# dallo scenario precedente al successivo. Misurato su 35760084: dal secondo
+# scenario in poi `_EVENTS_REFRESH_AT` (istante dell'ultimo refresh eventi, a
+# fine partita) fermava il refresh per tutta la partita (6 chiamate
+# `list_today_football_events` e la lettura delle fixture in meno),
+# `_SKIP_SEEN` ammutoliva gli skip gia' visti e i ripieghi dei lambda
+# (`_LAMBDA_CACHE`) arrivavano gia' pronti: il referto di uno scenario dipendeva
+# da quali scenari erano girati prima nello stesso processo, e `--worker N`
+# dava un referto diverso da `--worker 1`. Un processo nuovo li ha VUOTI: a
+# ogni scenario si ripartono vuoti. Solo il banco: in produzione
+# `svuota_le_cache` non la chiama nessuno e questo elenco non esiste.
+# Il test `test_ogni_stato_di_processo_di_omega_riparte_a_ogni_scenario`
+# pretende che ogni nuovo dizionario/insieme/lista di modulo di
+# `omega_service` stia qui, in `svuota_le_cache` o fra le costanti dichiarate.
+STATO_DI_PROCESSO_FRA_SCENARI = (
+    "_LEG_RETRY_DB", "_LEG_RETRY", "_ULTIMO_STATO_SCANNER_OMEGA", "_LAMBDA_CACHE",
+    "_MARKET_FIT_CACHE", "_EMPIRICAL_CACHE", "_MINUTE_CACHE", "_SKIP_SEEN",
+    "_DAILY_GOAL_WRITTEN", "_BLIND_CYCLES", "_REALLY_OVER_CACHE", "_IDLE_STATS_AT",
+    "_EVENTS_REFRESH_AT",
+)
+#: tabelle di testo fisse di `omega_service` (non sono stato: non si toccano)
+COSTANTI_DI_MODULO = ("_GREENUP_REASON", "_MISSION_MARKET_LABEL")
+
+
+def _processo_nuovo() -> None:
+    """Lo stato di `omega_service` come in un processo appena nato: le cache di
+    `svuota_le_cache`, i dizionari di `STATO_DI_PROCESSO_FRA_SCENARI` e i due
+    avvisi «una volta per processo» (aggregati senza modalita', scanner che non
+    dichiara il flusso)."""
+    from ...stream import flusso_prezzi as _FP
+
+    S.svuota_le_cache()
+    for nome in STATO_DI_PROCESSO_FRA_SCENARI:
+        getattr(S, nome).clear()
+    S._AVVISO_AGGREGATI_SENZA_MODO["dato"] = False
+    _FP._NON_NOTO_AVVISATO.discard("omega")
+
+
 # ---------------------------------------------------------------------------
 # la strategia flumine: alimenta lo scanner, fa girare il servizio, certifica
 # ---------------------------------------------------------------------------
@@ -1981,14 +2021,14 @@ class AmbienteOmega:
             ttl_sec=0.0, fetch=self.feed.righe,
             clock=(lambda: float(self.banco.ora)),
             fetch_status=self.feed.stato_scanner)
-        S.svuota_le_cache()
+        _processo_nuovo()   # 08/10 (cantiere 11): non solo svuota_le_cache
         return self
 
     def __exit__(self, *_exc: Any) -> None:
         S._real_market = self._prima["_real_market"]      # type: ignore[assignment]
         S._mono = self._prima["_mono"]                    # type: ignore[assignment]
         SF._SHARED_CACHE = self._prima["_SHARED_CACHE"]   # type: ignore[assignment]
-        S.svuota_le_cache()
+        _processo_nuovo()
 
 
 # ---------------------------------------------------------------------------
