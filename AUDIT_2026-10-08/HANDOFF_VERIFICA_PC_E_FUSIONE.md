@@ -15,6 +15,108 @@ CERTIFICAZIONE.)» e «VOGLIO CHE MASTER SIA PERFETTO [...] SENZA REGRESSIONI DI
 
 ---------------------------------------------------------------------------------------------------
 
+## ISTRUZIONI PER L'AGENTE DEL PC — VERSIONE VINCOLANTE (ordine dell'utente, 08/10 sera)
+
+Ordine testuale: «VOGLIO CHE CONTROLLI (MA NON DEVE FARE REPLAY, PER QUELLI MI FIDO DEL TUO GIUDIZIO) E TASSATIVAMENTE NON
+DEVE INTRODURRE REGRESSIONI, DOVRA' FONDERE SU MASTER TUTTO IL LAVORO FATTO».
+Questa sezione PREVALE sul resto del documento: i §3.1-§3.7 (replay e prove a schermo) restano come riferimento per
+l'utente, NON sono compiti tuoi. Tu NON lanci `certifica`, NON lanci replay, NON tocchi codice, NON applichi migrazioni,
+NON chiudi e NON ricompili l'app. Fai SOLO i passi A-F, nell'ordine; ogni «STOP» = ti fermi, non fondi, riporti all'utente.
+
+**Cosa e' gia' certificato nel cloud (non rifarlo):** ogni cantiere con diff riletto, test, mutazioni proprie e replay del
+coordinatore; controllo finale sulla cima `d01de76` con 5 macchine: suite Betfair 11295 verdi (parallela e
+seriale), tools 17, catchup 90, tsc 0, vitest 5447, build ok; replay `--scenari tutti` di Mike, Omega, Safe (3 varianti),
+Scalper calcio su entrambe le registrazioni: {ESITO_REPLAY}. Dopo il controllo sono cambiati SOLO: un test
+(`test_frammenti_mercato_2026_09_28.py`), un test nuovo (`test_banco_isolamento_conto_2026_10_08.py`), gli innesti del banco di Mike e Safe
+(`mike/tools/replay_registrazioni.py`, `safe_strategy/tools/replay_registrazioni.py`: strumenti di replay, NON codice dei bot) e documenti. Controllo:
+`git diff --stat d01de76 {SHA_FINALE} -- Betfair/ ':!Betfair/**/tools/**' ':!Betfair/**/tests/**' ':!Betfair/**/test_*'` -> VUOTO
+(nessun file di produzione dei bot cambiato dopo il controllo finale).
+
+### A. Stato (sola lettura, 2 minuti)
+```
+cd "<radice del repo>"
+git status                                   # STOP se ci sono modifiche non tue in stage; MAI `git add -A`
+git fetch origin
+git rev-parse origin/claude/blissful-sagan-hri7o6        # atteso: {SHA_FINALE}  (altrimenti STOP: chiedi)
+git rev-parse origin/master                               # atteso: 8226d766... (altrimenti §5.5)
+git merge-base --is-ancestor origin/master origin/claude/blissful-sagan-hri7o6 && echo OK_ANTENATO   # atteso OK_ANTENATO
+git log --oneline origin/claude/blissful-sagan-hri7o6..origin/claude/eloquent-franklin-g2nyk5         # lavoro del PC dopo
+```
+Se l'ultima riga NON e' vuota: il PC ha pushato altro dopo `3c4aae6`; segui §5.1 (merge, mai rebase) PRIMA di B.
+
+### B. Controlli di integrita' del ramo (sola lettura, 5 minuti)
+1. Nessun file enorme portato dal ramo:
+   `git diff --name-only --diff-filter=A origin/master origin/claude/blissful-sagan-hri7o6 | python -c "import sys,subprocess;[print(s,p) for p in sys.stdin.read().split() for s in [int(subprocess.run(['git','cat-file','-s','origin/claude/blissful-sagan-hri7o6:'+p],capture_output=True,text=True).stdout or 0)] if s>1000000]"`
+   ATTESO: nessuna riga. Una riga = STOP.
+2. Nessun file cancellato per sbaglio: `git diff --name-status --diff-filter=D origin/master origin/claude/blissful-sagan-hri7o6`
+   ATTESO: vuoto o soli file elencati qui: nessuno (verificato: 0 file cancellati rispetto a master). Altro = STOP.
+3. Strategie NON alterate: `git diff origin/master origin/claude/blissful-sagan-hri7o6 -- Betfair/omega/omega_config.py`
+   ATTESO: SOLO l'aggiunta di `v3_include_aggregate` (decisione dell'utente del 07/10, commit `bae79eb6`, gia' sul ramo del
+   PC). La sessione cloud non ha toccato nessun file di parametri (verificato: `git diff b5547eb8 {SHA_FINALE}` sui file
+   di configurazione = vuoto). Qualunque altra riga cambiata in un file di parametri = STOP.
+4. Fine riga delle fixture (cantiere 12): `git ls-files --eol frontend/src/**/__fixtures__/*.timeline.jsonl` (se il glob non
+   va, `git ls-files --eol | findstr timeline`): ATTESO `i/lf` per tutte.
+
+### C. Suite sul PC, su una COPIA di lavoro del ramo (non nel checkout dell'app viva)
+Lavora in un worktree separato, cosi' l'app (che gira sul checkout principale) non si accorge di nulla:
+```
+git worktree add ..\verifica-fusione origin/claude/blissful-sagan-hri7o6
+cmd /c mklink /J ..\verifica-fusione\.venv .venv
+cmd /c mklink /J ..\verifica-fusione\frontend\node_modules frontend\node_modules
+cd ..\verifica-fusione
+.venv\Scripts\python -m pytest Betfair/ -q -p no:cacheprovider        # ATTESO: 0 failed (cloud: 11295 passed)
+.venv\Scripts\python -m pytest tools/ -q -p no:cacheprovider           # ATTESO: 17 passed
+.venv\Scripts\python -m pytest test_catchup_*.py -q -p no:cacheprovider  # ATTESO: 90 passed (nella radice)
+cd frontend
+npx tsc -p tsconfig.app.json --noEmit                                  # ATTESO: 0 errori
+npx vitest run                                                          # ATTESO: 0 failed (cloud: 5447 passed; i 6 test
+                                                                        #  rossi solo su Windows del cantiere 12 ora VERDI)
+```
+- Un rosso: rilancialo DA SOLO 3 volte. Rosso anche da solo = STOP (riporta l'uscita intera). Mai chiamarlo «flaky»: oggi
+  due «flaky» erano un test sbagliato e un difetto vero. Eccezione: un test SOLO di tempo (nome con `latenza`, p95 in ms)
+  rosso sotto carico: rilancialo a macchina scarica; se passa, annotalo.
+- Numeri di skipped diversi dal cloud sono normali (Windows/dipendenze); i passed possono differire di poco solo se ci sono
+  skipped in piu': riportali.
+- `npm run build` NON lo lanci tu (l'app e' viva): lo fa l'utente ad app chiusa dopo la fusione (passo F).
+- Smonta il worktree SENZA cancellazioni ricorsive (CLAUDE.md, incidente del 17/09):
+  `cmd /c rmdir ..\verifica-fusione\.venv` , `cmd /c rmdir ..\verifica-fusione\frontend\node_modules` , poi
+  `git worktree remove ..\verifica-fusione` (MAI `--force`); verifica che `.venv\Scripts\python.exe` e
+  `frontend\node_modules` del checkout principale esistano ancora.
+
+### D. Fusione su master (solo se A, B, C sono puliti)
+```
+git fetch origin
+git checkout master                     # nel checkout principale: l'app usa i file del checkout! fallo SOLO con
+                                        # l'utente d'accordo e app CHIUSA, oppure nel worktree (vedi sotto)
+git merge --ff-only origin/claude/blissful-sagan-hri7o6
+git log --oneline -1                    # = {SHA_FINALE}
+git push origin master                  # MAI --force
+```
+Variante senza toccare il checkout dell'app (consigliata se l'app e' aperta): dal worktree o da qualunque cartella del repo
+`git push origin origin/claude/blissful-sagan-hri7o6:refs/heads/master` — e' un avanzamento veloce (fast-forward): se Git
+lo rifiuta («non-fast-forward») master e' andato avanti: STOP e §5.5, MAI `--force`.
+Dopo: `git fetch origin && git rev-parse origin/master` = {SHA_FINALE}; `git diff origin/master origin/claude/blissful-sagan-hri7o6 --stat` vuoto.
+
+### E. Dopo la fusione (documenti, 5 minuti)
+- `CRONOSTORIA.md`: blocco «FUSIONE SU MASTER — 08/10» nel TUO blocco: sha prima (8226d76) e dopo, esiti di A-C con i
+  numeri, eventuali reperti. Commit con messaggio in italiano, `git fetch` prima del push.
+- NON cancellare nessun ramo. `git branch -r --no-merged origin/master` -> elenco all'utente (non fondere altro).
+
+### F. Da dire all'utente (non da fare tu)
+1. Ad app CHIUSA: `cd frontend && npm run build`, poi riavvio dell'app (all'avvio nessun bot opera: i bot li accende lui).
+2. Migrazioni da applicare (lui, nell'ordine, dopo verifica in sola lettura di quali mancano): §4.
+3. Prove a schermo consigliate (sue): pagina Cash Out in PROVA (§3.4); registro del replay (§3.5).
+4. Decisioni aperte: §6 (D-1 ... D-14), in particolare D-2 (money-critical: place-and-trim dopo un replace rifiutato).
+5. Replay tennis (cantieri 5, 6, 9, W3b): NON eseguiti in nessuna macchina (registrazioni solo sul PC); coperti da test
+   (1112 tennis + 47 + 45). Per ordine dell'utente non li rifai; restano disponibili i comandi del §3.1 se l'utente li vuole.
+
+### Condizioni di STOP (riepilogo)
+SHA diverso dall'atteso · file > 1 MB nuovo · file cancellato non elencato · parametro di strategia cambiato · un test rosso
+anche da solo · tsc con errori · `--ff-only` rifiutato · qualunque conflitto in un file di codice. In tutti questi casi: NON
+fondere, riporta all'utente l'uscita intera e la tua lettura, e aspetta.
+
+---------------------------------------------------------------------------------------------------
+
 ## 0. In una pagina
 
 - Ramo da fondere: `claude/blissful-sagan-hri7o6`. Contiene TUTTO `claude/eloquent-franklin-g2nyk5` (lavoro del
