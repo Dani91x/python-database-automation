@@ -1,0 +1,10 @@
+== gruppo scalper ==
+  Betfair/stream/scalper/scalper_bot.py (69 funz., 3315 righe)  vs  Betfair/stream/tennis_scalper/tennis_scalper_bot.py (61 funz., 2974 righe): 49 nomi in comune, 20 identiche, 7 simili>=0.90, 22 diverse; righe gemelle lato A = 806 (24.3% del file A); delle diverse 0 hanno la STESSA STRUTTURA (stringhe mascherate), 0 righe lato A
+  Betfair/stream/scalper/scalper_bot.py (69 funz., 3315 righe)  vs  laboratorio/scalper_lab/scalper_bot_base.py (43 funz., 2076 righe): 41 nomi in comune, 22 identiche, 5 simili>=0.90, 14 diverse; righe gemelle lato A = 866 (26.1% del file A); delle diverse 0 hanno la STESSA STRUTTURA (stringhe mascherate), 0 righe lato A
+  Betfair/stream/tennis_scalper/tennis_scalper_bot.py (61 funz., 2974 righe)  vs  laboratorio/scalper_lab/scalper_bot_base.py (43 funz., 2076 righe): 42 nomi in comune, 23 identiche, 3 simili>=0.90, 16 diverse; righe gemelle lato A = 649 (21.8% del file A); delle diverse 0 hanno la STESSA STRUTTURA (stringhe mascherate), 0 righe lato A
+
+== gruppo db ==
+  Betfair/safe_strategy/bot_db.py (61 funz., 1044 righe)  vs  Betfair/omega/omega_db.py (66 funz., 1081 righe): 28 nomi in comune, 2 identiche, 3 simili>=0.90, 23 diverse; righe gemelle lato A = 29 (2.8% del file A); delle diverse 2 hanno la STESSA STRUTTURA (stringhe mascherate), 25 righe lato A
+  Betfair/safe_strategy/bot_db.py (61 funz., 1044 righe)  vs  Betfair/mike/db.py (42 funz., 693 righe): 26 nomi in comune, 3 identiche, 0 simili>=0.90, 23 diverse; righe gemelle lato A = 8 (0.8% del file A); delle diverse 0 hanno la STESSA STRUTTURA (stringhe mascherate), 0 righe lato A
+  Betfair/omega/omega_db.py (66 funz., 1081 righe)  vs  Betfair/mike/db.py (42 funz., 693 righe): 22 nomi in comune, 2 identiche, 0 simili>=0.90, 20 diverse; righe gemelle lato A = 4 (0.4% del file A); delle diverse 0 hanno la STESSA STRUTTURA (stringhe mascherate), 0 righe lato A
+

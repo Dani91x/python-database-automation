@@ -1,0 +1,4 @@
+A) payload 1332 byte; json.dumps: n=2000 p50=166.800 p95=541.900 p99=1827.300 max=7030.400 us
+A) giro send->recv su loopback (stesso processo): n=2000 p50=0.635 p95=1.958 p99=4.119 max=10.244 ms
+B) dqbwaocvlzbxfrpacsac.supabase.co -> 172.64.149.246: DNS 23.4 ms, TCP connect 15.4 ms, TLS handshake 50.5 ms
+B) GET /rest/v1/ senza chiave, connessione riusata: stati {401: 40} ; n=39 p50=21.312 p95=26.112 p99=35.479 max=35.479 ms ; prima richiesta 79.0 ms

@@ -1,0 +1,34 @@
+# LOG per servizio (tutti i file in ../../../_logs)
+  backtest-worker           1138.1 MB    8 file     3.2 ore-sessione    356.42 MB/ora
+  runner-calcio              129.2 MB   21 file    15.5 ore-sessione      8.31 MB/ora
+  safe-strategy-bot           52.4 MB   21 file    15.5 ore-sessione      3.37 MB/ora
+  mike-service                35.1 MB   21 file    15.5 ore-sessione      2.26 MB/ora
+  safe-strategy-service       33.2 MB   21 file    15.5 ore-sessione      2.13 MB/ora
+  runner-tennis               14.5 MB   21 file    15.5 ore-sessione      0.93 MB/ora
+  scalper-service             13.7 MB   21 file    15.5 ore-sessione      0.88 MB/ora
+  tennis-bot-service           8.8 MB   21 file    15.5 ore-sessione      0.57 MB/ora
+  omega-service                2.8 MB   21 file    15.5 ore-sessione      0.18 MB/ora
+  tennis-odds                  0.3 MB   21 file    12.8 ore-sessione      0.03 MB/ora
+  TOTALE 1428.1 MB
+
+# LOG per giorno (data di avvio sessione, UTC), MB: totale / senza backtest-worker / solo backtest-worker
+  2026-10-01      94.3 /     94.3 /      0.0
+  2026-10-02      27.8 /     27.8 /      0.0
+  2026-10-04      80.3 /     80.3 /      0.0
+  2026-10-06     573.7 /     58.5 /    515.2
+  2026-10-07     184.2 /     15.0 /    169.2
+  2026-10-08     467.8 /     14.2 /    453.7
+
+# REGISTRAZIONI in ../../../_live_raw
+  eventi: 67 ; totale 4260.6 MB
+   jsonl               3976.2 MB
+   raw.jsonl            277.5 MB
+   scores.jsonl           6.8 MB
+   timeline.jsonl         0.1 MB
+   2026-09-26.jsonl       0.0 MB
+   recmeta.jsonl          0.0 MB
+   CACHEDIR.TAG           0.0 MB
+   .gitignore             0.0 MB
+   ARRESTO                0.0 MB
+  per evento (tutti i file): p50 9.0 MB  p95 404.3 MB  max 447.9 MB
+  per evento (solo raw.jsonl): n=40 p50 5.4 MB  p95 22.0 MB  max 25.0 MB

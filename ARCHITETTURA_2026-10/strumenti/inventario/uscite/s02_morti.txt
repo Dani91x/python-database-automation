@@ -1,0 +1,141 @@
+Criterio: modulo di codice di produzione (py_codice_*, no __init__) che nessun file di PRODUZIONE importa (AST).
+A = nessun importatore di nessun tipo, nessun riferimento per stringa in file di codice non-audit, nessun `if __name__ == '__main__'`.
+B = nessun importatore ma ha `__main__` o e' nominato per stringa (avviato come script/processo: NON morto per forza).
+C = importato solo da test; D = importato solo da strumenti/script di audit (o stringhe).
+Prova rieseguibile: `grep -rn '<nome_modulo>' --include=*.py --include=*.js --include=*.bat .` e s02_moduli.tsv (colonne imp_*).
+
+== A_nessun_riferimento: 26 moduli, 3610 righe ==
+  Ai Engine/ai_engine/analysis/advanced.py  (90 righe)
+  Ai Engine/ai_engine/analysis/summary.py  (25 righe)
+  Ai Engine/ai_engine/models/trainer.py  (154 righe)
+  Ai Engine/ai_engine/models/voting.py  (21 righe)
+  Betfair/cleanup_reset.py  (32 righe)
+  _certify_betfair_full.py  (37 righe)
+  analyze_recovery.py  (283 righe)
+  analyze_threshold.py  (308 righe)
+  calibration_analysis.py  (622 righe)
+  check_gh.py  (13 righe)
+  laboratorio/scalper_lab/grid_strategy.py  (485 righe)
+  parse.py  (12 righe)
+  refresh_dashboard.py  (20 righe)
+  report_mm.py  (202 righe)
+  simulate_recovery_forward.py  (287 righe)
+  tactical_engine/_check_fixpred.py  (24 righe)
+  tactical_engine/_inspect_mismatch.py  (21 righe)
+  tmp_analysis.py  (188 righe)
+  tmp_analysis2.py  (139 righe)
+  tmp_predict_today.py  (117 righe)
+  tmp_smoke_stack.py  (138 righe)
+  tmp_today_predictions.py  (141 righe)
+  tmp_validate_league.py  (66 righe)
+  tmp_validate_predict.py  (76 righe)
+  update_dashboard_only.py  (31 righe)
+  value_engine/generate_battery.py  (78 righe)
+
+== B_solo_main_o_stringa: 73 moduli, 15490 righe ==
+  AGGIORNA_CAMPO_db_json_analisi.py  (404 righe)  [main=si; riferimenti per stringa: Prediction/backfill_historical_analysis.py]
+  Ai Engine/ai_engine/audit_nulls.py  (138 righe)  [main=si; riferimenti per stringa: nessuno]
+  Ai Engine/ai_engine/backtest.py  (490 righe)  [main=si; riferimenti per stringa: nessuno]
+  Ai Engine/ai_engine/bss_monitor.py  (169 righe)  [main=si; riferimenti per stringa: nessuno]
+  Ai Engine/ai_engine/evaluate_holdout.py  (265 righe)  [main=si; riferimenti per stringa: nessuno]
+  Ai Engine/ai_engine/generate_fixture_report.py  (192 righe)  [main=si; riferimenti per stringa: nessuno]
+  Ai Engine/ai_engine/runner.py  (68 righe)  [main=si; riferimenti per stringa: nessuno]
+  Ai Engine/backtest_ml.py  (273 righe)  [main=si; riferimenti per stringa: nessuno]
+  Betfair/betfair_report_manager.py  (1737 righe)  [main=si; riferimenti per stringa: aggiorna_report.bat, aggiorna_report_veloce.bat]
+  Betfair/stream/scalper/validazione_hazard/taratura_b1.py  (66 righe)  [main=si; riferimenti per stringa: nessuno]
+  Betfair/stream/tennis_scalper/backtest_pro.py  (169 righe)  [main=si; riferimenti per stringa: Betfair/stream/tests/test_valuta_k1_2026_09_26.py]
+  Betfair/stream/tennis_scalper/flb_backtest.py  (141 righe)  [main=si; riferimenti per stringa: Betfair/stream/tests/test_valuta_k1_2026_09_26.py]
+  Betfair/stream/tennis_scalper/record_multi.py  (333 righe)  [main=si; riferimenti per stringa: Betfair/stream/tests/test_valuta_k1_2026_09_26.py]
+  Betfair/stream/tennis_scalper/record_tennis.py  (71 righe)  [main=si; riferimenti per stringa: Betfair/stream/tests/test_valuta_k1_2026_09_26.py]
+  Betfair/stream/tennis_scalper/research_data.py  (130 righe)  [main=no; riferimenti per stringa: Betfair/stream/tests/test_valuta_k1_2026_09_26.py]
+  Betfair/stream/tennis_scalper/run_tennis_pro.py  (159 righe)  [main=si; riferimenti per stringa: Betfair/stream/tests/test_valuta_k1_2026_09_26.py]
+  Betfair/stream/tennis_scalper/tune_tennis.py  (161 righe)  [main=si; riferimenti per stringa: Betfair/stream/tests/test_valuta_k1_2026_09_26.py]
+  Prediction/analyze_sweet_spot.py  (101 righe)  [main=si; riferimenti per stringa: nessuno]
+  Prediction/backfill_historical_analysis.py  (146 righe)  [main=si; riferimenti per stringa: nessuno]
+  _certify_betfair.py  (87 righe)  [main=si; riferimenti per stringa: nessuno]
+  _certify_delay_context.py  (102 righe)  [main=si; riferimenti per stringa: nessuno]
+  _certify_direction.py  (248 righe)  [main=si; riferimenti per stringa: nessuno]
+  _certify_direction_report.py  (641 righe)  [main=si; riferimenti per stringa: frontend/src/components/dashboard/DirezioniReport.tsx, frontend/src/lib/reportistiche.ts]
+  _certify_personal_report.py  (511 righe)  [main=si; riferimenti per stringa: nessuno]
+  _certify_signal_context.py  (96 righe)  [main=si; riferimenti per stringa: nessuno]
+  _league_eval.py  (100 righe)  [main=si; riferimenti per stringa: nessuno]
+  _stack_eval.py  (118 righe)  [main=si; riferimenti per stringa: nessuno]
+  admin_reset_password.py  (93 righe)  [main=si; riferimenti per stringa: nessuno]
+  aggiorna_mm_sheets.py  (542 righe)  [main=si; riferimenti per stringa: aggiorna_report.bat, aggiorna_report_veloce.bat, aggiorna_solo_fogli.bat]
+  aggiorna_solo_fogli.py  (46 righe)  [main=no; riferimenti per stringa: aggiorna_solo_fogli.bat]
+  backfill_poisson_calibrated.py  (209 righe)  [main=si; riferimenti per stringa: nessuno]
+  betfair_full_odds.py  (300 righe)  [main=si; riferimenti per stringa: Betfair/betfair_match.py, Betfair/odds_refresh.py, Betfair/omega/tools/misura_k.py, aggiorna_report.bat, betfair_tennis_odds.py]
+  betfair_tennis_odds.py  (322 righe)  [main=si; riferimenti per stringa: Betfair/stream/backtest/registro_bot.py, desktop/main.js]
+  build_inplay_intensity.py  (331 righe)  [main=si; riferimenti per stringa: Betfair/stream/engine/live_engine.py]
+  certify_backtest_strategy.py  (202 righe)  [main=si; riferimenti per stringa: nessuno]
+  cleanup_models.py  (138 righe)  [main=si; riferimenti per stringa: nessuno]
+  compress_models.py  (197 righe)  [main=si; riferimenti per stringa: nessuno]
+  compute_ml_post_calibration.py  (320 righe)  [main=si; riferimenti per stringa: .github/workflows/ml_calibration.yml, Ai Engine/ai_engine/predict_fixture.py]
+  direzione.py  (77 righe)  [main=si; riferimenti per stringa: .github/workflows/predictions_results_backfill.yml, Betfair/stream/backtest/tools/misura_punto8/x1_bias.py, build_direzione.py]
+  fix_storico_prob.py  (123 righe)  [main=si; riferimenti per stringa: nessuno]
+  football_data_scraper/backfill.py  (529 righe)  [main=si; riferimenti per stringa: nessuno]
+  football_data_scraper/fix_snapshot_time.py  (65 righe)  [main=si; riferimenti per stringa: nessuno]
+  import_betfair_operations.py  (428 righe)  [main=si; riferimenti per stringa: aggiorna_report_betfair.bat, importa_ultimi_15_giorni.bat]
+  laboratorio/scalper_lab/bt_theta.py  (187 righe)  [main=si; riferimenti per stringa: nessuno]
+  laboratorio/scalper_lab/exp_families.py  (69 righe)  [main=si; riferimenti per stringa: nessuno]
+  laboratorio/scalper_lab/rdloop.py  (194 righe)  [main=si; riferimenti per stringa: nessuno]
+  laboratorio/scalper_lab/validate_synth.py  (73 righe)  [main=si; riferimenti per stringa: nessuno]
+  laboratorio/tennis_lab/validate.py  (240 righe)  [main=si; riferimenti per stringa: nessuno]
+  load_poisson_calibration_to_db.py  (72 righe)  [main=si; riferimenti per stringa: nessuno]
+  market_intelligence/backtest.py  (361 righe)  [main=si; riferimenti per stringa: nessuno]
+  market_intelligence/backtest_audit.py  (283 righe)  [main=si; riferimenti per stringa: nessuno]
+  market_intelligence/pipeline.py  (239 righe)  [main=si; riferimenti per stringa: market_intelligence/__init__.py, market_intelligence/edge_scorer.py]
+  missing_fixtures_backfill.py  (131 righe)  [main=si; riferimenti per stringa: nessuno]
+  reset_ai_models.py  (114 righe)  [main=si; riferimenti per stringa: nessuno]
+  sanity_check.py  (211 righe)  [main=si; riferimenti per stringa: nessuno]
+  sql/_build_wc_xlsx_2013.py  (169 righe)  [main=si; riferimenti per stringa: nessuno]
+  sql/_cert_wc_fetch.py  (91 righe)  [main=si; riferimenti per stringa: nessuno]
+  sql/_cert_wc_full.py  (249 righe)  [main=si; riferimenti per stringa: nessuno]
+  sql/_verify_delays_math.py  (142 righe)  [main=si; riferimenti per stringa: nessuno]
+  start_order_server.py  (56 righe)  [main=si; riferimenti per stringa: Betfair/order_worker.py, Betfair/refresh_worker.py, Betfair/stream/odds_http.py, Betfair/stream/runner.py, aggiorna_quote_betfair.bat]
+  tactical_engine/_verify_data_worldcup.py  (87 righe)  [main=si; riferimenti per stringa: nessuno]
+  tactical_engine/generate_predictions.py  (198 righe)  [main=si; riferimenti per stringa: tactical_engine/tests/test_serving_esito_reale_2026_09_26.py]
+  tactical_engine/run_daily.py  (27 righe)  [main=si; riferimenti per stringa: nessuno]
+  tactical_engine/run_worldcup.py  (161 righe)  [main=si; riferimenti per stringa: nessuno]
+  test.py  (37 righe)  [main=no; riferimenti per stringa: Ai Engine/ai_engine/backtest.py, Ai Engine/ai_engine/db_adapter.py, Betfair/mike/tools/banco.py, Betfair/mike/tools/replay_registrazioni.py, Betfair/omega/omega_service.py]
+  tmp_smoke_ml_fixes.py  (196 righe)  [main=si; riferimenti per stringa: nessuno]
+  tmp_smoke_poisson_fixes.py  (148 righe)  [main=si; riferimenti per stringa: nessuno]
+  tmp_train_today.py  (73 righe)  [main=si; riferimenti per stringa: nessuno]
+  valida_motore_poisson.py  (169 righe)  [main=si; riferimenti per stringa: nessuno]
+  valida_ventaglio.py  (179 righe)  [main=si; riferimenti per stringa: nessuno]
+  validate_walkforward.py  (138 righe)  [main=si; riferimenti per stringa: .github/workflows/validate_models.yml]
+  value_engine/calibrate.py  (103 righe)  [main=si; riferimenti per stringa: nessuno]
+  value_engine/cli.py  (55 righe)  [main=si; riferimenti per stringa: nessuno]
+
+== C_solo_test: 1 moduli, 402 righe ==
+  Betfair/omega/liquidity_probe.py  (402 righe)  [test: Betfair/omega/test_liquidity_probe_2026_09_10.py, Betfair/omega/test_omega_matematica_2026_09_12.py] main=si
+
+== D_solo_strumenti_audit: 27 moduli, 21878 righe ==
+  Betfair/mike/certificazione.py  (2084 righe)  [strumenti/audit: Betfair/mike/tools/replay_registrazioni.py; test: 19; stringhe: Betfair/omega/certificazione.py, Betfair/safe_strategy/certificazione_k.py, Betfair/stream/backtest/registro_bot.py] main=no
+  Betfair/omega/certificazione.py  (2160 righe)  [strumenti/audit: Betfair/omega/tools/replay_registrazioni.py; test: 10; stringhe: Betfair/omega/test_omega_cashout_manuale_fallito_2026_09_23.py, Betfair/omega/test_omega_replay_2026_09_16.py, Betfair/stream/backtest/registro_bot.py] main=no
+  Betfair/omega/omega_validate.py  (183 righe)  [strumenti/audit: tools/omega_validate_models.py; test: 1; stringhe: -] main=no
+  Betfair/safe_strategy/certificazione.py  (2036 righe)  [strumenti/audit: Betfair/safe_strategy/tools/replay_registrazioni.py; test: 7; stringhe: Betfair/safe_strategy/tools/replay_registrazioni.py, Betfair/safe_strategy/tools/replay_tennis.py, Betfair/stream/backtest/registro_bot.py] main=no
+  Betfair/safe_strategy/certificazione_tennis.py  (1217 righe)  [strumenti/audit: Betfair/safe_strategy/tools/replay_tennis.py; test: 6; stringhe: Betfair/safe_strategy/tools/replay_tennis.py, Betfair/stream/backtest/registro_bot.py, Betfair/stream/tests/test_cantiere_v2_replay_veloce_2026_09_29.py] main=no
+  Betfair/stream/backtest/worker.py  (102 righe)  [strumenti/audit: ; test: 1; stringhe: Betfair/stream/backtest/registro_bot.py, desktop/main.js, frontend/src/components/dashboard/BacktestAutomatico.tsx] main=si
+  Betfair/stream/runner.py  (3171 righe)  [strumenti/audit: ; test: 32; stringhe: Betfair/conftest.py, Betfair/stream/backtest/banco_comune.py, Betfair/stream/backtest/registro_bot.py] main=si
+  Betfair/stream/scalper/certificazione.py  (2472 righe)  [strumenti/audit: Betfair/stream/scalper/tools/replay_registrazioni.py; test: 14; stringhe: Betfair/stream/backtest/registro_bot.py, Betfair/stream/scalper/tools/replay_registrazioni.py] main=no
+  Betfair/stream/scalper/run_scalper.py  (152 righe)  [strumenti/audit: ; test: 1; stringhe: Betfair/stream/scalper/__init__.py, Betfair/stream/scalper/run_scalper_live.py, Betfair/stream/tests/test_backtest_coverage_2026_07_17.py] main=no
+  Betfair/stream/scalper/run_scalper_live.py  (292 righe)  [strumenti/audit: ; test: 2; stringhe: Betfair/stream/tests/test_scalper_audit_2026_07_09.py, Betfair/stream/tests/test_valuta_k1_2026_09_26.py] main=si
+  Betfair/stream/scalper/run_theta.py  (289 righe)  [strumenti/audit: ; test: 1; stringhe: Betfair/stream/tests/test_backtest_coverage_2026_07_17.py, Betfair/stream/tests/test_valuta_k1_2026_09_26.py] main=si
+  Betfair/stream/scalper/scalper_service.py  (982 righe)  [strumenti/audit: AUDIT_2026-09-25/e2e_fase1/strumenti/sonda.py, Betfair/stream/scalper/tools/replay_registrazioni.py; test: 11; stringhe: Betfair/stream/backtest/registro_bot.py, Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py, Betfair/stream/tests/test_registro_impronta_2026_09_30.py] main=si
+  Betfair/stream/scalper/validazione_hazard/parita.py  (57 righe)  [strumenti/audit: AUDIT_2026-09-25/validazione_hazard/sonde/prova_parita.py; test: 0; stringhe: -] main=no
+  Betfair/stream/tennis_live/certificazione_bot.py  (1189 righe)  [strumenti/audit: Betfair/stream/tennis_live/tools/replay_bot.py; test: 5; stringhe: Betfair/stream/backtest/registro_bot.py, Betfair/stream/tennis_live/tools/replay_bot.py] main=no
+  Betfair/stream/watchdog.py  (337 righe)  [strumenti/audit: ; test: 4; stringhe: Betfair/stream/avvio_app.py, Betfair/stream/backtest/registro_bot.py, Betfair/stream/tests/test_spegnimento_ordinato_2026_09_28.py] main=si
+  Prediction/predictions_results_backfill.py  (875 righe)  [strumenti/audit: ; test: 1; stringhe: .github/workflows/predictions_results_backfill.yml, Prediction/test_predictions_results_backfill.py, log_predictions_utf8.txt] main=si
+  build_direzione.py  (238 righe)  [strumenti/audit: ; test: 1; stringhe: .github/workflows/predictions_results_backfill.yml, Betfair/stream/backtest/tools/misura_punto8/x1_bias.py] main=si
+  cloud_retrain_shard.py  (373 righe)  [strumenti/audit: ; test: 1; stringhe: .github/workflows/retrain_models.yml, test_cloud_retrain_shard_ritentativi_2026_09_21.py] main=si
+  daily_yesterday_backfill.py  (396 righe)  [strumenti/audit: ; test: 3; stringhe: .github/workflows/daily_yesterday_backfill.yml, Prediction/predictions_results_backfill.py, log_yesterday_utf8.txt] main=si
+  enrich_analytics_snapshots.py  (583 righe)  [strumenti/audit: ; test: 1; stringhe: .github/workflows/predictions_results_backfill.yml, test_actions_pipeline_paginazione.py] main=si
+  generate_dc_rho.py  (259 righe)  [strumenti/audit: ; test: 1; stringhe: .github/workflows/weekly_poisson_calibration.yml, Prediction/predictions_results_backfill.py, Prediction/today_predictions_backfill.py] main=si
+  generate_dynamic_cal.py  (596 righe)  [strumenti/audit: ; test: 1; stringhe: .github/workflows/weekly_poisson_calibration.yml, calibration_analysis.py, market_intelligence/calibration.py] main=si
+  league_orchestrator.py  (262 righe)  [strumenti/audit: ; test: 3; stringhe: season_backfill.py, season_gaps.py] main=si
+  leagues_mapper.py  (406 righe)  [strumenti/audit: ; test: 3; stringhe: .github/workflows/leagues_mapper.yml, league_orchestrator.py] main=si
+  merge_engine_signals.py  (280 righe)  [strumenti/audit: ; test: 2; stringhe: .github/workflows/predictions_results_backfill.yml, Betfair/betfair_report_manager.py, test_actions_pipeline_paginazione.py] main=si
+  refresh_analytics_bets.py  (281 righe)  [strumenti/audit: ; test: 2; stringhe: .github/workflows/predictions_results_backfill.yml, test_actions_pipeline_paginazione.py, test_refresh_analytics_bets_v2_2026_09_24.py] main=si
+  update_poisson_calibration.py  (606 righe)  [strumenti/audit: ; test: 1; stringhe: .github/workflows/weekly_poisson_calibration.yml, Betfair/money_management.py, Betfair/stream/engine/live_engine_pro.py] main=si
+

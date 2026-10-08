@@ -1,0 +1,325 @@
+voce	tipo	file_tracciati	righe_py	righe_py_test	righe_testo_altro	data	hash	oggetto	disco_non_tracciati
+.agent	cartella	1	0	0	14	2026-03-03	7ef56193	Fix AI errors, professional dashboard redesign, and codebase cleanup	0
+.claude	cartella	1	0	0	8	2026-09-17	37e681d5	fix(feed): incidente quote 17/09 — il feed non carica piu' flumine (atlante hazard in modulo puro, import pigro scalper), ladder letto in entrambe le forme, guardia runtime, book senza prezzi mai applicato, copertura per mercato con REST, risottoscrizione a caldo, stato onesto, skip quote_assenti; UI stati di attesa Safe; regole worktree/file condivisi	613026
+.github	cartella	10	0	0	1199	2026-10-04	cdecd095	fix(actions): ritentativi nel Leagues Mapping, Seasons Catchup rosso solo per i guasti veri, nome veritiero del workflow	0
+.gitignore	file	1	0	0	71	2026-09-26	67c3ad4d	fix(e2e 26/09): stream cieco rilevato ed escalato, log dei figli su file, allarme col modo effettivo; scalper non arma a freno tirato, follow auto, force-flat dichiarato; paper fill di Mike al best; catchup aspetta il retrain; atlante priorita' in gioco e stagione_rif per lega; frame Mike con chiavi v4	
+AGGIORNA_CAMPO_db_json_analisi.py	file	1	404	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+ARCHITETTURA_2026-10	cartella	4	211	0	350	2026-10-08	dfae4541	tools: sessione SDK con processo vivo (ClaudeSDKClient), «continua» automatico fino a FATTO.txt o tetto, ripresa della sessione; delegati da aspettare (lezione del lancio delle 12:18)	63
+AUDIT_2026-09-24	cartella	7	0	0	2199	2026-09-24	69074ecb	docs(audit): sei audit del 24/09 (bot dati algoritmi, tempo reale, fedelta' strategie Safe, tab dashboard, modalita' paper/live, strade ordine) + stato di ripresa delle schede proposte al ms; cronostoria replay c3j e push	0
+AUDIT_2026-09-25	cartella	658	13172	114	518929	2026-10-04	cdecd095	fix(actions): ritentativi nel Leagues Mapping, Seasons Catchup rosso solo per i guasti veri, nome veritiero del workflow	65
+AUDIT_2026-09-26	cartella	18	921	0	1476	2026-09-26	73c1046f	test(ui): test nuovi e referto del cantiere UI pagine (07bc872)	4
+AUDIT_2026-09-28	cartella	183	4752	0	19976	2026-09-29	ff555fb7	feat(banco): il referto dichiara i tempi e avvisa se il replay e' lento (cantiere V2)	0
+AUDIT_2026-09-29	cartella	71	960	0	10693	2026-09-29	fc0428f8	docs(cronostoria): chiusura del 29/09, Mike nuovo su master, difetto sul mercato deciso dai gol accertato, patch in attesa del via	0
+AUDIT_2026-09-30	cartella	224	1928	16	55388	2026-09-30	951113c9	docs: review finale firmata da entrambe le sessioni (ALTI a zero), rapporto della sera con migrazioni e checklist del live di domani, cronostoria 30/09 chiusa con il punto di ripresa	55
+AUDIT_2026-10-01	cartella	318	421	0	36909	2026-10-02	2c67d69c	merge: redesign veste completa (ramo redesign/veste-completa 7a17f7f, PR #2) su master 67261b9: veste fedele al prototipo dietro ui.shell SPENTO di default; verificata dal delegato e dal coordinatore (diff solo classi ds-v2-*, CSS 175 selettori tutti sotto data-shell=v2, interruttore e ritorno a un clic identici a master, suite 316/4839 verdi, fotografia 26/26 non rigenerata, build +0,78%)	11
+AUDIT_2026-10-02	cartella	144	3306	0	80286	2026-10-02	a8523350	docs: audit ML/Poisson in sola lettura (il mercato batte tutti i nostri modelli; veto di Mike da misurare)	1084
+AUDIT_2026-10-04	cartella	130	1132	0	30548	2026-10-05	0002582a	docs: cronostoria 05/10, replay finali di tutti i bot sul codice finale, suite 10025 verdi, reperti aperti e punto di ripresa	0
+AUDIT_2026-10-05	cartella	52	616	0	7165	2026-10-06	b0a1553a	docs: cronostoria 06/10, secondo giro della modalita' media under verificato dal coordinatore (replay, mutazioni, suite)	0
+AUDIT_2026-10-06	cartella	37	463	0	3831	2026-10-06	84d4afd3	docs: referto di Segui Live fermo e degli allarmi CAMBIO_GBP_EUR dei replay	0
+AUDIT_2026-10-07	cartella	182	2130	0	37894	2026-10-07	89385250	docs: cronostoria e protocollo par. 11 (solo controllo) per replay professionale e banca della media under, replay prima/dopo del coordinatore	5
+AUDIT_2026-10-08	cartella	33	0	0	10825	2026-10-08	b5547eb8	fix(banco): regola del mercato che attraversa (ordine appoggiato abbinato al suo prezzo appena il mercato scambia oltre), test e falsificazioni, caso vero 35768297, replay tennis/calcio prima-dopo; reperto scalper chiusura-abbinata-in-parte KO -> cantiere 15	3
+AUDIT_TEST_2026-09-16.md	file	1	0	0	231	2026-09-16	f562fff9	wip: certificazione definitiva 16/09 — banco flumine, Fase A, Control Room, consapevolezza ordini, replay Omega/Safe/Mike/tennis (commit di sicurezza, lavoro in corso)	
+Ai Engine	cartella	54	8845	1557	1588	2026-09-21	0bfc9aaa	fix(ml): collassa il fan-out delle classifiche multiple prima di predict_ensemble	13486
+BRIEF_STANDARD_DELEGATI.md	file	1	0	0	118	2026-09-29	7c1a40e0	docs: standard dei replay veloci (5 minuti, tetto 10) e checkpoint	
+Betfair	cartella	941	202612	179802	682913	2026-10-08	b5547eb8	fix(banco): regola del mercato che attraversa (ordine appoggiato abbinato al suo prezzo appena il mercato scambia oltre), test e falsificazioni, caso vero 35768297, replay tennis/calcio prima-dopo; reperto scalper chiusura-abbinata-in-parte KO -> cantiere 15	58
+CERTIFICAZIONE_MOTORI_2026-06-12.md	file	1	0	0	99	2026-06-12	362a66e6	feat(training): strumento retrain cloud GitHub Actions + certificazione motori	
+CLAUDE.md	file	1	0	0	78	2026-09-17	37e681d5	fix(feed): incidente quote 17/09 — il feed non carica piu' flumine (atlante hazard in modulo puro, import pigro scalper), ladder letto in entrambe le forme, guardia runtime, book senza prezzi mai applicato, copertura per mercato con REST, risottoscrizione a caldo, stato onesto, skip quote_assenti; UI stati di attesa Safe; regole worktree/file condivisi	
+CRONOSTORIA.md	file	1	0	0	5192	2026-10-08	161564f9	docs(architettura): tappa 0, brief comune dei delegati, registro dei costi, blocco in cronostoria	
+DOCUMENTAZIONE_DATABASE.md	file	1	0	0	264	2026-07-15	2c42ad98	feat(missioni+theta): centro di controllo per partita + theta scalper + atlante hazard	
+FASE0_VERITA_DI_PARTENZA_2026-09-16.md	file	1	0	0	602	2026-09-16	f562fff9	wip: certificazione definitiva 16/09 — banco flumine, Fase A, Control Room, consapevolezza ordini, replay Omega/Safe/Mike/tennis (commit di sicurezza, lavoro in corso)	
+FASE_C9_BACKTEST_SCALPER_TENNIS_2026-09-16.md	file	1	0	0	85	2026-09-16	f562fff9	wip: certificazione definitiva 16/09 — banco flumine, Fase A, Control Room, consapevolezza ordini, replay Omega/Safe/Mike/tennis (commit di sicurezza, lavoro in corso)	
+FLUMINE_CAPACITA_SIMULAZIONE_2026-09-16.md	file	1	0	0	241	2026-09-16	f562fff9	wip: certificazione definitiva 16/09 — banco flumine, Fase A, Control Room, consapevolezza ordini, replay Omega/Safe/Mike/tennis (commit di sicurezza, lavoro in corso)	
+HANDOFF_2026-09-16_SERA.md	file	1	0	0	177	2026-09-16	1ee76243	wip(ui): cash out globale, Riprendi, badge chiusa da te, rischio conto/bot, proposte Omega, parametri v3; handoff §8 con migrazioni e procedura di domani	
+HANDOFF_CONTROL_ROOM.md	file	1	0	0	712	2026-09-15	36cc2506	fix(mike): i tre difetti del pomeriggio — stessa radice, tre punti	
+INVENTARIO_CAMPI_UI_2026-09-25.md	file	1	0	0	614	2026-09-25	e7d7553d	docs(e2e): INVENTARIO_COMPONENTI (482 componenti, C001-C482, con avvio/vita/spegnimento) e INVENTARIO_CAMPI_UI (542 campi a video, U0001-U0542): base della certificazione globale (§0-bis del piano)	
+INVENTARIO_COMPONENTI_2026-09-25.md	file	1	0	0	988	2026-09-25	e7d7553d	docs(e2e): INVENTARIO_COMPONENTI (482 componenti, C001-C482, con avvio/vita/spegnimento) e INVENTARIO_CAMPI_UI (542 campi a video, U0001-U0542): base della certificazione globale (§0-bis del piano)	
+LIVE_TRADING_SOFTWARE_PLAN.md	file	1	0	0	230	2026-07-15	2c42ad98	feat(missioni+theta): centro di controllo per partita + theta scalper + atlante hazard	
+MANUALE_OPERATIVO.md	file	1	0	0	357	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+MATRICE_CONSAPEVOLEZZA_ORDINI_2026-09-16.md	file	1	0	0	340	2026-09-16	f562fff9	wip: certificazione definitiva 16/09 — banco flumine, Fase A, Control Room, consapevolezza ordini, replay Omega/Safe/Mike/tennis (commit di sicurezza, lavoro in corso)	
+MISSIONE_250_ROADMAP.md	file	1	0	0	184	2026-07-15	2c42ad98	feat(missioni+theta): centro di controllo per partita + theta scalper + atlante hazard	
+MLAUDIT.md	file	1	0	0	1391	2026-04-02	f8faab24	Merge root files and update ignore rules	
+PIANO_CERTIFICAZIONE_DEFINITIVA_2026-09-16.md	file	1	0	0	1131	2026-09-16	26373552	test(banco): il fill usa l'ultimo book entro la scadenza (reperto respinto con misura, 3 test)	
+PIANO_MODIFICHE_MIKE_2026-09-29.md	file	1	0	0	662	2026-09-29	bf03fcb1	docs(mike): piano, copertura in un ordine solo e regola della liquidita invariata	
+PIANO_OTTIMIZZAZIONE_GLOBALE_2026-10-02.md	file	1	0	0	100	2026-10-02	ca7abeab	docs: piano, aggiunte della sera (librerie, ML, condotta Mike, feed, metodo)	
+PIANO_TEST_E2E_REALE_2026-09-25.md	file	1	0	0	1493	2026-09-25	a46a95d0	docs(e2e): piano corretto sui reperti dell'inventario e allineato alle decisioni della sera	
+POISSON_AUDIT.md	file	1	0	0	106	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+POISSON_FIXES_2026-06-11.md	file	1	0	0	62	2026-06-11	ab88834d	fix(poisson): porta motore blindato su master (#1,2,3,4,8,9,11,15,19)	
+POISSON_RESEARCH_2026-06-11.md	file	1	0	0	168	2026-06-11	ab88834d	fix(poisson): porta motore blindato su master (#1,2,3,4,8,9,11,15,19)	
+PROCESSO_STANDARD_BOT.md	file	1	0	0	289	2026-09-29	7c1a40e0	docs: standard dei replay veloci (5 minuti, tetto 10) e checkpoint	
+PROGETTO_PAPER_VIA_FLUMINE_2026-09-16.md	file	1	0	0	308	2026-09-16	f562fff9	wip: certificazione definitiva 16/09 — banco flumine, Fase A, Control Room, consapevolezza ordini, replay Omega/Safe/Mike/tennis (commit di sicurezza, lavoro in corso)	
+PUNTI_APERTI_2026-06-10.md	file	1	0	0	68	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+Prediction	cartella	8	3911	3072	189	2026-09-26	c4a5f300	fix(pagine): FIX-B prestazioni e coerenza delle pagine (KO 2,3,6,7,9,11 fase 3 + kickoff sporchi): Analytics e Ritardi entro gli 8 s, Direzione con quota Betfair o «quota book», ML verdetto unico, TacticAI esito reale, rese null/NaN/date, kickoff da matches.fixture_date	2
+REPORT_PERSONALE_CONTRACT.md	file	1	0	0	301	2026-06-24	63f3eed4	feat: Watchlist + Report Personale (tracking operatività pre-match→giocata/scartata)	
+RIEPILOGO_DECISIONI_E_AZIONI_2026-09-23.md	file	1	0	0	170	2026-09-24	8e68de15	docs: cronostoria pomeriggio 24/09 (Omega per partita, scalper S5/S3, action rilanciata) e riepilogo D11 + istruzioni action	
+RIEPILOGO_LAVORI_2026-09-28_29.md	file	1	0	0	119	2026-09-29	5886b89e	docs: tutti i bot a 0 violazioni sul replay, riepilogo e cronostoria aggiornati	
+SCHEMI_BOT	cartella	93	1640	0	226462	2026-10-02	c3e994aa	docs(schemi): schema archify dell'architettura attuale (12 viste, 268 prove file:riga, misure DB/Betfair del 02/10, strumenti per rifarlo)	20
+SICUREZZA_DB_2026-09-24.md	file	1	0	0	558	2026-09-24	20a913aa	docs(cronostoria): giornata 24/09 - decisioni dell'utente, 16 integrazioni verificate, audit (modalita' UI, strade ordine, sicurezza DB), migrazioni da applicare, riepilogo decisioni D1-D10 e promemoria	
+STATO_PRODUZIONE.md	file	1	0	0	194	2026-09-14	ac7bee43	docs(produzione): P1, P2 e P5 chiusi con commit ed evidenza	
+TACTICAI_STUDIO_E_ADATTAMENTO_2026-06-16.md	file	1	0	0	295	2026-06-20	630d1f15	feat: terzo motore Tactical Engine (GSG) Dixon-Coles + pannello dashboard	
+TRADING_SHEET_SPEC.md	file	1	0	0	182	2026-03-16	ad8168a5	Aggiornamenti giornalieri: calibrazione Poisson, retraining ML e report statistici (2026-03-16)	
+Telegram bot	cartella	12	0	0	3071	2026-06-22	745c84f7	feat: cabla ML nella action giornaliera + bot mostra Poisson calibrato	14
+_AUDIT_2026_05	cartella	109	1887	0	2047	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	2
+_certify_betfair.py	file	1	87	0	0	2026-06-24	4783fb65	feat: toggle "Match Betfair" + pannello Quote Betfair	
+_certify_betfair_full.py	file	1	37	0	0	2026-06-24	b0c7bca4	feat: quote Betfair complete (tutti i mercati, back+lay) — pannello + Direzione	
+_certify_delay_context.py	file	1	102	0	0	2026-06-24	7900fd6e	fix: ritardo del cruscotto Direzione corretto (no piu' 547 su over 0.5 1T)	
+_certify_direction.py	file	1	248	0	0	2026-06-25	4700a06d	feat(direzione): cruscotto visibile senza Poisson + API da advice/under_over_line	
+_certify_direction_report.py	file	1	641	0	0	2026-06-25	d0aa9447	feat(analytics): rendimento (ROI alle quote Betfair) + fasce convinzione/quota + copertura + CSV	
+_certify_personal_report.py	file	1	511	0	0	2026-06-24	63f3eed4	feat: Watchlist + Report Personale (tracking operatività pre-match→giocata/scartata)	
+_certify_signal_context.py	file	1	96	0	0	2026-06-24	b53151fd	feat: cruscotto Direzione mostra frequenza + ritardo ATTUALI per lega/mercato	
+_league_eval.py	file	1	100	0	0	2026-06-24	d1ab51f0	feat: cruscotto Direzione — pagella DB + RPC get_direction + UI	
+_personal_oracle_fixture.json	file	1	0	0	0	2026-06-24	63f3eed4	feat: Watchlist + Report Personale (tracking operatività pre-match→giocata/scartata)	
+_stack_eval.py	file	1	118	0	0	2026-06-24	d1ab51f0	feat: cruscotto Direzione — pagella DB + RPC get_direction + UI	
+admin_reset_password.py	file	1	93	0	0	2026-06-22	d80eac25	feat: riabilita auth early-access (solo owner) + lockdown sicurezza dati	
+aggiorna_mm_sheets.py	file	1	542	0	0	2026-07-03	c4a26d07	perf: tempi ridotti a parità di output (actions <2000 min/mese + bat veloce)	
+aggiorna_modelli.bat	file	1	0	0	39	2026-04-02	f8faab24	Merge root files and update ignore rules	
+aggiorna_quote_betfair.bat	file	1	0	0	12	2026-07-10	5fe1e8ec	feat(bots): missione 2-tick scalper calcio+tennis, lab theta, tooling quote/replay	
+aggiorna_report.bat	file	1	0	0	36	2026-06-24	a8a17063	feat: betfair_full_odds.py agganciato al .bat + hardening limiti API	
+aggiorna_report_betfair.bat	file	1	0	0	31	2026-07-06	0b1c38e6	feat: backfill multi-giorno import operazioni + fix riconciliazione	
+aggiorna_report_veloce.bat	file	1	0	0	27	2026-07-10	5fe1e8ec	feat(bots): missione 2-tick scalper calcio+tennis, lab theta, tooling quote/replay	
+aggiorna_solo_fogli.bat	file	1	0	0	17	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+aggiorna_solo_fogli.py	file	1	46	0	0	2026-03-16	ad8168a5	Aggiornamenti giornalieri: calibrazione Poisson, retraining ML e report statistici (2026-03-16)	
+analysis_output.txt	file	1	0	0	214	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+analytics_market_stats.py	file	1	307	0	0	2026-06-22	2b8cefe7	fix(analytics): rimuovi look-ahead negli snapshot storici freq/ritardi + backfill timing	
+analytics_settlement.py	file	1	125	0	0	2026-06-22	321d984b	feat(analytics): copertura massima motori + snapshot freq/ritardi/timing + drill-down/grafici/export	
+analyze_recovery.py	file	1	283	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+analyze_threshold.py	file	1	308	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+api_client.py	file	1	137	0	0	2026-09-25	f0152049	feat(backfill): DB sempre aggiornato e senza buchi, in automatico, dentro la quota API	
+api_quota.py	file	1	345	0	0	2026-09-25	59482d7b	feat(backfill): coda P4 «stagioni mai caricate» (solo per intero), RISERVA DINAMICA dopo le action del giorno, verifica dei «current» all'API, 400 verifiche/notte	
+api_usage_report.txt	file	1	0	0	244	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+avvia_omega_service.bat	file	1	0	0	14	2026-07-12	c4b63e55	feat: bot Omega (Correct Score LAY) integrato nell'app	
+avvia_scalper_service.bat	file	1	0	0	13	2026-07-02	93f16715	feat(scalper): scalper bot v2 pre-match + connettore motori + servizio + UI	
+backfill_poisson_calibrated.py	file	1	209	0	0	2026-06-22	745c84f7	feat: cabla ML nella action giornaliera + bot mostra Poisson calibrato	
+backtest_report_20260316_143438.md	file	1	0	0	71	2026-03-16	ad8168a5	Aggiornamenti giornalieri: calibrazione Poisson, retraining ML e report statistici (2026-03-16)	
+backtest_report_20260330_173815.md	file	1	0	0	75	2026-03-31	7f3c1ad5	Aggiornamento 2026-03-31	
+backtest_report_20260330_174107.md	file	1	0	0	74	2026-03-31	7f3c1ad5	Aggiornamento 2026-03-31	
+backtest_report_20260330_175024.md	file	1	0	0	74	2026-03-31	7f3c1ad5	Aggiornamento 2026-03-31	
+backtest_results_20260316_143438.csv	file	1	0	0	914	2026-03-16	ad8168a5	Aggiornamenti giornalieri: calibrazione Poisson, retraining ML e report statistici (2026-03-16)	
+betfair_full_odds.py	file	1	300	0	0	2026-07-10	5fe1e8ec	feat(bots): missione 2-tick scalper calcio+tennis, lab theta, tooling quote/replay	
+betfair_tennis_odds.py	file	1	322	0	0	2026-09-09	af15b0e3	perf(betfair): feed unico dello scanner per runner e board, stream tennis unico, limiti e supervisione	
+build_analytics_signals.py	file	1	452	0	0	2026-09-26	c4a5f300	fix(pagine): FIX-B prestazioni e coerenza delle pagine (KO 2,3,6,7,9,11 fase 3 + kickoff sporchi): Analytics e Ritardi entro gli 8 s, Direzione con quota Betfair o «quota book», ML verdetto unico, TacticAI esito reale, rese null/NaN/date, kickoff da matches.fixture_date	
+build_direzione.py	file	1	238	0	0	2026-09-21	3fe1e53a	fix(analytics): letture di enrich ordinate e senza troncamenti, retry su direzione, refresh senza retry sul timeout client	
+build_inplay_intensity.py	file	1	331	0	0	2026-06-29	d8b007ff	feat(live-engine): calibrazione in-play per-lega ACCESA (team-fixed-effects)	
+calibration_analysis.py	file	1	622	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+calibration_update_20260330_193248.json	file	1	0	0	1041	2026-03-31	7f3c1ad5	Aggiornamento 2026-03-31	
+calibration_update_20260331_093040.json	file	1	0	0	1047	2026-03-31	7f3c1ad5	Aggiornamento 2026-03-31	
+calibration_update_20260331_093151.json	file	1	0	0	1029	2026-03-31	7f3c1ad5	Aggiornamento 2026-03-31	
+certify_backtest_strategy.py	file	1	202	0	0	2026-06-23	34e4a990	feat: motore strategie /analytics — backtest parametrico + tab Crea Strategia	
+check_gh.py	file	1	13	0	0	2026-04-02	f8faab24	Merge root files and update ignore rules	
+cleanup_models.py	file	1	138	0	0	2026-03-10	4b51dd87	feat(ml): Road to Profitability fixes and caching enhancements	
+cloud_retrain_shard.py	file	1	373	0	0	2026-09-21	774a47a8	fix(retrain): lettura dati senza timeout 57014, ordine deterministico, ritentativo di fine shard	
+compress_models.py	file	1	197	0	0	2026-03-16	ad8168a5	Aggiornamenti giornalieri: calibrazione Poisson, retraining ML e report statistici (2026-03-16)	
+compute_ml_post_calibration.py	file	1	320	0	0	2026-06-16	8e911590	chore: rimuove ml_post_calibration.json (morto) + commenti aggiornati	
+config.py	file	1	58	0	0	2026-02-25	46207c08	Betfair matching algorithm improvements and Google Sheets presentation optimization	
+daily_yesterday_backfill.py	file	1	396	0	0	2026-09-25	306fd112	fix(backfill): via il ramo morto degli aggregati dal Daily, delete con ritentativi (mai insert dopo delete fallita), via il refresh MV	
+db_client.py	file	1	88	0	0	2026-09-28	92264f2b	fix(safe, mike): paper specchio del live, prima parte (cantiere D1)	
+db_delete_retry.py	file	1	53	0	0	2026-09-25	306fd112	fix(backfill): via il ramo morto degli aggregati dal Daily, delete con ritentativi (mai insert dopo delete fallita), via il refresh MV	
+dc_rho_by_league.json	file	1	0	0	182	2026-10-05	1a45841b	chore(calibration): aggiornamento settimanale Poisson	
+desktop	cartella	7	0	0	6506	2026-10-06	f536fdb1	feat: il banco del replay (worker del Backtest Automatico) parte con l'app, sotto watchdog: Applica bot funziona dalla UI senza terminale	81
+direzione.py	file	1	77	0	0	2026-06-24	d1ab51f0	feat: cruscotto Direzione — pagella DB + RPC get_direction + UI	
+docs	cartella	2	0	0	276	2026-07-17	9bef39fd	chore: report di sessione fuori dal repo (documento operativo locale)	1
+dynamic_cal.json	file	1	0	0	26304	2026-10-05	1a45841b	chore(calibration): aggiornamento settimanale Poisson	
+enrich_analytics_snapshots.py	file	1	583	0	0	2026-09-24	8d43da0a	fix(action): enrich lega 667 in 57014 -> keyset composto (season_year, fixture_id) sull'indice esistente	
+fetch_logs.ps1	file	1	0	0	1	2026-04-02	f8faab24	Merge root files and update ignore rules	
+fetch_summary.ps1	file	1	0	0	1	2026-04-02	f8faab24	Merge root files and update ignore rules	
+fix_storico_prob.py	file	1	123	0	0	2026-06-22	4ed56e35	fix(analytics): chiudi 3 BLOCCANTI cert. finale — copertura Poisson, shootout timing, label retrosp.	
+fixtures_backfill.py	file	1	210	0	0	2026-02-12	1bd7549a	Initial commit	
+football_data_scraper	cartella	7	1392	0	0	2026-03-16	ad8168a5	Aggiornamenti giornalieri: calibrazione Poisson, retraining ML e report statistici (2026-03-16)	0
+frontend	cartella	946	0	0	256463	2026-10-08	69baf115	fix(replay tennis): Applica bot cerca il Match Odds in tutte le cartelle delle registrazioni, errori veri sui mercati mancanti, pulsante disabilitato col motivo	94
+generate_dc_rho.py	file	1	259	0	0	2026-09-21	8d3dc8a3	fix(weekly-poisson): letture robuste, freni su lettura vuota e gate sullo step rho	
+generate_dynamic_cal.py	file	1	596	0	0	2026-09-21	8d3dc8a3	fix(weekly-poisson): letture robuste, freni su lettura vuota e gate sullo step rho	
+gh_jobs.json	file	1	0	0	0	2026-04-02	f8faab24	Merge root files and update ignore rules	
+import_betfair_operations.py	file	1	428	0	0	2026-07-06	8f053bb9	fix(report): status reale, stake=responsabilità su lay, strategia lato+mercato, hit motori, cassa Betfair	
+importa_ultimi_15_giorni.bat	file	1	0	0	25	2026-07-06	0b1c38e6	feat: backfill multi-giorno import operazioni + fix riconciliazione	
+injuries_backfill.py	file	1	354	0	0	2026-09-25	306fd112	fix(backfill): via il ramo morto degli aggregati dal Daily, delete con ritentativi (mai insert dopo delete fallita), via il refresh MV	
+inplay_intensity_by_league.json	file	1	0	0	486	2026-06-29	d8b007ff	feat(live-engine): calibrazione in-play per-lega ACCESA (team-fixed-effects)	
+install_worker_autostart.ps1	file	1	0	0	51	2026-06-28	3878919b	fix(backtest): backtest automatico flumine funzionante + realismo massimo	
+jobs.json	file	1	0	0	0	2026-04-02	f8faab24	Merge root files and update ignore rules	
+laboratorio	cartella	20	5356	245	225	2026-09-25	4021453f	refactor(laboratorio): i moduli di laboratorio escono da Betfair/ (laboratorio/scalper_lab, laboratorio/tennis_lab) con README; contratto strada unica aggiornato	0
+league_orchestrator.py	file	1	262	0	0	2026-09-25	59482d7b	feat(backfill): coda P4 «stagioni mai caricate» (solo per intero), RISERVA DINAMICA dopo le action del giorno, verifica dei «current» all'API, 400 verifiche/notte	
+league_trust_scores.json	file	1	0	0	414	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+leagues_mapper.py	file	1	406	0	0	2026-10-04	cdecd095	fix(actions): ritentativi nel Leagues Mapping, Seasons Catchup rosso solo per i guasti veri, nome veritiero del workflow	
+load_poisson_calibration_to_db.py	file	1	72	0	0	2026-06-20	d0e0c416	feat(calibration): centralizza la calibrazione Poisson nel DB	
+log.txt	file	1	0	0	0	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+log_predictions.txt	file	1	0	0	0	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+log_predictions_utf8.txt	file	1	0	0	581	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+log_today.txt	file	1	0	0	0	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+log_today_utf8.txt	file	1	0	0	1636	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+log_yesterday.txt	file	1	0	0	0	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+log_yesterday_utf8.txt	file	1	0	0	8797	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+logger.py	file	1	100	0	0	2026-07-03	c4a26d07	perf: tempi ridotti a parità di output (actions <2000 min/mese + bat veloce)	
+market_intelligence	cartella	12	2513	0	25009	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	0
+master_backtest.py	file	1	1660	0	0	2026-09-21	8d3dc8a3	fix(weekly-poisson): letture robuste, freni su lettura vuota e gate sullo step rho	
+merge_engine_signals.py	file	1	280	0	0	2026-09-26	c4a5f300	fix(pagine): FIX-B prestazioni e coerenza delle pagine (KO 2,3,6,7,9,11 fase 3 + kickoff sporchi): Analytics e Ritardi entro gli 8 s, Direzione con quota Betfair o «quota book», ML verdetto unico, TacticAI esito reale, rese null/NaN/date, kickoff da matches.fixture_date	
+migrations	cartella	175	294	0	34719	2026-10-08	69baf115	fix(replay tennis): Applica bot cerca il Match Odds in tutte le cartelle delle registrazioni, errori veri sui mercati mancanti, pulsante disabilitato col motivo	0
+missing_fixtures_backfill.py	file	1	131	0	0	2026-02-12	1bd7549a	Initial commit	
+out.json	file	1	0	0	17	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+output.txt	file	1	0	0	0	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+parse.py	file	1	12	0	0	2026-04-02	f8faab24	Merge root files and update ignore rules	
+per_fixture_backfill.py	file	1	1177	0	0	2026-09-25	f0152049	feat(backfill): DB sempre aggiornato e senza buchi, in automatico, dentro la quota API	
+poisson_calibrator.py	file	1	215	0	0	2026-06-20	d0e0c416	feat(calibration): centralizza la calibrazione Poisson nel DB	
+refresh_analytics_bets.py	file	1	281	0	0	2026-09-24	29f50b03	fix(action): Predictions Results Backfill - enrich con paginazione KEYSET per lega (l'OFFSET scorreva l'intero indice primario: 57014 su 10 leghe) + indice (league_id,id); refresh_analytics_bets_range v2 con temp table dei fixture, cache quote incrementale per impronta, statement_timeout 600 s della funzione (prima 0: 49 minuti fuggiti sul server) e diag per fase; client 660 s senza retry sul 57014; input leagues nel workflow; doppione idx fixture_predictions da togliere	
+refresh_dashboard.py	file	1	20	0	0	2026-03-14	6bc9d9d5	Aggiornamenti di oggi	
+registrazioni_banco	cartella	7	0	0	56	2026-10-05	f94f9d72	docs+dati: verifica della modalita' media under (replay del coordinatore), registrazioni compresse per i replay in cloud, secondo giro per l'agente; cronostoria 05/10	0
+report_mm.py	file	1	202	0	0	2026-04-02	f8faab24	Merge root files and update ignore rules	
+requirements-planner.txt	file	1	0	0	5	2026-07-03	c4a26d07	perf: tempi ridotti a parità di output (actions <2000 min/mese + bat veloce)	
+requirements-train.txt	file	1	0	0	28	2026-06-12	362a66e6	feat(training): strumento retrain cloud GitHub Actions + certificazione motori	
+requirements.txt	file	1	0	0	34	2026-07-16	3bbcbca9	feat(piattaforma): omega paper via flumine, recorder certificato, best practices, fedelta' paper pinnata	
+research_dump.txt	file	1	0	0	626	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+reset_ai_models.py	file	1	114	0	0	2026-03-13	9307c3f9	fix(ml): apply structural fixes to ML engine (lookahead bias, temporal split, targets, value betting thresholds)	
+retrain_all_leagues.py	file	1	631	0	0	2026-06-13	27a37601	fix(training): time_budget 150min (margine anti-timeout) + model_performance upsert on_conflict	
+retrain_log_20260403_093439.txt	file	1	0	0	1188	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+run.json	file	1	0	0	0	2026-04-02	f8faab24	Merge root files and update ignore rules	
+run_logs.txt	file	1	0	0	0	2026-04-02	f8faab24	Merge root files and update ignore rules	
+runs.json	file	1	0	0	0	2026-04-02	f8faab24	Merge root files and update ignore rules	
+sanity_check.py	file	1	211	0	0	2026-03-04	6eb44007	feat: Edge Engine v3.0 integration and Side-by-Side Dashboard Redesign	
+season_aggregates.py	file	1	282	0	0	2026-09-28	49dea7e5	perf(catchup): blocco adattivo per il riepilogo dei buchi (parte da 7 coppie)	
+season_backfill.py	file	1	240	0	0	2026-09-25	59482d7b	feat(backfill): coda P4 «stagioni mai caricate» (solo per intero), RISERVA DINAMICA dopo le action del giorno, verifica dei «current» all'API, 400 verifiche/notte	
+season_gaps.py	file	1	555	0	0	2026-09-28	49dea7e5	perf(catchup): blocco adattivo per il riepilogo dei buchi (parte da 7 coppie)	
+seasons_catchup.py	file	1	1022	0	0	2026-10-04	cdecd095	fix(actions): ritentativi nel Leagues Mapping, Seasons Catchup rosso solo per i guasti veri, nome veritiero del workflow	
+simulate_recovery_forward.py	file	1	287	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+sql	cartella	9	909	0	886	2026-06-19	31447615	test(ritardi): certificazione TOTALE 1:1 — ogni modalita' selezionabile (all/last_n[100,200,300,500,1000]/season[5]) x 50 varianti x ogni campo + serie DATI MATCH evento-per-evento. 550/550 PASS (oracolo foglio vs RPC). Arrotondamento Postgres-style + rit_vs_media su media_storica arrotondata a 6 (come la RPC).	3
+standings_backfill.py	file	1	381	0	0	2026-09-25	306fd112	fix(backfill): via il ramo morto degli aggregati dal Daily, delete con ritentativi (mai insert dopo delete fallita), via il refresh MV	
+start_backtest_worker.bat	file	1	0	0	14	2026-06-28	3878919b	fix(backtest): backtest automatico flumine funzionante + realismo massimo	
+start_order_server.py	file	1	56	0	0	2026-06-29	a5fd8e3c	feat(watchlist): Aggiorna quote e Invia Giocate mediati dal DB (usabili dal sito)	
+stream_api.bat	file	1	0	0	14	2026-07-10	5fe1e8ec	feat(bots): missione 2-tick scalper calcio+tennis, lab theta, tooling quote/replay	
+summary_23786706394.txt	file	1	0	0	0	2026-04-02	f8faab24	Merge root files and update ignore rules	
+tactical_engine	cartella	20	1748	1069	0	2026-09-26	c4a5f300	fix(pagine): FIX-B prestazioni e coerenza delle pagine (KO 2,3,6,7,9,11 fase 3 + kickoff sporchi): Analytics e Ritardi entro gli 8 s, Direzione con quota Betfair o «quota book», ML verdetto unico, TacticAI esito reale, rese null/NaN/date, kickoff da matches.fixture_date	0
+test.py	file	1	37	0	0	2026-03-30	e651d7c8	Auto-commit: Aggiornamenti giornalieri e script storici	
+test_actions_fail_rumoroso_2026_09_25.py	file	1	0	251	0	2026-09-25	306fd112	fix(backfill): via il ramo morto degli aggregati dal Daily, delete con ritentativi (mai insert dopo delete fallita), via il refresh MV	
+test_actions_pipeline_paginazione.py	file	1	0	1723	0	2026-09-24	8d43da0a	fix(action): enrich lega 667 in 57014 -> keyset composto (season_year, fixture_id) sull'indice esistente	
+test_analytics_market_stats.py	file	1	0	233	0	2026-06-22	2b8cefe7	fix(analytics): rimuovi look-ahead negli snapshot storici freq/ritardi + backfill timing	
+test_analytics_settlement.py	file	1	0	128	0	2026-06-22	321d984b	feat(analytics): copertura massima motori + snapshot freq/ritardi/timing + drill-down/grafici/export	
+test_backfill_automatico_2026_09_25.py	file	1	0	1270	0	2026-09-25	59482d7b	feat(backfill): coda P4 «stagioni mai caricate» (solo per intero), RISERVA DINAMICA dopo le action del giorno, verifica dei «current» all'API, 400 verifiche/notte	
+test_build_analytics_signals_kickoff_2026_09_26.py	file	1	0	78	0	2026-09-26	c4a5f300	fix(pagine): FIX-B prestazioni e coerenza delle pagine (KO 2,3,6,7,9,11 fase 3 + kickoff sporchi): Analytics e Ritardi entro gli 8 s, Direzione con quota Betfair o «quota book», ML verdetto unico, TacticAI esito reale, rese null/NaN/date, kickoff da matches.fixture_date	
+test_calibrazione_lettura_db.py	file	1	0	906	0	2026-09-21	8d3dc8a3	fix(weekly-poisson): letture robuste, freni su lettura vuota e gate sullo step rho	
+test_catchup_57014_2026_09_28.py	file	1	0	612	0	2026-09-28	49dea7e5	perf(catchup): blocco adattivo per il riepilogo dei buchi (parte da 7 coppie)	
+test_catchup_attesa_concorrenti_2026_09_26.py	file	1	0	123	0	2026-09-26	67c3ad4d	fix(e2e 26/09): stream cieco rilevato ed escalato, log dei figli su file, allarme col modo effettivo; scalper non arma a freno tirato, follow auto, force-flat dichiarato; paper fill di Mike al best; catchup aspetta il retrain; atlante priorita' in gioco e stagione_rif per lega; frame Mike con chiavi v4	
+test_catchup_avviso_buchi_2026_10_04.py	file	1	0	192	0	2026-10-04	cdecd095	fix(actions): ritentativi nel Leagues Mapping, Seasons Catchup rosso solo per i guasti veri, nome veritiero del workflow	
+test_catchup_p4_2026_09_25.py	file	1	0	514	0	2026-09-25	59482d7b	feat(backfill): coda P4 «stagioni mai caricate» (solo per intero), RISERVA DINAMICA dopo le action del giorno, verifica dei «current» all'API, 400 verifiche/notte	
+test_cloud_retrain_shard_ritentativi_2026_09_21.py	file	1	0	385	0	2026-09-21	774a47a8	fix(retrain): lettura dati senza timeout 57014, ordine deterministico, ritentativo di fine shard	
+test_daily_niente_aggregati_2026_09_25.py	file	1	0	102	0	2026-09-25	306fd112	fix(backfill): via il ramo morto degli aggregati dal Daily, delete con ritentativi (mai insert dopo delete fallita), via il refresh MV	
+test_delete_ritentativi_2026_09_25.py	file	1	0	386	0	2026-09-25	306fd112	fix(backfill): via il ramo morto degli aggregati dal Daily, delete con ritentativi (mai insert dopo delete fallita), via il refresh MV	
+test_leagues_mapper_ritentativi_2026_10_04.py	file	1	0	201	0	2026-10-04	cdecd095	fix(actions): ritentativi nel Leagues Mapping, Seasons Catchup rosso solo per i guasti veri, nome veritiero del workflow	
+test_merge_engine_signals_kickoff_2026_09_26.py	file	1	0	97	0	2026-09-26	c4a5f300	fix(pagine): FIX-B prestazioni e coerenza delle pagine (KO 2,3,6,7,9,11 fase 3 + kickoff sporchi): Analytics e Ritardi entro gli 8 s, Direzione con quota Betfair o «quota book», ML verdetto unico, TacticAI esito reale, rese null/NaN/date, kickoff da matches.fixture_date	
+test_omega_transizioni_notturne_2026_09_25.py	file	1	0	507	0	2026-09-25	ae1a184d	feat(omega): transizioni per minuto e HT-FT sempre aggiornate: registro per partita, giro notturno pg_cron 04:00 UTC, pubblicazione manuale reversibile	
+test_orchestratore_niente_refresh_mv_2026_09_25.py	file	1	0	101	0	2026-09-25	306fd112	fix(backfill): via il ramo morto degli aggregati dal Daily, delete con ritentativi (mai insert dopo delete fallita), via il refresh MV	
+test_refresh_analytics_bets_v2_2026_09_24.py	file	1	0	247	0	2026-09-24	29f50b03	fix(action): Predictions Results Backfill - enrich con paginazione KEYSET per lega (l'OFFSET scorreva l'intero indice primario: 57014 su 10 leghe) + indice (league_id,id); refresh_analytics_bets_range v2 con temp table dei fixture, cache quote incrementale per impronta, statement_timeout 600 s della funzione (prima 0: 49 minuti fuggiti sul server) e diag per fase; client 660 s senza retry sul 57014; input leagues nel workflow; doppione idx fixture_predictions da togliere	
+test_riserva_dinamica_2026_09_25.py	file	1	0	263	0	2026-09-25	59482d7b	feat(backfill): coda P4 «stagioni mai caricate» (solo per intero), RISERVA DINAMICA dopo le action del giorno, verifica dei «current» all'API, 400 verifiche/notte	
+tmp_analysis.py	file	1	188	0	0	2026-04-02	f8faab24	Merge root files and update ignore rules	
+tmp_analysis2.py	file	1	139	0	0	2026-04-02	f8faab24	Merge root files and update ignore rules	
+tmp_predict_today.py	file	1	117	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_predict_today_log.txt	file	1	0	0	58	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_predict_today_result.json	file	1	0	0	911	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_smoke_ml_fixes.py	file	1	196	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_smoke_poisson_fixes.py	file	1	148	0	0	2026-06-11	ab88834d	fix(poisson): porta motore blindato su master (#1,2,3,4,8,9,11,15,19)	
+tmp_smoke_stack.py	file	1	138	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_today_fixtures.json	file	1	0	0	609	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_today_predictions.json	file	1	0	0	1274	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_today_predictions.md	file	1	0	0	270	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_today_predictions.py	file	1	141	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_today_predictions_log.txt	file	1	0	0	273	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_train_today.py	file	1	73	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_train_today_log.txt	file	1	0	0	4104	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_train_today_result.json	file	1	0	0	716	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_validate_league.py	file	1	66	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_validate_predict.py	file	1	76	0	0	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_validation_log.txt	file	1	0	0	1277	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tmp_validation_result.json	file	1	0	0	92	2026-06-10	3250cb5e	fix: blindatura motore Poisson (audit 80 finding, nessun cambio strategia)	
+tools	cartella	5	722	117	404	2026-10-07	267605ca	feat: Match Replay, coerenza barra/simboli/tabellone come standard per tutte le partite (verificatore, test su ogni registrazione, avviso, strumento DB in sola lettura); salti di piu' unita'	0
+top_assists_backfill.py	file	1	380	0	0	2026-09-25	306fd112	fix(backfill): via il ramo morto degli aggregati dal Daily, delete con ritentativi (mai insert dopo delete fallita), via il refresh MV	
+top_cards_backfill.py	file	1	404	0	0	2026-09-25	306fd112	fix(backfill): via il ramo morto degli aggregati dal Daily, delete con ritentativi (mai insert dopo delete fallita), via il refresh MV	
+top_scorers_backfill.py	file	1	380	0	0	2026-09-25	306fd112	fix(backfill): via il ramo morto degli aggregati dal Daily, delete con ritentativi (mai insert dopo delete fallita), via il refresh MV	
+training_eligible_leagues.json	file	1	0	0	1022	2026-06-15	45663bcc	fix(planner): universo leghe da matches (ground-truth), non da season_backfill_state	
+training_planner.py	file	1	293	0	0	2026-06-19	c0eb8ae5	feat: retrain event-driven con gate >=1 giornata e auto-chain	
+update_dashboard_only.py	file	1	31	0	0	2026-03-13	9307c3f9	fix(ml): apply structural fixes to ML engine (lookahead bias, temporal split, targets, value betting thresholds)	
+update_poisson_calibration.py	file	1	606	0	0	2026-09-21	8d3dc8a3	fix(weekly-poisson): letture robuste, freni su lettura vuota e gate sullo step rho	
+valida_motore_poisson.py	file	1	169	0	0	2026-06-20	d0e0c416	feat(calibration): centralizza la calibrazione Poisson nel DB	
+valida_ventaglio.py	file	1	179	0	0	2026-06-20	d0e0c416	feat(calibration): centralizza la calibrazione Poisson nel DB	
+validate_walkforward.py	file	1	138	0	0	2026-06-15	387786bd	feat: walk-forward validation workflow per leghe Fascia A (sola lettura, no DB writes)	
+value_engine	cartella	12	729	130	0	2026-06-17	ce615b55	feat(calc): mercati 1X2 primo tempo (HT_H/HT_D/HT_A) nel calcolatore + bot	0
+ventaglio_segnali.py	file	1	350	0	0	2026-06-20	d0e0c416	feat(calibration): centralizza la calibrazione Poisson nel DB	
+.env	NON_TRACCIATA	0	0	0	0				1
+.scalper_mon_cursor	NON_TRACCIATA	0	0	0	0				1
+36006953	NON_TRACCIATA	0	0	0	0				1
+_adhoc_dist.py	NON_TRACCIATA	0	0	0	0				1
+_adhoc_over15.py	NON_TRACCIATA	0	0	0	0				1
+_api_leagues_coverage.json	NON_TRACCIATA	0	0	0	0				1
+_banco_alms_f3	NON_TRACCIATA	0	0	0	0				0
+_checkpoint_2026-09-28	NON_TRACCIATA	0	0	0	0				58058
+_concordance_miner.py	NON_TRACCIATA	0	0	0	0				1
+_count_played_by_league.py	NON_TRACCIATA	0	0	0	0				1
+_engine_grid.py	NON_TRACCIATA	0	0	0	0				1
+_enrich_storico.log	NON_TRACCIATA	0	0	0	0				1
+_enrich_storico_all.py	NON_TRACCIATA	0	0	0	0				1
+_exp_fullhistory.py	NON_TRACCIATA	0	0	0	0				1
+_fid2goals.json	NON_TRACCIATA	0	0	0	0				1
+_fid2league.json	NON_TRACCIATA	0	0	0	0				1
+_ghmaster.log	NON_TRACCIATA	0	0	0	0				1
+_ghrun.log	NON_TRACCIATA	0	0	0	0				1
+_inventory_direct.json	NON_TRACCIATA	0	0	0	0				1
+_inventory_direct.py	NON_TRACCIATA	0	0	0	0				1
+_league_data_audit.csv	NON_TRACCIATA	0	0	0	0				1
+_league_data_audit_REALE.csv	NON_TRACCIATA	0	0	0	0				1
+_LEAGUE_DATA_MAP.json	NON_TRACCIATA	0	0	0	0				1
+_LEAGUE_MAP_FINAL.csv	NON_TRACCIATA	0	0	0	0				1
+_league_played_by_season.json	NON_TRACCIATA	0	0	0	0				1
+_leagues_missing_from_sbf.json	NON_TRACCIATA	0	0	0	0				1
+_live_raw	NON_TRACCIATA	0	0	0	0				250
+_logs	NON_TRACCIATA	0	0	0	0				197
+_matrix.py	NON_TRACCIATA	0	0	0	0				1
+_monitor_run.py	NON_TRACCIATA	0	0	0	0				1
+_runner.log	NON_TRACCIATA	0	0	0	0				1
+_scorer.py	NON_TRACCIATA	0	0	0	0				1
+_segment_miner.py	NON_TRACCIATA	0	0	0	0				1
+_shardlogs	NON_TRACCIATA	0	0	0	0				6
+_tacticai_db_inventory.json	NON_TRACCIATA	0	0	0	0				1
+_tacticai_db_inventory.py	NON_TRACCIATA	0	0	0	0				1
+_tacticai_probe2.py	NON_TRACCIATA	0	0	0	0				1
+_tacticai_probe_wc.py	NON_TRACCIATA	0	0	0	0				1
+_test_targets_fix.py	NON_TRACCIATA	0	0	0	0				1
+_validazione_20260711	NON_TRACCIATA	0	0	0	0				317
+_validazione_tennis_1tick_20260710	NON_TRACCIATA	0	0	0	0				450
+backup_pre_cutoff_models.json	NON_TRACCIATA	0	0	0	0				1
+cert_bracket_id.txt	NON_TRACCIATA	0	0	0	0				1
+CERT_PAPER_2026-07-10.md	NON_TRACCIATA	0	0	0	0				1
+cert_replay_mo.json	NON_TRACCIATA	0	0	0	0				1
+cert_runner_calcio.log	NON_TRACCIATA	0	0	0	0				1
+cert_runner_tennis.log	NON_TRACCIATA	0	0	0	0				1
+CONTROCHECK_REPORT_2026-07-16.md	NON_TRACCIATA	0	0	0	0				1
+DIAGNOSI_CERTIFICATA_E_PIANO_PRO_2026-06-15.md	NON_TRACCIATA	0	0	0	0				1
+ENGINE_GRID_REPORT.json	NON_TRACCIATA	0	0	0	0				1
+ENGINE_GRID_REPORT.md	NON_TRACCIATA	0	0	0	0				1
+err.log	NON_TRACCIATA	0	0	0	0				1
+ESECUZIONE_LIVE.md	NON_TRACCIATA	0	0	0	0				1
+final_retrain.json	NON_TRACCIATA	0	0	0	0				1
+HANDOFF_LIVE_TRADING.md	NON_TRACCIATA	0	0	0	0				1
+HANDOFF_TOOL_DEFINITIVO.md	NON_TRACCIATA	0	0	0	0				1
+logs_23786706394.txt	NON_TRACCIATA	0	0	0	0				1
+MATCH_EVENTI_REPORTS_2026-06-16.txt	NON_TRACCIATA	0	0	0	0				1
+MATRICE_MERCATI.json	NON_TRACCIATA	0	0	0	0				1
+MATRICE_MERCATI.md	NON_TRACCIATA	0	0	0	0				1
+PIANO_CANALE_LOCALE_AL_MS_2026-09-18.md	NON_TRACCIATA	0	0	0	0				1
+PIANO_MAESTRO_2026-09-14.md	NON_TRACCIATA	0	0	0	0				1
+refill_now.json	NON_TRACCIATA	0	0	0	0				1
+report_test_run.log	NON_TRACCIATA	0	0	0	0				1
+report_test_run2.log	NON_TRACCIATA	0	0	0	0				1
+retrain_targets.json	NON_TRACCIATA	0	0	0	0				1
+RIPRESA_CERTIFICAZIONE_GLOBALE_2026-09-18.md	NON_TRACCIATA	0	0	0	0				1
+runner_console.err.log	NON_TRACCIATA	0	0	0	0				1
+runner_console.log	NON_TRACCIATA	0	0	0	0				1
+SAFE_STRATEGY_DOSSIER.md	NON_TRACCIATA	0	0	0	0				1
+SCALPER_AVGDOWN_REPORT_2026-07-16.md	NON_TRACCIATA	0	0	0	0				1
+SCALPER_CALCIO_DOSSIER.md	NON_TRACCIATA	0	0	0	0				1
+scalper_service_console.err.log	NON_TRACCIATA	0	0	0	0				1
+scalper_service_console.log	NON_TRACCIATA	0	0	0	0				1
+SCALPING_DEFINITIVO_2026-07-16.md	NON_TRACCIATA	0	0	0	0				1
+SPEC_STRATEGIA_S.md	NON_TRACCIATA	0	0	0	0				1
+TENNIS_BOT_DOSSIER.md	NON_TRACCIATA	0	0	0	0				1
+test_analytics_bets.py	NON_TRACCIATA	0	0	0	0				1
+test_roi.py	NON_TRACCIATA	0	0	0	0				1
+test_simple.py	NON_TRACCIATA	0	0	0	0				1
+TOOL_DEFINITIVO_ROADMAP.md	NON_TRACCIATA	0	0	0	0				1
+upload297.log	NON_TRACCIATA	0	0	0	0				1
+upload297b.log	NON_TRACCIATA	0	0	0	0				1
+upload297c.log	NON_TRACCIATA	0	0	0	0				1
+verify_mapping.py	NON_TRACCIATA	0	0	0	0				1

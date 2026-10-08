@@ -5257,3 +5257,29 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   identici prima/dopo; `ingresso-abbinato-in-parte` OK (3 scavalchi, cicli piatti); `rifiuti-betfair-codici` KO RC3 = DIFETTO VERO
   MONEY-CRITICAL (D1): dopo un `replaceOrders` rifiutato il place-and-trim passa a DONE e il bot crede chiusa per ~25 s una posizione
   aperta (`trading/submin.py`, condiviso da tutti i bot del place-and-trim): da decidere con l'utente. Mio replay identico.
+
+### PUNTO DI RIPRESA — ore 12:21 dell'08/10 (coordinatore PC, Fable 5.1)
+- Tre linee in corso, da fondere alla fine (decisione dell'utente): (1) SESSIONE CLOUD sui cantieri di `AUDIT_2026-10-08/SPECIFICHE_CANTIERI_CLOUD_2026-10-08.md` (15 per primo, poi 12, 5, 6, 14, 10, 13, 7, 9, 11), commit per cantiere sul ramo; (2) SESSIONE A CREDITI API (Agent SDK, lanciata alle 12:18 con `ARCHITETTURA_2026-10/strumenti/sessione_sdk.py`, tetto 190 USD, prova da 0,22 USD riuscita) che scrive SOLO in `ARCHITETTURA_2026-10/` il piano della nuova architettura (brief `BRIEF_PIANO_ARCHITETTURA_2026-10-08.md`, par. 9 compreso); (3) PC: build delle 12:19 su `40051ed9` (banco «mercato che attraversa» + Applica bot tennis per mercato), app riaperta dall'utente per le prove a schermo (par. 6, 11.4 e 10.1 del protocollo; lista nel referto `AUDIT_2026-10-07/certificazione_db/REFERTO_CERTIFICAZIONE_DB.md`).
+- Prossimi passi sul PC: esiti delle prove a schermo dell'utente (tennis con i mercati, calcio con i fill realistici); verifica dei commit del cloud man mano che arrivano (diff riletto, test e replay rilanciati, mutazioni mie); verifica a campione delle schede della sessione API contro il codice; fusione su master solo alla fine, con suite verde e replay di riferimento identici.
+- Reperti aperti fuori bot: disco Supabase 52 GB (margine 4-6 GB), decisione rimandata; 6 test vitest rossi solo su Windows (cantiere 12); barra 13/38 partite di luglio (cantiere 13).
+
+## 2026-10-08 — PIANO DI ARCHITETTURA (sessione a crediti API via Claude Agent SDK; coordinatore Opus 5.5; delegati Sonnet)
+
+Dominio di questa sessione: SOLO `ARCHITETTURA_2026-10/` e questo blocco. Nessun codice di produzione.
+Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 vale su tutto). Tetto 190 USD; costi in
+`ARCHITETTURA_2026-10/COSTI.md`.
+
+### Checkpoint
+- 12:20 tappa 0: brief comune dei delegati `ARCHITETTURA_2026-10/strumenti/BRIEF_COMUNE_DELEGATI.md`; lanciati 19
+  delegati Sonnet in parallelo: inventario (00), competitor (02), misure di oggi (07), schede A, B, C, D, E1 Mike,
+  E2 Omega, E3 Safe, E4 Scalper calcio, E5 Tennis, F, G1 dati, G2 algoritmi del cloud, H banco, I processi h24,
+  J frontend, K cartelle e codice morto.
+- 14:33 ripresa dopo l'arresto del primo processo (12:37, 40,94 USD): delegati interrotti senza schede; script e uscite
+  in `ARCHITETTURA_2026-10/strumenti/` riusati. Delegati da ora in primo piano, 4 alla volta.
+- 15:35 tappa 1 ACCETTATA: `00_INVENTARIO.md` (2.165 righe), `02_COMPETITOR.md` (63 fonti), `07_MISURE_OGGI.md`,
+  `03_SCHEDE_COMPONENTI/A_CONNESSIONE_BETFAIR.md` (86 funzionalita'). Verifica del coordinatore a campione, tutte
+  confermate sul codice: `runner.py:743-755` (ladder: publish sul canale poi upsert DB nello stesso thread),
+  `safe_strategy/stream.py:66` (`_CONFLATE_MS = 1000` dello scanner), `config_stream.py:311` (risk engine a 1 s),
+  `trading/risk_engine.py:21-23`, `desktop/main.js:756` (terzo login Betfair, web SSO); `read_book` in produzione 2
+  definizioni (`mike/service.py:146`, `omega/omega_market.py:571`), non 17 come nel brief. Reperti per il piano: 10/10
+  connessioni stream nel caso peggiore, scanner senza ripresa clk, orologio del PC +844 ms, 9,6 buchi >5 s per ora in-play.

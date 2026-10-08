@@ -1,0 +1,491 @@
+
+################ sessione 2026-10-08T06-03-49-625Z
+
+### mike-service: richieste 3791 in 79 min (log attivo) -> media 48.0/min | per-minuto p50=51 p95=54 p99=55 max=55
+        825   10.4/min  GET mike_control
+        824   10.4/min  GET mike_requests
+        824   10.4/min  GET safe_strategy_scan
+        824   10.4/min  GET mike_trades
+        210    2.7/min  PATCH mike_control
+        209    2.6/min  POST rpc/get_mike_aggregates
+         73    0.9/min  GET mike_events
+          1    0.0/min  GET safe_strategy_status
+
+### omega-service: richieste 964 in 79 min (log attivo) -> media 12.2/min | per-minuto p50=13 p95=13 p99=16 max=18
+        440    5.6/min  GET omega_trades
+         74    0.9/min  GET omega_control
+         74    0.9/min  PATCH omega_control
+         73    0.9/min  GET omega_events
+         73    0.9/min  PATCH omega_manual_requests
+         73    0.9/min  GET omega_manual_requests
+         73    0.9/min  GET omega_missions
+         73    0.9/min  POST rpc/get_omega_aggregates_modalita
+
+### runner-calcio: richieste 16631 in 79 min (log attivo) -> media 210.5/min | per-minuto p50=45 p95=489 p99=490 max=491
+       5040   63.8/min  GET betfair_live_risk_rules
+       3866   48.9/min  GET betfair_live_order_requests
+       3637   46.0/min  POST rpc/get_live_settings
+       2124   26.9/min  GET live_follow
+        581    7.4/min  POST betfair_live_heartbeat
+        347    4.4/min  GET betfair_live_settled
+        345    4.4/min  GET betfair_live_orders
+        330    4.2/min  GET safe_strategy_scan
+
+### runner-tennis: richieste 2146 in 79 min (log attivo) -> media 27.2/min | per-minuto p50=29 p95=29 p99=29 max=35
+       2138   27.1/min  GET tennis_live_follow
+          2    0.0/min  GET tennis_bot_control
+          2    0.0/min  PATCH tennis_live_order_queue
+          1    0.0/min  PATCH tennis_live_orders
+          1    0.0/min  PATCH tennis_live_positions
+          1    0.0/min  GET tennis_live_now
+          1    0.0/min  POST live_alerts
+
+### safe-strategy-bot: richieste 18352 in 79 min (log attivo) -> media 232.3/min | per-minuto p50=245 p95=259 p99=261 max=262
+       6477   82.0/min  GET safe_strategy_trades
+       3526   44.6/min  GET safe_strategy_requests
+       2998   37.9/min  GET safe_strategy_control
+       1506   19.1/min  PATCH safe_strategy_requests
+       1499   19.0/min  PATCH safe_strategy_control
+       1417   17.9/min  POST rpc/get_safe_aggregates
+        384    4.9/min  GET safe_strategy_scan
+        384    4.9/min  GET safe_strategy_status
+
+### safe-strategy-service: richieste 6455 in 79 min (log attivo) -> media 81.7/min | per-minuto p50=87 p95=94 p99=97 max=104
+       5170   65.4/min  POST safe_strategy_scan
+        438    5.5/min  GET mike_events
+        437    5.5/min  POST rpc/list_bot_exposures
+        375    4.7/min  POST safe_strategy_status
+         17    0.2/min  GET safe_strategy_scan
+         15    0.2/min  DELETE safe_strategy_scan
+          3    0.0/min  POST live_alerts
+
+### scalper-service: richieste 4151 in 79 min (log attivo) -> media 52.5/min | per-minuto p50=55 p95=57 p99=57 max=58
+       1383   17.5/min  GET scalper_control
+       1382   17.5/min  POST rpc/get_live_settings
+       1381   17.5/min  GET scalper_service_control
+          2    0.0/min  PATCH scalper_service_control
+          2    0.0/min  POST scalper_activity
+          1    0.0/min  POST live_alerts
+
+### tennis-bot-service: richieste 3399 in 79 min (log attivo) -> media 43.0/min | per-minuto p50=48 p95=48 p99=48 max=50
+       1699   21.5/min  GET tennis_bot_control
+       1132   14.3/min  PATCH tennis_bot_service_control
+        284    3.6/min  GET tennis_bot_service_control
+        283    3.6/min  GET tennis_live_follow
+          1    0.0/min  POST live_alerts
+
+### tennis-odds: richieste 6 in 63 min (log attivo) -> media 0.1/min | per-minuto p50=0 p95=0 p99=2 max=2
+          3    0.0/min  DELETE tennis_markets
+          3    0.0/min  POST tennis_markets
+
+### TOTALE sessione 2026-10-08T06-03-49-625Z: 55895 richieste in 79 min -> media 707.5/min | per-minuto p50=575 p95=1032 p99=1033 max=1034
+
+################ sessione 2026-10-04T14-18-01-459Z
+
+### mike-service: richieste 23560 in 92 min (log attivo) -> media 256.1/min | per-minuto p50=280 p95=311 p99=345 max=349
+       9913  107.8/min  GET mike_trades
+       4493   48.8/min  GET mike_control
+       4492   48.8/min  GET mike_requests
+       1796   19.5/min  POST mike_events
+       1241   13.5/min  GET safe_strategy_scan
+        879    9.6/min  POST mike_activity
+        279    3.0/min  PATCH mike_control
+        276    3.0/min  POST rpc/get_mike_aggregates
+
+### omega-service: richieste 1171 in 92 min (log attivo) -> media 12.7/min | per-minuto p50=13 p95=13 p99=16 max=18
+        536    5.8/min  GET omega_trades
+         90    1.0/min  GET omega_control
+         90    1.0/min  PATCH omega_control
+         89    1.0/min  GET omega_events
+         89    1.0/min  PATCH omega_manual_requests
+         89    1.0/min  GET omega_manual_requests
+         89    1.0/min  GET omega_missions
+         89    1.0/min  POST rpc/get_omega_aggregates_modalita
+
+### runner-calcio: richieste 51301 in 92 min (log attivo) -> media 557.6/min | per-minuto p50=558 p95=740 p99=766 max=811
+      18611  202.3/min  GET betfair_live_order_requests
+      15155  164.7/min  GET betfair_live_risk_rules
+      11031  119.9/min  POST rpc/get_live_settings
+       2636   28.7/min  GET live_follow
+       1035   11.2/min  GET betfair_live_settled
+       1022   11.1/min  GET betfair_live_orders
+        718    7.8/min  POST betfair_live_heartbeat
+        660    7.2/min  GET safe_strategy_scan
+
+### runner-tennis: richieste 2610 in 92 min (log attivo) -> media 28.4/min | per-minuto p50=29 p95=29 p99=29 max=29
+       2602   28.3/min  GET tennis_live_follow
+          2    0.0/min  GET tennis_bot_control
+          2    0.0/min  PATCH tennis_live_order_queue
+          1    0.0/min  PATCH tennis_live_orders
+          1    0.0/min  PATCH tennis_live_positions
+          1    0.0/min  GET tennis_live_now
+          1    0.0/min  POST live_alerts
+
+### safe-strategy-bot: richieste 24456 in 92 min (log attivo) -> media 265.8/min | per-minuto p50=251 p95=391 p99=397 max=401
+       7993   86.9/min  GET safe_strategy_trades
+       5683   61.8/min  GET safe_strategy_requests
+       3483   37.9/min  GET safe_strategy_control
+       2110   22.9/min  PATCH safe_strategy_requests
+       1743   18.9/min  PATCH safe_strategy_control
+       1743   18.9/min  POST rpc/get_safe_aggregates
+        647    7.0/min  GET safe_strategy_status
+        455    4.9/min  GET safe_strategy_scan
+
+### safe-strategy-service: richieste 8177 in 92 min (log attivo) -> media 88.9/min | per-minuto p50=93 p95=100 p99=103 max=104
+       6585   71.6/min  POST safe_strategy_scan
+        529    5.8/min  POST rpc/list_bot_exposures
+        529    5.8/min  GET mike_events
+        459    5.0/min  POST safe_strategy_status
+         28    0.3/min  DELETE safe_strategy_scan
+         19    0.2/min  GET safe_strategy_scan
+         14    0.2/min  GET fixture_predictions
+         10    0.1/min  POST live_alerts
+
+### scalper-service: richieste 5062 in 92 min (log attivo) -> media 55.0/min | per-minuto p50=56 p95=57 p99=57 max=57
+       1686   18.3/min  GET scalper_control
+       1686   18.3/min  GET scalper_service_control
+       1685   18.3/min  POST rpc/get_live_settings
+          2    0.0/min  PATCH scalper_service_control
+          2    0.0/min  POST scalper_activity
+          1    0.0/min  POST live_alerts
+
+### tennis-bot-service: richieste 4083 in 92 min (log attivo) -> media 44.4/min | per-minuto p50=48 p95=48 p99=48 max=48
+       2041   22.2/min  GET tennis_bot_control
+       1360   14.8/min  PATCH tennis_bot_service_control
+        341    3.7/min  GET tennis_bot_service_control
+        340    3.7/min  GET tennis_live_follow
+          1    0.0/min  POST live_alerts
+
+### tennis-odds: richieste 8 in 91 min (log attivo) -> media 0.1/min | per-minuto p50=0 p95=0 p99=2 max=2
+          4    0.0/min  DELETE tennis_markets
+          4    0.0/min  POST tennis_markets
+
+### TOTALE sessione 2026-10-04T14-18-01-459Z: 120428 richieste in 92 min -> media 1309.0/min | per-minuto p50=1343 p95=1494 p99=1502 max=1563
+
+################ sessione 2026-10-02T14-25-16-280Z
+
+### mike-service: richieste 21162 in 84 min (log attivo) -> media 251.9/min | per-minuto p50=273 p95=288 p99=318 max=347
+       8323   99.1/min  GET mike_trades
+       4609   54.9/min  GET mike_control
+       4608   54.9/min  GET mike_requests
+       1597   19.0/min  POST mike_events
+       1167   13.9/min  GET safe_strategy_scan
+        256    3.0/min  PATCH mike_control
+        252    3.0/min  POST rpc/get_mike_aggregates
+        190    2.3/min  POST mike_activity
+
+### omega-service: richieste 1067 in 84 min (log attivo) -> media 12.7/min | per-minuto p50=13 p95=13 p99=16 max=18
+        488    5.8/min  GET omega_trades
+         82    1.0/min  GET omega_control
+         82    1.0/min  PATCH omega_control
+         81    1.0/min  GET omega_events
+         81    1.0/min  PATCH omega_manual_requests
+         81    1.0/min  GET omega_manual_requests
+         81    1.0/min  GET omega_missions
+         81    1.0/min  POST rpc/get_omega_aggregates_modalita
+
+### runner-calcio: richieste 45125 in 84 min (log attivo) -> media 537.2/min | per-minuto p50=552 p95=565 p99=566 max=589
+      15333  182.5/min  GET betfair_live_order_requests
+      13781  164.1/min  GET betfair_live_risk_rules
+      10053  119.7/min  POST rpc/get_live_settings
+       2382   28.4/min  GET live_follow
+        935   11.1/min  GET betfair_live_settled
+        928   11.0/min  GET betfair_live_orders
+        652    7.8/min  POST betfair_live_heartbeat
+        642    7.6/min  GET safe_strategy_scan
+
+### runner-tennis: richieste 2369 in 84 min (log attivo) -> media 28.2/min | per-minuto p50=29 p95=29 p99=29 max=29
+       2361   28.1/min  GET tennis_live_follow
+          2    0.0/min  GET tennis_bot_control
+          2    0.0/min  PATCH tennis_live_order_queue
+          1    0.0/min  PATCH tennis_live_orders
+          1    0.0/min  PATCH tennis_live_positions
+          1    0.0/min  GET tennis_live_now
+          1    0.0/min  POST live_alerts
+
+### safe-strategy-bot: richieste 21389 in 84 min (log attivo) -> media 254.6/min | per-minuto p50=258 p95=281 p99=286 max=290
+       7083   84.3/min  GET safe_strategy_trades
+       3573   42.5/min  GET safe_strategy_requests
+       3295   39.2/min  PATCH safe_strategy_requests
+       2997   35.7/min  GET safe_strategy_control
+       1499   17.8/min  PATCH safe_strategy_control
+       1498   17.8/min  POST rpc/get_safe_aggregates
+        423    5.0/min  GET safe_strategy_status
+        422    5.0/min  GET safe_strategy_scan
+
+### safe-strategy-service: richieste 7146 in 84 min (log attivo) -> media 85.1/min | per-minuto p50=87 p95=99 p99=100 max=100
+       5722   68.1/min  POST safe_strategy_scan
+        479    5.7/min  POST rpc/list_bot_exposures
+        479    5.7/min  GET mike_events
+        417    5.0/min  POST safe_strategy_status
+         18    0.2/min  GET safe_strategy_scan
+         12    0.1/min  GET fixture_predictions
+         11    0.1/min  DELETE safe_strategy_scan
+          5    0.1/min  POST live_alerts
+
+### scalper-service: richieste 4563 in 84 min (log attivo) -> media 54.3/min | per-minuto p50=54 p95=57 p99=57 max=58
+       1520   18.1/min  GET scalper_control
+       1520   18.1/min  GET scalper_service_control
+       1518   18.1/min  POST rpc/get_live_settings
+          2    0.0/min  PATCH scalper_service_control
+          2    0.0/min  POST scalper_activity
+          1    0.0/min  POST live_alerts
+
+### tennis-bot-service: richieste 3699 in 84 min (log attivo) -> media 44.0/min | per-minuto p50=48 p95=48 p99=48 max=48
+       1849   22.0/min  GET tennis_bot_control
+       1232   14.7/min  PATCH tennis_bot_service_control
+        309    3.7/min  GET tennis_bot_service_control
+        308    3.7/min  GET tennis_live_follow
+          1    0.0/min  POST live_alerts
+
+### tennis-odds: richieste 6 in 61 min (log attivo) -> media 0.1/min | per-minuto p50=0 p95=0 p99=2 max=2
+          3    0.0/min  DELETE tennis_markets
+          3    0.0/min  POST tennis_markets
+
+### TOTALE sessione 2026-10-02T14-25-16-280Z: 106526 richieste in 84 min -> media 1268.2/min | per-minuto p50=1306 p95=1363 p99=1377 max=1413
+
+################ sessione 2026-10-06T15-38-45-144Z
+
+### mike-service: richieste 645 in 36 min (log attivo) -> media 17.9/min | per-minuto p50=0 p95=51 p99=53 max=53
+        140    3.9/min  GET mike_control
+        139    3.9/min  GET mike_requests
+        139    3.9/min  GET safe_strategy_scan
+        139    3.9/min  GET mike_trades
+         37    1.0/min  PATCH mike_control
+         36    1.0/min  POST rpc/get_mike_aggregates
+         14    0.4/min  GET mike_events
+          1    0.0/min  POST live_alerts
+
+### omega-service: richieste 180 in 36 min (log attivo) -> media 5.0/min | per-minuto p50=0 p95=13 p99=16 max=16
+         80    2.2/min  GET omega_trades
+         14    0.4/min  GET omega_control
+         14    0.4/min  PATCH omega_control
+         13    0.4/min  GET omega_events
+         13    0.4/min  PATCH omega_manual_requests
+         13    0.4/min  GET omega_manual_requests
+         13    0.4/min  GET omega_missions
+         13    0.4/min  POST rpc/get_omega_aggregates_modalita
+
+### runner-calcio: richieste 11463 in 36 min (log attivo) -> media 318.4/min | per-minuto p50=0 p95=1077 p99=1108 max=1108
+       5092  141.4/min  POST live_ladder
+       1884   52.3/min  GET betfair_live_risk_rules
+       1468   40.8/min  GET betfair_live_order_requests
+       1371   38.1/min  POST rpc/get_live_settings
+        387   10.8/min  GET betfair_live_orders
+        353    9.8/min  GET live_follow
+        252    7.0/min  POST live_now
+        185    5.1/min  POST live_signals
+
+### runner-tennis: richieste 368 in 36 min (log attivo) -> media 10.2/min | per-minuto p50=0 p95=29 p99=35 max=35
+        360   10.0/min  GET tennis_live_follow
+          2    0.1/min  GET tennis_bot_control
+          2    0.1/min  PATCH tennis_live_order_queue
+          1    0.0/min  PATCH tennis_live_orders
+          1    0.0/min  PATCH tennis_live_positions
+          1    0.0/min  GET tennis_live_now
+          1    0.0/min  POST live_alerts
+
+### safe-strategy-bot: richieste 3255 in 36 min (log attivo) -> media 90.4/min | per-minuto p50=0 p95=262 p99=271 max=271
+       1062   29.5/min  GET safe_strategy_trades
+        556   15.4/min  GET safe_strategy_requests
+        502   13.9/min  PATCH safe_strategy_requests
+        469   13.0/min  GET safe_strategy_control
+        235    6.5/min  PATCH safe_strategy_control
+        225    6.2/min  POST rpc/get_safe_aggregates
+         64    1.8/min  GET safe_strategy_scan
+         63    1.8/min  GET safe_strategy_status
+
+### safe-strategy-service: richieste 1170 in 36 min (log attivo) -> media 32.5/min | per-minuto p50=0 p95=98 p99=102 max=102
+        933   25.9/min  POST safe_strategy_scan
+         75    2.1/min  POST rpc/list_bot_exposures
+         75    2.1/min  GET mike_events
+         65    1.8/min  POST safe_strategy_status
+          7    0.2/min  DELETE safe_strategy_scan
+          5    0.1/min  GET safe_strategy_scan
+          5    0.1/min  GET fixture_predictions
+          3    0.1/min  POST live_alerts
+
+### scalper-service: richieste 717 in 36 min (log attivo) -> media 19.9/min | per-minuto p50=0 p95=57 p99=58 max=58
+        238    6.6/min  GET scalper_control
+        238    6.6/min  GET scalper_service_control
+        237    6.6/min  POST rpc/get_live_settings
+          2    0.1/min  PATCH scalper_service_control
+          1    0.0/min  POST scalper_activity
+          1    0.0/min  POST live_alerts
+
+### tennis-bot-service: richieste 591 in 36 min (log attivo) -> media 16.4/min | per-minuto p50=0 p95=48 p99=48 max=48
+        295    8.2/min  GET tennis_bot_control
+        196    5.4/min  PATCH tennis_bot_service_control
+         50    1.4/min  GET tennis_bot_service_control
+         49    1.4/min  GET tennis_live_follow
+          1    0.0/min  POST live_alerts
+
+### tennis-odds: richieste 2 in 32 min (log attivo) -> media 0.1/min | per-minuto p50=0 p95=0 p99=2 max=2
+          1    0.0/min  DELETE tennis_markets
+          1    0.0/min  POST tennis_markets
+
+### TOTALE sessione 2026-10-06T15-38-45-144Z: 18391 richieste in 36 min -> media 510.9/min | per-minuto p50=0 p95=1633 p99=1656 max=1656
+
+################ sessione 2026-10-07T14-23-40-718Z
+
+### mike-service: richieste 1522 in 33 min (log attivo) -> media 46.1/min | per-minuto p50=48 p95=51 p99=51 max=51
+        345   10.5/min  GET mike_control
+        344   10.4/min  GET mike_requests
+        344   10.4/min  GET mike_trades
+        279    8.5/min  GET safe_strategy_scan
+         89    2.7/min  PATCH mike_control
+         87    2.6/min  POST rpc/get_mike_aggregates
+         31    0.9/min  GET mike_events
+          2    0.1/min  GET safe_strategy_status
+
+### omega-service: richieste 415 in 33 min (log attivo) -> media 12.6/min | per-minuto p50=13 p95=13 p99=18 max=18
+        188    5.7/min  GET omega_trades
+         32    1.0/min  GET omega_control
+         32    1.0/min  PATCH omega_control
+         31    0.9/min  GET omega_events
+         31    0.9/min  PATCH omega_manual_requests
+         31    0.9/min  GET omega_manual_requests
+         31    0.9/min  GET omega_missions
+         31    0.9/min  POST rpc/get_omega_aggregates_modalita
+
+### runner-calcio: richieste 14997 in 33 min (log attivo) -> media 454.5/min | per-minuto p50=486 p95=492 p99=512 max=512
+       5032  152.5/min  GET betfair_live_risk_rules
+       3995  121.1/min  GET betfair_live_order_requests
+       3693  111.9/min  POST rpc/get_live_settings
+        902   27.3/min  GET live_follow
+        351   10.6/min  GET betfair_live_settled
+        349   10.6/min  GET betfair_live_orders
+        247    7.5/min  POST betfair_live_heartbeat
+        243    7.4/min  GET safe_strategy_scan
+
+### runner-tennis: richieste 901 in 33 min (log attivo) -> media 27.3/min | per-minuto p50=29 p95=29 p99=33 max=33
+        893   27.1/min  GET tennis_live_follow
+          2    0.1/min  GET tennis_bot_control
+          2    0.1/min  PATCH tennis_live_order_queue
+          1    0.0/min  PATCH tennis_live_orders
+          1    0.0/min  PATCH tennis_live_positions
+          1    0.0/min  GET tennis_live_now
+          1    0.0/min  POST live_alerts
+
+### safe-strategy-bot: richieste 7628 in 33 min (log attivo) -> media 231.2/min | per-minuto p50=246 p95=250 p99=253 max=253
+       2619   79.4/min  GET safe_strategy_trades
+       1440   43.6/min  GET safe_strategy_requests
+       1225   37.1/min  GET safe_strategy_control
+        641   19.4/min  PATCH safe_strategy_requests
+        613   18.6/min  PATCH safe_strategy_control
+        612   18.5/min  POST rpc/get_safe_aggregates
+        155    4.7/min  GET safe_strategy_scan
+        155    4.7/min  GET safe_strategy_status
+
+### safe-strategy-service: richieste 2977 in 33 min (log attivo) -> media 90.2/min | per-minuto p50=95 p95=100 p99=106 max=106
+       2431   73.7/min  POST safe_strategy_scan
+        182    5.5/min  POST rpc/list_bot_exposures
+        181    5.5/min  GET mike_events
+        157    4.8/min  POST safe_strategy_status
+         10    0.3/min  DELETE safe_strategy_scan
+          9    0.3/min  GET safe_strategy_scan
+          5    0.2/min  GET fixture_predictions
+          1    0.0/min  GET matches
+
+### scalper-service: richieste 1734 in 33 min (log attivo) -> media 52.5/min | per-minuto p50=55 p95=57 p99=57 max=57
+        577   17.5/min  GET scalper_control
+        577   17.5/min  GET scalper_service_control
+        576   17.5/min  POST rpc/get_live_settings
+          2    0.1/min  PATCH scalper_service_control
+          1    0.0/min  POST scalper_activity
+          1    0.0/min  POST live_alerts
+
+### tennis-bot-service: richieste 1407 in 33 min (log attivo) -> media 42.6/min | per-minuto p50=48 p95=48 p99=48 max=48
+        703   21.3/min  GET tennis_bot_control
+        468   14.2/min  PATCH tennis_bot_service_control
+        118    3.6/min  GET tennis_bot_service_control
+        117    3.5/min  GET tennis_live_follow
+          1    0.0/min  POST live_alerts
+
+### tennis-odds: richieste 4 in 32 min (log attivo) -> media 0.1/min | per-minuto p50=0 p95=0 p99=2 max=2
+          2    0.1/min  DELETE tennis_markets
+          2    0.1/min  POST tennis_markets
+
+### TOTALE sessione 2026-10-07T14-23-40-718Z: 31585 richieste in 33 min -> media 957.1/min | per-minuto p50=1019 p95=1030 p99=1044 max=1044
+
+################ sessione 2026-10-07T15-57-15-286Z
+
+### mike-service: richieste 1397 in 29 min (log attivo) -> media 48.2/min | per-minuto p50=50 p95=51 p99=51 max=51
+        305   10.5/min  GET mike_control
+        304   10.5/min  GET mike_requests
+        304   10.5/min  GET mike_trades
+        299   10.3/min  GET safe_strategy_scan
+         79    2.7/min  PATCH mike_control
+         76    2.6/min  POST rpc/get_mike_aggregates
+         28    1.0/min  GET mike_events
+          1    0.0/min  GET safe_strategy_status
+
+### omega-service: richieste 369 in 29 min (log attivo) -> media 12.7/min | per-minuto p50=13 p95=13 p99=18 max=18
+        168    5.8/min  GET omega_trades
+         29    1.0/min  GET omega_control
+         29    1.0/min  PATCH omega_control
+         28    1.0/min  GET omega_events
+         28    1.0/min  PATCH omega_manual_requests
+         28    1.0/min  GET omega_manual_requests
+         28    1.0/min  GET omega_missions
+         28    1.0/min  POST rpc/get_omega_aggregates_modalita
+
+### runner-calcio: richieste 13332 in 29 min (log attivo) -> media 459.7/min | per-minuto p50=489 p95=495 p99=498 max=498
+       4594  158.4/min  GET betfair_live_risk_rules
+       3466  119.5/min  GET betfair_live_order_requests
+       3286  113.3/min  POST rpc/get_live_settings
+        817   28.2/min  GET live_follow
+        312   10.8/min  GET betfair_live_settled
+        309   10.7/min  GET betfair_live_orders
+        222    7.7/min  POST betfair_live_heartbeat
+        215    7.4/min  GET safe_strategy_scan
+
+### runner-tennis: richieste 804 in 29 min (log attivo) -> media 27.7/min | per-minuto p50=29 p95=29 p99=29 max=29
+        796   27.4/min  GET tennis_live_follow
+          2    0.1/min  GET tennis_bot_control
+          2    0.1/min  PATCH tennis_live_order_queue
+          1    0.0/min  PATCH tennis_live_orders
+          1    0.0/min  PATCH tennis_live_positions
+          1    0.0/min  GET tennis_live_now
+          1    0.0/min  POST live_alerts
+
+### safe-strategy-bot: richieste 6848 in 29 min (log attivo) -> media 236.1/min | per-minuto p50=246 p95=255 p99=261 max=261
+       2398   82.7/min  GET safe_strategy_trades
+       1292   44.6/min  GET safe_strategy_requests
+       1101   38.0/min  GET safe_strategy_control
+        570   19.7/min  PATCH safe_strategy_requests
+        551   19.0/min  PATCH safe_strategy_control
+        550   19.0/min  POST rpc/get_safe_aggregates
+        139    4.8/min  GET safe_strategy_scan
+        139    4.8/min  GET safe_strategy_status
+
+### safe-strategy-service: richieste 2495 in 29 min (log attivo) -> media 86.0/min | per-minuto p50=91 p95=99 p99=100 max=100
+       2013   69.4/min  POST safe_strategy_scan
+        162    5.6/min  POST rpc/list_bot_exposures
+        162    5.6/min  GET mike_events
+        139    4.8/min  POST safe_strategy_status
+          7    0.2/min  GET safe_strategy_scan
+          6    0.2/min  DELETE safe_strategy_scan
+          4    0.1/min  GET fixture_predictions
+          1    0.0/min  GET matches
+
+### scalper-service: richieste 1545 in 29 min (log attivo) -> media 53.3/min | per-minuto p50=54 p95=57 p99=58 max=58
+        514   17.7/min  GET scalper_control
+        514   17.7/min  GET scalper_service_control
+        513   17.7/min  POST rpc/get_live_settings
+          2    0.1/min  PATCH scalper_service_control
+          1    0.0/min  POST scalper_activity
+          1    0.0/min  POST live_alerts
+
+### tennis-bot-service: richieste 1251 in 29 min (log attivo) -> media 43.1/min | per-minuto p50=48 p95=48 p99=48 max=48
+        625   21.6/min  GET tennis_bot_control
+        416   14.3/min  PATCH tennis_bot_service_control
+        105    3.6/min  GET tennis_bot_service_control
+        104    3.6/min  GET tennis_live_follow
+          1    0.0/min  POST live_alerts
+
+### tennis-odds: richieste 2 in 2 min (log attivo) -> media 1.0/min | per-minuto p50=0 p95=2 p99=2 max=2
+          1    0.5/min  DELETE tennis_markets
+          1    0.5/min  POST tennis_markets
+
+### TOTALE sessione 2026-10-07T15-57-15-286Z: 28043 richieste in 29 min -> media 967.0/min | per-minuto p50=1023 p95=1033 p99=1033 max=1033

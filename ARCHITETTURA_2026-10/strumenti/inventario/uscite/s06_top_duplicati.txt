@@ -1,0 +1,47 @@
+== TOP 30 per righe totali (esclusi metodi omonimi generici) ==
+nome                         copie file  righe ident quasi  div  recup  giudizio
+process_market_book             20   20   1826     0     1   18    211  MISTE
+run_once                         4    4   1160     0     0    4      0  DIVERSE
+_manage                          6    6   1014     0     0    6      0  DIVERSE
+_place                          16   15    829     0     0   16      0  DIVERSE
+_drive_flatten                   6    6    658     0     0    6      0  DIVERSE
+place                           10    9    564     3     0    6     12  MISTE
+verifica                         8    8    525     0     0    8      0  DIVERSE
+_try_enter                       3    3    503     0     2    0    344  IDENTICHE/QUASI
+run_for_date                     3    3    499     0     0    3      0  DIVERSE
+_process_once                    7    7    471     0     0    7      0  DIVERSE
+_manage_maker                    3    3    431     0     1    1    157  MISTE
+_place_exact                     4    4    384     0     0    4      0  DIVERSE
+process_closed_market           17   17    380     0     2   13     25  MISTE
+execute_place                    3    3    353     0     0    3      0  DIVERSE
+evaluate                        10    9    335     0     0   10      0  DIVERSE
+place_submin_live                4    4    325     0     0    4      0  DIVERSE
+_drive_submins                   4    4    306     0     0    4      0  DIVERSE
+place_order_live                 4    4    275     0     0    4      0  DIVERSE
+run_backfill                     3    3    265     0     0    3      0  DIVERSE
+_process_local_requests          3    3    244     0     0    3      0  DIVERSE
+_run_one_event                   3    3    239     0     0    3      0  DIVERSE
+_un_giro                         4    4    233     0     0    4      0  DIVERSE
+_enter_join                      3    3    215     1     1    0    143  IDENTICHE/QUASI
+ferma_al_nuovo_avvio             4    4    212     0     0    4      0  DIVERSE
+esegui                           3    3    212     0     0    3      0  DIVERSE
+fit                              4    3    203     0     0    4      0  DIVERSE
+_validate                        7    3    195     0     0    7      0  DIVERSE
+write_message                    3    3    193     0     0    3      0  DIVERSE
+osserva                          6    6    179     0     0    6      0  DIVERSE
+cancel_order_live                3    3    177     0     0    3      0  DIVERSE
+
+== omonimie generiche (non sono duplicati da fondere per costruzione) ==
+main                            96   96   5727     0     0   96      0
+__init__                       182   93   4151     2     0  178      6
+run                              7    7    401     0     0    7      0
+stato                           14   11    164     0     0   14      0
+avvia                           14   12    122     0     0   14      0
+azzera                          12   12     80     0     1   10     11
+__getattr__                     14   11     59     0     0   14      0
+ferma                           11    9     56     4     0    5     11
+log                              7    7     44     0     0    7      0
+__str__                          6    6     23     1     0    4      3
+__repr__                         3    3      6     0     0    3      0
+
+righe recuperabili per copie identiche/quasi (esclusi omonimi): 2324 su 320 nomi con >= 3 copie

@@ -1,0 +1,967 @@
+file	riga	tipo	nome	operazione	categoria	linguaggio
+AGGIORNA_CAMPO_db_json_analisi.py	134	table	fixture_predictions	select	py_codice_radice	py
+AGGIORNA_CAMPO_db_json_analisi.py	178	table	fixture_predictions	update	py_codice_radice	py
+AUDIT_2026-09-25/e2e_fase1/strumenti/e2e.py	36	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/attesa_freno.py	17	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/confronto_d.py	22	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/conta_freno.py	19	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/raccolta_db.py	26	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sentinella.py	18	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_automode_db.py	27	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_mapper.py	8	table	api_coverage_by_season	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_quota.py	43	table	<dinamico:tabella>	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_quota.py	81	rpc	season_detail_gaps	?	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_quota.py	94	table	matches	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_quota.py	102	table	fixture_detail_checks	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_stato.py	11	table	pg_available?	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_stato.py	18	rpc	<dinamico:nome>	?	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_stato.py	25	rpc	season_detail_gaps	?	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_stato.py	29	table	season_backfill_state	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_stato.py	48	table	season_backfill_state	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_stato.py	65	table	season_backfill_state	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_catchup_stato2.py	14	table	season_backfill_state	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_fase3_db.py	14	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_feed_atlante_db.py	30	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_libro_a.py	33	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/sonda_ordini_db.py	27	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/verifica_mike_aperti.py	36	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/verifica_mike_b.py	19	table	mike_activity	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/verifica_mike_c.py	17	table	mike_trades	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/verifica_mike_c.py	20	table	mike_events	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/verifica_pnl.py	21	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/verifica_safe_c.py	70	table	safe_strategy_trades	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2/verifica_safe_c.py	74	table	safe_strategy_activity	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2_z0/semantica_A.py	28	table	safe_strategy_scan	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase2_z0/semantica_A.py	42	table	safe_strategy_scan	select	py_script_audit	py
+AUDIT_2026-09-25/e2e_fase3_sessB/verifica_modelli.py	50	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/prova_preflight_atlante.py	41	rest_tabella	hazard_atlas		py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_copertura_sola_lettura.py	15	table	fixture_predictions	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_copertura_sola_lettura.py	17	table	matches	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_copertura_sola_lettura.py	27	table	fixture_predictions	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_forma_quote_sola_lettura.py	14	table	tennis_markets	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_forma_quote_sola_lettura.py	20	table	tennis_markets	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_forma_quote_sola_lettura.py	22	table	fixture_predictions	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_misura_super_favorito.py	125	table	tennis_markets	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_misura_super_favorito.py	151	table	fixture_predictions	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_round_finali_sola_lettura.py	17	table	matches	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_schema_sola_lettura.py	14	table	<dinamico:t>	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_schema_sola_lettura.py	16	table	matches	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/d5_schema_sola_lettura.py	19	table	fixture_predictions	select	py_script_audit	py
+AUDIT_2026-09-25/sonde/misura_leghe_giorno.py	24	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/sonde/p4_sonda_get.py	16	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/sonde/sonda_db_colonna_extra.py	28	rest_tabella	matches		py_script_audit	py
+AUDIT_2026-09-25/validazione_hazard/sonde/sonda1_colonne.py	22	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/validazione_hazard/sonde/sonda2_copertura.py	25	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/validazione_hazard/sonde/sonda3_leghe_piccole.py	21	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-25/validazione_hazard/sonde/sonda4_conta_piccole.py	22	rest_dinamico	<percorso costruito a runtime>		py_script_audit	py
+AUDIT_2026-09-30/app_tabellone/sonda_conteggio_migrazione.py	10	table	tennis_live_orders	select	py_script_audit	py
+AUDIT_2026-09-30/app_tabellone/sonda_riga_tennis.py	10	table	tennis_live_orders	select	py_script_audit	py
+AUDIT_2026-09-30/app_tabellone/sonda_riga_tennis.py	16	table	tennis_live_orders	select	py_script_audit	py
+AUDIT_2026-09-30/app_tabellone/sonda_riga_tennis.py	21	table	tennis_live_follow	select	py_script_audit	py
+AUDIT_2026-09-30/app_tabellone/sonda_riga_tennis.py	23	table	tennis_live_order_queue	select	py_script_audit	py
+AUDIT_2026-09-30/sonda_arretrati_prova.py	19	rpc	get_mike_state	?	py_script_audit	py
+AUDIT_2026-09-30/sonda_arretrati_prova.py	32	table	<dinamico:tab>	select	py_script_audit	py
+Ai Engine/ai_engine/db_adapter.py	231	table	<dinamico:table>	select	py_codice_cartelle_radice	py
+Ai Engine/ai_engine/db_adapter.py	418	table	matches	select	py_codice_cartelle_radice	py
+Ai Engine/ai_engine/db_adapter.py	432	table	fixture_predictions	select	py_codice_cartelle_radice	py
+Ai Engine/ai_engine/predict_fixture.py	83	storage	<dinamico:bucket>	?	py_codice_cartelle_radice	py
+Ai Engine/ai_engine/predict_fixture.py	386	table	ml_post_calibration	select	py_codice_cartelle_radice	py
+Ai Engine/ai_engine/predict_fixture.py	512	table	ai_model_registry	select	py_codice_cartelle_radice	py
+Ai Engine/ai_engine/predict_fixture.py	1087	table	fixture_predictions	update	py_codice_cartelle_radice	py
+Ai Engine/ai_engine/seriea_model_export.py	679	storage	<dinamico:bucket>	?	py_codice_cartelle_radice	py
+Ai Engine/ai_engine/seriea_model_export.py	686	table	ai_model_registry	delete	py_codice_cartelle_radice	py
+Ai Engine/ai_engine/seriea_model_export.py	689	table	ai_model_registry	insert	py_codice_cartelle_radice	py
+Ai Engine/ai_engine/serving_batch.py	60	table	fixture_predictions	select	py_codice_cartelle_radice	py
+Ai Engine/ai_engine/tests/test_db_adapter_letture_2026_09_21.py	345	table	match_odds	select	py_test	py
+Ai Engine/ai_engine/tests/test_db_adapter_letture_2026_09_21.py	365	table	<dinamico:table>	select	py_test	py
+Betfair/betfair_report_manager.py	302	table	fixture_predictions	select	py_codice_Betfair	py
+Betfair/betfair_report_manager.py	315	table	fixture_predictions	select	py_codice_Betfair	py
+Betfair/betfair_report_manager.py	1224	table	ai_model_registry	select	py_codice_Betfair	py
+Betfair/betfair_report_manager.py	1246	table	matches	select	py_codice_Betfair	py
+Betfair/betfair_report_manager.py	1299	table	ai_model_registry	delete	py_codice_Betfair	py
+Betfair/betfair_report_manager.py	1319	table	ai_model_registry	select	py_codice_Betfair	py
+Betfair/betfair_report_manager.py	1335	storage	<dinamico:bucket>	?	py_codice_Betfair	py
+Betfair/betfair_report_manager.py	1392	table	ai_model_registry	select	py_codice_Betfair	py
+Betfair/mike/db.py	60	table	mike_control	select	py_codice_Betfair	py
+Betfair/mike/db.py	68	table	mike_control	update	py_codice_Betfair	py
+Betfair/mike/db.py	76	table	mike_activity	insert	py_codice_Betfair	py
+Betfair/mike/db.py	108	table	mike_events	select	py_codice_Betfair	py
+Betfair/mike/db.py	117	table	mike_events	select	py_codice_Betfair	py
+Betfair/mike/db.py	141	table	mike_events	upsert	py_codice_Betfair	py
+Betfair/mike/db.py	164	table	mike_events	upsert	py_codice_Betfair	py
+Betfair/mike/db.py	169	table	mike_events	delete	py_codice_Betfair	py
+Betfair/mike/db.py	176	table	mike_trades	insert	py_codice_Betfair	py
+Betfair/mike/db.py	186	table	mike_trades	update	py_codice_Betfair	py
+Betfair/mike/db.py	192	table	mike_trades	select	py_codice_Betfair	py
+Betfair/mike/db.py	202	table	mike_trades	select	py_codice_Betfair	py
+Betfair/mike/db.py	211	table	mike_trades	select	py_codice_Betfair	py
+Betfair/mike/db.py	230	table	<dinamico:tabella>	select	py_codice_Betfair	py
+Betfair/mike/db.py	233	table	betfair_live_orders	select	py_codice_Betfair	py
+Betfair/mike/db.py	264	table	mike_trades	select	py_codice_Betfair	py
+Betfair/mike/db.py	271	table	mike_trades	select	py_codice_Betfair	py
+Betfair/mike/db.py	281	table	mike_trades	select	py_codice_Betfair	py
+Betfair/mike/db.py	409	rpc	get_mike_aggregates	?	py_codice_Betfair	py
+Betfair/mike/db.py	463	table	mike_requests	select	py_codice_Betfair	py
+Betfair/mike/db.py	490	table	mike_requests	select	py_codice_Betfair	py
+Betfair/mike/db.py	509	table	mike_requests	update	py_codice_Betfair	py
+Betfair/mike/db.py	516	table	mike_requests	update	py_codice_Betfair	py
+Betfair/mike/db.py	533	table	mike_requests	select	py_codice_Betfair	py
+Betfair/mike/db.py	560	table	safe_strategy_scan	select	py_codice_Betfair	py
+Betfair/mike/db.py	569	table	safe_strategy_status	select	py_codice_Betfair	py
+Betfair/mike/db.py	599	table	<dinamico:tabella>	select	py_codice_Betfair	py
+Betfair/mike/db.py	651	table	live_follow	select	py_codice_Betfair	py
+Betfair/mike/db.py	657	table	betfair_live_heartbeat	select	py_codice_Betfair	py
+Betfair/mike/db.py	663	rpc	request_betfair_live_order	?	py_codice_Betfair	py
+Betfair/mike/db.py	669	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/mike/db.py	676	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/mike/db.py	683	table	betfair_live_order_requests	update	py_codice_Betfair	py
+Betfair/mike/db.py	691	table	betfair_live_orders	select	py_codice_Betfair	py
+Betfair/mike/tests/test_mike_respiro_scritture_2026_09_13.py	12	rest_tabella	mike_events		py_test	py
+Betfair/mike/tests/test_mike_respiro_scritture_2026_09_13.py	13	rest_tabella	mike_events		py_test	py
+Betfair/mike/tests/test_mike_respiro_scritture_2026_09_13.py	14	rest_tabella	mike_events		py_test	py
+Betfair/mike/tests/test_mike_respiro_scritture_2026_09_13.py	15	rest_tabella	mike_events		py_test	py
+Betfair/mike/tests/test_mike_respiro_scritture_2026_09_13.py	16	rest_tabella	mike_events		py_test	py
+Betfair/mike/tests/test_mike_respiro_scritture_2026_09_13.py	17	rest_tabella	mike_control		py_test	py
+Betfair/money_management.py	1399	table	matches	select	py_codice_Betfair	py
+Betfair/money_management.py	1522	table	matches	select	py_codice_Betfair	py
+Betfair/money_management.py	2167	table	matches	select	py_codice_Betfair	py
+Betfair/money_management.py	2270	table	matches	select	py_codice_Betfair	py
+Betfair/money_management.py	2330	table	matches	select	py_codice_Betfair	py
+Betfair/money_management.py	2434	table	signal_history	upsert	py_codice_Betfair	py
+Betfair/money_management.py	2471	table	signal_history	upsert	py_codice_Betfair	py
+Betfair/odds_refresh.py	178	table	fixture_predictions	select	py_codice_Betfair	py
+Betfair/odds_refresh.py	224	table	betfair_market_odds	select	py_codice_Betfair	py
+Betfair/odds_refresh.py	254	table	betfair_market_odds	delete	py_codice_Betfair	py
+Betfair/odds_refresh.py	257	table	betfair_market_odds	insert	py_codice_Betfair	py
+Betfair/omega/omega_db.py	50	table	omega_control	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	58	table	omega_control	update	py_codice_Betfair	py
+Betfair/omega/omega_db.py	63	table	omega_activity	insert	py_codice_Betfair	py
+Betfair/omega/omega_db.py	76	table	omega_trades	insert	py_codice_Betfair	py
+Betfair/omega/omega_db.py	86	table	omega_trades	update	py_codice_Betfair	py
+Betfair/omega/omega_db.py	94	table	omega_trades	delete	py_codice_Betfair	py
+Betfair/omega/omega_db.py	181	table	<dinamico:table>	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	253	table	omega_trades	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	283	table	omega_manual_requests	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	297	table	omega_manual_requests	update	py_codice_Betfair	py
+Betfair/omega/omega_db.py	303	table	omega_events	upsert	py_codice_Betfair	py
+Betfair/omega/omega_db.py	323	table	omega_manual_requests	update	py_codice_Betfair	py
+Betfair/omega/omega_db.py	373	table	omega_manual_requests	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	394	table	omega_manual_requests	update	py_codice_Betfair	py
+Betfair/omega/omega_db.py	402	table	omega_manual_requests	insert	py_codice_Betfair	py
+Betfair/omega/omega_db.py	421	table	omega_manual_requests	update	py_codice_Betfair	py
+Betfair/omega/omega_db.py	442	table	omega_events	upsert	py_codice_Betfair	py
+Betfair/omega/omega_db.py	446	table	omega_events	upsert	py_codice_Betfair	py
+Betfair/omega/omega_db.py	450	table	omega_events	delete	py_codice_Betfair	py
+Betfair/omega/omega_db.py	476	table	omega_events	update	py_codice_Betfair	py
+Betfair/omega/omega_db.py	482	table	omega_market_snapshot	upsert	py_codice_Betfair	py
+Betfair/omega/omega_db.py	486	table	omega_events	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	526	table	omega_events	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	545	table	omega_events	update	py_codice_Betfair	py
+Betfair/omega/omega_db.py	564	table	omega_events	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	595	table	live_now	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	618	table	live_follow	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	628	table	betfair_live_heartbeat	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	638	rpc	request_betfair_live_order	?	py_codice_Betfair	py
+Betfair/omega/omega_db.py	648	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	658	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	674	table	betfair_live_order_requests	update	py_codice_Betfair	py
+Betfair/omega/omega_db.py	687	table	betfair_live_orders	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	699	table	omega_missions	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	708	table	omega_missions	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	717	table	omega_missions	update	py_codice_Betfair	py
+Betfair/omega/omega_db.py	722	table	omega_trades	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	747	table	fixture_predictions	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	759	table	fixture_predictions	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	767	rpc	get_market_frequency	?	py_codice_Betfair	py
+Betfair/omega/omega_db.py	823	rpc	get_omega_aggregates_modalita	?	py_codice_Betfair	py
+Betfair/omega/omega_db.py	875	rpc	get_omega_aggregates	?	py_codice_Betfair	py
+Betfair/omega/omega_db.py	945	table	omega_trades	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	975	table	omega_trades	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	996	table	omega_trades	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	1017	table	omega_events	update	py_codice_Betfair	py
+Betfair/omega/omega_db.py	1031	table	omega_trades	select	py_codice_Betfair	py
+Betfair/omega/omega_db.py	1045	table	omega_daily_goal	upsert	py_codice_Betfair	py
+Betfair/omega/omega_db.py	1060	rpc	get_omega_ht_ft	?	py_codice_Betfair	py
+Betfair/omega/omega_db.py	1073	rpc	get_omega_minute_ft	?	py_codice_Betfair	py
+Betfair/omega/tools/banco_fusione.py	235	table	betfair_market_odds	select	py_strumenti	py
+Betfair/omega/tools/estrai_transizioni.py	41	table	omega_minute_transitions	select	py_strumenti	py
+Betfair/omega/tools/estrai_transizioni.py	76	table	omega_minute_league_counts	select	py_strumenti	py
+Betfair/omega/tools/estrai_transizioni.py	96	table	omega_minute_league_counts	select	py_strumenti	py
+Betfair/omega/tools/m2_pesi.py	92	table	<dinamico:tab>	select	py_strumenti	py
+Betfair/omega/tools/m2_pesi.py	109	table	<dinamico:tab>	select	py_strumenti	py
+Betfair/omega/tools/m2_pesi.py	1130	table	<dinamico:t>	select	py_strumenti	py
+Betfair/omega/tools/m2_pesi.py	1295	table	fixture_predictions	select	py_strumenti	py
+Betfair/omega/tools/m2_pesi.py	1300	table	betfair_market_odds	select	py_strumenti	py
+Betfair/omega/tools/m2_pesi.py	1305	table	matches	select	py_strumenti	py
+Betfair/omega/tools/misura_k.py	177	table	betfair_market_odds	select	py_strumenti	py
+Betfair/omega/tools/misura_k.py	196	table	matches	select	py_strumenti	py
+Betfair/omega/tools/verifica_transizioni_2026_09_25.py	78	table	<dinamico:tabella>	select	py_strumenti	py
+Betfair/omega/tools/verifica_transizioni_2026_09_25.py	92	table	<dinamico:tabella>	select	py_strumenti	py
+Betfair/omega/tools/verifica_transizioni_2026_09_25.py	100	table	<dinamico:tabella>	select	py_strumenti	py
+Betfair/omega/tools/verifica_transizioni_2026_09_25.py	105	rpc	<dinamico:nome>	?	py_strumenti	py
+Betfair/order_exec.py	161	table	betfair_market_odds	select	py_codice_Betfair	py
+Betfair/order_worker.py	48	table	betfair_order_requests	update	py_codice_Betfair	py
+Betfair/order_worker.py	61	table	betfair_order_requests	select	py_codice_Betfair	py
+Betfair/order_worker.py	99	table	betfair_order_requests	update	py_codice_Betfair	py
+Betfair/order_worker.py	106	table	betfair_order_requests	update	py_codice_Betfair	py
+Betfair/order_worker.py	113	table	betfair_order_requests	update	py_codice_Betfair	py
+Betfair/order_worker.py	120	table	betfair_order_requests	update	py_codice_Betfair	py
+Betfair/order_worker.py	136	table	betfair_order_requests	select	py_codice_Betfair	py
+Betfair/refresh_worker.py	38	table	betfair_refresh_requests	select	py_codice_Betfair	py
+Betfair/refresh_worker.py	59	table	betfair_refresh_requests	update	py_codice_Betfair	py
+Betfair/refresh_worker.py	66	table	betfair_refresh_requests	update	py_codice_Betfair	py
+Betfair/refresh_worker.py	73	table	betfair_refresh_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	64	table	safe_strategy_control	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	74	table	safe_strategy_control	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	79	table	safe_strategy_activity	insert	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	92	table	safe_strategy_trades	insert	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	102	table	safe_strategy_trades	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	110	table	safe_strategy_trades	delete	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	122	table	safe_strategy_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	129	table	safe_strategy_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	172	table	safe_strategy_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	195	table	safe_strategy_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	214	table	safe_strategy_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	224	table	safe_strategy_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	253	table	safe_strategy_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	276	table	safe_strategy_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	336	rpc	get_safe_aggregates	?	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	356	table	safe_strategy_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	410	table	safe_strategy_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	436	table	safe_strategy_activity	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	606	table	safe_strategy_requests	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	619	table	safe_strategy_requests	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	632	table	safe_strategy_requests	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	651	table	safe_strategy_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	659	table	safe_strategy_requests	insert	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	678	table	safe_strategy_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	694	table	safe_strategy_requests	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	708	table	safe_strategy_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	739	table	safe_strategy_requests	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	760	table	safe_strategy_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	768	table	safe_strategy_requests	insert	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	785	table	safe_strategy_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	809	table	safe_strategy_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	829	table	safe_strategy_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	847	table	safe_strategy_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	855	table	safe_strategy_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	864	table	safe_strategy_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	879	table	safe_strategy_opportunities	upsert	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	891	table	safe_strategy_opportunities	delete	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	903	table	safe_strategy_opportunities	delete	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	919	table	omega_events	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	961	table	safe_strategy_scan	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	973	table	safe_strategy_status	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	989	table	live_follow	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	997	table	betfair_live_heartbeat	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	1004	rpc	request_betfair_live_order	?	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	1011	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	1020	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	1029	table	betfair_live_order_requests	update	py_codice_Betfair	py
+Betfair/safe_strategy/bot_db.py	1040	table	betfair_live_orders	select	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	50	table	safe_strategy_scan	select	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	90	table	safe_strategy_scan	select	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	173	table	fixture_predictions	select	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	185	table	matches	select	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	198	table	safe_strategy_scan	upsert	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	213	table	safe_strategy_scan	delete	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	228	table	safe_strategy_status	upsert	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	307	table	mike_events	select	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	432	rpc	list_bot_exposures	?	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	461	table	omega_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	466	table	safe_strategy_trades	select	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	473	table	<dinamico:tabella>	select	py_codice_Betfair	py
+Betfair/safe_strategy/db.py	480	table	<dinamico:tabella>	select	py_codice_Betfair	py
+Betfair/safe_strategy/tools/conta_operazioni_live.py	40	rest_dinamico	<percorso costruito a runtime>		py_strumenti	py
+Betfair/safe_strategy/tools/storia_operazioni.py	35	rest_dinamico	<percorso costruito a runtime>		py_strumenti	py
+Betfair/stream/auto_follow.py	385	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/auto_follow.py	402	table	live_follow	update	py_codice_Betfair	py
+Betfair/stream/auto_follow.py	426	table	live_follow	upsert	py_codice_Betfair	py
+Betfair/stream/auto_follow.py	429	table	live_follow	update	py_codice_Betfair	py
+Betfair/stream/auto_follow.py	442	table	live_follow	update	py_codice_Betfair	py
+Betfair/stream/auto_follow.py	466	table	safe_strategy_status	select	py_codice_Betfair	py
+Betfair/stream/auto_follow.py	474	table	safe_strategy_scan	select	py_codice_Betfair	py
+Betfair/stream/backtest/tools/misura_punto8/estrai_db.py	103	table	<dinamico:tab>	select	py_strumenti	py
+Betfair/stream/backtest/tools/misura_punto8/estrai_db.py	156	table	<dinamico:tab>	select	py_strumenti	py
+Betfair/stream/backtest/tools/misura_punto8/estrai_db.py	184	table	<dinamico:tab>	select	py_strumenti	py
+Betfair/stream/daily_stop_worker.py	250	table	betfair_live_settled	select	py_codice_Betfair	py
+Betfair/stream/daily_stop_worker.py	363	rpc	set_live_kill_switch	?	py_codice_Betfair	py
+Betfair/stream/daily_stop_worker.py	391	table	betfair_live_audit	insert	py_codice_Betfair	py
+Betfair/stream/db.py	114	table	personal_watchlist	select	py_codice_Betfair	py
+Betfair/stream/db.py	122	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/db.py	152	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/db.py	164	table	live_follow	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	170	table	live_follow	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	182	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/db.py	197	table	live_follow	update	py_codice_Betfair	py
+Betfair/stream/db.py	216	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/db.py	223	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/db.py	254	table	fixture_predictions	select	py_codice_Betfair	py
+Betfair/stream/db.py	314	table	live_markets	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	348	table	live_now	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	362	table	live_now	update	py_codice_Betfair	py
+Betfair/stream/db.py	404	table	live_markets	select	py_codice_Betfair	py
+Betfair/stream/db.py	425	table	betfair_live_settled	select	py_codice_Betfair	py
+Betfair/stream/db.py	447	table	betfair_live_orders	select	py_codice_Betfair	py
+Betfair/stream/db.py	451	table	betfair_live_positions	select	py_codice_Betfair	py
+Betfair/stream/db.py	474	table	betfair_live_orders	select	py_codice_Betfair	py
+Betfair/stream/db.py	481	table	betfair_live_positions	select	py_codice_Betfair	py
+Betfair/stream/db.py	491	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/stream/db.py	513	table	live_now	select	py_codice_Betfair	py
+Betfair/stream/db.py	521	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/db.py	528	table	live_now	update	py_codice_Betfair	py
+Betfair/stream/db.py	564	table	<dinamico:table>	select	py_codice_Betfair	py
+Betfair/stream/db.py	572	table	<dinamico:table>	delete	py_codice_Betfair	py
+Betfair/stream/db.py	596	table	<dinamico:table>	insert	py_codice_Betfair	py
+Betfair/stream/db.py	644	table	live_run_log	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	662	table	live_signals	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	682	table	live_ladder	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	697	table	live_alerts	insert	py_codice_Betfair	py
+Betfair/stream/db.py	714	table	live_backtest_requests	select	py_codice_Betfair	py
+Betfair/stream/db.py	726	table	live_backtest_requests	update	py_codice_Betfair	py
+Betfair/stream/db.py	741	table	live_backtest_requests	update	py_codice_Betfair	py
+Betfair/stream/db.py	752	table	replay_bot_esiti	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	758	table	live_backtest_results	delete	py_codice_Betfair	py
+Betfair/stream/db.py	762	table	live_backtest_results	insert	py_codice_Betfair	py
+Betfair/stream/db.py	819	table	betfair_live_orders	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	828	table	betfair_live_orders	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	907	table	betfair_live_orders	select	py_codice_Betfair	py
+Betfair/stream/db.py	940	table	betfair_live_positions	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	945	table	betfair_live_positions	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	963	table	betfair_live_settled	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	978	table	betfair_live_risk_state	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	988	table	betfair_live_journal	insert	py_codice_Betfair	py
+Betfair/stream/db.py	1004	table	betfair_live_account	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	1055	table	betfair_live_account	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	1086	table	betfair_live_account	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	1114	table	<dinamico:tabella>	update	py_codice_Betfair	py
+Betfair/stream/db.py	1127	table	betfair_live_heartbeat	upsert	py_codice_Betfair	py
+Betfair/stream/db.py	1139	table	betfair_live_orders	delete	py_codice_Betfair	py
+Betfair/stream/db.py	1140	table	betfair_live_positions	delete	py_codice_Betfair	py
+Betfair/stream/db.py	1165	table	betfair_live_order_requests	update	py_codice_Betfair	py
+Betfair/stream/db.py	1177	table	betfair_live_order_requests	update	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	498	rpc	get_live_settings	?	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	907	table	betfair_live_order_requests	update	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	922	table	betfair_live_audit	insert	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	999	table	live_signals	select	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	1071	table	live_alerts	insert	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	1094	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	1105	table	live_now	select	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	1134	table	betfair_live_journal	insert	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	1169	table	betfair_live_order_requests	update	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	1195	table	betfair_live_order_requests	update	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	1208	table	betfair_live_order_requests	update	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	1890	rpc	request_betfair_live_order	?	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	1930	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	2076	table	betfair_live_order_requests	update	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	3156	table	betfair_live_order_requests	update	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	3288	table	<dinamico:name>	(ritorna_il_builder)	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	3291	rpc	<dinamico:*a>	?	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	3343	table	betfair_live_order_requests	insert	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	3726	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/stream/live_order_worker.py	3852	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/stream/modo_ordini.py	300	rpc	get_live_settings	?	py_codice_Betfair	py
+Betfair/stream/modo_ordini.py	391	rpc	live_order_mode_avvio	?	py_codice_Betfair	py
+Betfair/stream/motore_ordini.py	2431	table	live_alerts	insert	py_codice_Betfair	py
+Betfair/stream/reconcile_worker.py	380	table	betfair_live_orders	upsert	py_codice_Betfair	py
+Betfair/stream/reconcile_worker.py	422	table	betfair_live_orders	update	py_codice_Betfair	py
+Betfair/stream/reconcile_worker.py	472	table	betfair_live_orders	select	py_codice_Betfair	py
+Betfair/stream/reconcile_worker.py	867	table	<dinamico:tabella>	select	py_codice_Betfair	py
+Betfair/stream/reconcile_worker.py	897	table	<dinamico:tabella>	select	py_codice_Betfair	py
+Betfair/stream/reconcile_worker.py	1264	table	betfair_live_risk_rules	select	py_codice_Betfair	py
+Betfair/stream/reconcile_worker.py	1308	table	betfair_live_orders	select	py_codice_Betfair	py
+Betfair/stream/risk_engine_worker.py	189	table	betfair_live_risk_rules	update	py_codice_Betfair	py
+Betfair/stream/risk_engine_worker.py	194	rpc	request_betfair_live_order	?	py_codice_Betfair	py
+Betfair/stream/risk_engine_worker.py	493	table	betfair_live_order_requests	select	py_codice_Betfair	py
+Betfair/stream/risk_engine_worker.py	557	table	betfair_live_risk_rules	select	py_codice_Betfair	py
+Betfair/stream/risk_engine_worker.py	831	table	betfair_live_risk_rules	select	py_codice_Betfair	py
+Betfair/stream/risk_engine_worker.py	1001	table	betfair_live_xhedge	select	py_codice_Betfair	py
+Betfair/stream/risk_engine_worker.py	1096	table	betfair_live_risk_rules	select	py_codice_Betfair	py
+Betfair/stream/risk_engine_worker.py	1173	table	betfair_live_risk_rules	select	py_codice_Betfair	py
+Betfair/stream/runner.py	1288	table	betfair_live_risk_rules	select	py_codice_Betfair	py
+Betfair/stream/runner.py	2491	rpc	get_live_settings	?	py_codice_Betfair	py
+Betfair/stream/scalper/genera_atlante.py	593	rest_dinamico	<percorso costruito a runtime>		py_codice_Betfair	py
+Betfair/stream/scalper/genera_atlante.py	939	rest_dinamico	<percorso costruito a runtime>		py_codice_Betfair	py
+Betfair/stream/scalper/hazard_atlas_sync.py	47	rest_dinamico	<percorso costruito a runtime>		py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	75	table	scalper_control	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	81	table	scalper_control	update	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	86	table	scalper_activity	insert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	94	table	scalper_service_control	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	102	table	scalper_service_control	update	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	110	table	safe_strategy_scan	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	128	table	safe_strategy_status	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	147	table	scalper_control	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	163	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	184	table	live_follow	upsert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	195	table	scalper_control	upsert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	197	table	scalper_control	update	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	208	table	scalper_control	update	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	214	table	scalper_control	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	671	table	live_alerts	insert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_service.py	890	table	scalper_activity	insert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	709	table	live_alerts	insert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	859	table	live_alerts	insert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	962	table	<dinamico:MU.TABELLA_ORDINI_CONTO>	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1075	table	live_alerts	insert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1220	table	scalper_control	update	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1229	table	scalper_control	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1241	table	scalper_control	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1250	table	scalper_control	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1255	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1262	table	fixture_predictions	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1270	table	scalper_activity	insert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1281	table	scalper_activity	insert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1699	table	live_alerts	insert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1756	table	live_now	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1891	table	live_now	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1911	table	live_now	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1936	table	theta_confirm_requests	insert	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1947	table	theta_confirm_requests	select	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	1958	table	theta_confirm_requests	update	py_codice_Betfair	py
+Betfair/stream/scalper/scalper_session.py	2064	table	live_alerts	insert	py_codice_Betfair	py
+Betfair/stream/scores/scan_feed.py	407	table	safe_strategy_status	select	py_codice_Betfair	py
+Betfair/stream/scores/scan_feed.py	417	table	safe_strategy_scan	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/esecutore_tennis.py	266	table	tennis_live_order_queue	insert	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_bot_service.py	151	table	tennis_markets	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	118	table	tennis_live_follow	upsert	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	152	table	safe_strategy_scan	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	180	table	safe_strategy_status	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	198	table	tennis_live_now	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	214	table	tennis_bot_control	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	231	table	tennis_live_follow	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	240	table	tennis_live_follow	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	260	table	tennis_live_ladder	upsert	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	292	table	tennis_live_now	upsert	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	306	table	tennis_live_now	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	313	table	tennis_live_now	upsert	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	335	table	tennis_live_orders	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	342	table	tennis_live_positions	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	351	table	tennis_live_order_queue	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	369	table	tennis_live_now	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	377	table	tennis_live_follow	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	384	table	tennis_live_now	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	399	table	tennis_bot_control	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	444	table	tennis_bot_control	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	451	table	tennis_bot_control	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	468	table	tennis_bot_control	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	501	table	tennis_bot_control	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	503	table	tennis_bot_control	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	508	table	tennis_bot_control	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	518	table	tennis_bot_activity	insert	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	535	table	tennis_live_order_queue	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	549	table	tennis_live_order_queue	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	568	table	tennis_live_order_queue	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	580	table	tennis_live_order_queue	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	604	table	tennis_live_orders	upsert	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	627	table	tennis_live_positions	upsert	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	662	table	tennis_bot_service_control	select	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	710	table	tennis_bot_service_control	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	764	table	tennis_bot_control	upsert	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	777	table	tennis_bot_control	upsert	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	818	table	tennis_live_order_queue	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	831	table	tennis_live_order_queue	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	854	table	tennis_live_orders	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_db.py	863	table	tennis_live_positions	update	py_codice_Betfair	py
+Betfair/stream/tennis_live/tennis_live_order_worker.py	1631	table	tennis_live_order_queue	insert	py_codice_Betfair	py
+Betfair/stream/tennis_replay/caricamento.py	75	table	tennis_replay_eventi	upsert	py_codice_Betfair	py
+Betfair/stream/tennis_replay/caricamento.py	79	table	tennis_replay_mercati	upsert	py_codice_Betfair	py
+Betfair/stream/tennis_replay/caricamento.py	97	table	tennis_replay_mercati	select	py_codice_Betfair	py
+Betfair/stream/tennis_replay/caricamento.py	108	table	tennis_replay_eventi	update	py_codice_Betfair	py
+Betfair/stream/tennis_replay/importa.py	78	table	tennis_live_follow	select	py_codice_Betfair	py
+Betfair/stream/tennis_replay/importa.py	82	table	tennis_markets	select	py_codice_Betfair	py
+Betfair/stream/tests/test_banco_scalper_sniper_2026_09_28.py	121	table	live_now	select	py_test	py
+Betfair/stream/tests/test_genera_atlante_scrittura_ritentativi_2026_09_28.py	52	rest_tabella	x		py_test	py
+Betfair/stream/tests/test_motore_ordini_2026_09_24.py	668	table	<dinamico:LOW._TABLE>	update	py_test	py
+Betfair/stream/tests/test_motore_ordini_2026_09_24.py	973	table	betfair_live_audit	insert	py_test	py
+Betfair/stream/tests/test_motore_ordini_2026_09_24.py	975	table	live_now	select	py_test	py
+Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py	258	rpc	<dinamico:nome>	?	py_test	py
+Betfair/stream/tests/test_reconcile_worker.py	377	table	<dinamico:tabella>	?	py_test	py
+Betfair/stream/tests/test_replay_scalper_db_isolato_2026_10_06.py	131	table	live_alerts	insert	py_test	py
+Betfair/stream/trading/controls.py	96	rpc	get_live_settings	?	py_codice_Betfair	py
+Betfair/stream/trading/controls.py	393	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/uploader.py	193	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/uploader.py	202	table	live_follow	select	py_codice_Betfair	py
+Betfair/stream/watchlist.py	29	table	personal_watchlist	select	py_codice_Betfair	py
+Betfair/stream/xhedge_worker.py	95	table	betfair_live_orders	select	py_codice_Betfair	py
+Betfair/stream/xhedge_worker.py	119	table	betfair_live_xhedge	upsert	py_codice_Betfair	py
+Betfair/tools/scostamento_fischio_2026_09_13.py	85	table	mike_events	select	py_strumenti	py
+Betfair/tools/verifica_75_condizioni_2026_09_13.py	96	table	mike_events	select	py_strumenti	py
+Betfair/tools/verifica_75_condizioni_2026_09_13.py	102	table	mike_trades	select	py_strumenti	py
+Betfair/tools/verifica_75_condizioni_2026_09_13.py	111	table	mike_activity	select	py_strumenti	py
+Betfair/tools/verifica_margine_2026_09_12.py	92	table	omega_trades	select	py_strumenti	py
+Betfair/tools/verifica_pnl_2026_09_12.py	137	table	<dinamico:table>	select	py_strumenti	py
+Betfair/tools/verifica_pnl_2026_09_12.py	148	rpc	<dinamico:name>	?	py_strumenti	py
+Prediction/analyze_sweet_spot.py	30	table	fixture_predictions	select	py_codice_cartelle_radice	py
+Prediction/analyze_sweet_spot.py	39	table	matches	select	py_codice_cartelle_radice	py
+Prediction/backfill_historical_analysis.py	38	table	<dinamico:table>	select	py_codice_cartelle_radice	py
+Prediction/backfill_historical_analysis.py	120	table	fixture_predictions	update	py_codice_cartelle_radice	py
+Prediction/predictions_results_backfill.py	243	table	fixture_predictions	select	py_codice_cartelle_radice	py
+Prediction/predictions_results_backfill.py	383	table	matches	select	py_codice_cartelle_radice	py
+Prediction/predictions_results_backfill.py	504	table	fixture_predictions	update	py_codice_cartelle_radice	py
+Prediction/predictions_results_backfill.py	584	table	fixture_predictions	select	py_codice_cartelle_radice	py
+Prediction/predictions_results_backfill.py	671	rpc	bulk_update_prediction_results	?	py_codice_cartelle_radice	py
+Prediction/test_today_predictions_backfill_resilienza.py	2140	table	fixture_predictions	upsert	py_test	py
+Prediction/test_today_predictions_backfill_resilienza.py	2145	table	fixture_predictions	upsert	py_test	py
+Prediction/today_predictions_backfill.py	416	table	fixture_predictions	update	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	472	table	<dinamico:table>	select	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	550	table	matches	select	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	576	table	fixture_predictions	select	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	754	table	api_coverage_by_season	select	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	796	table	api_coverage_by_season	select	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	909	table	fixture_predictions	update	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	971	table	fixture_predictions	update	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	991	table	fixture_predictions	select	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	1040	table	fixture_predictions	select	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	1898	table	fixture_predictions	upsert	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	2173	table	fixture_predictions	upsert	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	2187	table	fixture_predictions	upsert	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	2219	table	fixture_predictions	update	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	2238	table	fixture_predictions	update	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	2285	table	fixture_predictions	upsert	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	2344	table	fixture_predictions	upsert	py_codice_cartelle_radice	py
+Prediction/today_predictions_backfill.py	2364	table	fixture_predictions	upsert	py_codice_cartelle_radice	py
+_AUDIT_2026_05/dataload.py	44	table	matches	select	py_script_audit	py
+_AUDIT_2026_05/dataload.py	66	table	match_odds	select	py_script_audit	py
+_AUDIT_2026_05/explore_schema.py	38	table	<dinamico:table>	select	py_script_audit	py
+_AUDIT_2026_05/load_goals.py	14	table	match_events	select	py_script_audit	py
+_AUDIT_2026_05/load_xg.py	17	table	match_team_stats	select	py_script_audit	py
+_AUDIT_2026_05/probe_data.py	25	table	signal_history	select	py_script_audit	py
+_AUDIT_2026_05/probe_data.py	82	table	model_performance	select	py_script_audit	py
+_AUDIT_2026_05/probe_data.py	105	table	match_odds	select	py_script_audit	py
+_AUDIT_2026_05/probe_data.py	118	table	match_team_stats	select	py_script_audit	py
+_AUDIT_2026_05/probe_depth.py	13	table	match_odds	select	py_script_audit	py
+_AUDIT_2026_05/probe_depth.py	26	table	match_odds	select	py_script_audit	py
+_AUDIT_2026_05/probe_depth.py	39	table	match_team_stats	select	py_script_audit	py
+_AUDIT_2026_05/probe_events.py	10	table	match_events	select	py_script_audit	py
+_AUDIT_2026_05/probe_events.py	17	table	match_events	select	py_script_audit	py
+_AUDIT_2026_05/probe_events.py	27	table	match_events	select	py_script_audit	py
+_certify_betfair.py	24	table	engine_signals	select	py_codice_radice	py
+_certify_betfair.py	42	rpc	get_betfair_fixtures	?	py_codice_radice	py
+_certify_betfair.py	49	table	fixture_predictions	select	py_codice_radice	py
+_certify_betfair.py	59	rpc	get_betfair_odds	?	py_codice_radice	py
+_certify_betfair_full.py	13	table	betfair_market_odds	select	py_codice_radice	py
+_certify_betfair_full.py	21	rpc	get_betfair_full_odds	?	py_codice_radice	py
+_certify_betfair_full.py	28	rpc	get_betfair_direction_odds	?	py_codice_radice	py
+_certify_delay_context.py	33	rpc	get_market_frequency	?	py_codice_radice	py
+_certify_delay_context.py	45	table	matches	select	py_codice_radice	py
+_certify_direction.py	39	table	direction_pagella	select	py_codice_radice	py
+_certify_direction.py	112	table	fixture_predictions	select	py_codice_radice	py
+_certify_direction.py	174	table	analytics_bets	select	py_codice_radice	py
+_certify_direction.py	197	table	fixture_predictions	select	py_codice_radice	py
+_certify_direction.py	199	table	fixture_predictions	select	py_codice_radice	py
+_certify_direction.py	207	rpc	get_direction	?	py_codice_radice	py
+_certify_direction_report.py	85	table	analytics_signals	select	py_codice_radice	py
+_certify_direction_report.py	103	table	engine_signals	select	py_codice_radice	py
+_certify_direction_report.py	139	table	engine_signals	select	py_codice_radice	py
+_certify_direction_report.py	480	rpc	get_direction_report_fixture	?	py_codice_radice	py
+_certify_direction_report.py	509	rpc	get_direction_report	?	py_codice_radice	py
+_certify_direction_report.py	518	rpc	get_direction_report_matches	?	py_codice_radice	py
+_certify_personal_report.py	325	table	personal_trades	delete	py_codice_radice	py
+_certify_personal_report.py	359	rpc	add_personal_trade	?	py_codice_radice	py
+_certify_personal_report.py	361	rpc	settle_personal_trade	?	py_codice_radice	py
+_certify_personal_report.py	387	rpc	get_personal_report	?	py_codice_radice	py
+_certify_personal_report.py	486	rpc	get_personal_report	?	py_codice_radice	py
+_certify_signal_context.py	48	rpc	get_market_frequency	?	py_codice_radice	py
+_certify_signal_context.py	66	rpc	get_market_frequency	?	py_codice_radice	py
+_certify_signal_context.py	77	rpc	get_market_delays	?	py_codice_radice	py
+_league_eval.py	43	table	bet_features	select	py_codice_radice	py
+_stack_eval.py	42	table	bet_features	select	py_codice_radice	py
+api_quota.py	144	table	api_call_log	select	py_codice_radice	py
+api_quota.py	149	table	api_call_log	select	py_codice_radice	py
+api_quota.py	169	table	api_call_log	select	py_codice_radice	py
+api_quota.py	177	table	api_call_log	select	py_codice_radice	py
+backfill_poisson_calibrated.py	41	table	fixture_predictions	select	py_codice_radice	py
+backfill_poisson_calibrated.py	48	table	fixture_predictions	select	py_codice_radice	py
+backfill_poisson_calibrated.py	70	table	fixture_predictions	select	py_codice_radice	py
+backfill_poisson_calibrated.py	132	table	fixture_predictions	update	py_codice_radice	py
+betfair_full_odds.py	73	table	betfair_market_odds	delete	py_codice_radice	py
+betfair_full_odds.py	94	table	betfair_market_odds	insert	py_codice_radice	py
+betfair_full_odds.py	141	table	fixture_predictions	select	py_codice_radice	py
+betfair_tennis_odds.py	274	table	tennis_markets	delete	py_codice_radice	py
+betfair_tennis_odds.py	278	table	tennis_markets	upsert	py_codice_radice	py
+build_analytics_signals.py	332	table	fixture_predictions	select	py_codice_radice	py
+build_analytics_signals.py	353	table	matches	select	py_codice_radice	py
+build_analytics_signals.py	376	table	match_events	select	py_codice_radice	py
+build_analytics_signals.py	402	table	analytics_signals	upsert	py_codice_radice	py
+build_direzione.py	79	table	bet_features	select	py_codice_radice	py
+build_direzione.py	226	table	direction_pagella	upsert	py_codice_radice	py
+build_direzione.py	230	table	direction_pagella	delete	py_codice_radice	py
+build_direzione.py	232	table	direction_pagella	select	py_codice_radice	py
+build_inplay_intensity.py	71	table	matches	select	py_codice_radice	py
+build_inplay_intensity.py	88	table	match_events	select	py_codice_radice	py
+calibration_analysis.py	33	table	fixture_predictions	select	py_codice_radice	py
+calibration_analysis.py	54	table	matches	select	py_codice_radice	py
+calibration_analysis.py	353	table	fixture_predictions	select	py_codice_radice	py
+certify_backtest_strategy.py	72	table	<dinamico:table>	select	py_codice_radice	py
+certify_backtest_strategy.py	103	table	analytics_decisions	select	py_codice_radice	py
+certify_backtest_strategy.py	114	table	fixture_predictions	select	py_codice_radice	py
+certify_backtest_strategy.py	171	rpc	backtest_strategy	?	py_codice_radice	py
+cleanup_models.py	31	table	ai_model_registry	delete	py_codice_radice	py
+cleanup_models.py	53	storage	<dinamico:name>	?	py_codice_radice	py
+cleanup_models.py	64	storage	<dinamico:name>	?	py_codice_radice	py
+cloud_retrain_shard.py	77	rest_tabella	ai_model_registry		py_codice_radice	py
+compute_ml_post_calibration.py	99	table	ai_model_registry	select	py_codice_radice	py
+compute_ml_post_calibration.py	123	table	ml_post_calibration	select	py_codice_radice	py
+compute_ml_post_calibration.py	244	table	ml_post_calibration	upsert	py_codice_radice	py
+compute_ml_post_calibration.py	256	table	ml_post_calibration	select	py_codice_radice	py
+compute_ml_post_calibration.py	259	table	ml_post_calibration	delete	py_codice_radice	py
+daily_yesterday_backfill.py	75	table	matches	upsert	py_codice_radice	py
+daily_yesterday_backfill.py	171	table	<dinamico:table>	select	py_codice_radice	py
+direzione.py	24	table	bet_features	select	py_codice_radice	py
+direzione.py	67	rpc	get_direction	?	py_codice_radice	py
+enrich_analytics_snapshots.py	250	table	matches	select	py_codice_radice	py
+enrich_analytics_snapshots.py	265	table	analytics_signals	select	py_codice_radice	py
+enrich_analytics_snapshots.py	293	table	analytics_snap_staging	upsert	py_codice_radice	py
+enrich_analytics_snapshots.py	312	rpc	flush_analytics_snap_staging	?	py_codice_radice	py
+enrich_analytics_snapshots.py	336	table	analytics_snap_staging	delete	py_codice_radice	py
+enrich_analytics_snapshots.py	485	table	analytics_signals	select	py_codice_radice	py
+fix_storico_prob.py	34	table	analytics_signals	select	py_codice_radice	py
+fix_storico_prob.py	48	table	fixture_predictions	select	py_codice_radice	py
+fix_storico_prob.py	59	table	analytics_signals	upsert	py_codice_radice	py
+fixtures_backfill.py	135	table	matches	upsert	py_codice_radice	py
+football_data_scraper/backfill.py	67	table	matches	select	py_codice_cartelle_radice	py
+football_data_scraper/backfill.py	102	table	match_odds	select	py_codice_cartelle_radice	py
+football_data_scraper/backfill.py	147	table	match_team_stats	select	py_codice_cartelle_radice	py
+football_data_scraper/backfill.py	342	table	<dinamico:table>	insert	py_codice_cartelle_radice	py
+football_data_scraper/fix_snapshot_time.py	24	table	matches	select	py_codice_cartelle_radice	py
+football_data_scraper/fix_snapshot_time.py	45	table	match_odds	update	py_codice_cartelle_radice	py
+football_data_scraper/fixture_matcher.py	106	table	matches	select	py_codice_cartelle_radice	py
+football_data_scraper/fixture_matcher.py	123	table	matches	select	py_codice_cartelle_radice	py
+frontend/src/certification/realClient.ts	146	rpc	betfair_live_is_owner		frontend_codice	ts
+frontend/src/certification/realClient.ts	155	rpc	<dinamico>		frontend_codice	ts
+frontend/src/certification/realtime.cert.test.ts	105	table	safe_strategy_status	select	frontend_test	ts
+frontend/src/certification/realtime.cert.test.ts	111	table	safe_strategy_scan	select	frontend_test	ts
+frontend/src/components/dashboard/FixtureSelector.tsx	30	table	fixture_predictions	select	frontend_codice	ts
+frontend/src/components/dashboard/MatchesList.tsx	157	table	fixture_predictions	select	frontend_codice	ts
+frontend/src/components/landing/AuthSection.tsx	74	table	leads	insert	frontend_codice	ts
+frontend/src/lib/__fixtures__/replayBarraDbFinto.ts	185	rpc	<dinamico>		frontend_codice	ts
+frontend/src/lib/analytics.ts	81	rpc	get_analytics_filters		frontend_codice	ts
+frontend/src/lib/analytics.ts	106	rpc	get_analytics		frontend_codice	ts
+frontend/src/lib/analytics.ts	115	rpc	get_analytics_rows		frontend_codice	ts
+frontend/src/lib/analytics.ts	175	rpc	get_decisions_filters		frontend_codice	ts
+frontend/src/lib/analytics.ts	180	rpc	get_decisions		frontend_codice	ts
+frontend/src/lib/analytics.ts	328	rpc	backtest_strategy		frontend_codice	ts
+frontend/src/lib/analytics.ts	334	rpc	list_strategies		frontend_codice	ts
+frontend/src/lib/analytics.ts	340	rpc	save_strategy		frontend_codice	ts
+frontend/src/lib/analytics.ts	346	rpc	delete_strategy		frontend_codice	ts
+frontend/src/lib/analytics.ts	351	rpc	run_strategy		frontend_codice	ts
+frontend/src/lib/analytics.ts	385	rpc	run_strategy_rows		frontend_codice	ts
+frontend/src/lib/analytics.ts	456	rpc	request_backtest		frontend_codice	ts
+frontend/src/lib/analytics.ts	463	rpc	list_backtest_runs		frontend_codice	ts
+frontend/src/lib/analytics.ts	473	rpc	list_backtest_results		frontend_codice	ts
+frontend/src/lib/betfair.ts	23	rpc	get_betfair_fixtures		frontend_codice	ts
+frontend/src/lib/betfair.ts	32	rpc	get_betfair_odds		frontend_codice	ts
+frontend/src/lib/betfair.ts	44	rpc	get_betfair_full_odds		frontend_codice	ts
+frontend/src/lib/betfair.ts	53	rpc	get_betfair_direction_odds		frontend_codice	ts
+frontend/src/lib/betfair.ts	81	rpc	request_betfair_refresh		frontend_codice	ts
+frontend/src/lib/betfair.ts	90	rpc	get_betfair_refresh_request		frontend_codice	ts
+frontend/src/lib/betfair.ts	167	rpc	request_betfair_order		frontend_codice	ts
+frontend/src/lib/betfair.ts	177	rpc	get_betfair_order_request		frontend_codice	ts
+frontend/src/lib/betfair.ts	238	rpc	get_betfair_orders		frontend_codice	ts
+frontend/src/lib/chiuseGiornata.ts	146	rpc	<dinamico>		frontend_codice	ts
+frontend/src/lib/controlRoomProposte.ts	371	table	safe_strategy_requests	select	frontend_codice	ts
+frontend/src/lib/controlRoomProposte.ts	400	rpc	safe_request_approve		frontend_codice	ts
+frontend/src/lib/controlRoomProposte.ts	409	rpc	safe_request_ignore		frontend_codice	ts
+frontend/src/lib/dailyHistory.ts	270	rpc	get_omega_daily		frontend_codice	ts
+frontend/src/lib/dailyHistory.ts	293	rpc	get_safe_daily		frontend_codice	ts
+frontend/src/lib/dailyHistory.ts	301	rpc	get_omega_day_trades		frontend_codice	ts
+frontend/src/lib/dailyHistory.ts	339	rpc	get_omega_daily		frontend_codice	ts
+frontend/src/lib/dailyHistory.ts	344	rpc	get_omega_daily		frontend_codice	ts
+frontend/src/lib/dailyHistory.ts	353	rpc	get_omega_day_trades		frontend_codice	ts
+frontend/src/lib/dailyHistory.ts	356	rpc	get_omega_day_trades		frontend_codice	ts
+frontend/src/lib/dailyHistory.ts	371	rpc	get_storico_stake		frontend_codice	ts
+frontend/src/lib/dailyHistory.ts	397	rpc	get_safe_day_trades		frontend_codice	ts
+frontend/src/lib/dailyHistory.ts	412	rpc	get_mike_daily		frontend_codice	ts
+frontend/src/lib/dailyHistory.ts	420	rpc	get_mike_day_trades		frontend_codice	ts
+frontend/src/lib/direzione.ts	50	rpc	get_direction		frontend_codice	ts
+frontend/src/lib/direzione.ts	73	rpc	get_direction_eta		frontend_codice	ts
+frontend/src/lib/fixtureModels.ts	70	table	fixture_predictions	select	frontend_codice	ts
+frontend/src/lib/fixtureModels.ts	89	rpc	get_poisson_calibration_eta		frontend_codice	ts
+frontend/src/lib/fixtureModels.ts	97	table	fixture_predictions	select	frontend_codice	ts
+frontend/src/lib/live.ts	37	rpc	get_live_follows		frontend_codice	ts
+frontend/src/lib/live.ts	51	rpc	segui_live_apri_partita		frontend_codice	ts
+frontend/src/lib/live.ts	140	table	live_now	select	frontend_codice	ts
+frontend/src/lib/live.ts	193	rpc	list_replays		frontend_codice	ts
+frontend/src/lib/live.ts	339	rpc	get_replay		frontend_codice	ts
+frontend/src/lib/live.ts	386	rpc	<dinamico>		frontend_codice	ts
+frontend/src/lib/live.ts	433	rpc	get_replay_meta		frontend_codice	ts
+frontend/src/lib/live.ts	560	table	live_signals	select	frontend_codice	ts
+frontend/src/lib/live.ts	621	table	live_ladder	select	frontend_codice	ts
+frontend/src/lib/live.ts	668	rpc	get_live_alerts		frontend_codice	ts
+frontend/src/lib/live.ts	691	rpc	ack_alert		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	133	rpc	request_betfair_live_order		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	143	rpc	get_betfair_live_order		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	483	rpc	request_live_risk_rule		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	494	rpc	cancel_live_risk_rule		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	501	rpc	get_live_risk_rules		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	510	rpc	get_live_orders		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	518	rpc	get_live_positions		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	615	rpc	get_live_xhedge		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	676	rpc	get_live_settings		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	684	rpc	set_live_kill_switch		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	693	rpc	set_live_order_mode		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	705	rpc	set_live_settings		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	712	rpc	get_live_audit		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	769	rpc	get_live_settled		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	795	table	betfair_live_risk_state	select	frontend_codice	ts
+frontend/src/lib/liveOrders.ts	851	rpc	get_live_orders_account_open		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	862	rpc	get_live_positions_all		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	869	rpc	get_live_positions_event		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	915	rpc	get_live_journal		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	932	rpc	set_live_journal_note		frontend_codice	ts
+frontend/src/lib/liveOrders.ts	981	table	betfair_live_account	select	frontend_codice	ts
+frontend/src/lib/liveOrders.ts	1034	table	betfair_live_heartbeat	select	frontend_codice	ts
+frontend/src/lib/marketDelays.ts	134	rpc	get_market_delays		frontend_codice	ts
+frontend/src/lib/marketFrequency.ts	154	rpc	get_market_frequency		frontend_codice	ts
+frontend/src/lib/marketFrequency.ts	168	rpc	get_league_seasons		frontend_codice	ts
+frontend/src/lib/mediaUnderAttiva.ts	17	rpc	scalper_media_attiva_adesso		frontend_codice	ts
+frontend/src/lib/mike.ts	2228	rpc	mike_activate		frontend_codice	ts
+frontend/src/lib/mike.ts	2234	rpc	mike_stop		frontend_codice	ts
+frontend/src/lib/mike.ts	2240	rpc	mike_update_params		frontend_codice	ts
+frontend/src/lib/mike.ts	2248	rpc	get_mike_state		frontend_codice	ts
+frontend/src/lib/mike.ts	2268	rpc	get_mike_trades		frontend_codice	ts
+frontend/src/lib/mike.ts	2274	rpc	mike_request		frontend_codice	ts
+frontend/src/lib/mike.ts	2301	table	mike_requests	select	frontend_codice	ts
+frontend/src/lib/omega.ts	1317	rpc	omega_activate		frontend_codice	ts
+frontend/src/lib/omega.ts	1325	rpc	omega_stop		frontend_codice	ts
+frontend/src/lib/omega.ts	1333	rpc	omega_update_params		frontend_codice	ts
+frontend/src/lib/omega.ts	1343	rpc	get_omega_state		frontend_codice	ts
+frontend/src/lib/omega.ts	1362	rpc	get_omega_trades		frontend_codice	ts
+frontend/src/lib/omega.ts	1398	rpc	omega_eventi_chiusi_dall_utente		frontend_codice	ts
+frontend/src/lib/omega.ts	1421	rpc	omega_evento_riprendi		frontend_codice	ts
+frontend/src/lib/omega.ts	1501	rpc	omega_request		frontend_codice	ts
+frontend/src/lib/omega.ts	1507	rpc	get_omega_events		frontend_codice	ts
+frontend/src/lib/omega.ts	1562	rpc	get_omega_market		frontend_codice	ts
+frontend/src/lib/omega.ts	1568	rpc	get_omega_manual_requests		frontend_codice	ts
+frontend/src/lib/omegaMissions.ts	150	rpc	omega_mission_activate		frontend_codice	ts
+frontend/src/lib/omegaMissions.ts	162	rpc	omega_mission_stop		frontend_codice	ts
+frontend/src/lib/omegaMissions.ts	174	rpc	omega_mission_follow		frontend_codice	ts
+frontend/src/lib/omegaMissions.ts	190	rpc	set_follow_record		frontend_codice	ts
+frontend/src/lib/omegaMissions.ts	198	rpc	get_omega_missions		frontend_codice	ts
+frontend/src/lib/omegaProposte.ts	292	rpc	get_omega_proposte		frontend_codice	ts
+frontend/src/lib/omegaProposte.ts	338	rpc	omega_request_approve		frontend_codice	ts
+frontend/src/lib/omegaProposte.ts	348	rpc	omega_request_ignore		frontend_codice	ts
+frontend/src/lib/personalReport.ts	325	rpc	add_personal_trade		frontend_codice	ts
+frontend/src/lib/personalReport.ts	333	rpc	add_trade_leg		frontend_codice	ts
+frontend/src/lib/personalReport.ts	340	rpc	settle_personal_trade		frontend_codice	ts
+frontend/src/lib/personalReport.ts	370	rpc	get_cash_movements		frontend_codice	ts
+frontend/src/lib/personalReport.ts	378	rpc	set_trade_time_operative		frontend_codice	ts
+frontend/src/lib/personalReport.ts	388	rpc	get_personal_report		frontend_codice	ts
+frontend/src/lib/personalReport.ts	403	rpc	reset_personal_report		frontend_codice	ts
+frontend/src/lib/personalReport.ts	410	rpc	get_personal_trades		frontend_codice	ts
+frontend/src/lib/proposteUscite.ts	90	rpc	scalper_approva_uscita		frontend_codice	ts
+frontend/src/lib/proposteUscite.ts	91	rpc	tennis_bot_approva_uscita		frontend_codice	ts
+frontend/src/lib/replayBot.ts	228	rpc	request_backtest		frontend_codice	ts
+frontend/src/lib/replayBot.ts	236	rpc	get_replay_bot_esito		frontend_codice	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	17	rpc	<dinamico>		frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	47	rpc	list_replays		frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	56	rpc	get_replay_meta		frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	62	rpc	get_replay_frames		frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	64	rpc	get_replay_frames		frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	66	rpc	altra_rpc		frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	148	rpc	segui_live_apri_partita		frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	149	rpc	delete_event		frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	150	table	live_follow	?	frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	151	rpc	list_replays		frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	156	rpc	apri_partita		frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.test.ts	157	table	live_follow	?	frontend_test	ts
+frontend/src/lib/replayVerificaBarraDb.ts	56	rpc	get_replay_meta		frontend_codice	ts
+frontend/src/lib/reportistiche.ts	140	rpc	get_direction_report		frontend_codice	ts
+frontend/src/lib/reportistiche.ts	147	rpc	get_direction_report_matches		frontend_codice	ts
+frontend/src/lib/reportistiche.ts	180	rpc	get_direction_report_fixture		frontend_codice	ts
+frontend/src/lib/safeBot.ts	369	rpc	get_safe_aggregates		frontend_codice	ts
+frontend/src/lib/safeBot.ts	1147	rpc	safe_activate		frontend_codice	ts
+frontend/src/lib/safeBot.ts	1155	rpc	safe_stop		frontend_codice	ts
+frontend/src/lib/safeBot.ts	1161	rpc	safe_update_params		frontend_codice	ts
+frontend/src/lib/safeBot.ts	1177	rpc	get_safe_state		frontend_codice	ts
+frontend/src/lib/safeBot.ts	1201	rpc	get_safe_activity		frontend_codice	ts
+frontend/src/lib/safeBot.ts	1206	table	safe_strategy_activity	select	frontend_codice	ts
+frontend/src/lib/safeBot.ts	1215	rpc	get_safe_trades		frontend_codice	ts
+frontend/src/lib/safeBot.ts	1224	rpc	safe_request		frontend_codice	ts
+frontend/src/lib/safeBot.ts	1394	rpc	safe_request_approve		frontend_codice	ts
+frontend/src/lib/safeBot.ts	1418	table	safe_strategy_requests	select	frontend_codice	ts
+frontend/src/lib/safeBot.ts	1467	table	safe_strategy_requests	select	frontend_codice	ts
+frontend/src/lib/safeBot.ts	1486	table	safe_strategy_requests	select	frontend_codice	ts
+frontend/src/lib/safeBot.ts	1544	table	safe_strategy_opportunities	select	frontend_codice	ts
+frontend/src/lib/safeBot.ts	2183	table	betfair_live_heartbeat	select	frontend_codice	ts
+frontend/src/lib/safeBot.ts	2195	table	live_follow	select	frontend_codice	ts
+frontend/src/lib/safeStrategyScan.ts	343	table	safe_strategy_scan	select	frontend_codice	ts
+frontend/src/lib/safeStrategyScan.ts	350	table	safe_strategy_status	select	frontend_codice	ts
+frontend/src/lib/scalper.ts	148	rpc	scalper_activate		frontend_codice	ts
+frontend/src/lib/scalper.ts	160	rpc	scalper_stop		frontend_codice	ts
+frontend/src/lib/scalper.ts	168	rpc	get_scalper_state		frontend_codice	ts
+frontend/src/lib/scalperControlRoom.ts	140	rpc	get_scalper_control_room		frontend_codice	ts
+frontend/src/lib/scalperControlRoom.ts	166	rpc	scalper_auto_activate		frontend_codice	ts
+frontend/src/lib/scalperControlRoom.ts	177	rpc	scalper_auto_stop		frontend_codice	ts
+frontend/src/lib/scalperControlRoom.ts	188	rpc	scalper_auto_update		frontend_codice	ts
+frontend/src/lib/scalperControlRoom.ts	298	rpc	scalper_stop_sessione		frontend_codice	ts
+frontend/src/lib/scalperControlRoom.ts	313	rpc	scalper_uscite_automatiche		frontend_codice	ts
+frontend/src/lib/tacticalEngine.ts	60	table	fixture_predictions	select	frontend_codice	ts
+frontend/src/lib/tennis.ts	82	rpc	get_tennis_fixtures		frontend_codice	ts
+frontend/src/lib/tennis.ts	108	rpc	get_tennis_full_odds		frontend_codice	ts
+frontend/src/lib/tennis.ts	123	rpc	request_tennis_refresh		frontend_codice	ts
+frontend/src/lib/tennis.ts	129	rpc	get_tennis_refresh_request		frontend_codice	ts
+frontend/src/lib/tennis.ts	168	rpc	get_tennis_follows		frontend_codice	ts
+frontend/src/lib/tennis.ts	180	rpc	tennis_follow_event		frontend_codice	ts
+frontend/src/lib/tennis.ts	198	rpc	tennis_set_follow_record		frontend_codice	ts
+frontend/src/lib/tennis.ts	209	table	tennis_live_now	select	frontend_codice	ts
+frontend/src/lib/tennis.ts	263	table	tennis_live_ladder	select	frontend_codice	ts
+frontend/src/lib/tennis.ts	422	rpc	request_tennis_live_order		frontend_codice	ts
+frontend/src/lib/tennis.ts	437	rpc	get_tennis_live_order		frontend_codice	ts
+frontend/src/lib/tennis.ts	483	rpc	request_tennis_live_order		frontend_codice	ts
+frontend/src/lib/tennis.ts	498	rpc	get_tennis_live_order		frontend_codice	ts
+frontend/src/lib/tennis.ts	506	rpc	get_tennis_live_orders		frontend_codice	ts
+frontend/src/lib/tennis.ts	517	rpc	get_tennis_live_positions		frontend_codice	ts
+frontend/src/lib/tennis.ts	571	rpc	get_tennis_live_positions_all		frontend_codice	ts
+frontend/src/lib/tennis.ts	837	rpc	get_tennis_bots_state		frontend_codice	ts
+frontend/src/lib/tennis.ts	876	rpc	tennis_bot_arm		frontend_codice	ts
+frontend/src/lib/tennis.ts	889	rpc	tennis_bot_disarm		frontend_codice	ts
+frontend/src/lib/tennis.ts	966	rpc	tennis_bot_service_set_uscite		frontend_codice	ts
+frontend/src/lib/tennis.ts	981	rpc	get_tennis_bot_services		frontend_codice	ts
+frontend/src/lib/tennis.ts	997	rpc	tennis_bot_service_activate		frontend_codice	ts
+frontend/src/lib/tennis.ts	1008	rpc	tennis_bot_service_stop		frontend_codice	ts
+frontend/src/lib/tennis.ts	1022	rpc	tennis_bot_service_update_params		frontend_codice	ts
+frontend/src/lib/tennis.ts	1080	rpc	get_tennis_bot_daily		frontend_codice	ts
+frontend/src/lib/tennis.ts	1124	rpc	get_tennis_bot_orders_today		frontend_codice	ts
+frontend/src/lib/tennisReplay.ts	114	rpc	list_replays_tennis		frontend_codice	ts
+frontend/src/lib/tennisReplay.ts	124	rpc	get_replay_tennis_meta		frontend_codice	ts
+frontend/src/lib/watchlist.ts	110	rpc	add_to_watchlist		frontend_codice	ts
+frontend/src/lib/watchlist.ts	117	rpc	get_watchlist		frontend_codice	ts
+frontend/src/lib/watchlist.ts	126	rpc	delete_from_watchlist		frontend_codice	ts
+frontend/src/lib/watchlist.ts	134	rpc	set_watchlist_follow_live		frontend_codice	ts
+frontend/src/lib/watchlist.ts	144	rpc	set_watchlist_decision		frontend_codice	ts
+frontend/src/pages/Dashboard.tsx	50	table	fixture_predictions	select	frontend_codice	ts
+generate_dynamic_cal.py	121	table	fixture_predictions	select	py_codice_radice	py
+generate_dynamic_cal.py	156	table	matches	select	py_codice_radice	py
+generate_dynamic_cal.py	459	table	poisson_calibration	upsert	py_codice_radice	py
+import_betfair_operations.py	194	rpc	upsert_cash_movement	?	py_codice_radice	py
+import_betfair_operations.py	245	table	fixture_predictions	select	py_codice_radice	py
+import_betfair_operations.py	262	rpc	get_direction	?	py_codice_radice	py
+import_betfair_operations.py	358	rpc	upsert_imported_trade	?	py_codice_radice	py
+injuries_backfill.py	209	table	injuries	delete	py_codice_radice	py
+injuries_backfill.py	259	table	injuries	insert	py_codice_radice	py
+leagues_mapper.py	96	table	api_coverage_by_season	select	py_codice_radice	py
+leagues_mapper.py	325	table	api_coverage_by_season	upsert	py_codice_radice	py
+leagues_mapper.py	350	table	api_coverage_by_season	update	py_codice_radice	py
+load_poisson_calibration_to_db.py	65	table	poisson_calibration	upsert	py_codice_radice	py
+logger.py	86	table	api_call_log	insert	py_codice_radice	py
+logger.py	91	table	api_call_log	insert	py_codice_radice	py
+market_intelligence/audit.py	63	table	fixture_predictions	select	py_codice_cartelle_radice	py
+market_intelligence/audit.py	83	table	match_team_stats	select	py_codice_cartelle_radice	py
+market_intelligence/backtest.py	137	table	fixture_predictions	select	py_codice_cartelle_radice	py
+market_intelligence/backtest_audit.py	63	table	fixture_predictions	select	py_codice_cartelle_radice	py
+market_intelligence/backtest_audit.py	124	table	match_odds	select	py_codice_cartelle_radice	py
+market_intelligence/backtest_audit.py	138	table	match_odds	select	py_codice_cartelle_radice	py
+market_intelligence/backtest_audit.py	149	table	match_odds	select	py_codice_cartelle_radice	py
+market_intelligence/backtest_audit.py	206	table	fixture_predictions	select	py_codice_cartelle_radice	py
+market_intelligence/backtest_audit.py	228	table	fixture_predictions	select	py_codice_cartelle_radice	py
+market_intelligence/calibration.py	211	table	fixture_predictions	select	py_codice_cartelle_radice	py
+market_intelligence/calibration.py	230	table	fixture_predictions	select	py_codice_cartelle_radice	py
+market_intelligence/edge_scorer.py	457	table	fixture_predictions	select	py_codice_cartelle_radice	py
+market_intelligence/edge_scorer.py	472	table	match_team_stats	select	py_codice_cartelle_radice	py
+market_intelligence/pipeline.py	94	table	fixture_predictions	select	py_codice_cartelle_radice	py
+market_intelligence/signals.py	141	table	fixture_predictions	select	py_codice_cartelle_radice	py
+market_intelligence/signals.py	165	table	fixture_predictions	select	py_codice_cartelle_radice	py
+market_intelligence/signals.py	178	table	match_team_stats	select	py_codice_cartelle_radice	py
+master_backtest.py	684	table	fixture_predictions	select	py_codice_radice	py
+master_backtest.py	728	table	matches	select	py_codice_radice	py
+merge_engine_signals.py	101	table	engine_signals	select	py_codice_radice	py
+merge_engine_signals.py	121	table	matches	select	py_codice_radice	py
+merge_engine_signals.py	215	table	<dinamico:table>	upsert	py_codice_radice	py
+migrations/backfill_engine_signals.py	136	table	matches	select	py_codice_cartelle_radice	py
+migrations/backfill_engine_signals.py	278	table	engine_signals	upsert	py_codice_cartelle_radice	py
+missing_fixtures_backfill.py	20	table	matches	select	py_codice_radice	py
+missing_fixtures_backfill.py	47	rpc	fetch_missing_fixture_coverage	?	py_codice_radice	py
+per_fixture_backfill.py	104	table	api_coverage_by_season	select	py_codice_radice	py
+per_fixture_backfill.py	162	table	matches	select	py_codice_radice	py
+per_fixture_backfill.py	219	table	<dinamico:t>	delete	py_codice_radice	py
+per_fixture_backfill.py	264	table	<dinamico:table>	insert	py_codice_radice	py
+per_fixture_backfill.py	943	table	<dinamico:table>	delete	py_codice_radice	py
+poisson_calibrator.py	100	table	poisson_calibration	select	py_codice_radice	py
+refresh_analytics_bets.py	197	rpc	refresh_analytics_bets_range	?	py_codice_radice	py
+reset_ai_models.py	24	table	ai_model_registry	select	py_codice_radice	py
+reset_ai_models.py	31	table	ai_model_registry	delete	py_codice_radice	py
+reset_ai_models.py	63	storage	<dinamico:bucket_name>	?	py_codice_radice	py
+reset_ai_models.py	80	storage	<dinamico:bucket_name>	?	py_codice_radice	py
+retrain_all_leagues.py	125	table	season_backfill_state	select	py_codice_radice	py
+retrain_all_leagues.py	146	table	matches	select	py_codice_radice	py
+retrain_all_leagues.py	363	table	model_performance	upsert	py_codice_radice	py
+sanity_check.py	27	table	matches	select	py_codice_radice	py
+sanity_check.py	54	table	fixture_predictions	select	py_codice_radice	py
+sanity_check.py	86	table	matches	select	py_codice_radice	py
+season_aggregates.py	151	rpc	season_aggregates_summary	?	py_codice_radice	py
+season_aggregates.py	229	table	<dinamico:nome>	delete	py_codice_radice	py
+season_aggregates.py	238	table	<dinamico:nome>	insert	py_codice_radice	py
+season_gaps.py	228	rpc	season_detail_gaps	?	py_codice_radice	py
+season_gaps.py	345	rpc	season_gaps_summary	?	py_codice_radice	py
+season_gaps.py	445	table	fixture_detail_checks	select	py_codice_radice	py
+season_gaps.py	455	rpc	record_fixture_detail_checks	?	py_codice_radice	py
+season_gaps.py	522	table	season_backfill_state	upsert	py_codice_radice	py
+season_gaps.py	531	table	season_backfill_state	upsert	py_codice_radice	py
+season_gaps.py	546	table	season_backfill_state	select	py_codice_radice	py
+season_gaps.py	559	table	season_backfill_state	upsert	py_codice_radice	py
+season_gaps.py	595	table	season_backfill_state	select	py_codice_radice	py
+season_gaps.py	609	table	season_backfill_state	upsert	py_codice_radice	py
+season_gaps.py	634	table	season_backfill_state	select	py_codice_radice	py
+season_gaps.py	670	table	api_coverage_by_season	select	py_codice_radice	py
+seasons_catchup.py	375	table	season_backfill_state	select	py_codice_radice	py
+seasons_catchup.py	382	table	season_backfill_state	update	py_codice_radice	py
+sql/_cert_wc_compare.py	227	rpc	get_market_delays	?	py_codice_cartelle_radice	py
+sql/_cert_wc_fetch.py	32	table	matches	select	py_codice_cartelle_radice	py
+sql/_cert_wc_full.py	225	rpc	get_market_delays	?	py_codice_cartelle_radice	py
+standings_backfill.py	239	table	standings	delete	py_codice_radice	py
+standings_backfill.py	289	table	standings	insert	py_codice_radice	py
+tactical_engine/_check_fixpred.py	9	table	matches	select	py_codice_cartelle_radice	py
+tactical_engine/_check_fixpred.py	16	table	fixture_predictions	select	py_codice_cartelle_radice	py
+tactical_engine/_check_fixpred.py	22	table	fixture_predictions	select	py_codice_cartelle_radice	py
+tactical_engine/_inspect_mismatch.py	5	table	matches	select	py_codice_cartelle_radice	py
+tactical_engine/_verify_data_worldcup.py	13	table	matches	select	py_codice_cartelle_radice	py
+tactical_engine/data_loader.py	51	table	matches	select	py_codice_cartelle_radice	py
+tactical_engine/generate_predictions.py	60	table	matches	select	py_codice_cartelle_radice	py
+tactical_engine/generate_predictions.py	171	table	fixture_predictions	select	py_codice_cartelle_radice	py
+tactical_engine/generate_predictions.py	179	table	fixture_predictions	update	py_codice_cartelle_radice	py
+tactical_engine/generate_predictions.py	187	table	fixture_predictions	insert	py_codice_cartelle_radice	py
+tactical_engine/serving.py	114	table	matches	select	py_codice_cartelle_radice	py
+tactical_engine/serving.py	151	table	fixture_predictions	select	py_codice_cartelle_radice	py
+tactical_engine/serving.py	263	table	fixture_predictions	update	py_codice_cartelle_radice	py
+tactical_engine/serving.py	324	table	fixture_predictions	select	py_codice_cartelle_radice	py
+tactical_engine/serving.py	333	table	fixture_predictions	select	py_codice_cartelle_radice	py
+tactical_engine/serving.py	342	table	matches	select	py_codice_cartelle_radice	py
+tactical_engine/serving.py	358	table	fixture_predictions	update	py_codice_cartelle_radice	py
+tactical_engine/tools/verifica_payload_tacticai.py	118	table	fixture_predictions	select	py_strumenti	py
+test_actions_pipeline_paginazione.py	438	table	analytics_snap_staging	upsert	py_test	py
+test_actions_pipeline_paginazione.py	446	rpc	flush_analytics_snap_staging	?	py_test	py
+test_actions_pipeline_paginazione.py	688	table	bet_features	select	py_test	py
+test_actions_pipeline_paginazione.py	951	table	fixture_predictions	select	py_test	py
+test_actions_pipeline_paginazione.py	1047	table	<dinamico:table>	select	py_test	py
+test_actions_pipeline_paginazione.py	1252	table	matches	select	py_test	py
+test_actions_pipeline_paginazione.py	1691	table	analytics_signals	select	py_test	py
+test_analytics_market_stats.py	140	table	matches	select	py_test	py
+test_analytics_market_stats.py	158	rpc	get_market_frequency	?	py_test	py
+test_analytics_market_stats.py	174	rpc	get_market_delays	?	py_test	py
+test_analytics_market_stats.py	190	rpc	get_market_frequency	?	py_test	py
+test_analytics_market_stats.py	212	rpc	get_market_delays	?	py_test	py
+test_calibrazione_lettura_db.py	282	table	fixture_predictions	select	py_test	py
+test_calibrazione_lettura_db.py	746	table	fixture_predictions	select	py_test	py
+test_calibrazione_lettura_db.py	879	table	matches	select	py_test	py
+test_delete_ritentativi_2026_09_25.py	373	table	<dinamico:nome>	insert	py_test	py
+tools/omega_validate_models.py	48	table	matches	select	py_strumenti	py
+tools/omega_validate_models.py	64	table	match_events	select	py_strumenti	py
+tools/omega_watch.py	36	table	omega_control	select	py_strumenti	py
+tools/omega_watch.py	41	table	safe_strategy_status	select	py_strumenti	py
+tools/omega_watch.py	46	table	omega_activity	select	py_strumenti	py
+top_assists_backfill.py	235	table	top_assists	delete	py_codice_radice	py
+top_assists_backfill.py	285	table	top_assists	insert	py_codice_radice	py
+top_cards_backfill.py	244	table	top_cards	delete	py_codice_radice	py
+top_cards_backfill.py	294	table	top_cards	insert	py_codice_radice	py
+top_scorers_backfill.py	235	table	top_scorers	delete	py_codice_radice	py
+top_scorers_backfill.py	285	table	top_scorers	insert	py_codice_radice	py
+training_planner.py	104	table	<dinamico:table>	select	py_codice_radice	py
+training_planner.py	152	rpc	leagues_needing_retrain	?	py_codice_radice	py
+update_poisson_calibration.py	146	table	fixture_predictions	select	py_codice_radice	py
+update_poisson_calibration.py	183	table	matches	select	py_codice_radice	py
+valida_motore_poisson.py	48	rest_dinamico	<percorso costruito a runtime>		py_codice_radice	py
+value_engine/calibrate.py	37	table	match_events	select	py_codice_cartelle_radice	py
+ventaglio_segnali.py	59	rest_dinamico	<percorso costruito a runtime>		py_codice_radice	py
+ventaglio_segnali.py	66	rest_rpc	rpc		py_codice_radice	py
+ventaglio_segnali.py	190	rpc	get_market_delays		py_codice_radice	py

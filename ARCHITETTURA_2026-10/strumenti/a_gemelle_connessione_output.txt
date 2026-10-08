@@ -1,0 +1,46 @@
+====================================================================================================
+A = Betfair/stream/runner.py : 3171 righe, 1965 di codice
+B = Betfair/stream/tennis_live/tennis_runner.py : 3483 righe, 2345 di codice
+righe uguali (blocchi difflib): 179 -> 9.1% di A, 7.6% di B, ratio 0.083
+funzioni omonime: 16 (A ne ha 81, B ne ha 109)
+  __init__                                     A   43 righe cod  B    7 righe cod  ratio 0.00  A:175 B:2358
+  _as_levels                                   A   14 righe cod  B   14 righe cod  ratio 0.93  A:573 B:200
+  compute_wom                                  A   13 righe cod  B   10 righe cod  ratio 0.70  A:594 B:216
+  build_ladder_selection                       A   19 righe cod  B   15 righe cod  ratio 0.76  A:617 B:229
+  ladder_signature                             A   12 righe cod  B   11 righe cod  ratio 0.78  A:643 B:260
+  build_ladder_payload                         A   13 righe cod  B   10 righe cod  ratio 0.70  A:667 B:247
+  ladder_worker                                A   49 righe cod  B   43 righe cod  ratio 0.54  A:687 B:1455
+  _stop_framework                              A    7 righe cod  B    7 righe cod  ratio 0.71  A:1224 B:3015
+  arresto_worker                               A    7 righe cod  B    8 righe cod  ratio 0.80  A:1768 B:2074
+  lifecycle_worker                             A   40 righe cod  B   29 righe cod  ratio 0.43  A:1783 B:2125
+  _stato_fine                                  A    9 righe cod  B    9 righe cod  ratio 1.00  A:1927 B:676
+  _fine_dimentica                              A    4 righe cod  B    4 righe cod  ratio 1.00  A:1940 B:687
+  build_order_client                           A   31 righe cod  B   15 righe cod  ratio 0.17  A:2123 B:144
+  _announce_order_mode                         A   13 righe cod  B    7 righe cod  ratio 0.00  A:2275 B:3037
+  setup_and_run                                A  313 righe cod  B  261 righe cod  ratio 0.20  A:2599 B:3121
+  _main                                        A   14 righe cod  B   14 righe cod  ratio 0.50  A:3149 B:3465
+====================================================================================================
+A = Betfair/stream/raw_listener.py : 325 righe, 205 di codice
+B = Betfair/stream/tennis_live/tennis_recorder.py : 384 righe, 252 di codice
+righe uguali (blocchi difflib): 73 -> 35.6% di A, 29.0% di B, ratio 0.319
+funzioni omonime: 4 (A ne ha 12, B ne ha 14)
+  __init__                                     A   13 righe cod  B   14 righe cod  ratio 0.37  A:32 B:76
+  write_message                                A   69 righe cod  B   64 righe cod  ratio 0.60  A:151 B:148
+  close                                        A   14 righe cod  B   10 righe cod  ratio 0.50  A:269 B:298
+  on_data                                      A    6 righe cod  B    6 righe cod  ratio 0.50  A:307 B:321
+====================================================================================================
+A = Betfair/stream/canale_bot.py : 426 righe, 190 di codice
+B = Betfair/stream/tennis_live/canale_bot_tennis.py : 357 righe, 210 di codice
+righe uguali (blocchi difflib): 13 -> 6.8% di A, 6.2% di B, ratio 0.065
+funzioni omonime: 1 (A ne ha 15, B ne ha 18)
+  statistiche                                  A    3 righe cod  B    3 righe cod  ratio 0.00  A:412 B:323
+====================================================================================================
+A = Betfair/stream/sottoscrizione_a_caldo.py : 113 righe, 51 di codice
+B = Betfair/stream/tennis_live/iscrizione_a_caldo.py : 322 righe, 182 di codice
+righe uguali (blocchi difflib): 5 -> 9.8% di A, 2.7% di B, ratio 0.043
+funzioni omonime: 0 (A ne ha 4, B ne ha 11)
+====================================================================================================
+A = Betfair/stream/watchlist.py : 107 righe, 79 di codice
+B = Betfair/stream/tennis_live/mercati_registrati.py : 95 righe, 47 di codice
+righe uguali (blocchi difflib): 5 -> 6.3% di A, 10.6% di B, ratio 0.079
+funzioni omonime: 0 (A ne ha 2, B ne ha 3)

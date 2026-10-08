@@ -1,0 +1,100 @@
+gruppo	modulo	esito	n_citazioni	prime_citazioni
+A	Ai Engine/ai_engine/analysis/advanced.py	ZERO	0	
+A	Ai Engine/ai_engine/analysis/summary.py	CITATO	130	Ai Engine/ai_engine/analysis/advanced.py:14; Ai Engine/ai_engine/backtest.py:168; Ai Engine/ai_engine/backtest.py:360
+A	Ai Engine/ai_engine/models/trainer.py	CITATO	7	Ai Engine/ai_engine/ensemble_trainer.py:2; Ai Engine/ai_engine/feature_pipeline.py:725; Ai Engine/ai_engine/feature_pipeline.py:775
+A	Ai Engine/ai_engine/models/voting.py	ZERO	0	
+A	Betfair/cleanup_reset.py	ZERO	0	
+A	_certify_betfair_full.py	ZERO	0	
+A	analyze_recovery.py	ZERO	0	
+A	analyze_threshold.py	ZERO	0	
+A	calibration_analysis.py	ZERO	0	
+A	check_gh.py	ZERO	0	
+A	laboratorio/scalper_lab/grid_strategy.py	ZERO	0	
+A	parse.py	CITATO	309	Betfair/stream/local_channel.py:32; Betfair/stream/odds_http.py:23; Betfair/stream/scalper/genera_atlante.py:49
+A	refresh_dashboard.py	ZERO	0	
+A	report_mm.py	ZERO	0	
+A	simulate_recovery_forward.py	ZERO	0	
+A	tactical_engine/_check_fixpred.py	ZERO	0	
+A	tactical_engine/_inspect_mismatch.py	ZERO	0	
+A	tmp_analysis.py	ZERO	0	
+A	tmp_analysis2.py	ZERO	0	
+A	tmp_predict_today.py	ZERO	0	
+A	tmp_smoke_stack.py	ZERO	0	
+A	tmp_today_predictions.py	ZERO	0	
+A	tmp_validate_league.py	ZERO	0	
+A	tmp_validate_predict.py	ZERO	0	
+A	update_dashboard_only.py	ZERO	0	
+A	value_engine/generate_battery.py	ZERO	0	
+B	AGGIORNA_CAMPO_db_json_analisi.py	CITATO	2	Prediction/backfill_historical_analysis.py:6; Prediction/backfill_historical_analysis.py:74
+B	Ai Engine/ai_engine/audit_nulls.py	ZERO	0	
+B	Ai Engine/ai_engine/backtest.py	CITATO	363	Ai Engine/ai_engine/db_adapter.py:73; Ai Engine/ai_engine/db_adapter.py:255; Ai Engine/ai_engine/db_adapter.py:379
+B	Ai Engine/ai_engine/bss_monitor.py	ZERO	0	
+B	Ai Engine/ai_engine/evaluate_holdout.py	ZERO	0	
+B	Ai Engine/ai_engine/generate_fixture_report.py	ZERO	0	
+B	Ai Engine/ai_engine/runner.py	CITATO	2763	.github/workflows/retrain_models.yml:59; .github/workflows/retrain_models.yml:210; .github/workflows/retrain_models.yml:265
+B	Ai Engine/backtest_ml.py	ZERO	0	
+B	Betfair/betfair_report_manager.py	CITATO	5	Betfair/betfair_match.py:16; Betfair/betfair_match.py:28; aggiorna_report.bat:21
+B	Betfair/stream/scalper/validazione_hazard/taratura_b1.py	CITATO	4	Betfair/stream/scalper/validazione_hazard/banco.py:274; Betfair/stream/scalper/validazione_hazard/banco.py:275; Betfair/stream/scalper/validazione_hazard/banco.py:367
+B	Betfair/stream/tennis_scalper/backtest_pro.py	CITATO	5	Betfair/stream/tennis_live/tennis_recorder.py:8; Betfair/stream/tennis_live/tools/replay_bot.py:52; Betfair/stream/tennis_scalper/flb_backtest.py:83
+B	Betfair/stream/tennis_scalper/flb_backtest.py	CITATO	2	Betfair/stream/tennis_live/tennis_recorder.py:7; Betfair/stream/tennis_scalper/record_multi.py:6
+B	Betfair/stream/tennis_scalper/record_multi.py	CITATO	11	Betfair/stream/tennis_live/tennis_recorder.py:4; Betfair/stream/tennis_live/tennis_recorder.py:10; Betfair/stream/tennis_live/tennis_recorder.py:20
+B	Betfair/stream/tennis_scalper/record_tennis.py	ZERO	0	
+B	Betfair/stream/tennis_scalper/research_data.py	CITATO	1	Betfair/safe_strategy/tennis_opportunity.py:128
+B	Betfair/stream/tennis_scalper/run_tennis_pro.py	CITATO	2	Betfair/stream/tennis_live/tennis_runner.py:627; Betfair/stream/tennis_scalper/tennis_pro_bot.py:133
+B	Betfair/stream/tennis_scalper/tune_tennis.py	ZERO	0	
+B	Prediction/analyze_sweet_spot.py	ZERO	0	
+B	Prediction/backfill_historical_analysis.py	ZERO	0	
+B	_certify_betfair.py	ZERO	0	
+B	_certify_delay_context.py	ZERO	0	
+B	_certify_direction.py	ZERO	0	
+B	_certify_direction_report.py	CITATO	2	frontend/src/components/dashboard/DirezioniReport.tsx:7; frontend/src/lib/reportistiche.ts:6
+B	_certify_personal_report.py	ZERO	0	
+B	_certify_signal_context.py	ZERO	0	
+B	_league_eval.py	ZERO	0	
+B	_stack_eval.py	ZERO	0	
+B	admin_reset_password.py	ZERO	0	
+B	aggiorna_mm_sheets.py	CITATO	3	aggiorna_report.bat:25; aggiorna_report_veloce.bat:21; aggiorna_solo_fogli.bat:14
+B	aggiorna_solo_fogli.py	CITATO	1	aggiorna_solo_fogli.bat:10
+B	backfill_poisson_calibrated.py	ZERO	0	
+B	betfair_full_odds.py	CITATO	9	Betfair/betfair_match.py:6; Betfair/odds_refresh.py:16; Betfair/odds_refresh.py:34
+B	betfair_tennis_odds.py	CITATO	5	Betfair/client.py:266; Betfair/stream/backtest/registro_bot.py:414; desktop/main.js:432
+B	build_inplay_intensity.py	CITATO	1	Betfair/stream/engine/live_engine.py:49
+B	certify_backtest_strategy.py	ZERO	0	
+B	cleanup_models.py	ZERO	0	
+B	compress_models.py	ZERO	0	
+B	compute_ml_post_calibration.py	CITATO	4	.github/workflows/ml_calibration.yml:78; Ai Engine/ai_engine/predict_fixture.py:872; Ai Engine/ai_engine/seriea_model_export.py:172
+B	direzione.py	CITATO	137	Betfair/mike/engine.py:2308; Betfair/mike/engine.py:2364; Betfair/omega/omega_engine.py:1149
+B	fix_storico_prob.py	CITATO	1	merge_engine_signals.py:185
+B	football_data_scraper/backfill.py	CITATO	44	.github/workflows/daily_yesterday_backfill.yml:8; .github/workflows/daily_yesterday_backfill.yml:10; .github/workflows/daily_yesterday_backfill.yml:14
+B	football_data_scraper/fix_snapshot_time.py	ZERO	0	
+B	import_betfair_operations.py	CITATO	3	aggiorna_report_betfair.bat:21; aggiorna_report_betfair.bat:24; importa_ultimi_15_giorni.bat:19
+B	laboratorio/scalper_lab/bt_theta.py	ZERO	0	
+B	laboratorio/scalper_lab/exp_families.py	ZERO	0	
+B	laboratorio/scalper_lab/rdloop.py	CITATO	1	laboratorio/scalper_lab/bt_lab.py:56
+B	laboratorio/scalper_lab/validate_synth.py	ZERO	0	
+B	laboratorio/tennis_lab/validate.py	CITATO	16	.github/workflows/validate_models.yml:28; .github/workflows/validate_models.yml:32; .github/workflows/validate_models.yml:97
+B	load_poisson_calibration_to_db.py	ZERO	0	
+B	market_intelligence/backtest.py	CITATO	364	Ai Engine/ai_engine/backtest.py:151; Ai Engine/ai_engine/backtest.py:166; Ai Engine/ai_engine/backtest.py:233
+B	market_intelligence/backtest_audit.py	ZERO	0	
+B	market_intelligence/pipeline.py	CITATO	52	.github/workflows/predictions_results_backfill.yml:88; .github/workflows/predictions_results_backfill.yml:117; .github/workflows/predictions_results_backfill.yml:154
+B	missing_fixtures_backfill.py	ZERO	0	
+B	reset_ai_models.py	ZERO	0	
+B	sanity_check.py	ZERO	0	
+B	sql/_build_wc_xlsx_2013.py	ZERO	0	
+B	sql/_cert_wc_fetch.py	ZERO	0	
+B	sql/_cert_wc_full.py	ZERO	0	
+B	sql/_verify_delays_math.py	ZERO	0	
+B	start_order_server.py	CITATO	5	Betfair/order_worker.py:5; Betfair/refresh_worker.py:6; Betfair/stream/odds_http.py:3
+B	tactical_engine/_verify_data_worldcup.py	ZERO	0	
+B	tactical_engine/generate_predictions.py	CITATO	2	tactical_engine/serving.py:283; tactical_engine/serving.py:286
+B	tactical_engine/run_daily.py	CITATO	1	tactical_engine/serving.py:5
+B	tactical_engine/run_worldcup.py	ZERO	0	
+B	test.py	CITATO	1160	.github/workflows/validate_models.yml:6; .github/workflows/validate_models.yml:19; .github/workflows/validate_models.yml:91
+B	tmp_smoke_ml_fixes.py	ZERO	0	
+B	tmp_smoke_poisson_fixes.py	ZERO	0	
+B	tmp_train_today.py	ZERO	0	
+B	valida_motore_poisson.py	ZERO	0	
+B	valida_ventaglio.py	ZERO	0	
+B	validate_walkforward.py	CITATO	1	.github/workflows/validate_models.yml:91
+B	value_engine/calibrate.py	CITATO	26	.github/workflows/weekly_poisson_calibration.yml:9; .github/workflows/weekly_poisson_calibration.yml:69; Ai Engine/ai_engine/ensemble_trainer.py:1322
+B	value_engine/cli.py	CITATO	4	Betfair/stream/scalper/run_scalper_live.py:64; Telegram bot/supabase/config.toml:2; value_engine/__init__.py:4

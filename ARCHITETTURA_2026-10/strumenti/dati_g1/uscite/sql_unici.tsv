@@ -1,0 +1,109 @@
+analytics_decisions	primary_key_colonna	id              BIGSERIAL    PRIMARY KEY,	migrations/analytics_decisions.sql	22
+analytics_prob_staging	primary_key_colonna	signal_uid       text primary key,	migrations/analytics_prob_staging.sql	12
+analytics_riepilogo_meta	primary_key_colonna	chiave        text primary key,      -- 'segnali' | 'decisioni' | 'filtri_analyt	migrations/analytics_rpc_veloci_2026-09-26.sql	100
+analytics_signals	primary_key_colonna	id              BIGSERIAL    PRIMARY KEY,	migrations/analytics_signals.sql	34
+analytics_snap_staging	primary_key	fixture_id, market, selection	migrations/analytics_snap_staging.sql	34
+strategies	primary_key_colonna	id          uuid         primary key default gen_random_uuid(),	migrations/analytics_strategies_store.sql	15
+book_odds_cache	primary_key	fixture_id, market, selection	migrations/analytics_strategy.sql	82
+analytics_bets	primary_key	fixture_id, market, selection	migrations/analytics_strategy.sql	128
+betfair_live_account	primary_key_colonna	id          INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),	migrations/betfair_live_account_heartbeat.sql	23
+betfair_live_heartbeat	primary_key_colonna	id           INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),	migrations/betfair_live_account_heartbeat.sql	54
+betfair_live_settings	primary_key_colonna	id                         INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),	migrations/betfair_live_controls.sql	20
+betfair_live_audit	primary_key_colonna	id           BIGSERIAL PRIMARY KEY,	migrations/betfair_live_controls.sql	39
+betfair_live_order_requests	primary_key_colonna	id             BIGSERIAL PRIMARY KEY,	migrations/betfair_live_order_queue.sql	34
+betfair_live_orders	primary_key_colonna	id                    BIGSERIAL PRIMARY KEY,	migrations/betfair_live_order_queue.sql	81
+betfair_live_positions	primary_key_colonna	id                      BIGSERIAL PRIMARY KEY,	migrations/betfair_live_order_queue.sql	131
+betfair_live_positions	primary_key_colonna	-- BIGSERIAL PRIMARY KEY → sempre > 0. NULL/<=0 è una richiesta malformata, non 	migrations/betfair_live_order_queue.sql	327
+betfair_live_settled	primary_key_colonna	id          BIGSERIAL PRIMARY KEY,	migrations/betfair_live_pnl_journal.sql	26
+betfair_live_risk_state	primary_key_colonna	id           INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),	migrations/betfair_live_pnl_journal.sql	52
+betfair_live_journal	primary_key_colonna	id           BIGSERIAL PRIMARY KEY,	migrations/betfair_live_pnl_journal.sql	90
+betfair_live_risk_rules	primary_key_colonna	id                  BIGSERIAL PRIMARY KEY,	migrations/betfair_live_risk_rules.sql	29
+betfair_live_xhedge	primary_key_colonna	id          BIGSERIAL PRIMARY KEY,	migrations/betfair_live_xhedge.sql	11
+betfair_market_odds	primary_key	fixture_id, market_name, selection	migrations/betfair_market_odds.sql	16
+betfair_order_requests	primary_key_colonna	id            BIGSERIAL PRIMARY KEY,	migrations/betfair_order_queue.sql	18
+betfair_refresh_requests	primary_key_colonna	id           BIGSERIAL PRIMARY KEY,	migrations/betfair_refresh_queue.sql	13
+direction_pagella	primary_key	engine, market, selection, league_id, prob_bucket	migrations/direction_pagella.sql	24
+direction_pagella	primary_key	engine,market,selection,league_id,prob_bucket	migrations/direction_pagella.sql	30
+engine_signals	primary_key_colonna	signal_uid     TEXT        PRIMARY KEY,        -- "{engine}|{fixture_id}|{market	migrations/engine_signals.sql	8
+hazard_atlas_leghe	primary_key_colonna	league_id          integer     PRIMARY KEY,	migrations/hazard_atlas_2026-09-24.sql	29
+hazard_atlas	primary_key_colonna	id                  bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,	migrations/hazard_atlas_2026-09-24.sql	42
+live_alerts	primary_key_colonna	id            BIGSERIAL PRIMARY KEY,	migrations/live_alerts.sql	23
+live_backtest_requests	primary_key_colonna	id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),	migrations/live_backtest.sql	26
+live_backtest_results	primary_key_colonna	id            BIGSERIAL PRIMARY KEY,	migrations/live_backtest.sql	45
+live_ladder	primary_key_colonna	id           BIGSERIAL PRIMARY KEY,	migrations/live_ladder.sql	38
+live_ladder	unique	event_id, market_id	migrations/live_ladder.sql	39
+live_signals	primary_key_colonna	event_id    TEXT PRIMARY KEY REFERENCES public.live_follow(event_id) ON DELETE C	migrations/live_signals.sql	28
+live_follow	primary_key_colonna	event_id        TEXT PRIMARY KEY,                 -- Betfair event_id	migrations/live_stream.sql	34
+live_now	primary_key_colonna	event_id     TEXT PRIMARY KEY REFERENCES public.live_follow(event_id) ON DELETE 	migrations/live_stream.sql	60
+live_markets	primary_key_colonna	id            BIGSERIAL PRIMARY KEY,	migrations/live_stream.sql	76
+live_markets	unique	event_id, market_id	migrations/live_stream.sql	85
+live_market_snapshots	primary_key_colonna	id            BIGSERIAL PRIMARY KEY,	migrations/live_stream.sql	97
+live_score_timeline	primary_key_colonna	id            BIGSERIAL PRIMARY KEY,	migrations/live_stream.sql	118
+live_run_log	primary_key_colonna	event_id        TEXT PRIMARY KEY REFERENCES public.live_follow(event_id) ON DELE	migrations/live_stream.sql	136
+mike_control	primary_key_colonna	id            INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),	migrations/mike_bot.sql	25
+mike_events	primary_key_colonna	event_id             TEXT PRIMARY KEY,	migrations/mike_bot.sql	46
+mike_trades	primary_key_colonna	id               BIGSERIAL PRIMARY KEY,	migrations/mike_bot.sql	80
+mike_activity	primary_key_colonna	id        BIGSERIAL PRIMARY KEY,	migrations/mike_bot.sql	125
+mike_requests	primary_key_colonna	id           BIGSERIAL PRIMARY KEY,	migrations/mike_bot.sql	138
+omega_control	primary_key_colonna	id            INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),	migrations/omega_bot.sql	18
+omega_trades	primary_key_colonna	id               BIGSERIAL PRIMARY KEY,	migrations/omega_bot.sql	39
+omega_trades	unique_index	event_id	migrations/omega_bot.sql	66
+omega_activity	primary_key_colonna	id       BIGSERIAL PRIMARY KEY,	migrations/omega_bot.sql	74
+omega_daily_goal	primary_key_colonna	day         DATE PRIMARY KEY,	migrations/omega_daily_v2.sql	35
+omega_ht_ft_transitions	primary_key	league_id, ht, ft	migrations/omega_daily_v2.sql	606
+omega_events	primary_key_colonna	event_id    TEXT PRIMARY KEY,	migrations/omega_manual.sql	40
+omega_market_snapshot	primary_key_colonna	market_id    TEXT PRIMARY KEY,	migrations/omega_manual.sql	63
+omega_manual_requests	primary_key_colonna	id           BIGSERIAL PRIMARY KEY,	migrations/omega_manual.sql	77
+omega_missions	primary_key_colonna	event_id     TEXT PRIMARY KEY,	migrations/omega_missions.sql	28
+omega_minute_transitions	primary_key	league_id, bucket, target, score, result	migrations/omega_models_v3.sql	29
+omega_build_jobs	primary_key_colonna	job          TEXT PRIMARY KEY,	migrations/omega_models_v3.sql	50
+omega_minute_league_counts	primary_key_colonna	league_id  BIGINT PRIMARY KEY,	migrations/omega_models_v3.sql	63
+omega_requests	primary_key_colonna	id          BIGSERIAL PRIMARY KEY,	migrations/omega_proposte_uscita_2026-09-16.sql	31
+omega_transitions_ledger	primary_key_colonna	fixture_id         BIGINT      PRIMARY KEY,	migrations/omega_transitions_catchup_2026-09-25.sql	70
+omega_minute_transitions_raw	primary_key	league_id, bucket, target, score, result	migrations/omega_transitions_catchup_2026-09-25.sql	92
+omega_ht_ft_transitions_raw	primary_key	league_id, ht, ft	migrations/omega_transitions_catchup_2026-09-25.sql	105
+omega_transitions_league_counts	primary_key_colonna	league_id   BIGINT  PRIMARY KEY,	migrations/omega_transitions_catchup_2026-09-25.sql	113
+omega_transitions_state	primary_key_colonna	id                    SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),	migrations/omega_transitions_catchup_2026-09-25.sql	124
+omega_transitions_runs	primary_key_colonna	id                     BIGSERIAL PRIMARY KEY,	migrations/omega_transitions_catchup_2026-09-25.sql	141
+personal_cash_movements	primary_key_colonna	id             BIGSERIAL PRIMARY KEY,	migrations/personal_cash_movements.sql	12
+personal_watchlist	primary_key_colonna	id                   BIGSERIAL PRIMARY KEY,	migrations/personal_tracking.sql	21
+personal_watchlist	unique	fixture_id	migrations/personal_tracking.sql	44
+personal_trades	primary_key_colonna	id              BIGSERIAL PRIMARY KEY,	migrations/personal_tracking.sql	55
+personal_trade_legs	primary_key_colonna	id          BIGSERIAL PRIMARY KEY,	migrations/personal_tracking.sql	115
+poisson_calibration	primary_key_colonna	league_id    BIGINT      PRIMARY KEY,            -- 0 = FALLBACK GLOBALE; >0 = p	migrations/poisson_calibration.sql	22
+book_odds_cache_fonte	primary_key_colonna	fixture_id        bigint      primary key,	migrations/refresh_analytics_bets_range_v2_2026-09-24.sql	65
+book_odds_cache_fonte	primary_key_colonna	create temp table _rab_fx (fixture_id bigint primary key) on commit drop;	migrations/refresh_analytics_bets_range_v2_2026-09-24.sql	93
+book_odds_cache_fonte	primary_key_colonna	fixture_id       bigint primary key,	migrations/refresh_analytics_bets_range_v2_2026-09-24.sql	109
+replay_bot_esiti	primary_key_colonna	request_id  UUID PRIMARY KEY	migrations/replay_applica_bot_2026-10-06.sql	12
+tennis_replay_eventi	primary_key_colonna	event_id          TEXT PRIMARY KEY,                    -- Betfair event_id	migrations/replay_tennis_2026-10-07.sql	52
+tennis_replay_mercati	primary_key_colonna	id             BIGSERIAL PRIMARY KEY,	migrations/replay_tennis_2026-10-07.sql	77
+tennis_replay_mercati	unique	event_id, market_id	migrations/replay_tennis_2026-10-07.sql	90
+tennis_replay_snapshots	primary_key_colonna	id          BIGSERIAL PRIMARY KEY,	migrations/replay_tennis_2026-10-07.sql	98
+tennis_replay_punteggio	primary_key_colonna	id           BIGSERIAL PRIMARY KEY,	migrations/replay_tennis_2026-10-07.sql	115
+safe_strategy_control	primary_key_colonna	id            INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),	migrations/safe_strategy_bot.sql	23
+safe_strategy_trades	primary_key_colonna	id               BIGSERIAL PRIMARY KEY,	migrations/safe_strategy_bot.sql	48
+safe_strategy_activity	primary_key_colonna	id       BIGSERIAL PRIMARY KEY,	migrations/safe_strategy_bot.sql	96
+safe_strategy_requests	primary_key_colonna	id           BIGSERIAL PRIMARY KEY,	migrations/safe_strategy_bot.sql	107
+safe_strategy_opportunities	primary_key_colonna	event_id    TEXT PRIMARY KEY,	migrations/safe_strategy_bot.sql	123
+safe_strategy_scan	primary_key_colonna	event_id    TEXT PRIMARY KEY,	migrations/safe_strategy_scan.sql	29
+safe_strategy_status	primary_key_colonna	id          TEXT PRIMARY KEY,	migrations/safe_strategy_scan.sql	41
+scalper_service_control	primary_key_colonna	id           SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),	migrations/scalper_auto_mode_2026-09-25.sql	69
+scalper_control	primary_key_colonna	event_id      TEXT PRIMARY KEY REFERENCES public.live_follow(event_id)	migrations/scalper_bot.sql	26
+scalper_activity	primary_key_colonna	id        BIGSERIAL PRIMARY KEY,	migrations/scalper_bot.sql	54
+fixture_detail_checks	primary_key	fixture_id, tabella	migrations/season_gaps_2026-09-25.sql	72
+sicurezza_bk	primary_key_colonna	id          bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,	migrations/sicurezza_db_2026-09-24_BLOCCO_1_zero_rischio.sql	70
+sicurezza_bk	primary_key_colonna	id          bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,	migrations/sicurezza_db_2026-09-24_BLOCCO_2_rls_e_policy.sql	62
+sicurezza_bk	primary_key_colonna	id          bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,	migrations/sicurezza_db_2026-09-24_BLOCCO_3_revoke_anon.sql	65
+signal_history	primary_key_colonna	signal_id    TEXT        PRIMARY KEY,	migrations/signal_history.sql	6
+tennis_bot_service_control	primary_key_colonna	bot_key      TEXT PRIMARY KEY	migrations/tennis_bot_service_control_2026-09-17.sql	28
+tennis_bot_control	primary_key	event_id, bot_key	migrations/tennis_bots.sql	65
+tennis_bot_activity	primary_key_colonna	id        BIGSERIAL PRIMARY KEY,	migrations/tennis_bots.sql	76
+tennis_live_follow	primary_key_colonna	event_id        TEXT PRIMARY KEY,                    -- Betfair event_id	migrations/tennis_live.sql	29
+tennis_live_now	primary_key_colonna	event_id   TEXT PRIMARY KEY	migrations/tennis_live.sql	57
+tennis_live_ladder	primary_key_colonna	id          BIGSERIAL PRIMARY KEY,	migrations/tennis_live.sql	74
+tennis_markets	primary_key_colonna	event_id           TEXT PRIMARY KEY,                 -- Betfair event_id (autori	migrations/tennis_markets.sql	33
+tennis_refresh_requests	primary_key_colonna	id           BIGSERIAL PRIMARY KEY,	migrations/tennis_markets.sql	67
+tennis_live_order_queue	primary_key_colonna	id           BIGSERIAL PRIMARY KEY,	migrations/tennis_orders.sql	50
+tennis_live_orders	primary_key_colonna	id                    BIGSERIAL PRIMARY KEY,	migrations/tennis_orders.sql	75
+tennis_live_positions	primary_key_colonna	id                      BIGSERIAL PRIMARY KEY,	migrations/tennis_orders.sql	118
+theta_confirm_requests	primary_key_colonna	id           BIGSERIAL PRIMARY KEY,	migrations/theta_confirm.sql	24

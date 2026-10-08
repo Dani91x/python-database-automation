@@ -1,0 +1,15 @@
+Betfair/stream/canale_bot.py                         righe di codice 190
+Betfair/stream/esiti_ordini_canale.py                righe di codice 556
+Betfair/stream/sveglia_canale.py                     righe di codice 243
+Betfair/safe_strategy/canale_scan.py                 righe di codice 303
+Betfair/stream/tennis_live/canale_bot_tennis.py      righe di codice 210
+canale_bot.py                            <-> esiti_ordini_canale.py                   uguali   20 (10.5% / 3.6%)
+canale_bot.py                            <-> sveglia_canale.py                        uguali   12 (6.3% / 4.9%)
+canale_bot.py                            <-> canale_scan.py                           uguali   14 (7.4% / 4.6%)
+canale_bot.py                            <-> canale_bot_tennis.py                     uguali   13 (6.8% / 6.2%)
+esiti_ordini_canale.py                   <-> sveglia_canale.py                        uguali   49 (8.8% / 20.2%)
+esiti_ordini_canale.py                   <-> canale_scan.py                           uguali   53 (9.5% / 17.5%)
+esiti_ordini_canale.py                   <-> canale_bot_tennis.py                     uguali   62 (11.2% / 29.5%)
+sveglia_canale.py                        <-> canale_scan.py                           uguali   32 (13.2% / 10.6%)
+sveglia_canale.py                        <-> canale_bot_tennis.py                     uguali   46 (18.9% / 21.9%)
+canale_scan.py                           <-> canale_bot_tennis.py                     uguali   34 (11.2% / 16.2%)

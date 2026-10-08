@@ -1,0 +1,278 @@
+file	riga_02_10	esito	riga_oggi	testo_02_10
+Betfair/client.py	95	stessa_riga	95	def login_cert(self, max_retries: int = 3) -> BetfairAuthSession:
+Betfair/client.py	148	stessa_riga	148	self._session_token = str(session_token)
+Betfair/client.py	361	stessa_riga	361	def list_current_orders(
+Betfair/mike/config.py	32	stessa_riga	32	LOCK_PORT_DEFAULT = 47319
+Betfair/mike/config.py	338	stessa_riga	338	"feed_cache_s": (4.0, float, 0.0, 30.0, None),
+Betfair/mike/db.py	662	stessa_riga	662	def enqueue_live_order(payload: dict[str, Any]) -> Optional[int]:
+Betfair/mike/porta_ordini.py	9	stessa_riga	9	canale di comando ``/comando/mike`` (47331): la STESSA strada di Safe e Omega.
+Betfair/mike/porta_ordini.py	11	stessa_riga	11	della Costituzione di Mike. Il live NON cambia (REST, ``omega_market``).
+Betfair/mike/porta_ordini.py	36	stessa_riga	36	ATTORE = "mike"
+Betfair/mike/service.py	149	stessa_riga	149	return omega_market.read_book(str(market_id), names)
+Betfair/mike/service.py	152	stessa_riga	152	def place_order_live(**kw: Any) -> Any:
+Betfair/mike/service.py	1267	spostata	1291	_RIPIEGO_REST_MIN_S = 10.0
+Betfair/mike/service.py	2208	spostata	2259	res = market.place_order_live(
+Betfair/mike/service.py	3953	spostata	3978	control = db.read_control()
+Betfair/mike/service.py	3984	spostata	4035	richieste_in_attesa, richieste_bloccate = leggi_insieme()
+Betfair/mike/service.py	4087	spostata	4138	open_refs = _open_refs_by_event(db)      # H5: una query per il pre-controllo H2
+Betfair/mike/service.py	5761	spostata	5816	def _reconcile_unknown(db: Any, market: Any, event_id: str, ctx: E.MatchCtx, mode: str,
+Betfair/mike/service.py	6132	spostata	6187	extra["conto_chiamate"] = int(extra.get("conto_chiamate") or 0) + chiamate
+Betfair/mike/service.py	6636	spostata	6691	db.upsert_event(ev)
+Betfair/mike/service.py	6729	spostata	6784	_PORTA_CANALE = 47333
+Betfair/mike/service.py	6763	spostata	6818	client = _EO.ClientEsiti(memoria, topic=_EO.TOPIC_CONTO)
+Betfair/mike/service.py	6785	spostata	6840	ch = _lc.start_channel(porta, "mike", solo_lettura=True)
+Betfair/mike/service.py	7017	spostata	7072	client = CS.ClientScan(CS.porta_scan(), cache, **sveglia_kw)
+Betfair/mike/service.py	7145	spostata	7200	letto = db.fetch_scan_rows()
+Betfair/mike/service.py	7380	spostata	7435	logger.info("[mike] timeout PostgREST del profilo bot: %s", _dbc.usa_timeout_bot())
+Betfair/mike/service.py	7432	spostata	7487	interval = max(1.0, float(params.get("decide_min_interval_ms", 500)) / 1000.0 * 2)
+Betfair/omega/omega_db.py	634	stessa_riga	634	def enqueue_live_order(payload: dict[str, Any]) -> Optional[int]:
+Betfair/omega/omega_market.py	68	stessa_riga	68	def call(fn: Callable[[Any], Any]) -> Any:
+Betfair/omega/omega_market.py	140	stessa_riga	140	def keep_alive() -> None:
+Betfair/omega/omega_market.py	696	spostata	704	def place_order_live(
+Betfair/omega/omega_market.py	731	spostata	739	_v = min_stake_rules(JURISDICTION_IT, side_bf.lower(), price_tick, round(size_f, 2))
+Betfair/omega/omega_market.py	763	spostata	787	report = call_mutating(
+Betfair/omega/omega_market.py	1018	spostata	1043	def place_submin_live(
+Betfair/omega/omega_market.py	1540	spostata	1565	def list_current_orders(strategy_ref: Any = _REF_OMEGA) -> list[dict]:
+Betfair/omega/omega_service.py	759	spostata	760	client = CS.ClientScan(CS.porta_scan(), memoria,
+Betfair/omega/omega_service.py	790	spostata	791	"""Accende il lettore degli esiti degli ordini (canale del runner 47331,
+Betfair/omega/omega_service.py	2707	spostata	2861	_leg_certain_failure(db, trade_id, ev.event_id, phase, now,
+Betfair/omega/omega_service.py	2751	spostata	2913	res = market.place_lay_live(
+Betfair/omega/omega_service.py	2877	spostata	3039	def _flumine_gate(event_id: str, *, db, mode: str, params: dict[str, Any],
+Betfair/omega/omega_service.py	4155	spostata	4337	def reconcile_pending(*, market, db, now: datetime) -> int:
+Betfair/omega/omega_service.py	4215	spostata	4397	d = E.reconcile_decision(tr, current, cleared, now.isoformat())
+Betfair/omega/omega_service.py	5252	spostata	5434	reqs = db.pending_manual_requests()
+Betfair/omega/omega_service.py	7496	spostata	7716	missions = db.active_missions()
+Betfair/omega/omega_service.py	7809	spostata	8029	return db.read_control(), None
+Betfair/omega/omega_service.py	8031	spostata	8251	events = market.list_today_football_events()
+Betfair/omega/omega_service.py	8293	spostata	8520	_SINGLE_INSTANCE_PORT = 47313  # lock single-instance (come tennis 47312)
+Betfair/omega/omega_service.py	8360	spostata	8587	_PORTA_CANALE = 47334
+Betfair/omega/omega_service.py	8372	spostata	8599	ch = _lc.start_channel(porta, "omega", solo_lettura=True)
+Betfair/omega/omega_service.py	8621	spostata	8848	interval = 20
+Betfair/omega/porta_ordini.py	48	stessa_riga	48	ENV_CANALE = "OMEGA_ORDINI_VIA_CANALE"
+Betfair/order_exec.py	207	spostata	215	def place_order(
+Betfair/order_exec.py	269	spostata	277	_v = min_stake_rules(JURISDICTION_IT, side_up.lower(), price_tick, size)
+Betfair/order_exec.py	322	spostata	340	report = _call(lambda c: c.place_orders(
+Betfair/order_worker.py	29	stessa_riga	29	_TABLE = "betfair_order_requests"
+Betfair/safe_strategy/bot_db.py	336	stessa_riga	336	res = _sb().rpc("get_safe_aggregates", {"p_mode": m} if m else {}).execute()
+Betfair/safe_strategy/bot_db.py	1003	stessa_riga	1003	def enqueue_live_order(payload: dict[str, Any]) -> Optional[int]:
+Betfair/safe_strategy/bot_service.py	96	stessa_riga	96	"""``omega_market`` col customerStrategyRef di Safe (R1). Ogni attributo non
+Betfair/safe_strategy/bot_service.py	139	stessa_riga	139	_SINGLE_INSTANCE_PORT = 47318  # omega=47313, tennis=47312, safe bot=47318
+Betfair/safe_strategy/bot_service.py	759	stessa_riga	759	REST_MIN_INTERVAL_S = 10.0     # mai due REST sullo stesso mercato piu' vicine
+Betfair/safe_strategy/bot_service.py	789	stessa_riga	789	rest_now_ts: Optional[float] = None) -> Optional[dict[str, Any]]:
+Betfair/safe_strategy/bot_service.py	1085	spostata	1117	def reconcile_pending(*, market, db, now: datetime) -> int:
+Betfair/safe_strategy/bot_service.py	9273	spostata	9541	client = CS.ClientScan(CS.porta_scan(), cache, **sveglia_prezzo)
+Betfair/safe_strategy/bot_service.py	9864	spostata	10095	control = db.read_control()
+Betfair/safe_strategy/bot_service.py	10310	spostata	10583	ch = _lc.start_channel(porta, "safe", solo_lettura=True)
+Betfair/safe_strategy/bot_service.py	10355	spostata	10628	def _avvia_esiti_ordini() -> bool:
+Betfair/safe_strategy/bot_service.py	10481	spostata	10754	righe = _real_db.pending_requests(limit=1) or []
+Betfair/safe_strategy/bot_service.py	10581	spostata	10854	return db.read_control() or {}
+Betfair/safe_strategy/bot_service.py	10677	spostata	10950	interval = 2.0
+Betfair/safe_strategy/canale_scan.py	69	stessa_riga	69	PORTA_SCAN = 47336
+Betfair/safe_strategy/canale_scan.py	312	stessa_riga	312	class ClientScan:
+Betfair/safe_strategy/db.py	198	stessa_riga	198	sb.table("safe_strategy_scan").upsert(rows, on_conflict="event_id").execute()
+Betfair/safe_strategy/db.py	416	stessa_riga	416	def list_bot_exposures(now_ts: Optional[float] = None) -> Dict[str, Optional[List[Dict[str
+Betfair/safe_strategy/db.py	432	stessa_riga	432	res = get_supabase_client().rpc(_RPC_ESPOSIZIONI, {}).execute()
+Betfair/safe_strategy/execution.py	871	spostata	1061	def place(
+Betfair/safe_strategy/execution.py	1003	spostata	1219	if porta is not None and getattr(porta, "via_canale", False):
+Betfair/safe_strategy/execution.py	1070	spostata	1286	use_flumine, gate_reason = _gate(event_id, db=db, mode=mode, params=params, now=now)
+Betfair/safe_strategy/execution.py	1095	spostata	1311	if mode == "paper":
+Betfair/safe_strategy/execution.py	1163	spostata	1379	if tradotto_rest is not None:
+Betfair/safe_strategy/execution.py	1381	spostata	1607	def reconcile_decision(trade: dict[str, Any], current_orders: list[dict],
+Betfair/safe_strategy/porta_ordini.py	75	stessa_riga	75	PORTA_CALCIO = 47331
+Betfair/safe_strategy/porta_ordini.py	76	stessa_riga	76	PORTA_TENNIS = 47332
+Betfair/safe_strategy/scanner.py	535	stessa_riga	535	def books_period_calcio(any_inplay: bool, any_hot: bool) -> float:
+Betfair/safe_strategy/service.py	74	stessa_riga	74	_LOCK_PORT = int(os.getenv("SAFE_STRATEGY_LOCK_PORT", "47315"))
+Betfair/safe_strategy/service.py	120	stessa_riga	120	_CATALOGUE_TTL_SEC = 300.0
+Betfair/safe_strategy/service.py	132	stessa_riga	132	_SCORES_PERIOD_SEC = 2.0
+Betfair/safe_strategy/service.py	136	stessa_riga	136	_TIMELINE_PERIOD_SEC = 30.0
+Betfair/safe_strategy/service.py	159	stessa_riga	159	_PUBLISH_MIN_INTERVAL_SEC = 2.5
+Betfair/safe_strategy/service.py	183	stessa_riga	183	_MAX_MARKETS = 1000
+Betfair/safe_strategy/service.py	189	stessa_riga	189	_CATALOGUE_PAST_H = 6
+Betfair/safe_strategy/service.py	223	stessa_riga	223	_STREAM_PRICE_MAX_AGE_SEC = 20.0
+Betfair/safe_strategy/service.py	431	stessa_riga	431	class Scanner:
+Betfair/safe_strategy/service.py	715	stessa_riga	715	def _aggiungi_esposti_mancanti(self, sport: str, metas: Dict[str, Dict[str, Any]],
+Betfair/safe_strategy/service.py	1672	stessa_riga	1672	def poll_books(self, sport: str, ids: List[str]) -> None:
+Betfair/safe_strategy/service.py	1945	stessa_riga	1945	ids = scan_db.list_mike_followed_event_ids()
+Betfair/safe_strategy/service.py	1951	stessa_riga	1951	_ESPOSIZIONI_TTL_S = 10.0
+Betfair/safe_strategy/service.py	2015	stessa_riga	2015	def _eventi_esposti(self, sport: Optional[str] = None,
+Betfair/safe_strategy/service.py	2457	stessa_riga	2457	ch = _lc.start_channel(porta, "safe-scan", solo_lettura=True)
+Betfair/safe_strategy/service.py	2847	stessa_riga	2847	scan_db.upsert_scan_rows(rows)
+Betfair/safe_strategy/service.py	2920	stessa_riga	2920	"ips": dict(self.ips_chiamate),
+Betfair/safe_strategy/service.py	2930	stessa_riga	2930	scan_db.upsert_status(payload)
+Betfair/safe_strategy/service.py	2933	stessa_riga	2933	def _scarica_avvisi(self) -> int:
+Betfair/safe_strategy/service.py	3338	stessa_riga	3338	time.sleep(0.5)
+Betfair/safe_strategy/stream.py	81	stessa_riga	81	DEFAULT_MAX_CONNECTIONS = 4
+Betfair/safe_strategy/stream.py	82	stessa_riga	82	DEFAULT_MARKETS_PER_CONN = 180
+Betfair/safe_strategy/stream.py	265	stessa_riga	265	def _subscribe(self, stream: Any, ids: List[str]) -> None:
+Betfair/safe_strategy/stream.py	418	stessa_riga	418	stream = self.client.streaming.create_stream(listener=listener)
+Betfair/stream/auth.py	59	stessa_riga	59	client = betfairlightweight.APIClient(
+Betfair/stream/auth.py	70	stessa_riga	70	client.login()
+Betfair/stream/auth.py	100	stessa_riga	100	# (``SESSION_TIMEOUT[italy]`` di betfairlightweight; per Betfair le chiamate API
+Betfair/stream/backtest/banco_comune.py	6	stessa_riga	6	raw registrato        `_live_raw/<id>/<id>.raw.jsonl` (stream NATIVO Betfair)
+Betfair/stream/backtest/banco_comune.py	217	spostata	248	class DbMemoria:
+Betfair/stream/backtest/banco_comune.py	499	spostata	530	class MercatoFlumine:
+Betfair/stream/backtest/banco_comune.py	620	spostata	651	def place_order_live(self, *, market_id: str, selection_id: int, price: float,
+Betfair/stream/backtest/banco_comune.py	1905	spostata	1968	class MotoreReplay:
+Betfair/stream/backtest/banco_comune.py	2828	spostata	3023	quadro = FlumineSimulation(client=cliente_simulato())
+Betfair/stream/backtest/certifica.py	1	stessa_riga	1	"""CERTIFICA — il punto d'ingresso UNICO per certificare un bot sul banco.
+Betfair/stream/backtest/certifica.py	15	stessa_riga	15	Il referto NON misura il profitto: misura la CONDOTTA. Per ogni controllo dice
+Betfair/stream/backtest/porta_banco.py	446	stessa_riga	446	self.motore = MO.MotoreOrdini(
+Betfair/stream/backtest/registro_bot.py	188	spostata	217	_REGISTRO: Tuple[BotRegistrato, ...] = (
+Betfair/stream/backtest/registro_bot.py	352	spostata	401	REGISTRO: Dict[str, BotRegistrato] = {b.nome: b for b in _REGISTRO}
+Betfair/stream/backtest/trasporto.py	1	stessa_riga	1	"""trasporto.py - IL TRASPORTO DELL'ORDINE nel banco: coda di oggi o canale (F4).
+Betfair/stream/canale_bot.py	82	stessa_riga	82	# Mike (47333)
+Betfair/stream/canale_bot.py	135	stessa_riga	135	PORTA_TENNIS_BOT = 47337
+Betfair/stream/canale_bot.py	142	stessa_riga	142	PORTA_SCALPER = 47338
+Betfair/stream/config_stream.py	229	stessa_riga	229	LIVE_ORDER_QUEUE_POLL_SEC: float = float(os.getenv("LIVE_ORDER_QUEUE_POLL_SEC", "1.0"))
+Betfair/stream/config_stream.py	332	stessa_riga	332	RECONCILE_POLL_SEC: float = float(os.getenv("LIVE_RECONCILE_POLL_SEC", "30.0"))
+Betfair/stream/daily_stop_worker.py	421	stessa_riga	421	low._refresh_settings(sb)
+Betfair/stream/esiti_ordini_canale.py	82	stessa_riga	82	PORTA = 47331
+Betfair/stream/live_order_build.py	179	spostata	193	def min_stake_rules(
+Betfair/stream/live_order_build.py	594	spostata	616	def verdetto_minimi(
+Betfair/stream/live_order_build.py	813	spostata	842	verdict = min_stake_rules(jurisdiction, side_l, tick_price, raw_size)
+Betfair/stream/live_order_worker.py	61	stessa_riga	61	_TABLE = "betfair_live_order_requests"
+Betfair/stream/live_order_worker.py	250	stessa_riga	250	def _is_paper_client(client: Any) -> bool:
+Betfair/stream/live_order_worker.py	276	stessa_riga	276	def _client_for_mode(flumine: Any, row_mode: str, proc_mode: Optional[str] = None) -> Any:
+Betfair/stream/live_order_worker.py	498	stessa_riga	498	res = sb.rpc("get_live_settings", {}).execute()
+Betfair/stream/live_order_worker.py	1273	stessa_riga	1273	ok = market.place_order(
+Betfair/stream/live_order_worker.py	1423	stessa_riga	1423	def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any
+Betfair/stream/live_order_worker.py	3673	spostata	3679	def _dispatch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any
+Betfair/stream/live_order_worker.py	3720	spostata	3726	sb.table(_TABLE)
+Betfair/stream/live_order_worker.py	3811	spostata	3817	_db_target = _order_poll_target() or (1.0 if _lc.channel_active() else None)
+Betfair/stream/live_order_worker.py	3846	spostata	3852	sb.table(_TABLE)
+Betfair/stream/local_channel.py	68	stessa_riga	68	ORIGINI_APP = frozenset({"http://127.0.0.1:47330", "http://localhost:47330"})
+Betfair/stream/local_channel.py	143	stessa_riga	143	PREFISSO_COMANDO = "/comando/"
+Betfair/stream/local_channel.py	296	stessa_riga	296	async with serve(self._handler, "127.0.0.1", self.port,
+Betfair/stream/local_channel.py	325	stessa_riga	325	def _token_valido(self, presentato: Optional[str]) -> bool:
+Betfair/stream/local_channel.py	425	stessa_riga	425	if method in _METODI_CHE_ESEGUONO and ws not in self._autorizzati:
+Betfair/stream/motore_ordini.py	801	stessa_riga	801	self.canale.set_su_comando(self.sveglia)
+Betfair/stream/motore_ordini.py	1071	stessa_riga	1071	mode = piano["mode"]
+Betfair/stream/motore_ordini.py	1312	stessa_riga	1312	verdetto = LB.verdetto_minimi(
+Betfair/stream/motore_ordini.py	1489	spostata	1506	with LOW.LUCCHETTO_ORDINI:
+Betfair/stream/odds_http.py	28	stessa_riga	28	ODDS_HTTP_PORT = int(os.getenv("LIVE_ODDS_HTTP_PORT", "8787"))
+Betfair/stream/reconcile_worker.py	96	stessa_riga	96	_ACCOUNT_SYNC_INTERVAL_SEC = 20.0
+Betfair/stream/reconcile_worker.py	287	stessa_riga	287	lambda fr=from_record: session.context_api_client.betting.list_current_orders(
+Betfair/stream/risk_engine_worker.py	557	stessa_riga	557	sb.table(_TABLE).select("*").eq("status", "triggered").eq("mode", mode_l)
+Betfair/stream/risk_engine_worker.py	1096	stessa_riga	1096	sb.table(_TABLE).select("*").eq("status", "cancelled").eq("mode", mode_l)
+Betfair/stream/risk_engine_worker.py	1173	stessa_riga	1173	sb.table(_TABLE).select("*").eq("status", "armed").eq("mode", mode_l)
+Betfair/stream/risk_engine_worker.py	1192	stessa_riga	1192	if not low._throttled("risk_settings_refresh", 1.0):
+Betfair/stream/runner.py	745	stessa_riga	745	_lc.publish("ladder", row)
+Betfair/stream/runner.py	1001	stessa_riga	1001	follows = db.list_pending_follows()
+Betfair/stream/runner.py	1203	spostata	1254	_RUNNER_LOCK_PORT = int(os.getenv("LIVE_RUNNER_LOCK_PORT", "47311"))
+Betfair/stream/runner.py	1539	spostata	1576	db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=heartbeat_mode())
+Betfair/stream/runner.py	2106	spostata	2161	order_stream=True,
+Betfair/stream/runner.py	2408	spostata	2463	def _costruisci_motore(ch: Any) -> Any:
+Betfair/stream/runner.py	2585	spostata	2640	ch = _lc.start_channel(int(os.getenv("LIVE_LOCAL_WS_PORT", "47331")), "calcio")
+Betfair/stream/runner.py	2747	spostata	2802	# la sessione JSON-RPC (rest) è tenuta viva dal
+Betfair/stream/runner.py	2805	spostata	2860	market_filter=streaming_market_filter(market_ids=mercati_frammento0),
+Betfair/stream/runner.py	2850	spostata	2905	if modo_client == "LIVE":
+Betfair/stream/runner.py	2944	spostata	2969	framework.add_worker(BackgroundWorker(
+Betfair/stream/scalper/scalper_bot.py	69	TESTO_CAMBIATO_O_SPARITO		MIN_STAKE: float = 2.0
+Betfair/stream/scalper/scalper_bot.py	2462	spostata	2924	esito = market.place_order(order)
+Betfair/stream/scalper/scalper_service.py	43	stessa_riga	43	POLL_S = 3.0
+Betfair/stream/scalper/scalper_service.py	75	stessa_riga	75	r = self.sb.table("scalper_control").select("*").in_(
+Betfair/stream/scalper/scalper_service.py	94	stessa_riga	94	r = self.sb.table(TABELLA_SERVIZIO).select("*").eq("id", 1).limit(1).execute()
+Betfair/stream/scalper/scalper_service.py	110	stessa_riga	110	r = (self.sb.table("safe_strategy_scan")
+Betfair/stream/scalper/scalper_service.py	597	spostata	607	ch = _lc.start_channel(porta, "scalper", solo_lettura=True)
+Betfair/stream/scalper/scalper_service.py	663	spostata	705	return subprocess.Popen(
+Betfair/stream/scalper/scalper_service.py	813	spostata	855	int(os.getenv("SCALPER_SVC_LOCK_PORT", "47314")), "scalper-svc")
+Betfair/stream/scalper/scalper_session.py	448	spostata	522	cur = trading.betting.list_current_orders(market_ids=[mid])
+Betfair/stream/scalper/scalper_session.py	1085	spostata	1404	trading = build_client(login=True)
+Betfair/stream/scalper/scalper_session.py	1187	spostata	1510	market_filter=filters.streaming_market_filter(
+Betfair/stream/scores/scan_feed.py	43	stessa_riga	43	DEFAULT_MAX_AGE_SEC = 15.0
+Betfair/stream/scores/scan_feed.py	69	stessa_riga	69	DEFAULT_CACHE_TTL_SEC = 1.0
+Betfair/stream/scores/scan_feed.py	138	stessa_riga	138	client = CS.ClientScan(CS.porta_scan(), CS.CacheScan())
+Betfair/stream/scores/scan_feed.py	407	stessa_riga	407	res = sb.table(STATUS_TABLE).select("id,payload,updated_at").eq("id", "scanner").execute()
+Betfair/stream/scores/scan_feed.py	524	stessa_riga	524	def get_score(self, event_id: str) -> Optional[ScoreSnapshot]:
+Betfair/stream/tennis_live/canale_bot_tennis.py	107	stessa_riga	107	from websockets.sync.client import connect
+Betfair/stream/tennis_live/guardie_tennis.py	109	stessa_riga	109	class MercatoConClient:
+Betfair/stream/tennis_live/tennis_bot_service.py	46	stessa_riga	46	ENSURE_POLL_SEC = 15.0
+Betfair/stream/tennis_live/tennis_bot_service.py	170	stessa_riga	170	controls = tennis_db.list_tennis_bot_controls(statuses=_ACTIVE_STATUSES)
+Betfair/stream/tennis_live/tennis_bot_service.py	258	stessa_riga	258	ch = _lc.start_channel(porta, "tennis-bot", solo_lettura=True)
+Betfair/stream/tennis_live/tennis_bot_service.py	436	stessa_riga	436	desiderato = stato_desiderato(db.list_tennis_bot_services())
+Betfair/stream/tennis_live/tennis_bot_service.py	676	stessa_riga	676	db.set_tennis_bot_service_state(
+Betfair/stream/tennis_live/tennis_bot_service.py	1128	spostata	1138	if args.bridge_only:
+Betfair/stream/tennis_live/tennis_db.py	152	stessa_riga	152	resp = (sb.table("safe_strategy_scan")
+Betfair/stream/tennis_live/tennis_runner.py	157	spostata	158	api_client, order_stream=True, paper_trade=False, min_bet_validation=False
+Betfair/stream/tennis_live/tennis_runner.py	469	spostata	483	market_filter=streaming_market_filter(market_ids=list(market_ids or [market_id])),
+Betfair/stream/tennis_live/tennis_runner.py	1506	spostata	1580	_STREAM_KEEPALIVE_SEC = float(os.getenv("TENNIS_STREAM_KEEPALIVE_SEC", "480"))
+Betfair/stream/tennis_live/tennis_runner.py	1975	spostata	2049	_TENNIS_LOCK_PORT = int(os.getenv("TENNIS_RUNNER_LOCK_PORT", "47312"))
+Betfair/stream/tennis_live/tennis_runner.py	2986	spostata	3157	_ch = _lc.start_channel(int(os.getenv("TENNIS_LOCAL_WS_PORT", "47332")), "tennis")
+Betfair/stream/tennis_live/tennis_runner.py	3012	spostata	2860	follows = tennis_db.list_pending_tennis_follows()
+Betfair/stream/tests/test_contratto_strada_unica_2026_09_25.py	163	stessa_riga	163	_CHIAMANTI_AUTORIZZATI: Dict[str, _Autorizzato] = {
+Betfair/stream/tests/test_contratto_strada_unica_2026_09_25.py	278	spostata	285	_STRADE_AUDIT = frozenset({"S1", "S2", "S2t", "S3a", "S3b", "S4a", "S4b"})
+Betfair/stream/trading/controls.py	96	stessa_riga	96	res = sb.rpc("get_live_settings", {}).execute()
+Betfair/stream/trading/minimi_it.py	30	spostata	46	IT_MIN_BACK = 1.00
+Betfair/stream/trading/minimi_it.py	32	spostata	48	IT_MIN_LAY = 1.00
+Betfair/stream/trading/minimi_it.py	34	spostata	50	IT_FLOOR_LEGGE = 0.50
+Betfair/stream/trading/minimi_it.py	56	spostata	76	ATTORI_CON_TRADUZIONE: frozenset = frozenset()
+Betfair/stream/watchdog.py	65	stessa_riga	65	_DEFAULT_TARGET = "Betfair.stream.runner"
+Betfair/stream/watchdog.py	82	stessa_riga	82	if returncode == 0:
+Betfair/stream/watchdog.py	84	stessa_riga	84	if returncode == EXIT_PLANNED_RESTART:
+Betfair/stream/watchdog.py	88	stessa_riga	88	if uptime_sec < lock_grace_sec:
+Betfair/stream/watchdog.py	93	stessa_riga	93	def next_backoff(consecutive_crashes: int, base: float = 10.0, cap: float = 300.0) -> floa
+Betfair/stream/watchdog.py	105	stessa_riga	105	def should_restart(restart_ts: List[float], now: float, max_per_hour: int) -> bool:
+Betfair/stream/watchdog.py	122	stessa_riga	122	def deve_scrivere_battito(target: str, override: Optional[str] = None) -> bool:
+Betfair/stream/watchdog.py	144	stessa_riga	144	def _db_alert(level: str, msg: str) -> None:
+Betfair/stream/watchdog.py	148	stessa_riga	148	db.insert_alert(level, _ALERT_CODE, msg)
+Betfair/stream/watchdog.py	248	stessa_riga	248	max_per_hour = int(_env_float("WATCHDOG_MAX_RESTARTS_PER_HOUR", 5))
+Betfair/stream/watchdog.py	249	stessa_riga	249	backoff_base = _env_float("WATCHDOG_BACKOFF_BASE_SEC", 10.0)
+Betfair/stream/watchdog.py	252	stessa_riga	252	hb_sec = _env_float("WATCHDOG_HEARTBEAT_SEC", 30.0) or 30.0
+Betfair/stream/watchdog.py	289	stessa_riga	289	if esito == "clean":
+Betfair/stream/watchdog.py	298	stessa_riga	298	if esito == "planned":
+Betfair/stream/watchdog.py	307	stessa_riga	307	if esito == "lock":
+Betfair/stream/watchdog.py	314	stessa_riga	314	# CRASH → notifica forte + riavvio con backoff (entro il tetto orario)
+Betfair/stream/watchdog.py	317	stessa_riga	317	if not should_restart(restart_ts, now(), max_per_hour):
+betfair_tennis_odds.py	53	stessa_riga	53	def _list_catalogue(c: Any, event_ids: List[str]) -> List[Dict[str, Any]]:
+betfair_tennis_odds.py	204	stessa_riga	204	raw_evs = c.list_events([TENNIS_EVENT_TYPE_ID], to_date=to_date_str, from_date=from_str) o
+betfair_tennis_odds.py	244	stessa_riga	244	for i in range(0, len(mids), BATCH):
+betfair_tennis_odds.py	274	stessa_riga	274	sb.table("tennis_markets").delete().eq("run_date", today).execute()
+betfair_tennis_odds.py	278	stessa_riga	278	sb.table("tennis_markets").upsert(
+betfair_tennis_odds.py	304	stessa_riga	304	_lock = acquire_single_instance_lock(  # noqa: F841 - vita = processo
+db_client.py	60	stessa_riga	60	"""Accende il profilo bot per TUTTO il processo (ogni thread, anche i
+db_client.py	74	riga_vuota_a_base		
+desktop/main.js	25	spostata	27	const UI_PORT = 47330;
+desktop/main.js	59	spostata	61	const LOCAL_CHANNEL_TOKEN = crypto.randomBytes(32).toString('hex');
+desktop/main.js	213	spostata	215	server.listen(UI_PORT, '127.0.0.1', () => {
+desktop/main.js	351	spostata	353	function spawnRunner(label, args) {
+desktop/main.js	357	TESTO_CAMBIATO_O_SPARITO		const env = {
+desktop/main.js	366	TESTO_CAMBIATO_O_SPARITO		LIVE_LADDER_PUBLISH_SEC: '0.3',
+desktop/main.js	390	spostata	374	const child = spawn(PYTHON, args, {
+desktop/main.js	435	spostata	419	spawnRunner('runner-calcio', ['-m', 'Betfair.stream.watchdog']);
+desktop/main.js	436	spostata	420	spawnRunner('runner-tennis', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.stream.tenni
+desktop/main.js	443	spostata	427	spawnRunner('scalper-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.stream.sca
+desktop/main.js	453	spostata	437	spawnRunner('tennis-bot-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.stream.
+desktop/main.js	459	spostata	443	spawnRunner('safe-strategy-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.safe
+desktop/main.js	466	spostata	450	spawnRunner('omega-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.omega.omega_
+desktop/main.js	472	spostata	456	spawnRunner('safe-strategy-bot', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.safe_str
+desktop/main.js	474	spostata	458	// il feed unico dello scanner (ramo pre-KO O/U: SAFE_PRE_KO_OU_HOURS nel .env),
+desktop/main.js	477	spostata	461	spawnRunner('mike-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.mike.service'
+desktop/main.js	484	spostata	476	if (tennisOddsChild && tennisOddsChild.exitCode === null) {
+desktop/main.js	488	spostata	480	tennisOddsChild = spawnRunner('tennis-odds', ['betfair_tennis_odds.py']) || null;
+desktop/main.js	490	spostata	482	runTennisOdds();
+desktop/main.js	491	spostata	483	setInterval(runTennisOdds, 30 * 60 * 1000);
+desktop/main.js	497	spostata	489	function killChildren() {
+desktop/main.js	535	spostata	527	async function orderedShutdown() {
+desktop/main.js	540	spostata	532	const p = arrestoPercorso(repoRoot);
+desktop/main.js	903	spostata	895	win.loadURL(`http://127.0.0.1:${UI_PORT}/board`);
+desktop/preload.js	21	stessa_riga	21	const token = tokenDaArgv(process.argv);
+frontend/src/components/controlroom/useControlRoom.ts	208	spostata	210	export const RICARICA_MS = 30_000;
+frontend/src/components/live/ScalperPanel.tsx	57	spostata	67	export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
+frontend/src/components/mike/useMike.ts	31	spostata	33	const POLL_MS = 15_000;
+frontend/src/components/safestrategy/useSafeBot.ts	26	spostata	28	const POLL_MS = 15_000;
+frontend/src/lib/liveOrders.ts	133	stessa_riga	133	const { data, error } = await supabase.rpc('request_betfair_live_order', { p: { ...cmd, cl
+frontend/src/lib/localChannel.ts	62	stessa_riga	62	const PORTS: Record<LocalSport, number> = {
+frontend/src/lib/localChannel.ts	83	stessa_riga	83	export function tokenCanale(): string | null {
+frontend/src/lib/localChannel.ts	338	stessa_riga	338	export function svegliaBot(bot: Bot, motivo: MotivoSveglia): void {
+frontend/src/lib/localTransport.ts	441	stessa_riga	441	if (!connected() || !store.channel.puoComandare()) return dbApi.send(cmd);
+frontend/src/lib/localTransport.ts	445	stessa_riga	445	const res = await store.channel.request('order', {
+frontend/src/lib/mike.ts	2228	stessa_riga	2228	const { data, error } = await supabase.rpc('mike_activate', { p_mode: mode, p_params: (par
+frontend/src/lib/mike.ts	2248	stessa_riga	2248	const { data, error } = await supabase.rpc('get_mike_state', {});
+frontend/src/lib/mike.ts	2345	stessa_riga	2345	export const MIKE_REALTIME_TABLES = [
+frontend/src/lib/omega.ts	1311	spostata	1317	const { data, error } = await supabase.rpc('omega_activate', {
+frontend/src/lib/safeBot.ts	1147	stessa_riga	1147	const { data, error } = await supabase.rpc('safe_activate', {
+frontend/src/lib/safeBot.ts	1177	stessa_riga	1177	const { data, error } = await supabase.rpc('get_safe_state', {});
+frontend/src/lib/scalper.ts	145	spostata	148	const { data, error } = await supabase.rpc('scalper_activate', {
+frontend/src/lib/tennis.ts	876	stessa_riga	876	const { data, error } = await supabase.rpc('tennis_bot_arm', {
+frontend/src/pages/Omega.tsx	272	spostata	274	const poll = setInterval(() => { reload().catch(onReloadError); }, 15_000);
+start_order_server.py	24	stessa_riga	24	from Betfair.stream.odds_http import start_odds_http_server

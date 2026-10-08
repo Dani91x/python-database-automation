@@ -1,0 +1,73 @@
+gruppo A (nessun riferimento secondo s02): ZERO citazioni per stringa=23, CITATO=3
+gruppo B (solo __main__ o stringa): ZERO=41, CITATO=32
+
+-- gruppo A con ZERO citazioni (morti certi):
+   Ai Engine/ai_engine/analysis/advanced.py
+   Ai Engine/ai_engine/models/voting.py
+   Betfair/cleanup_reset.py
+   _certify_betfair_full.py
+   analyze_recovery.py
+   analyze_threshold.py
+   calibration_analysis.py
+   check_gh.py
+   laboratorio/scalper_lab/grid_strategy.py
+   refresh_dashboard.py
+   report_mm.py
+   simulate_recovery_forward.py
+   tactical_engine/_check_fixpred.py
+   tactical_engine/_inspect_mismatch.py
+   tmp_analysis.py
+   tmp_analysis2.py
+   tmp_predict_today.py
+   tmp_smoke_stack.py
+   tmp_today_predictions.py
+   tmp_validate_league.py
+   tmp_validate_predict.py
+   update_dashboard_only.py
+   value_engine/generate_battery.py
+-- gruppo A CITATI (da leggere):
+   Ai Engine/ai_engine/analysis/summary.py  [130]  Ai Engine/ai_engine/analysis/advanced.py:14; Ai Engine/ai_engine/backtest.py:168; Ai Engine/ai_engine/backtest.py:360
+   Ai Engine/ai_engine/models/trainer.py  [7]  Ai Engine/ai_engine/ensemble_trainer.py:2; Ai Engine/ai_engine/feature_pipeline.py:725; Ai Engine/ai_engine/feature_pipeline.py:775
+   parse.py  [309]  Betfair/stream/local_channel.py:32; Betfair/stream/odds_http.py:23; Betfair/stream/scalper/genera_atlante.py:49
+-- gruppo B con ZERO citazioni (script con __main__ mai richiamati da nessuno):
+   Ai Engine/ai_engine/audit_nulls.py
+   Ai Engine/ai_engine/bss_monitor.py
+   Ai Engine/ai_engine/evaluate_holdout.py
+   Ai Engine/ai_engine/generate_fixture_report.py
+   Ai Engine/backtest_ml.py
+   Betfair/stream/tennis_scalper/record_tennis.py
+   Betfair/stream/tennis_scalper/tune_tennis.py
+   Prediction/analyze_sweet_spot.py
+   Prediction/backfill_historical_analysis.py
+   _certify_betfair.py
+   _certify_delay_context.py
+   _certify_direction.py
+   _certify_personal_report.py
+   _certify_signal_context.py
+   _league_eval.py
+   _stack_eval.py
+   admin_reset_password.py
+   backfill_poisson_calibrated.py
+   certify_backtest_strategy.py
+   cleanup_models.py
+   compress_models.py
+   football_data_scraper/fix_snapshot_time.py
+   laboratorio/scalper_lab/bt_theta.py
+   laboratorio/scalper_lab/exp_families.py
+   laboratorio/scalper_lab/validate_synth.py
+   load_poisson_calibration_to_db.py
+   market_intelligence/backtest_audit.py
+   missing_fixtures_backfill.py
+   reset_ai_models.py
+   sanity_check.py
+   sql/_build_wc_xlsx_2013.py
+   sql/_cert_wc_fetch.py
+   sql/_cert_wc_full.py
+   sql/_verify_delays_math.py
+   tactical_engine/_verify_data_worldcup.py
+   tactical_engine/run_worldcup.py
+   tmp_smoke_ml_fixes.py
+   tmp_smoke_poisson_fixes.py
+   tmp_train_today.py
+   valida_motore_poisson.py
+   valida_ventaglio.py

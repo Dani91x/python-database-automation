@@ -1,0 +1,25 @@
+porta  n_def  n_cit  definizioni (file:riga)
+47311    1     0  Betfair/stream/runner.py:1254
+47312    4     2  Betfair/omega/omega_service.py:8520; Betfair/safe_strategy/bot_service.py:139; Betfair/stream/tennis_live/tennis_bot_service.py:1104; Betfair/stream/tennis_live/tennis_runner.py:2049
+47313    2     2  Betfair/omega/omega_service.py:8520; Betfair/safe_strategy/bot_service.py:139
+47314    2     1  Betfair/stream/scalper/run_scalper_live.py:52; Betfair/stream/scalper/scalper_service.py:855
+47315    1     1  Betfair/safe_strategy/service.py:74
+47316    1     1  betfair_tennis_odds.py:305
+47318    2     2  Betfair/safe_strategy/bot_service.py:139; Betfair/safe_strategy/bot_service.py:139
+47319    1     2  Betfair/mike/config.py:32
+47330    1     6  desktop/main.js:27
+47331    5    72  Betfair/safe_strategy/porta_ordini.py:75; Betfair/stream/esiti_ordini_canale.py:82; Betfair/stream/runner.py:2640; frontend/src/components/controlroom/testata/TesseraRunner.tsx:32; frontend/src/pages/Board.tsx:122
+47332    5    61  Betfair/safe_strategy/porta_ordini.py:76; Betfair/stream/tennis_live/canale_bot_tennis.py:69; Betfair/stream/tennis_live/tennis_runner.py:3157; frontend/src/components/controlroom/testata/TesseraRunner.tsx:32; frontend/src/pages/Board.tsx:122
+47333    1    21  Betfair/mike/service.py:6784
+47334    1    18  Betfair/omega/omega_service.py:8587
+47335    1    18  Betfair/safe_strategy/bot_service.py:10569
+47336    3    39  Betfair/safe_strategy/canale_scan.py:69; Betfair/safe_strategy/service.py:91; Betfair/stream/sveglia_canale.py:68
+47337    1    29  Betfair/stream/canale_bot.py:135
+47338    1    17  Betfair/stream/canale_bot.py:142
+47972    0     5  
+47973    0     3  
+47977    0     1  
+47979    0     3  
+47980    0     1  
+47981    0     1  
+47999    0     1  

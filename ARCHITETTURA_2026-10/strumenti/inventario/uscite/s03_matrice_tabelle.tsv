@@ -1,0 +1,103 @@
+tabella	definita_in	n_prod	n_frontend	n_test	n_strum	n_audit	prod_legge	prod_scrive	prod_op_non_determinata	frontend_legge	frontend_scrive
+<dinamico:LOW._TABLE>	-	0	0	1	0	0					
+<dinamico:MU.TABELLA_ORDINI_CONTO>	-	1	0	0	0	0	Betfair/stream/scalper/scalper_session.py:962				
+<dinamico:name>	-	1	0	0	0	0			Betfair/stream/live_order_worker.py:3288		
+<dinamico:nome>	-	2	0	1	0	0		season_aggregates.py:229; season_aggregates.py:238			
+<dinamico:t>	-	1	0	0	1	1		per_fixture_backfill.py:219			
+<dinamico:tab>	-	0	0	0	5	1					
+<dinamico:tabella>	-	7	0	1	3	1	Betfair/mike/db.py:230; Betfair/mike/db.py:599; Betfair/safe_strategy/db.py:473; Betfair/safe_strategy/db.py:480 (+2)	Betfair/stream/db.py:1114			
+<dinamico:table>	-	14	0	2	1	1	Ai Engine/ai_engine/db_adapter.py:231; Betfair/omega/omega_db.py:181; Betfair/stream/db.py:564; Prediction/backfill_historical_analysis.py:38 (+4)	Betfair/stream/db.py:572; Betfair/stream/db.py:596; football_data_scraper/backfill.py:342; merge_engine_signals.py:215 (+2)			
+ai_model_registry	-	12	0	0	0	0	Ai Engine/ai_engine/predict_fixture.py:512; Betfair/betfair_report_manager.py:1224; Betfair/betfair_report_manager.py:1319; Betfair/betfair_report_manager.py:1392 (+3)	Ai Engine/ai_engine/seriea_model_export.py:686; Ai Engine/ai_engine/seriea_model_export.py:689; Betfair/betfair_report_manager.py:1299; cleanup_models.py:31 (+1)	cloud_retrain_shard.py:77		
+analytics_bets	migrations	1	0	0	0	0	_certify_direction.py:174				
+analytics_decisions	migrations	1	0	0	0	0	certify_backtest_strategy.py:103				
+analytics_signals	migrations	6	0	1	0	0	_certify_direction_report.py:85; enrich_analytics_snapshots.py:265; enrich_analytics_snapshots.py:485; fix_storico_prob.py:34	build_analytics_signals.py:402; fix_storico_prob.py:59			
+analytics_snap_staging	migrations	2	0	1	0	0		enrich_analytics_snapshots.py:293; enrich_analytics_snapshots.py:336			
+api_call_log	-	6	0	0	0	0	api_quota.py:144; api_quota.py:149; api_quota.py:169; api_quota.py:177	logger.py:86; logger.py:91			
+api_coverage_by_season	-	7	0	0	0	1	Prediction/today_predictions_backfill.py:754; Prediction/today_predictions_backfill.py:796; leagues_mapper.py:96; per_fixture_backfill.py:104 (+1)	leagues_mapper.py:325; leagues_mapper.py:350			
+bet_features	migrations	4	0	1	0	0	_league_eval.py:43; _stack_eval.py:42; build_direzione.py:79; direzione.py:24				
+betfair_live_account	migrations	3	1	0	0	0		Betfair/stream/db.py:1004; Betfair/stream/db.py:1055; Betfair/stream/db.py:1086		frontend/src/lib/liveOrders.ts:981	
+betfair_live_audit	migrations	2	0	1	0	0		Betfair/stream/daily_stop_worker.py:391; Betfair/stream/live_order_worker.py:922			
+betfair_live_heartbeat	migrations	4	2	0	0	0	Betfair/mike/db.py:657; Betfair/omega/omega_db.py:628; Betfair/safe_strategy/bot_db.py:997	Betfair/stream/db.py:1127		frontend/src/lib/liveOrders.ts:1034; frontend/src/lib/safeBot.ts:2183	
+betfair_live_journal	migrations	2	0	0	0	0		Betfair/stream/db.py:988; Betfair/stream/live_order_worker.py:1134			
+betfair_live_order_requests	migrations	24	0	0	0	0	Betfair/mike/db.py:669; Betfair/mike/db.py:676; Betfair/omega/omega_db.py:648; Betfair/omega/omega_db.py:658 (+8)	Betfair/mike/db.py:683; Betfair/omega/omega_db.py:674; Betfair/safe_strategy/bot_db.py:1029; Betfair/stream/db.py:1165 (+8)			
+betfair_live_orders	migrations	15	0	0	0	0	Betfair/mike/db.py:233; Betfair/mike/db.py:691; Betfair/omega/omega_db.py:687; Betfair/safe_strategy/bot_db.py:1040 (+6)	Betfair/stream/db.py:1139; Betfair/stream/db.py:819; Betfair/stream/db.py:828; Betfair/stream/reconcile_worker.py:380 (+1)			
+betfair_live_positions	migrations	5	0	0	0	0	Betfair/stream/db.py:451; Betfair/stream/db.py:481	Betfair/stream/db.py:1140; Betfair/stream/db.py:940; Betfair/stream/db.py:945			
+betfair_live_risk_rules	migrations	7	0	0	0	0	Betfair/stream/reconcile_worker.py:1264; Betfair/stream/risk_engine_worker.py:1096; Betfair/stream/risk_engine_worker.py:1173; Betfair/stream/risk_engine_worker.py:557 (+2)	Betfair/stream/risk_engine_worker.py:189			
+betfair_live_risk_state	migrations	1	1	0	0	0		Betfair/stream/db.py:978		frontend/src/lib/liveOrders.ts:795	
+betfair_live_settled	migrations	3	0	0	0	0	Betfair/stream/daily_stop_worker.py:250; Betfair/stream/db.py:425	Betfair/stream/db.py:963			
+betfair_live_xhedge	migrations	2	0	0	0	0	Betfair/stream/risk_engine_worker.py:1001	Betfair/stream/xhedge_worker.py:119			
+betfair_market_odds	migrations	7	0	0	3	0	Betfair/odds_refresh.py:224; Betfair/order_exec.py:161; _certify_betfair_full.py:13	Betfair/odds_refresh.py:254; Betfair/odds_refresh.py:257; betfair_full_odds.py:73; betfair_full_odds.py:94			
+betfair_order_requests	migrations	7	0	0	0	0	Betfair/order_worker.py:136; Betfair/order_worker.py:61	Betfair/order_worker.py:106; Betfair/order_worker.py:113; Betfair/order_worker.py:120; Betfair/order_worker.py:48 (+1)			
+betfair_refresh_requests	migrations	4	0	0	0	0	Betfair/refresh_worker.py:38	Betfair/refresh_worker.py:59; Betfair/refresh_worker.py:66; Betfair/refresh_worker.py:73			
+direction_pagella	migrations	4	0	0	0	0	_certify_direction.py:39; build_direzione.py:232	build_direzione.py:226; build_direzione.py:230			
+engine_signals	migrations	5	0	0	0	0	_certify_betfair.py:24; _certify_direction_report.py:103; _certify_direction_report.py:139; merge_engine_signals.py:101	migrations/backfill_engine_signals.py:278			
+fixture_detail_checks	migrations	1	0	0	0	1	season_gaps.py:445				
+fixture_predictions	-	72	6	5	2	5	AGGIORNA_CAMPO_db_json_analisi.py:134; Ai Engine/ai_engine/db_adapter.py:432; Ai Engine/ai_engine/serving_batch.py:60; Betfair/betfair_report_manager.py:302 (+48)	AGGIORNA_CAMPO_db_json_analisi.py:178; Ai Engine/ai_engine/predict_fixture.py:1087; Prediction/backfill_historical_analysis.py:120; Prediction/predictions_results_backfill.py:504 (+16)		frontend/src/components/dashboard/FixtureSelector.tsx:30; frontend/src/components/dashboard/MatchesList.tsx:157; frontend/src/lib/fixtureModels.ts:70 (+3)	
+hazard_atlas	migrations	0	0	0	0	1					
+injuries	-	2	0	0	0	0		injuries_backfill.py:209; injuries_backfill.py:259			
+leads	-	0	1	0	0	0					frontend/src/components/landing/AuthSection.tsx:74
+live_alerts	migrations	9	0	1	0	0		Betfair/stream/db.py:697; Betfair/stream/live_order_worker.py:1071; Betfair/stream/motore_ordini.py:2431; Betfair/stream/scalper/scalper_service.py:671 (+5)			
+live_backtest_requests	migrations	3	0	0	0	0	Betfair/stream/db.py:714	Betfair/stream/db.py:726; Betfair/stream/db.py:741			
+live_backtest_results	migrations	2	0	0	0	0		Betfair/stream/db.py:758; Betfair/stream/db.py:762			
+live_follow	migrations	23	1	2	0	0	Betfair/mike/db.py:651; Betfair/omega/omega_db.py:618; Betfair/safe_strategy/bot_db.py:989; Betfair/stream/auto_follow.py:385 (+11)	Betfair/stream/auto_follow.py:402; Betfair/stream/auto_follow.py:426; Betfair/stream/auto_follow.py:429; Betfair/stream/auto_follow.py:442 (+4)		frontend/src/lib/safeBot.ts:2195	
+live_ladder	migrations	1	1	0	0	0		Betfair/stream/db.py:682		frontend/src/lib/live.ts:621	
+live_markets	migrations	2	0	0	0	0	Betfair/stream/db.py:404	Betfair/stream/db.py:314			
+live_now	migrations	9	1	2	0	0	Betfair/omega/omega_db.py:595; Betfair/stream/db.py:513; Betfair/stream/live_order_worker.py:1105; Betfair/stream/scalper/scalper_session.py:1756 (+2)	Betfair/stream/db.py:348; Betfair/stream/db.py:362; Betfair/stream/db.py:528		frontend/src/lib/live.ts:140	
+live_run_log	migrations	1	0	0	0	0		Betfair/stream/db.py:644			
+live_signals	migrations	2	1	0	0	0	Betfair/stream/live_order_worker.py:999	Betfair/stream/db.py:662		frontend/src/lib/live.ts:560	
+match_events	-	3	0	0	1	4	build_analytics_signals.py:376; build_inplay_intensity.py:88; value_engine/calibrate.py:37				
+match_odds	-	5	0	1	0	4	football_data_scraper/backfill.py:102; market_intelligence/backtest_audit.py:124; market_intelligence/backtest_audit.py:138; market_intelligence/backtest_audit.py:149	football_data_scraper/fix_snapshot_time.py:45			
+match_team_stats	-	4	0	0	0	3	football_data_scraper/backfill.py:147; market_intelligence/audit.py:83; market_intelligence/edge_scorer.py:472; market_intelligence/signals.py:178				
+matches	-	40	0	3	3	6	Ai Engine/ai_engine/db_adapter.py:418; Betfair/betfair_report_manager.py:1246; Betfair/money_management.py:1399; Betfair/money_management.py:1522 (+34)	daily_yesterday_backfill.py:75; fixtures_backfill.py:135			
+mike_activity	migrations	1	0	0	1	1		Betfair/mike/db.py:76			
+mike_control	migrations	2	0	1	0	0	Betfair/mike/db.py:60	Betfair/mike/db.py:68			
+mike_events	migrations	6	0	5	2	1	Betfair/mike/db.py:108; Betfair/mike/db.py:117; Betfair/safe_strategy/db.py:307	Betfair/mike/db.py:141; Betfair/mike/db.py:164; Betfair/mike/db.py:169			
+mike_requests	migrations	5	1	0	0	0	Betfair/mike/db.py:463; Betfair/mike/db.py:490; Betfair/mike/db.py:533	Betfair/mike/db.py:509; Betfair/mike/db.py:516		frontend/src/lib/mike.ts:2301	
+mike_trades	migrations	8	0	0	1	1	Betfair/mike/db.py:192; Betfair/mike/db.py:202; Betfair/mike/db.py:211; Betfair/mike/db.py:264 (+2)	Betfair/mike/db.py:176; Betfair/mike/db.py:186			
+ml_post_calibration	-	5	0	0	0	0	Ai Engine/ai_engine/predict_fixture.py:386; compute_ml_post_calibration.py:123; compute_ml_post_calibration.py:256	compute_ml_post_calibration.py:244; compute_ml_post_calibration.py:259			
+model_performance	-	1	0	0	0	1		retrain_all_leagues.py:363			
+omega_activity	migrations	1	0	0	1	0		Betfair/omega/omega_db.py:63			
+omega_control	migrations	2	0	0	1	0	Betfair/omega/omega_db.py:50	Betfair/omega/omega_db.py:58			
+omega_daily_goal	migrations	1	0	0	0	0		Betfair/omega/omega_db.py:1045			
+omega_events	migrations	11	0	0	0	0	Betfair/omega/omega_db.py:486; Betfair/omega/omega_db.py:526; Betfair/omega/omega_db.py:564; Betfair/safe_strategy/bot_db.py:919	Betfair/omega/omega_db.py:1017; Betfair/omega/omega_db.py:303; Betfair/omega/omega_db.py:442; Betfair/omega/omega_db.py:446 (+3)			
+omega_manual_requests	migrations	7	0	0	0	0	Betfair/omega/omega_db.py:283; Betfair/omega/omega_db.py:373	Betfair/omega/omega_db.py:297; Betfair/omega/omega_db.py:323; Betfair/omega/omega_db.py:394; Betfair/omega/omega_db.py:402 (+1)			
+omega_market_snapshot	migrations	1	0	0	0	0		Betfair/omega/omega_db.py:482			
+omega_minute_league_counts	migrations	0	0	0	2	0					
+omega_minute_transitions	migrations	0	0	0	1	0					
+omega_missions	migrations	3	0	0	0	0	Betfair/omega/omega_db.py:699; Betfair/omega/omega_db.py:708	Betfair/omega/omega_db.py:717			
+omega_trades	migrations	10	0	0	1	0	Betfair/omega/omega_db.py:1031; Betfair/omega/omega_db.py:253; Betfair/omega/omega_db.py:722; Betfair/omega/omega_db.py:945 (+3)	Betfair/omega/omega_db.py:76; Betfair/omega/omega_db.py:86; Betfair/omega/omega_db.py:94			
+personal_trades	migrations	1	0	0	0	0		_certify_personal_report.py:325			
+personal_watchlist	migrations	2	0	0	0	0	Betfair/stream/db.py:114; Betfair/stream/watchlist.py:29				
+pg_available?	-	0	0	0	0	1					
+poisson_calibration	migrations	3	0	0	0	0	poisson_calibrator.py:100	generate_dynamic_cal.py:459; load_poisson_calibration_to_db.py:65			
+replay_bot_esiti	migrations	1	0	0	0	0		Betfair/stream/db.py:752			
+safe_strategy_activity	migrations	2	1	0	0	1	Betfair/safe_strategy/bot_db.py:436	Betfair/safe_strategy/bot_db.py:79		frontend/src/lib/safeBot.ts:1206	
+safe_strategy_control	migrations	2	0	0	0	0	Betfair/safe_strategy/bot_db.py:64	Betfair/safe_strategy/bot_db.py:74			
+safe_strategy_opportunities	migrations	3	1	0	0	0		Betfair/safe_strategy/bot_db.py:879; Betfair/safe_strategy/bot_db.py:891; Betfair/safe_strategy/bot_db.py:903		frontend/src/lib/safeBot.ts:1544	
+safe_strategy_requests	migrations	17	4	0	0	0	Betfair/safe_strategy/bot_db.py:606; Betfair/safe_strategy/bot_db.py:619; Betfair/safe_strategy/bot_db.py:632; Betfair/safe_strategy/bot_db.py:694 (+1)	Betfair/safe_strategy/bot_db.py:651; Betfair/safe_strategy/bot_db.py:659; Betfair/safe_strategy/bot_db.py:678; Betfair/safe_strategy/bot_db.py:708 (+8)		frontend/src/lib/controlRoomProposte.ts:371; frontend/src/lib/safeBot.ts:1418; frontend/src/lib/safeBot.ts:1467 (+1)	
+safe_strategy_scan	migrations	10	1	1	0	2	Betfair/mike/db.py:560; Betfair/safe_strategy/bot_db.py:961; Betfair/safe_strategy/db.py:50; Betfair/safe_strategy/db.py:90 (+4)	Betfair/safe_strategy/db.py:198; Betfair/safe_strategy/db.py:213		frontend/src/lib/safeStrategyScan.ts:343	
+safe_strategy_status	migrations	7	1	1	1	0	Betfair/mike/db.py:569; Betfair/safe_strategy/bot_db.py:973; Betfair/stream/auto_follow.py:466; Betfair/stream/scalper/scalper_service.py:128 (+2)	Betfair/safe_strategy/db.py:228		frontend/src/lib/safeStrategyScan.ts:350	
+safe_strategy_trades	migrations	14	0	0	0	1	Betfair/safe_strategy/bot_db.py:122; Betfair/safe_strategy/bot_db.py:129; Betfair/safe_strategy/bot_db.py:172; Betfair/safe_strategy/bot_db.py:195 (+7)	Betfair/safe_strategy/bot_db.py:102; Betfair/safe_strategy/bot_db.py:110; Betfair/safe_strategy/bot_db.py:92			
+scalper_activity	migrations	4	0	0	0	0		Betfair/stream/scalper/scalper_service.py:86; Betfair/stream/scalper/scalper_service.py:890; Betfair/stream/scalper/scalper_session.py:1270; Betfair/stream/scalper/scalper_session.py:1281			
+scalper_control	migrations	11	0	0	0	0	Betfair/stream/scalper/scalper_service.py:147; Betfair/stream/scalper/scalper_service.py:214; Betfair/stream/scalper/scalper_service.py:75; Betfair/stream/scalper/scalper_session.py:1229 (+2)	Betfair/stream/scalper/scalper_service.py:195; Betfair/stream/scalper/scalper_service.py:197; Betfair/stream/scalper/scalper_service.py:208; Betfair/stream/scalper/scalper_service.py:81 (+1)			
+scalper_service_control	migrations	2	0	0	0	0	Betfair/stream/scalper/scalper_service.py:94	Betfair/stream/scalper/scalper_service.py:102			
+season_backfill_state	-	10	0	0	0	4	retrain_all_leagues.py:125; season_gaps.py:546; season_gaps.py:595; season_gaps.py:634 (+1)	season_gaps.py:522; season_gaps.py:531; season_gaps.py:559; season_gaps.py:609 (+1)			
+signal_history	migrations	2	0	0	0	1		Betfair/money_management.py:2434; Betfair/money_management.py:2471			
+standings	-	2	0	0	0	0		standings_backfill.py:239; standings_backfill.py:289			
+tennis_bot_activity	migrations	1	0	0	0	0		Betfair/stream/tennis_live/tennis_db.py:518			
+tennis_bot_control	migrations	10	0	0	0	0	Betfair/stream/tennis_live/tennis_db.py:399	Betfair/stream/tennis_live/tennis_db.py:214; Betfair/stream/tennis_live/tennis_db.py:444; Betfair/stream/tennis_live/tennis_db.py:451; Betfair/stream/tennis_live/tennis_db.py:468 (+5)			
+tennis_bot_service_control	migrations	2	0	0	0	0	Betfair/stream/tennis_live/tennis_db.py:662	Betfair/stream/tennis_live/tennis_db.py:710			
+tennis_live_follow	migrations	5	0	0	0	1	Betfair/stream/tennis_live/tennis_db.py:240; Betfair/stream/tennis_live/tennis_db.py:377; Betfair/stream/tennis_replay/importa.py:78	Betfair/stream/tennis_live/tennis_db.py:118; Betfair/stream/tennis_live/tennis_db.py:231			
+tennis_live_ladder	migrations	1	1	0	0	0		Betfair/stream/tennis_live/tennis_db.py:260		frontend/src/lib/tennis.ts:263	
+tennis_live_now	migrations	6	1	0	0	0	Betfair/stream/tennis_live/tennis_db.py:198; Betfair/stream/tennis_live/tennis_db.py:369	Betfair/stream/tennis_live/tennis_db.py:292; Betfair/stream/tennis_live/tennis_db.py:306; Betfair/stream/tennis_live/tennis_db.py:313; Betfair/stream/tennis_live/tennis_db.py:384		frontend/src/lib/tennis.ts:209	
+tennis_live_order_queue	migrations	9	0	0	0	1	Betfair/stream/tennis_live/tennis_db.py:351; Betfair/stream/tennis_live/tennis_db.py:535	Betfair/stream/tennis_live/esecutore_tennis.py:266; Betfair/stream/tennis_live/tennis_db.py:549; Betfair/stream/tennis_live/tennis_db.py:568; Betfair/stream/tennis_live/tennis_db.py:580 (+3)			
+tennis_live_orders	migrations	3	0	0	0	3	Betfair/stream/tennis_live/tennis_db.py:335	Betfair/stream/tennis_live/tennis_db.py:604; Betfair/stream/tennis_live/tennis_db.py:854			
+tennis_live_positions	migrations	3	0	0	0	0	Betfair/stream/tennis_live/tennis_db.py:342	Betfair/stream/tennis_live/tennis_db.py:627; Betfair/stream/tennis_live/tennis_db.py:863			
+tennis_markets	migrations	4	0	0	0	3	Betfair/stream/tennis_live/tennis_bot_service.py:151; Betfair/stream/tennis_replay/importa.py:82	betfair_tennis_odds.py:274; betfair_tennis_odds.py:278			
+tennis_replay_eventi	migrations	2	0	0	0	0		Betfair/stream/tennis_replay/caricamento.py:108; Betfair/stream/tennis_replay/caricamento.py:75			
+tennis_replay_mercati	migrations	2	0	0	0	0	Betfair/stream/tennis_replay/caricamento.py:97	Betfair/stream/tennis_replay/caricamento.py:79			
+theta_confirm_requests	migrations	3	0	0	0	0	Betfair/stream/scalper/scalper_session.py:1947	Betfair/stream/scalper/scalper_session.py:1936; Betfair/stream/scalper/scalper_session.py:1958			
+top_assists	-	2	0	0	0	0		top_assists_backfill.py:235; top_assists_backfill.py:285			
+top_cards	-	2	0	0	0	0		top_cards_backfill.py:244; top_cards_backfill.py:294			
+top_scorers	-	2	0	0	0	0		top_scorers_backfill.py:235; top_scorers_backfill.py:285			
+x	-	0	0	1	0	0					

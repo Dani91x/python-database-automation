@@ -1,0 +1,56 @@
+nomi di funzione con >= 3 copie nel codice di PRODUZIONE: 320
+
+== nome | copie prod | file | tutte le copie (anche test/strum/audit) | righe totali copie prod | giudizio ==
+__init__                       prod=182 file= 93 tutte=1041 righe= 4151  DIVERSE (180 gruppi) (rapporto min 1.00)
+main                           prod= 96 file= 96 tutte= 288 righe= 5727  DIVERSE (96 gruppi) (rapporto min 1.00)
+_num                           prod= 20 file= 20 tutte=  22 righe=  131  DIVERSE (18 gruppi) (rapporto min 1.00)
+process_market_book            prod= 20 file= 20 tutte=  34 righe= 1826  DIVERSE (19 gruppi) (rapporto min 0.91)
+check_market_book              prod= 19 file= 19 tutte=  37 righe=  153  DIVERSE (14 gruppi) (rapporto min 0.92)
+_now_iso                       prod= 17 file= 17 tutte=  20 righe=   34  IDENTICHE (rapporto min 1.00)
+process_closed_market          prod= 17 file= 17 tutte=  20 righe=  380  DIVERSE (15 gruppi) (rapporto min 0.91)
+_f                             prod= 16 file= 16 tutte=  26 righe=  103  DIVERSE (10 gruppi) (rapporto min 1.00)
+_place                         prod= 16 file= 15 tutte=  23 righe=  829  DIVERSE (16 gruppi) (rapporto min 1.00)
+__getattr__                    prod= 14 file= 11 tutte=  32 righe=   59  DIVERSE (14 gruppi) (rapporto min 1.00)
+avvia                          prod= 14 file= 12 tutte=  22 righe=  122  DIVERSE (14 gruppi) (rapporto min 1.00)
+stato                          prod= 14 file= 11 tutte=  18 righe=  164  DIVERSE (14 gruppi) (rapporto min 1.00)
+_emit                          prod= 13 file= 13 tutte=  15 righe=   86  DIVERSE (9 gruppi) (rapporto min 1.00)
+_int                           prod= 12 file= 12 tutte=  13 righe=   74  DIVERSE (8 gruppi) (rapporto min 1.00)
+azzera                         prod= 12 file= 12 tutte=  12 righe=   80  DIVERSE (11 gruppi) (rapporto min 0.90)
+_reg                           prod= 11 file=  7 tutte=  11 righe=   49  DIVERSE (8 gruppi) (rapporto min 1.00)
+ferma                          prod= 11 file=  9 tutte=  11 righe=   56  DIVERSE (7 gruppi) (rapporto min 1.00)
+elenco_controlli               prod= 10 file= 10 tutte=  10 righe=   52  DIVERSE (8 gruppi) (rapporto min 1.00)
+evaluate                       prod= 10 file=  9 tutte=  25 righe=  335  DIVERSE (10 gruppi) (rapporto min 1.00)
+place                          prod= 10 file=  9 tutte=  14 righe=  564  DIVERSE (7 gruppi) (rapporto min 1.00)
+invia                          prod=  9 file=  6 tutte=  14 righe=  101  DIVERSE (9 gruppi) (rapporto min 1.00)
+ask_and_run_cli                prod=  8 file=  8 tutte=   8 righe=  152  DIVERSE (8 gruppi) (rapporto min 1.00)
+get_supabase                   prod=  8 file=  8 tutte=   8 righe=   42  DIVERSE (3 gruppi) (rapporto min 0.91)
+statistiche                    prod=  8 file=  5 tutte=  11 righe=   41  DIVERSE (7 gruppi) (rapporto min 1.00)
+verifica                       prod=  8 file=  8 tutte=  10 righe=  525  DIVERSE (8 gruppi) (rapporto min 1.00)
+_controllo                     prod=  7 file=  7 tutte=   8 righe=   89  DIVERSE (6 gruppi) (rapporto min 1.00)
+_ko_epoch_ms                   prod=  7 file=  7 tutte=   7 righe=  150  DIVERSE (4 gruppi) (rapporto min 1.00)
+_process_once                  prod=  7 file=  7 tutte=   7 righe=  471  DIVERSE (7 gruppi) (rapporto min 1.00)
+_validate                      prod=  7 file=  3 tutte=   9 righe=  195  DIVERSE (7 gruppi) (rapporto min 1.00)
+acceso                         prod=  7 file=  7 tutte=   8 righe=   33  DIVERSE (6 gruppi) (rapporto min 1.00)
+aggiorna                       prod=  7 file=  6 tutte=   7 righe=  155  DIVERSE (7 gruppi) (rapporto min 1.00)
+log                            prod=  7 file=  7 tutte=  96 righe=   44  DIVERSE (7 gruppi) (rapporto min 1.00)
+run                            prod=  7 file=  7 tutte=  12 righe=  401  DIVERSE (7 gruppi) (rapporto min 1.00)
+settled_orders                 prod=  7 file=  7 tutte=   7 righe=   25  DIVERSE (2 gruppi) (rapporto min 1.00)
+__str__                        prod=  6 file=  6 tutte=   6 righe=   23  DIVERSE (5 gruppi) (rapporto min 1.00)
+_avvia_canale                  prod=  6 file=  6 tutte=   6 righe=  134  DIVERSE (6 gruppi) (rapporto min 1.00)
+_cancel_if_live                prod=  6 file=  6 tutte=   6 righe=   70  DIVERSE (5 gruppi) (rapporto min 1.00)
+_ciclo                         prod=  6 file=  5 tutte=   9 righe=   68  DIVERSE (6 gruppi) (rapporto min 1.00)
+_drive_flatten                 prod=  6 file=  6 tutte=   6 righe=  658  DIVERSE (6 gruppi) (rapporto min 1.00)
+_has_live                      prod=  6 file=  6 tutte=   6 righe=   49  DIVERSE (5 gruppi) (rapporto min 1.00)
+_manage                        prod=  6 file=  6 tutte=   6 righe= 1014  DIVERSE (6 gruppi) (rapporto min 1.00)
+_p                             prod=  6 file=  5 tutte=  14 righe=   44  DIVERSE (6 gruppi) (rapporto min 1.00)
+_parse_int                     prod=  6 file=  6 tutte=   6 righe=   95  DIVERSE (2 gruppi) (rapporto min 1.00)
+_pubblica_proposte             prod=  6 file=  6 tutte=   6 righe=   43  DIVERSE (5 gruppi) (rapporto min 1.00)
+_sleep_backoff                 prod=  6 file=  6 tutte=   6 righe=   21  DIVERSE (3 gruppi) (rapporto min 1.00)
+
+== i 4 nomi del brief (copie in produzione / in tutto il repo) ==
+read_book              produzione=  3 (file 3), test=26, strumenti/audit=1, tutte=30
+process_market_book    produzione= 20 (file 20), test=9, strumenti/audit=5, tutte=34
+_now_iso               produzione= 17 (file 17), test=3, strumenti/audit=0, tutte=20
+log                    produzione=  7 (file 7), test=85, strumenti/audit=4, tutte=96
+
+gruppi di file identici: 35 (vedi s04_file_identici.txt)

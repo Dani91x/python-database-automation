@@ -1,0 +1,108 @@
+gruppi di file tracciati con contenuto identico (>= 30 righe): 35
+-- 4 copie, 132 righe ciascuna:
+     AUDIT_2026-10-07/omega_apertura_35760084/replay/bisect_0acf3297.txt
+     AUDIT_2026-10-07/omega_apertura_35760084/replay/bisect_304a8e1d.txt
+     AUDIT_2026-10-07/omega_apertura_35760084/replay/ib_nuovo_con_banco_vecchio_35760084_apertura.txt
+     AUDIT_2026-10-07/omega_apertura_35760084/replay/ib_vecchio_omega_safe_35760084_apertura.txt
+-- 2 copie, 124 righe ciascuna:
+     AUDIT_2026-09-25/e2e_fase1/strumenti/clientVero.ts
+     frontend/e2e_fase1/clientVero.ts
+-- 2 copie, 1129 righe ciascuna:
+     AUDIT_2026-09-25/e2e_fase1/strumenti/percorsi.e2e.test.tsx
+     frontend/e2e_fase1/percorsi.e2e.test.tsx
+-- 2 copie, 329 righe ciascuna:
+     AUDIT_2026-09-25/e2e_fase2/accensione/accensione_r3.e2e.test.tsx
+     AUDIT_2026-09-25/e2e_fase2/freno_r3/accensione_r3.e2e.test.tsx
+-- 2 copie, 61 righe ciascuna:
+     AUDIT_2026-09-25/e2e_fase3_sessB/evidenze/dash_1637820_Frequenze_Mercati.txt
+     AUDIT_2026-09-25/e2e_fase3_sessB/evidenze/x_freq_667_ht.txt
+-- 2 copie, 589 righe ciascuna:
+     AUDIT_2026-09-25/e2e_fase3_sessB/evidenze/dash_list.txt
+     AUDIT_2026-09-25/e2e_fase3_sessB/evidenze/dash_list_aperta.txt
+-- 2 copie, 61 righe ciascuna:
+     AUDIT_2026-09-28/replay/giro_finale_29_09/giro_completo.sh
+     AUDIT_2026-09-30/ereditato_29_09/scratchpad_admin_e7/giro_completo.sh
+-- 2 copie, 96 righe ciascuna:
+     AUDIT_2026-09-29/in_attesa_del_via/MIKE_P5_5.md
+     AUDIT_2026-09-30/MIKE_P5_5.md
+-- 2 copie, 45 righe ciascuna:
+     AUDIT_2026-09-29/in_attesa_del_via/MIKE_P6_6.md
+     AUDIT_2026-09-30/MIKE_P6_6.md
+-- 2 copie, 135 righe ciascuna:
+     AUDIT_2026-10-07/omega_apertura_35760084/replay/PRIMA_4dd624af_35760084_apertura.txt
+     AUDIT_2026-10-07/omega_apertura_35760084/replay/bisect_4dd624af.txt
+-- 2 copie, 117 righe ciascuna:
+     AUDIT_2026-10-07/omega_apertura_35760084/replay/bisect_82239dfc.txt
+     AUDIT_2026-10-07/omega_apertura_35760084/replay/bisect_b206b1cd.txt
+-- 2 copie, 168 righe ciascuna:
+     frontend/src/fotografia/snapshot/analytics.off.json
+     frontend/src/fotografia/snapshot/analytics.v2.json
+-- 2 copie, 70 righe ciascuna:
+     frontend/src/fotografia/snapshot/board.off.json
+     frontend/src/fotografia/snapshot/board.v2.json
+-- 2 copie, 36 righe ciascuna:
+     frontend/src/fotografia/snapshot/check-email.off.json
+     frontend/src/fotografia/snapshot/check-email.v2.json
+-- 2 copie, 1152 righe ciascuna:
+     frontend/src/fotografia/snapshot/control-room.off.json
+     frontend/src/fotografia/snapshot/control-room.v2.json
+-- 2 copie, 75 righe ciascuna:
+     frontend/src/fotografia/snapshot/dashboard.off.json
+     frontend/src/fotografia/snapshot/dashboard.v2.json
+-- 2 copie, 67 righe ciascuna:
+     frontend/src/fotografia/snapshot/ladder-popout.off.json
+     frontend/src/fotografia/snapshot/ladder-popout.v2.json
+-- 2 copie, 174 righe ciascuna:
+     frontend/src/fotografia/snapshot/landing.off.json
+     frontend/src/fotografia/snapshot/landing.v2.json
+-- 2 copie, 61 righe ciascuna:
+     frontend/src/fotografia/snapshot/live-pnl.off.json
+     frontend/src/fotografia/snapshot/live-pnl.v2.json
+-- 2 copie, 45 righe ciascuna:
+     frontend/src/fotografia/snapshot/match-replay.off.json
+     frontend/src/fotografia/snapshot/match-replay.v2.json
+-- 2 copie, 193 righe ciascuna:
+     frontend/src/fotografia/snapshot/mike.off.json
+     frontend/src/fotografia/snapshot/mike.v2.json
+-- 2 copie, 212 righe ciascuna:
+     frontend/src/fotografia/snapshot/omega.off.json
+     frontend/src/fotografia/snapshot/omega.v2.json
+-- 2 copie, 93 righe ciascuna:
+     frontend/src/fotografia/snapshot/report-personale.off.json
+     frontend/src/fotografia/snapshot/report-personale.v2.json
+-- 2 copie, 241 righe ciascuna:
+     frontend/src/fotografia/snapshot/safe-strategy.off.json
+     frontend/src/fotografia/snapshot/safe-strategy.v2.json
+-- 2 copie, 77 righe ciascuna:
+     frontend/src/fotografia/snapshot/segui-live.off.json
+     frontend/src/fotografia/snapshot/segui-live.v2.json
+-- 2 copie, 71 righe ciascuna:
+     frontend/src/fotografia/snapshot/select-sport.off.json
+     frontend/src/fotografia/snapshot/select-sport.v2.json
+-- 2 copie, 461 righe ciascuna:
+     frontend/src/fotografia/snapshot/storico-calcio.off.json
+     frontend/src/fotografia/snapshot/storico-calcio.v2.json
+-- 2 copie, 476 righe ciascuna:
+     frontend/src/fotografia/snapshot/storico-tennis.off.json
+     frontend/src/fotografia/snapshot/storico-tennis.v2.json
+-- 2 copie, 56 righe ciascuna:
+     frontend/src/fotografia/snapshot/tennis-replay.off.json
+     frontend/src/fotografia/snapshot/tennis-replay.v2.json
+-- 2 copie, 333 righe ciascuna:
+     frontend/src/fotografia/snapshot/tennis-terminal-match.off.json
+     frontend/src/fotografia/snapshot/tennis-terminal-match.v2.json
+-- 2 copie, 234 righe ciascuna:
+     frontend/src/fotografia/snapshot/tennis-terminal-match.v2.guscio.json
+     frontend/src/fotografia/snapshot/tennis-terminal.v2.guscio.json
+-- 2 copie, 56 righe ciascuna:
+     frontend/src/fotografia/snapshot/tennis-terminal.off.json
+     frontend/src/fotografia/snapshot/tennis-terminal.v2.json
+-- 2 copie, 72 righe ciascuna:
+     frontend/src/fotografia/snapshot/tennis.off.json
+     frontend/src/fotografia/snapshot/tennis.v2.json
+-- 2 copie, 56 righe ciascuna:
+     frontend/src/fotografia/snapshot/trade-journal.off.json
+     frontend/src/fotografia/snapshot/trade-journal.v2.json
+-- 2 copie, 64 righe ciascuna:
+     frontend/src/fotografia/snapshot/watchlist.off.json
+     frontend/src/fotografia/snapshot/watchlist.v2.json

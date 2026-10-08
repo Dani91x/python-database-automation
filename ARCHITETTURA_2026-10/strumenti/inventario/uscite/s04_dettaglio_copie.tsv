@@ -1,0 +1,1687 @@
+nome	file	riga	lunghezza	classe	categoria	gruppo	rapporto_con_riferimento
+__init__	Ai Engine/ai_engine/ensemble_trainer.py	101	6	_XGBWrapper	py_codice_cartelle_radice	0	1.00
+__init__	Ai Engine/ai_engine/ensemble_trainer.py	918	5	_KerasMetaWrapper	py_codice_cartelle_radice	1	1.00
+__init__	Ai Engine/ai_engine/models/trainer.py	29	4	Trainer	py_codice_cartelle_radice	2	1.00
+__init__	Ai Engine/ai_engine/preprocessing/dataset.py	21	20	DatasetPreprocessor	py_codice_cartelle_radice	3	1.00
+__init__	Betfair/betfair_report_manager.py	67	10	BetfairReportManager	py_codice_Betfair	4	1.00
+__init__	Betfair/client.py	48	22	BetfairClient	py_codice_Betfair	5	1.00
+__init__	Betfair/mike/certificazione.py	1751	8	SorveglianzaFirme	py_codice_Betfair	6	1.00
+__init__	Betfair/mike/porta_ordini.py	122	8	VistaMike	py_codice_Betfair	7	1.00
+__init__	Betfair/mike/service.py	401	3	_Cache	py_codice_Betfair	8	1.00
+__init__	Betfair/omega/omega_service.py	174	3	_Cache	py_codice_Betfair	8	1.00
+__init__	Betfair/mike/service.py	3139	4	_ContoNonLetto	py_codice_Betfair	9	1.00
+__init__	Betfair/mike/service.py	6879	2	_AlzaSveglia	py_codice_Betfair	10	1.00
+__init__	Betfair/money_management.py	266	7	SlotManager	py_codice_Betfair	11	1.00
+__init__	Betfair/omega/omega_empirical.py	80	16	EmpiricalTable	py_codice_Betfair	12	1.00
+__init__	Betfair/omega/omega_empirical.py	182	15	MinuteTable	py_codice_Betfair	13	1.00
+__init__	Betfair/omega/omega_market.py	624	5	PlaceRifiutato	py_codice_Betfair	14	1.00
+__init__	Betfair/omega/porta_ordini.py	140	7	VistaOmega	py_codice_Betfair	15	1.00
+__init__	Betfair/safe_strategy/anomaly.py	225	9	_Ctx	py_codice_Betfair	16	1.00
+__init__	Betfair/safe_strategy/bot_service.py	99	2	_MercatoSafe	py_codice_Betfair	17	1.00
+__init__	Betfair/safe_strategy/calibration.py	295	5	Calibrator	py_codice_Betfair	18	1.00
+__init__	Betfair/safe_strategy/canale_scan.py	128	8	CacheScan	py_codice_Betfair	19	1.00
+__init__	Betfair/safe_strategy/canale_scan.py	323	29	ClientScan	py_codice_Betfair	20	1.00
+__init__	Betfair/safe_strategy/combos.py	159	14	Leg	py_codice_Betfair	21	1.00
+__init__	Betfair/safe_strategy/combos.py	249	16	_Event	py_codice_Betfair	22	1.00
+__init__	Betfair/safe_strategy/engine.py	1987	13	SafeEngine	py_codice_Betfair	23	1.00
+__init__	Betfair/safe_strategy/opportunity.py	292	3	_GridView	py_codice_Betfair	24	1.00
+__init__	Betfair/safe_strategy/opportunity.py	321	26	OpportunityModel	py_codice_Betfair	25	1.00
+__init__	Betfair/safe_strategy/porta_ordini.py	366	12	MemoriaComandi	py_codice_Betfair	26	1.00
+__init__	Betfair/safe_strategy/porta_ordini.py	552	24	PortaCanale	py_codice_Betfair	27	1.00
+__init__	Betfair/safe_strategy/selezione.py	407	16	SchedeFixture	py_codice_Betfair	28	1.00
+__init__	Betfair/safe_strategy/service.py	333	12	SorvegliaFonte	py_codice_Betfair	29	1.00
+__init__	Betfair/safe_strategy/service.py	421	8	SportState	py_codice_Betfair	30	1.00
+__init__	Betfair/safe_strategy/service.py	432	181	Scanner	py_codice_Betfair	31	1.00
+__init__	Betfair/safe_strategy/service.py	3192	7	Cronometro	py_codice_Betfair	32	1.00
+__init__	Betfair/safe_strategy/service.py	3267	4	ScoreFeedWorker	py_codice_Betfair	33	1.00
+__init__	Betfair/safe_strategy/stream.py	148	11	_HealthListener	py_codice_Betfair	34	1.00
+__init__	Betfair/safe_strategy/stream.py	164	29	StreamShard	py_codice_Betfair	35	1.00
+__init__	Betfair/safe_strategy/stream.py	464	27	MarketStreamPool	py_codice_Betfair	36	1.00
+__init__	Betfair/safe_strategy/tennis_opportunity.py	192	11	TennisOpportunityModel	py_codice_Betfair	37	1.00
+__init__	Betfair/stream/auth.py	164	29	CustodeSessione	py_codice_Betfair	38	1.00
+__init__	Betfair/stream/auto_follow.py	179	5	PianoFollow	py_codice_Betfair	39	1.00
+__init__	Betfair/stream/auto_follow.py	372	3	FollowDb	py_codice_Betfair	40	1.00
+__init__	Betfair/stream/auto_follow.py	542	49	AutoFollow	py_codice_Betfair	41	1.00
+__init__	Betfair/stream/avvio_app.py	127	6	Guardia	py_codice_Betfair	42	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	256	15	DbMemoria	py_codice_Betfair	43	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	422	3	_Livello	py_codice_Betfair	44	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	435	11	_VistaEx	py_codice_Betfair	45	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	469	6	_VistaRunner	py_codice_Betfair	46	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	489	9	_VistaBook	py_codice_Betfair	47	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	559	61	MercatoFlumine	py_codice_Betfair	48	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	1890	12	GeneratoreLibri	py_codice_Betfair	49	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	1994	54	MotoreReplay	py_codice_Betfair	50	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	2537	48	ScannerReplay	py_codice_Betfair	51	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	2867	21	EsitoReplay	py_codice_Betfair	52	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	1532	9	_ClienteSenzaTetti	py_codice_Betfair	53	1.00
+__init__	Betfair/stream/backtest/banco_comune.py	2955	11	_Ponte	py_codice_Betfair	54	1.00
+__init__	Betfair/stream/backtest/chiusura_parziale.py	248	4	_Vista	py_codice_Betfair	55	1.00
+__init__	Betfair/stream/backtest/chiusura_parziale.py	409	29	GuastoChiusuraParziale	py_codice_Betfair	56	1.00
+__init__	Betfair/stream/backtest/chiusura_parziale.py	777	12	Sorveglianza	py_codice_Betfair	57	1.00
+__init__	Betfair/stream/backtest/minimi_banco.py	71	4	Registro	py_codice_Betfair	58	1.00
+__init__	Betfair/stream/backtest/porta_banco.py	90	2	_ScrittoreNullo	py_codice_Betfair	59	1.00
+__init__	Betfair/stream/backtest/porta_banco.py	121	2	ClienteLiveBanco	py_codice_Betfair	60	1.00
+__init__	Betfair/stream/backtest/porta_banco.py	136	3	_QuadroBanco	py_codice_Betfair	61	1.00
+__init__	Betfair/stream/backtest/porta_banco.py	166	8	WsBanco	py_codice_Betfair	62	1.00
+__init__	Betfair/stream/backtest/porta_banco.py	218	6	_CanaleBanco	py_codice_Betfair	63	1.00
+__init__	Betfair/stream/backtest/porta_banco.py	267	6	SottoscrittoreBanco	py_codice_Betfair	64	1.00
+__init__	Betfair/stream/backtest/porta_banco.py	286	2	_TennisDbNullo	py_codice_Betfair	65	1.00
+__init__	Betfair/stream/backtest/porta_banco.py	302	4	_CaptureTutte	py_codice_Betfair	66	1.00
+__init__	Betfair/stream/backtest/porta_banco.py	317	13	SessioneTennisBanco	py_codice_Betfair	67	1.00
+__init__	Betfair/stream/backtest/porta_banco.py	377	7	AllineaBancoTennis	py_codice_Betfair	68	1.00
+__init__	Betfair/stream/backtest/porta_banco.py	426	82	PortaBanco	py_codice_Betfair	69	1.00
+__init__	Betfair/stream/backtest/proposte_modello.py	392	9	Piano	py_codice_Betfair	70	1.00
+__init__	Betfair/stream/backtest/proposte_modello.py	561	2	AnomalieReplay	py_codice_Betfair	71	1.00
+__init__	Betfair/stream/backtest/proposte_modello.py	606	3	CombosReplay	py_codice_Betfair	72	1.00
+__init__	Betfair/stream/backtest/proposte_modello.py	839	10	TraderProposte	py_codice_Betfair	73	1.00
+__init__	Betfair/stream/backtest/proposte_modello.py	1032	8	Sorveglianza	py_codice_Betfair	74	1.00
+__init__	Betfair/stream/backtest/proposte_modello.py	1335	19	BancoProposte	py_codice_Betfair	75	1.00
+__init__	Betfair/stream/backtest/proposte_modello.py	463	5	ModelloCalcioReplay	py_codice_Betfair	76	1.00
+__init__	Betfair/stream/backtest/sim_strategy.py	103	43	SimStrategy	py_codice_Betfair	77	1.00
+__init__	Betfair/stream/backtest/trasporto_rapido.py	118	6	_Esito	py_codice_Betfair	78	1.00
+__init__	Betfair/stream/backtest/trasporto_rapido.py	145	43	BancoRapido	py_codice_Betfair	79	1.00
+__init__	Betfair/stream/backtest/trasporto_rapido.py	360	10	_Safe	py_codice_Betfair	80	1.00
+__init__	Betfair/stream/backtest/trasporto_rapido.py	417	10	_Omega	py_codice_Betfair	81	1.00
+__init__	Betfair/stream/backtest/trasporto_rapido.py	1295	3	_ContaLog	py_codice_Betfair	82	1.00
+__init__	Betfair/stream/backtest/uscite_manuali.py	188	40	Osservatore	py_codice_Betfair	83	1.00
+__init__	Betfair/stream/backtest/varianti_bot.py	186	7	Accensione	py_codice_Betfair	84	1.00
+__init__	Betfair/stream/backtest/varianti_bot.py	342	12	SpecchioOrdini	py_codice_Betfair	85	1.00
+__init__	Betfair/stream/engine/live_trading_strategy.py	141	20	LiveTradingStrategy	py_codice_Betfair	86	1.00
+__init__	Betfair/stream/esiti_ordini_canale.py	156	6	MemoriaEsiti	py_codice_Betfair	87	1.00
+__init__	Betfair/stream/esiti_ordini_canale.py	238	21	ClientEsiti	py_codice_Betfair	88	1.00
+__init__	Betfair/stream/esiti_ordini_canale.py	343	11	DbConSpecchioDalCanale	py_codice_Betfair	89	1.00
+__init__	Betfair/stream/esiti_ordini_canale.py	430	21	EsitiOrdini	py_codice_Betfair	90	1.00
+__init__	Betfair/stream/esiti_ordini_canale.py	792	9	MemoriaConto	py_codice_Betfair	91	1.00
+__init__	Betfair/stream/flusso_prezzi.py	308	3	Promemoria	py_codice_Betfair	92	1.00
+__init__	Betfair/stream/frammenti_mercato.py	126	16	FrammentoListener	py_codice_Betfair	93	1.00
+__init__	Betfair/stream/frammenti_mercato.py	195	6	FrammentoMarketStream	py_codice_Betfair	94	1.00
+__init__	Betfair/stream/frammenti_mercato.py	357	20	GestoreFrammenti	py_codice_Betfair	95	1.00
+__init__	Betfair/stream/ladder_canale.py	88	13	StatoLadder	py_codice_Betfair	96	1.00
+__init__	Betfair/stream/live_order_worker.py	2927	3	_RecordingFlumineOps	py_codice_Betfair	97	1.00
+__init__	Betfair/stream/live_order_worker.py	3244	4	_LocalTable	py_codice_Betfair	98	1.00
+__init__	Betfair/stream/live_order_worker.py	3281	3	_LocalSb	py_codice_Betfair	99	1.00
+__init__	Betfair/stream/live_order_worker.py	3389	3	_CatenaDifferita	py_codice_Betfair	100	1.00
+__init__	Betfair/stream/live_order_worker.py	3411	2	_SbDifferito	py_codice_Betfair	101	1.00
+__init__	Betfair/stream/local_channel.py	206	69	LocalChannel	py_codice_Betfair	102	1.00
+__init__	Betfair/stream/motore_ordini.py	167	3	Rifiuto	py_codice_Betfair	103	1.00
+__init__	Betfair/stream/motore_ordini.py	188	6	Diario	py_codice_Betfair	104	1.00
+__init__	Betfair/stream/motore_ordini.py	265	15	ScrittoreAsincrono	py_codice_Betfair	105	1.00
+__init__	Betfair/stream/motore_ordini.py	695	92	MotoreOrdini	py_codice_Betfair	106	1.00
+__init__	Betfair/stream/raw_listener.py	32	30	_RawState	py_codice_Betfair	107	1.00
+__init__	Betfair/stream/recorder.py	98	9	MarketRecorderStrategy	py_codice_Betfair	108	1.00
+__init__	Betfair/stream/runner.py	175	74	LiveSession	py_codice_Betfair	109	1.00
+__init__	Betfair/stream/scalper/atlante_a_domanda.py	126	31	MotoreAtlante	py_codice_Betfair	110	1.00
+__init__	Betfair/stream/scalper/certificazione.py	913	18	_CoperturaBuchi	py_codice_Betfair	111	1.00
+__init__	Betfair/stream/scalper/certificazione.py	966	2	RegistroBuchi	py_codice_Betfair	112	1.00
+__init__	Betfair/stream/scalper/certificazione.py	987	3	VistaBuchi	py_codice_Betfair	113	1.00
+__init__	Betfair/stream/scalper/certificazione.py	1040	7	_CoperturaCrescente	py_codice_Betfair	114	1.00
+__init__	Betfair/stream/scalper/certificazione.py	1096	4	_StatoS5	py_codice_Betfair	115	1.00
+__init__	Betfair/stream/scalper/certificazione.py	1265	5	Memoria	py_codice_Betfair	116	1.00
+__init__	Betfair/stream/scalper/genera_atlante.py	578	11	LettoreDB	py_codice_Betfair	117	1.00
+__init__	Betfair/stream/scalper/genera_atlante.py	901	4	ScritturaLegheParziale	py_codice_Betfair	118	1.00
+__init__	Betfair/stream/scalper/genera_atlante.py	925	7	_Scrittore	py_codice_Betfair	119	1.00
+__init__	Betfair/stream/scalper/media_under_bot.py	786	21	OrdineDelConto	py_codice_Betfair	120	1.00
+__init__	Betfair/stream/scalper/media_under_bot.py	901	103	MediaUnderStrategy	py_codice_Betfair	121	1.00
+__init__	Betfair/stream/scalper/risk_semaphore.py	27	10	EventRiskSemaphore	py_codice_Betfair	122	1.00
+__init__	Betfair/stream/scalper/scalper_bot.py	427	308	ScalperStrategy	py_codice_Betfair	123	1.00
+__init__	Betfair/stream/scalper/scalper_service.py	70	3	Db	py_codice_Betfair	124	1.00
+__init__	Betfair/stream/scalper/scalper_session.py	1210	3	Db	py_codice_Betfair	124	1.00
+__init__	Betfair/stream/scalper/scalper_service.py	312	10	StatoAuto	py_codice_Betfair	125	1.00
+__init__	Betfair/stream/scalper/scalper_service.py	626	2	PubblicaSessioni	py_codice_Betfair	126	1.00
+__init__	Betfair/stream/scalper/sniper_bot.py	93	117	SniperStrategy	py_codice_Betfair	127	1.00
+__init__	Betfair/stream/scalper/theta_bot.py	258	4	ThetaConfirmBus	py_codice_Betfair	128	1.00
+__init__	Betfair/stream/scalper/theta_bot.py	348	137	ThetaStrategy	py_codice_Betfair	129	1.00
+__init__	Betfair/stream/scalper/validazione_hazard/produzione.py	28	9	LettoreCache	py_codice_Betfair	130	1.00
+__init__	Betfair/stream/scores/api_football.py	62	7	ApiFootballProvider	py_codice_Betfair	131	1.00
+__init__	Betfair/stream/scores/betfair_inplay.py	159	2	BetfairInPlayProvider	py_codice_Betfair	132	1.00
+__init__	Betfair/stream/scores/poller.py	25	19	ScorePoller	py_codice_Betfair	133	1.00
+__init__	Betfair/stream/scores/scan_feed.py	201	31	ScanRowCache	py_codice_Betfair	134	1.00
+__init__	Betfair/stream/scores/scan_feed.py	485	11	ScanFeedScoreProvider	py_codice_Betfair	135	1.00
+__init__	Betfair/stream/sveglia_canale.py	136	15	Sveglia	py_codice_Betfair	136	1.00
+__init__	Betfair/stream/sveglia_canale.py	269	19	AscoltoScan	py_codice_Betfair	137	1.00
+__init__	Betfair/stream/tennis_live/canale_bot_tennis.py	135	15	InoltroPosizioni	py_codice_Betfair	138	1.00
+__init__	Betfair/stream/tennis_live/canale_bot_tennis.py	289	12	CancelloBotControl	py_codice_Betfair	139	1.00
+__init__	Betfair/stream/tennis_live/esecutore_tennis.py	148	3	CaptureDiModo	py_codice_Betfair	140	1.00
+__init__	Betfair/stream/tennis_live/esecutore_tennis.py	303	2	CanaleSoloComandi	py_codice_Betfair	141	1.00
+__init__	Betfair/stream/tennis_live/esecutore_tennis.py	383	27	AgganciaTennis	py_codice_Betfair	142	1.00
+__init__	Betfair/stream/tennis_live/guardie_tennis.py	119	3	MercatoConClient	py_codice_Betfair	143	1.00
+__init__	Betfair/stream/tennis_live/guardie_tennis.py	356	3	ControlloModoOrdiniTennis	py_codice_Betfair	144	1.00
+__init__	Betfair/stream/tennis_live/iscrizione_a_caldo.py	233	7	LavoroFlumine	py_codice_Betfair	145	1.00
+__init__	Betfair/stream/tennis_live/tennis_recorder.py	76	20	TennisRawTee	py_codice_Betfair	146	1.00
+__init__	Betfair/stream/tennis_live/tennis_runner.py	521	85	TennisLiveSession	py_codice_Betfair	147	1.00
+__init__	Betfair/stream/tennis_live/tennis_runner.py	2358	7	ContestoCaldo	py_codice_Betfair	148	1.00
+__init__	Betfair/stream/tennis_live/tennis_runner.py	418	6	_Capture	py_codice_Betfair	149	1.00
+__init__	Betfair/stream/tennis_scalper/condotta_ordini.py	178	11	OrdineComposto	py_codice_Betfair	150	1.00
+__init__	Betfair/stream/tennis_scalper/condotta_ordini.py	272	19	UsciteEsatte	py_codice_Betfair	151	1.00
+__init__	Betfair/stream/tennis_scalper/condotta_ordini.py	534	3	ResiduiRicordati	py_codice_Betfair	152	1.00
+__init__	Betfair/stream/tennis_scalper/record_multi.py	46	7	_MultiRawState	py_codice_Betfair	153	1.00
+__init__	Betfair/stream/tennis_scalper/tennis_flb_bot.py	74	68	TennisFLBStrategy	py_codice_Betfair	154	1.00
+__init__	Betfair/stream/tennis_scalper/tennis_pro_bot.py	102	152	TennisProStrategy	py_codice_Betfair	155	1.00
+__init__	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	314	323	TennisScalperStrategy	py_codice_Betfair	156	1.00
+__init__	Betfair/stream/tennis_scalper/tennis_swing_bot.py	73	63	TennisSwingStrategy	py_codice_Betfair	157	1.00
+__init__	Betfair/stream/trading/freno_rifiuti.py	54	15	FrenoRifiuti	py_codice_Betfair	158	1.00
+__init__	Betfair/stream/trading/stato_mercato.py	195	3	AttesaRiapertura	py_codice_Betfair	159	1.00
+__init__	Betfair/stream/uscite_proposte.py	130	2	UltimiPrezzi	py_codice_Betfair	160	1.00
+__init__	Betfair/stream/uscite_proposte.py	181	8	CancelloUscite	py_codice_Betfair	161	1.00
+__init__	Betfair/stream/valuta.py	127	17	CambioGbpEur	py_codice_Betfair	162	1.00
+__init__	Betfair/stream/valuta.py	322	2	MiddlewareValutaEur	py_codice_Betfair	163	1.00
+__init__	Prediction/today_predictions_backfill.py	450	9	CoverageReadError	py_codice_cartelle_radice	164	1.00
+__init__	Prediction/today_predictions_backfill.py	2021	5	_DeferredWriter	py_codice_cartelle_radice	165	1.00
+__init__	api_client.py	18	13	APIFootballClient	py_codice_radice	166	1.00
+__init__	api_quota.py	200	22	GestoreQuota	py_codice_radice	167	1.00
+__init__	api_quota.py	324	3	QuotaConPavimento	py_codice_radice	168	1.00
+__init__	db_client.py	162	7	GuastoRete	py_codice_radice	169	1.00
+__init__	db_client.py	353	2	_Catena	py_codice_radice	170	1.00
+__init__	laboratorio/scalper_lab/grid_strategy.py	74	40	GridStrategy	py_codice_cartelle_radice	171	1.00
+__init__	laboratorio/scalper_lab/scalper_bot_base.py	230	263	ScalperStrategy	py_codice_cartelle_radice	172	1.00
+__init__	laboratorio/scalper_lab/theta_strategy.py	60	43	ThetaStrategy	py_codice_cartelle_radice	173	1.00
+__init__	laboratorio/tennis_lab/tennis_lab.py	43	50	TennisLabStrategy	py_codice_cartelle_radice	174	1.00
+__init__	laboratorio/tennis_lab/tennis_lab_score.py	51	18	ScoreConditionedLab	py_codice_cartelle_radice	175	1.00
+__init__	market_intelligence/edge_scorer.py	439	2	EdgeScorer	py_codice_cartelle_radice	176	1.00
+__init__	poisson_calibrator.py	83	10	PoissonCalibrator	py_codice_radice	177	1.00
+__init__	seasons_catchup.py	131	14	ControlloConcorrenza	py_codice_radice	178	1.00
+__init__	tactical_engine/model.py	87	7	DixonColesModel	py_codice_cartelle_radice	179	1.00
+main	Ai Engine/ai_engine/seriea_model_export.py	715	16		py_codice_cartelle_radice	0	1.00
+main	Ai Engine/ai_engine/serving_batch.py	98	8		py_codice_cartelle_radice	1	1.00
+main	Ai Engine/backtest_ml.py	198	72		py_codice_cartelle_radice	2	1.00
+main	Betfair/mike/service.py	7416	132		py_codice_Betfair	3	1.00
+main	Betfair/omega/liquidity_probe.py	381	18		py_codice_Betfair	4	1.00
+main	Betfair/omega/omega_service.py	8800	103		py_codice_Betfair	5	1.00
+main	Betfair/safe_strategy/bot_service.py	10902	133		py_codice_Betfair	6	1.00
+main	Betfair/safe_strategy/service.py	3341	100		py_codice_Betfair	7	1.00
+main	Betfair/stream/backtest/applica_bot.py	875	14		py_codice_Betfair	8	1.00
+main	Betfair/stream/backtest/certifica.py	711	370		py_codice_Betfair	9	1.00
+main	Betfair/stream/backtest/worker.py	70	29		py_codice_Betfair	10	1.00
+main	Betfair/stream/scalper/genera_atlante.py	1139	147		py_codice_Betfair	11	1.00
+main	Betfair/stream/scalper/habitat_scan.py	177	16		py_codice_Betfair	12	1.00
+main	Betfair/stream/scalper/run_scalper_live.py	202	87		py_codice_Betfair	13	1.00
+main	Betfair/stream/scalper/run_theta.py	224	62		py_codice_Betfair	14	1.00
+main	Betfair/stream/scalper/scalper_service.py	844	135		py_codice_Betfair	15	1.00
+main	Betfair/stream/scalper/scalper_session.py	2264	10		py_codice_Betfair	16	1.00
+main	Betfair/stream/scalper/validazione_hazard/banco.py	667	25		py_codice_Betfair	17	1.00
+main	Betfair/stream/scalper/validazione_hazard/raccogli.py	146	18		py_codice_Betfair	18	1.00
+main	Betfair/stream/scalper/validazione_hazard/taratura_b1.py	34	29		py_codice_Betfair	19	1.00
+main	Betfair/stream/tennis_replay/importa.py	126	36		py_codice_Betfair	20	1.00
+main	Betfair/stream/tennis_scalper/backtest_pro.py	142	24		py_codice_Betfair	21	1.00
+main	Betfair/stream/tennis_scalper/flb_backtest.py	119	19		py_codice_Betfair	22	1.00
+main	Betfair/stream/tennis_scalper/record_multi.py	265	65		py_codice_Betfair	23	1.00
+main	Betfair/stream/tennis_scalper/record_tennis.py	29	39		py_codice_Betfair	24	1.00
+main	Betfair/stream/tennis_scalper/run_tennis_pro.py	65	91		py_codice_Betfair	25	1.00
+main	Betfair/stream/tennis_scalper/run_tennis_scalper.py	210	116		py_codice_Betfair	26	1.00
+main	Betfair/stream/tennis_scalper/tune_tennis.py	110	48		py_codice_Betfair	27	1.00
+main	Prediction/predictions_results_backfill.py	843	29		py_codice_cartelle_radice	28	1.00
+main	Prediction/today_predictions_backfill.py	2763	23		py_codice_cartelle_radice	29	1.00
+main	_certify_betfair.py	37	47		py_codice_radice	30	1.00
+main	_certify_delay_context.py	78	21		py_codice_radice	31	1.00
+main	_certify_direction.py	194	51		py_codice_radice	32	1.00
+main	_certify_direction_report.py	543	95		py_codice_radice	33	1.00
+main	_certify_personal_report.py	470	38		py_codice_radice	34	1.00
+main	_certify_signal_context.py	57	36		py_codice_radice	35	1.00
+main	_league_eval.py	55	42		py_codice_radice	36	1.00
+main	_stack_eval.py	91	24		py_codice_radice	37	1.00
+main	admin_reset_password.py	80	10		py_codice_radice	38	1.00
+main	aggiorna_mm_sheets.py	518	22		py_codice_radice	39	1.00
+main	backfill_poisson_calibrated.py	147	59		py_codice_radice	40	1.00
+main	betfair_full_odds.py	127	166		py_codice_radice	41	1.00
+main	betfair_tennis_odds.py	285	34		py_codice_radice	42	1.00
+main	build_analytics_signals.py	415	34		py_codice_radice	43	1.00
+main	build_direzione.py	199	36		py_codice_radice	44	1.00
+main	build_inplay_intensity.py	111	217		py_codice_radice	45	1.00
+main	certify_backtest_strategy.py	88	111		py_codice_radice	46	1.00
+main	cleanup_models.py	99	36		py_codice_radice	47	1.00
+main	cloud_retrain_shard.py	167	203		py_codice_radice	48	1.00
+main	compress_models.py	147	47		py_codice_radice	49	1.00
+main	compute_ml_post_calibration.py	267	50		py_codice_radice	50	1.00
+main	direzione.py	47	27		py_codice_radice	51	1.00
+main	enrich_analytics_snapshots.py	495	85		py_codice_radice	52	1.00
+main	fix_storico_prob.py	70	50		py_codice_radice	53	1.00
+main	football_data_scraper/fix_snapshot_time.py	57	5		py_codice_cartelle_radice	54	1.00
+main	generate_dc_rho.py	181	75		py_codice_radice	55	1.00
+main	generate_dynamic_cal.py	468	125		py_codice_radice	56	1.00
+main	import_betfair_operations.py	371	54		py_codice_radice	57	1.00
+main	laboratorio/scalper_lab/bt_lab.py	242	28		py_codice_cartelle_radice	58	1.00
+main	laboratorio/scalper_lab/bt_theta.py	137	47		py_codice_cartelle_radice	59	1.00
+main	laboratorio/scalper_lab/exp_families.py	50	16		py_codice_cartelle_radice	60	1.00
+main	laboratorio/scalper_lab/rdloop.py	119	72		py_codice_cartelle_radice	61	1.00
+main	laboratorio/scalper_lab/synth_raw.py	164	10		py_codice_cartelle_radice	62	1.00
+main	laboratorio/scalper_lab/validate_synth.py	47	23		py_codice_cartelle_radice	63	1.00
+main	laboratorio/tennis_lab/lab_grid.py	187	58		py_codice_cartelle_radice	64	1.00
+main	laboratorio/tennis_lab/lab_grid_score.py	219	58		py_codice_cartelle_radice	65	1.00
+main	laboratorio/tennis_lab/validate.py	218	19		py_codice_cartelle_radice	66	1.00
+main	league_orchestrator.py	237	22		py_codice_radice	67	1.00
+main	load_poisson_calibration_to_db.py	50	19		py_codice_radice	68	1.00
+main	market_intelligence/backtest.py	326	32		py_codice_cartelle_radice	69	1.00
+main	market_intelligence/backtest_audit.py	251	29		py_codice_cartelle_radice	70	1.00
+main	market_intelligence/pipeline.py	185	51		py_codice_cartelle_radice	71	1.00
+main	master_backtest.py	1495	162		py_codice_radice	72	1.00
+main	merge_engine_signals.py	228	49		py_codice_radice	73	1.00
+main	migrations/backfill_engine_signals.py	285	6		py_codice_cartelle_radice	74	1.00
+main	refresh_analytics_bets.py	223	55		py_codice_radice	75	1.00
+main	retrain_all_leagues.py	398	230		py_codice_radice	76	1.00
+main	sanity_check.py	177	31		py_codice_radice	77	1.00
+main	seasons_catchup.py	994	25		py_codice_radice	78	1.00
+main	sql/_build_wc_xlsx_2013.py	142	24		py_codice_cartelle_radice	79	1.00
+main	sql/_cert_wc_compare.py	218	37		py_codice_cartelle_radice	80	1.00
+main	sql/_cert_wc_fetch.py	70	18		py_codice_cartelle_radice	81	1.00
+main	sql/_cert_wc_full.py	203	43		py_codice_cartelle_radice	82	1.00
+main	sql/_verify_delays_math.py	101	38		py_codice_cartelle_radice	83	1.00
+main	start_order_server.py	29	24		py_codice_radice	84	1.00
+main	tactical_engine/_verify_data_worldcup.py	11	74		py_codice_cartelle_radice	85	1.00
+main	tactical_engine/generate_predictions.py	58	137		py_codice_cartelle_radice	86	1.00
+main	tactical_engine/run_daily.py	16	8		py_codice_cartelle_radice	87	1.00
+main	tactical_engine/run_worldcup.py	97	61		py_codice_cartelle_radice	88	1.00
+main	update_poisson_calibration.py	518	85		py_codice_radice	89	1.00
+main	valida_motore_poisson.py	91	75		py_codice_radice	90	1.00
+main	valida_ventaglio.py	50	126		py_codice_radice	91	1.00
+main	validate_walkforward.py	122	13		py_codice_radice	92	1.00
+main	value_engine/calibrate.py	78	22		py_codice_cartelle_radice	93	1.00
+main	value_engine/cli.py	17	35		py_codice_cartelle_radice	94	1.00
+main	ventaglio_segnali.py	296	51		py_codice_radice	95	1.00
+_num	Betfair/mike/feed.py	68	5		py_codice_Betfair	0	1.00
+_num	Betfair/safe_strategy/execution.py	2644	5		py_codice_Betfair	0	1.00
+_num	Betfair/mike/service.py	4452	11		py_codice_Betfair	1	1.00
+_num	Betfair/omega/certificazione.py	237	6		py_codice_Betfair	2	1.00
+_num	Betfair/omega/liquidity_probe.py	56	5		py_codice_Betfair	3	1.00
+_num	Betfair/omega/omega_service.py	7796	17		py_codice_Betfair	4	1.00
+_num	Betfair/safe_strategy/anomaly.py	73	5		py_codice_Betfair	5	1.00
+_num	Betfair/safe_strategy/combos.py	81	5		py_codice_Betfair	5	1.00
+_num	Betfair/safe_strategy/certificazione.py	255	2		py_codice_Betfair	6	1.00
+_num	Betfair/safe_strategy/certificazione_tennis.py	149	8		py_codice_Betfair	7	1.00
+_num	Betfair/safe_strategy/engine.py	355	2		py_codice_Betfair	8	1.00
+_num	Betfair/stream/backtest/proposte_modello.py	235	8		py_codice_Betfair	9	1.00
+_num	Betfair/stream/backtest/trasporto.py	478	5		py_codice_Betfair	10	1.00
+_num	Betfair/stream/backtest/varianti_bot.py	242	5		py_codice_Betfair	11	1.00
+_num	Betfair/stream/motore_ordini.py	355	14		py_codice_Betfair	12	1.00
+_num	Betfair/stream/saldo_evento.py	73	6		py_codice_Betfair	13	1.00
+_num	Betfair/stream/scalper/hazard_atlas_sync.py	138	5		py_codice_Betfair	14	1.00
+_num	Betfair/stream/tennis_live/tennis_runner.py	284	3		py_codice_Betfair	15	1.00
+_num	Betfair/stream/trading/risk_engine.py	458	9		py_codice_Betfair	16	1.00
+_num	build_analytics_signals.py	112	5		py_codice_radice	17	1.00
+process_market_book	Betfair/stream/backtest/banco_comune.py	2970	22	_Ponte	py_codice_Betfair	0	1.00
+process_market_book	Betfair/stream/backtest/sim_strategy.py	235	5	SimStrategy	py_codice_Betfair	1	1.00
+process_market_book	Betfair/stream/engine/live_trading_strategy.py	188	3	LiveTradingStrategy	py_codice_Betfair	2	1.00
+process_market_book	Betfair/stream/recorder.py	189	19	MarketRecorderStrategy	py_codice_Betfair	3	1.00
+process_market_book	Betfair/stream/scalper/media_under_bot.py	1116	75	MediaUnderStrategy	py_codice_Betfair	4	1.00
+process_market_book	Betfair/stream/scalper/scalper_bot.py	817	261	ScalperStrategy	py_codice_Betfair	5	1.00
+process_market_book	laboratorio/scalper_lab/scalper_bot_base.py	562	211	ScalperStrategy	py_codice_cartelle_radice	5	0.91
+process_market_book	Betfair/stream/scalper/sniper_bot.py	377	208	SniperStrategy	py_codice_Betfair	6	1.00
+process_market_book	Betfair/stream/scalper/theta_bot.py	612	172	ThetaStrategy	py_codice_Betfair	7	1.00
+process_market_book	Betfair/stream/tennis_live/tennis_runner.py	428	3	_Capture	py_codice_Betfair	8	1.00
+process_market_book	Betfair/stream/tennis_scalper/backtest_pro.py	43	9	BacktestProStrategy	py_codice_Betfair	9	1.00
+process_market_book	Betfair/stream/tennis_scalper/record_multi.py	141	2	_PassiveRecorder	py_codice_Betfair	10	1.00
+process_market_book	Betfair/stream/tennis_scalper/tennis_flb_bot.py	332	66	TennisFLBStrategy	py_codice_Betfair	11	1.00
+process_market_book	Betfair/stream/tennis_scalper/tennis_pro_bot.py	793	82	TennisProStrategy	py_codice_Betfair	12	1.00
+process_market_book	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	831	342	TennisScalperStrategy	py_codice_Betfair	13	1.00
+process_market_book	Betfair/stream/tennis_scalper/tennis_swing_bot.py	635	72	TennisSwingStrategy	py_codice_Betfair	14	1.00
+process_market_book	laboratorio/scalper_lab/grid_strategy.py	183	90	GridStrategy	py_codice_cartelle_radice	15	1.00
+process_market_book	laboratorio/scalper_lab/theta_strategy.py	160	118	ThetaStrategy	py_codice_cartelle_radice	16	1.00
+process_market_book	laboratorio/tennis_lab/tennis_lab.py	216	54	TennisLabStrategy	py_codice_cartelle_radice	17	1.00
+process_market_book	laboratorio/tennis_lab/tennis_lab_score.py	78	12	ScoreConditionedLab	py_codice_cartelle_radice	18	1.00
+check_market_book	Betfair/stream/backtest/banco_comune.py	2967	2	_Ponte	py_codice_Betfair	0	1.00
+check_market_book	Betfair/stream/backtest/sim_strategy.py	228	6	SimStrategy	py_codice_Betfair	1	1.00
+check_market_book	Betfair/stream/backtest/trasporto_rapido.py	165	2	_Muta	py_codice_Betfair	2	1.00
+check_market_book	Betfair/stream/engine/live_trading_strategy.py	183	4	LiveTradingStrategy	py_codice_Betfair	3	1.00
+check_market_book	Betfair/stream/recorder.py	184	4	MarketRecorderStrategy	py_codice_Betfair	4	1.00
+check_market_book	Betfair/stream/scalper/media_under_bot.py	1098	17	MediaUnderStrategy	py_codice_Betfair	5	1.00
+check_market_book	Betfair/stream/scalper/scalper_bot.py	769	18	ScalperStrategy	py_codice_Betfair	6	1.00
+check_market_book	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	787	14	TennisScalperStrategy	py_codice_Betfair	6	0.92
+check_market_book	laboratorio/scalper_lab/grid_strategy.py	137	11	GridStrategy	py_codice_cartelle_radice	6	0.92
+check_market_book	laboratorio/scalper_lab/scalper_bot_base.py	518	14	ScalperStrategy	py_codice_cartelle_radice	6	0.92
+check_market_book	Betfair/stream/scalper/sniper_bot.py	322	18	SniperStrategy	py_codice_Betfair	7	1.00
+check_market_book	Betfair/stream/scalper/theta_bot.py	564	22	ThetaStrategy	py_codice_Betfair	8	1.00
+check_market_book	Betfair/stream/tennis_live/tennis_runner.py	425	2	_Capture	py_codice_Betfair	9	1.00
+check_market_book	Betfair/stream/tennis_scalper/record_multi.py	138	2	_PassiveRecorder	py_codice_Betfair	10	1.00
+check_market_book	Betfair/stream/tennis_scalper/tennis_flb_bot.py	152	2	TennisFLBStrategy	py_codice_Betfair	11	1.00
+check_market_book	Betfair/stream/tennis_scalper/tennis_swing_bot.py	183	2	TennisSwingStrategy	py_codice_Betfair	11	1.00
+check_market_book	laboratorio/tennis_lab/tennis_lab.py	99	2	TennisLabStrategy	py_codice_cartelle_radice	11	1.00
+check_market_book	Betfair/stream/tennis_scalper/tennis_pro_bot.py	264	3	TennisProStrategy	py_codice_Betfair	12	1.00
+check_market_book	laboratorio/scalper_lab/theta_strategy.py	124	8	ThetaStrategy	py_codice_cartelle_radice	13	1.00
+_now_iso	Betfair/mike/db.py	52	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/omega/omega_db.py	432	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/order_worker.py	32	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/refresh_worker.py	31	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/safe_strategy/bot_db.py	55	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/safe_strategy/db.py	16	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/stream/db.py	40	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/stream/engine/live_trading_strategy.py	61	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/stream/live_order_worker.py	650	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/stream/risk_engine_worker.py	43	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/stream/scalper/scalper_service.py	51	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/stream/scalper/scalper_session.py	304	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/stream/scores/api_football.py	21	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/stream/scores/betfair_inplay.py	23	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/stream/tennis_live/tennis_db.py	79	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/stream/tennis_live/tennis_live_order_worker.py	219	2		py_codice_Betfair	0	1.00
+_now_iso	Betfair/stream/xhedge_worker.py	23	2		py_codice_Betfair	0	1.00
+process_closed_market	Betfair/stream/backtest/sim_strategy.py	241	15	SimStrategy	py_codice_Betfair	0	1.00
+process_closed_market	laboratorio/scalper_lab/scalper_bot_base.py	774	14	ScalperStrategy	py_codice_cartelle_radice	0	0.93
+process_closed_market	Betfair/stream/engine/live_trading_strategy.py	211	16	LiveTradingStrategy	py_codice_Betfair	1	1.00
+process_closed_market	Betfair/stream/recorder.py	209	31	MarketRecorderStrategy	py_codice_Betfair	2	1.00
+process_closed_market	Betfair/stream/scalper/media_under_bot.py	2595	43	MediaUnderStrategy	py_codice_Betfair	3	1.00
+process_closed_market	Betfair/stream/scalper/scalper_bot.py	1079	29	ScalperStrategy	py_codice_Betfair	4	1.00
+process_closed_market	Betfair/stream/scalper/sniper_bot.py	1364	24	SniperStrategy	py_codice_Betfair	5	1.00
+process_closed_market	Betfair/stream/scalper/theta_bot.py	595	15	ThetaStrategy	py_codice_Betfair	6	1.00
+process_closed_market	Betfair/stream/tennis_live/tennis_runner.py	432	16	_Capture	py_codice_Betfair	7	1.00
+process_closed_market	Betfair/stream/tennis_scalper/backtest_pro.py	53	7	BacktestProStrategy	py_codice_Betfair	8	1.00
+process_closed_market	Betfair/stream/tennis_scalper/tennis_flb_bot.py	695	33	TennisFLBStrategy	py_codice_Betfair	9	1.00
+process_closed_market	Betfair/stream/tennis_scalper/tennis_pro_bot.py	1287	31	TennisProStrategy	py_codice_Betfair	10	1.00
+process_closed_market	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1212	42	TennisScalperStrategy	py_codice_Betfair	11	1.00
+process_closed_market	Betfair/stream/tennis_scalper/tennis_swing_bot.py	782	29	TennisSwingStrategy	py_codice_Betfair	12	1.00
+process_closed_market	laboratorio/scalper_lab/grid_strategy.py	475	11	GridStrategy	py_codice_cartelle_radice	13	1.00
+process_closed_market	laboratorio/scalper_lab/theta_strategy.py	393	11	ThetaStrategy	py_codice_cartelle_radice	13	0.91
+process_closed_market	laboratorio/tennis_lab/tennis_lab.py	380	13	TennisLabStrategy	py_codice_cartelle_radice	14	1.00
+_f	Betfair/mike/regolato_conto.py	77	5		py_codice_Betfair	0	1.00
+_f	Betfair/stream/backtest/uscite_manuali.py	165	5		py_codice_Betfair	0	1.00
+_f	Betfair/omega/omega_proposte.py	227	5		py_codice_Betfair	1	1.00
+_f	Betfair/order_worker.py	36	7		py_codice_Betfair	2	1.00
+_f	Betfair/stream/live_order_worker.py	654	7		py_codice_Betfair	2	1.00
+_f	Betfair/stream/tennis_live/tennis_live_order_worker.py	145	7		py_codice_Betfair	2	1.00
+_f	Betfair/stream/trading/controls.py	49	7		py_codice_Betfair	2	1.00
+_f	Betfair/safe_strategy/bot_service.py	400	6		py_codice_Betfair	3	1.00
+_f	Betfair/safe_strategy/certificazione_k.py	163	7		py_codice_Betfair	4	1.00
+_f	Betfair/stream/scalper/certificazione.py	206	7		py_codice_Betfair	4	1.00
+_f	Betfair/stream/tennis_live/certificazione_bot.py	191	7		py_codice_Betfair	4	1.00
+_f	Betfair/safe_strategy/exits.py	321	6		py_codice_Betfair	5	1.00
+_f	Betfair/safe_strategy/risk.py	60	6		py_codice_Betfair	6	1.00
+_f	Betfair/stream/backtest/chiusura_parziale.py	128	9		py_codice_Betfair	7	1.00
+_f	Betfair/stream/db.py	392	5		py_codice_Betfair	8	1.00
+_f	Betfair/stream/engine/live_trading_strategy.py	73	7		py_codice_Betfair	9	1.00
+_place	Betfair/mike/engine.py	1876	17		py_codice_Betfair	0	1.00
+_place	Betfair/stream/backtest/chiusura_parziale.py	461	4		py_codice_Betfair	1	1.00
+_place	Betfair/stream/backtest/minimi_banco.py	147	4		py_codice_Betfair	2	1.00
+_place	Betfair/stream/backtest/minimi_banco.py	219	4		py_codice_Betfair	3	1.00
+_place	Betfair/stream/backtest/sim_strategy.py	208	18	SimStrategy	py_codice_Betfair	4	1.00
+_place	Betfair/stream/backtest/trasporto.py	308	3		py_codice_Betfair	5	1.00
+_place	Betfair/stream/scalper/scalper_bot.py	2743	171	ScalperStrategy	py_codice_Betfair	6	1.00
+_place	Betfair/stream/scalper/sniper_bot.py	1083	74	SniperStrategy	py_codice_Betfair	7	1.00
+_place	Betfair/stream/tennis_scalper/tennis_flb_bot.py	188	81	TennisFLBStrategy	py_codice_Betfair	8	1.00
+_place	Betfair/stream/tennis_scalper/tennis_pro_bot.py	467	82	TennisProStrategy	py_codice_Betfair	9	1.00
+_place	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2413	162	TennisScalperStrategy	py_codice_Betfair	10	1.00
+_place	Betfair/stream/tennis_scalper/tennis_swing_bot.py	244	69	TennisSwingStrategy	py_codice_Betfair	11	1.00
+_place	laboratorio/scalper_lab/grid_strategy.py	437	18	GridStrategy	py_codice_cartelle_radice	12	1.00
+_place	laboratorio/scalper_lab/scalper_bot_base.py	1746	94	ScalperStrategy	py_codice_cartelle_radice	13	1.00
+_place	laboratorio/scalper_lab/theta_strategy.py	360	13	ThetaStrategy	py_codice_cartelle_radice	14	1.00
+_place	laboratorio/tennis_lab/tennis_lab.py	135	15	TennisLabStrategy	py_codice_cartelle_radice	15	1.00
+__getattr__	Betfair/safe_strategy/bot_service.py	102	2	_MercatoSafe	py_codice_Betfair	0	1.00
+__getattr__	Betfair/stream/backtest/banco_comune.py	390	11	DbMemoria	py_codice_Betfair	1	1.00
+__getattr__	Betfair/stream/backtest/chiusura_parziale.py	253	2	_Vista	py_codice_Betfair	2	1.00
+__getattr__	Betfair/stream/backtest/porta_banco.py	124	2	ClienteLiveBanco	py_codice_Betfair	3	1.00
+__getattr__	Betfair/stream/backtest/porta_banco.py	140	2	_QuadroBanco	py_codice_Betfair	4	1.00
+__getattr__	Betfair/stream/backtest/porta_banco.py	292	4	_TennisDbNullo	py_codice_Betfair	5	1.00
+__getattr__	Betfair/stream/esiti_ordini_canale.py	377	2	DbConSpecchioDalCanale	py_codice_Betfair	6	1.00
+__getattr__	Betfair/stream/live_order_worker.py	3393	9	_CatenaDifferita	py_codice_Betfair	7	1.00
+__getattr__	Betfair/stream/scalper/__init__.py	28	7		py_codice_Betfair	8	1.00
+__getattr__	Betfair/stream/tennis_live/esecutore_tennis.py	309	2	CanaleSoloComandi	py_codice_Betfair	9	1.00
+__getattr__	Betfair/stream/tennis_live/guardie_tennis.py	127	2	MercatoConClient	py_codice_Betfair	10	1.00
+__getattr__	db_client.py	356	4	_Catena	py_codice_radice	11	1.00
+__getattr__	db_client.py	396	6	ClientResiliente	py_codice_radice	12	1.00
+__getattr__	laboratorio/scalper_lab/bt_lab.py	56	4		py_codice_cartelle_radice	13	1.00
+avvia	Betfair/mike/porta_ordini.py	164	6	PortaCanaleMike	py_codice_Betfair	0	1.00
+avvia	Betfair/omega/porta_ordini.py	184	6	PortaCanaleOmega	py_codice_Betfair	1	1.00
+avvia	Betfair/safe_strategy/canale_scan.py	354	6	ClientScan	py_codice_Betfair	2	1.00
+avvia	Betfair/safe_strategy/porta_ordini.py	582	6	PortaCanale	py_codice_Betfair	3	1.00
+avvia	Betfair/stream/auto_follow.py	675	7	AutoFollow	py_codice_Betfair	4	1.00
+avvia	Betfair/stream/backtest/porta_banco.py	97	2	_ScrittoreNullo	py_codice_Betfair	5	1.00
+avvia	Betfair/stream/esiti_ordini_canale.py	264	7	ClientEsiti	py_codice_Betfair	6	1.00
+avvia	Betfair/stream/esiti_ordini_canale.py	453	16	EsitiOrdini	py_codice_Betfair	7	1.00
+avvia	Betfair/stream/motore_ordini.py	281	6	ScrittoreAsincrono	py_codice_Betfair	8	1.00
+avvia	Betfair/stream/motore_ordini.py	789	17	MotoreOrdini	py_codice_Betfair	9	1.00
+avvia	Betfair/stream/sveglia_canale.py	294	15	AscoltoScan	py_codice_Betfair	10	1.00
+avvia	Betfair/stream/tennis_live/canale_bot_tennis.py	155	7	InoltroPosizioni	py_codice_Betfair	11	1.00
+avvia	Betfair/stream/tennis_live/esecutore_tennis.py	421	7	AgganciaTennis	py_codice_Betfair	12	1.00
+avvia	Betfair/stream/valuta.py	217	14	CambioGbpEur	py_codice_Betfair	13	1.00
+stato	Betfair/safe_strategy/canale_scan.py	234	6	CacheScan	py_codice_Betfair	0	1.00
+stato	Betfair/safe_strategy/canale_scan.py	364	5	ClientScan	py_codice_Betfair	1	1.00
+stato	Betfair/safe_strategy/porta_ordini.py	601	7	PortaCanale	py_codice_Betfair	2	1.00
+stato	Betfair/safe_strategy/service.py	397	13	SorvegliaFonte	py_codice_Betfair	3	1.00
+stato	Betfair/safe_strategy/stream.py	362	21	StreamShard	py_codice_Betfair	4	1.00
+stato	Betfair/stream/auth.py	246	12	CustodeSessione	py_codice_Betfair	5	1.00
+stato	Betfair/stream/auto_follow.py	1043	41	AutoFollow	py_codice_Betfair	6	1.00
+stato	Betfair/stream/esiti_ordini_canale.py	220	3	MemoriaEsiti	py_codice_Betfair	7	1.00
+stato	Betfair/stream/esiti_ordini_canale.py	275	5	ClientEsiti	py_codice_Betfair	8	1.00
+stato	Betfair/stream/esiti_ordini_canale.py	848	3	MemoriaConto	py_codice_Betfair	9	1.00
+stato	Betfair/stream/frammenti_mercato.py	628	38	GestoreFrammenti	py_codice_Betfair	10	1.00
+stato	Betfair/stream/tennis_live/esecutore_tennis.py	598	4	AgganciaTennis	py_codice_Betfair	11	1.00
+stato	Betfair/stream/valuta.py	245	4	CambioGbpEur	py_codice_Betfair	12	1.00
+stato	api_quota.py	329	2	QuotaConPavimento	py_codice_radice	13	1.00
+_emit	Betfair/stream/backtest/uscite_manuali.py	277	6		py_codice_Betfair	0	1.00
+_emit	Betfair/stream/scalper/media_under_bot.py	1006	7	MediaUnderStrategy	py_codice_Betfair	1	1.00
+_emit	Betfair/stream/scalper/scalper_bot.py	737	8	ScalperStrategy	py_codice_Betfair	2	1.00
+_emit	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	639	8	TennisScalperStrategy	py_codice_Betfair	2	1.00
+_emit	laboratorio/scalper_lab/scalper_bot_base.py	495	8	ScalperStrategy	py_codice_cartelle_radice	2	1.00
+_emit	Betfair/stream/scalper/sniper_bot.py	212	7	SniperStrategy	py_codice_Betfair	3	1.00
+_emit	Betfair/stream/tennis_live/tennis_live_order_worker.py	761	3		py_codice_Betfair	4	1.00
+_emit	Betfair/stream/tennis_scalper/tennis_flb_bot.py	144	7	TennisFLBStrategy	py_codice_Betfair	5	1.00
+_emit	Betfair/stream/tennis_scalper/tennis_pro_bot.py	256	7	TennisProStrategy	py_codice_Betfair	5	1.00
+_emit	Betfair/stream/tennis_scalper/tennis_swing_bot.py	137	4	TennisSwingStrategy	py_codice_Betfair	6	1.00
+_emit	Betfair/stream/uscite_proposte.py	303	7	CancelloUscite	py_codice_Betfair	7	1.00
+_emit	laboratorio/scalper_lab/grid_strategy.py	116	7	GridStrategy	py_codice_cartelle_radice	8	1.00
+_emit	laboratorio/scalper_lab/theta_strategy.py	104	7	ThetaStrategy	py_codice_cartelle_radice	8	1.00
+_int	Betfair/safe_strategy/anomaly.py	90	5		py_codice_Betfair	0	1.00
+_int	Betfair/safe_strategy/combos.py	98	5		py_codice_Betfair	0	1.00
+_int	Betfair/safe_strategy/exits.py	343	11		py_codice_Betfair	1	1.00
+_int	Betfair/safe_strategy/pressure.py	50	7		py_codice_Betfair	2	1.00
+_int	Betfair/stream/backtest/proposte_modello.py	245	3		py_codice_Betfair	3	1.00
+_int	Betfair/stream/engine/live_trading_strategy.py	88	7		py_codice_Betfair	4	1.00
+_int	Betfair/stream/live_order_worker.py	663	7		py_codice_Betfair	5	1.00
+_int	Betfair/stream/tennis_live/tennis_live_order_worker.py	154	7		py_codice_Betfair	5	1.00
+_int	Betfair/stream/trading/controls.py	58	7		py_codice_Betfair	5	1.00
+_int	Betfair/stream/scalper/genera_atlante.py	104	5		py_codice_Betfair	6	1.00
+_int	Betfair/stream/scalper/validazione_hazard/dati.py	30	5		py_codice_Betfair	6	1.00
+_int	Betfair/stream/tennis_replay/convertitore.py	270	5		py_codice_Betfair	7	1.00
+azzera	Betfair/mike/porta_ordini.py	209	10		py_codice_Betfair	0	1.00
+azzera	Betfair/omega/porta_ordini.py	227	11		py_codice_Betfair	0	0.90
+azzera	Betfair/safe_strategy/canale_scan.py	219	7	CacheScan	py_codice_Betfair	1	1.00
+azzera	Betfair/safe_strategy/porta_ordini.py	778	7		py_codice_Betfair	2	1.00
+azzera	Betfair/stream/avvio_app.py	139	6	Guardia	py_codice_Betfair	3	1.00
+azzera	Betfair/stream/backtest/minimi_banco.py	76	3	Registro	py_codice_Betfair	4	1.00
+azzera	Betfair/stream/esiti_ordini_canale.py	842	5	MemoriaConto	py_codice_Betfair	5	1.00
+azzera	Betfair/stream/flusso_prezzi.py	321	2	Promemoria	py_codice_Betfair	6	1.00
+azzera	Betfair/stream/modo_ordini.py	311	6		py_codice_Betfair	7	1.00
+azzera	Betfair/stream/riserva_prezzi.py	61	4		py_codice_Betfair	8	1.00
+azzera	Betfair/stream/saldo_evento.py	215	10		py_codice_Betfair	9	1.00
+azzera	Betfair/stream/sveglia_canale.py	236	9	Sveglia	py_codice_Betfair	10	1.00
+_reg	Betfair/mike/certificazione.py	80	3		py_codice_Betfair	0	1.00
+_reg	Betfair/omega/certificazione.py	195	3		py_codice_Betfair	0	1.00
+_reg	Betfair/safe_strategy/certificazione_tennis.py	139	3		py_codice_Betfair	0	1.00
+_reg	Betfair/mike/certificazione.py	1465	4		py_codice_Betfair	1	1.00
+_reg	Betfair/omega/certificazione.py	1892	4		py_codice_Betfair	1	1.00
+_reg	Betfair/safe_strategy/certificazione.py	220	3		py_codice_Betfair	2	1.00
+_reg	Betfair/safe_strategy/certificazione_k.py	66	5		py_codice_Betfair	3	1.00
+_reg	Betfair/stream/scalper/certificazione.py	192	7		py_codice_Betfair	4	1.00
+_reg	Betfair/stream/scalper/certificazione.py	1484	7		py_codice_Betfair	5	1.00
+_reg	Betfair/stream/scalper/certificazione.py	2180	5		py_codice_Betfair	6	1.00
+_reg	Betfair/stream/tennis_live/certificazione_bot.py	179	5		py_codice_Betfair	7	1.00
+ferma	Betfair/safe_strategy/canale_scan.py	361	2	ClientScan	py_codice_Betfair	0	1.00
+ferma	Betfair/stream/esiti_ordini_canale.py	272	2	ClientEsiti	py_codice_Betfair	0	1.00
+ferma	Betfair/stream/sveglia_canale.py	310	2	AscoltoScan	py_codice_Betfair	0	1.00
+ferma	Betfair/stream/tennis_live/canale_bot_tennis.py	163	2	InoltroPosizioni	py_codice_Betfair	0	1.00
+ferma	Betfair/safe_strategy/porta_ordini.py	589	8	PortaCanale	py_codice_Betfair	1	1.00
+ferma	Betfair/stream/auto_follow.py	683	5	AutoFollow	py_codice_Betfair	2	1.00
+ferma	Betfair/stream/tennis_live/esecutore_tennis.py	429	5	AgganciaTennis	py_codice_Betfair	2	1.00
+ferma	Betfair/stream/backtest/porta_banco.py	100	2	_ScrittoreNullo	py_codice_Betfair	3	1.00
+ferma	Betfair/stream/esiti_ordini_canale.py	470	4	EsitiOrdini	py_codice_Betfair	4	1.00
+ferma	Betfair/stream/motore_ordini.py	288	8	ScrittoreAsincrono	py_codice_Betfair	5	1.00
+ferma	Betfair/stream/motore_ordini.py	807	16	MotoreOrdini	py_codice_Betfair	6	1.00
+elenco_controlli	Betfair/mike/certificazione.py	1894	9		py_codice_Betfair	0	1.00
+elenco_controlli	Betfair/omega/certificazione.py	1734	10		py_codice_Betfair	1	1.00
+elenco_controlli	Betfair/safe_strategy/certificazione.py	1902	10		py_codice_Betfair	2	1.00
+elenco_controlli	Betfair/safe_strategy/certificazione_k.py	490	3		py_codice_Betfair	3	1.00
+elenco_controlli	Betfair/safe_strategy/certificazione_tennis.py	1107	5		py_codice_Betfair	4	1.00
+elenco_controlli	Betfair/stream/backtest/chiusura_parziale.py	116	3		py_codice_Betfair	5	1.00
+elenco_controlli	Betfair/stream/backtest/proposte_modello.py	200	3		py_codice_Betfair	5	1.00
+elenco_controlli	Betfair/stream/backtest/uscite_manuali.py	150	4		py_codice_Betfair	6	1.00
+elenco_controlli	Betfair/stream/scalper/certificazione.py	1328	2		py_codice_Betfair	7	1.00
+elenco_controlli	Betfair/stream/tennis_live/certificazione_bot.py	1147	3		py_codice_Betfair	7	1.00
+evaluate	Betfair/safe_strategy/engine.py	2112	20	SafeEngine	py_codice_Betfair	0	1.00
+evaluate	Betfair/safe_strategy/opportunity.py	529	69	OpportunityModel	py_codice_Betfair	1	1.00
+evaluate	Betfair/safe_strategy/tennis_opportunity.py	288	38	TennisOpportunityModel	py_codice_Betfair	2	1.00
+evaluate	Betfair/stream/backtest/proposte_modello.py	469	36	ModelloCalcioReplay	py_codice_Betfair	3	1.00
+evaluate	Betfair/stream/backtest/proposte_modello.py	519	34	ModelloTennisReplay	py_codice_Betfair	4	1.00
+evaluate	Prediction/predictions_results_backfill.py	434	58		py_codice_cartelle_radice	5	1.00
+evaluate	_stack_eval.py	54	35		py_codice_radice	6	1.00
+evaluate	laboratorio/scalper_lab/rdloop.py	107	10		py_codice_cartelle_radice	7	1.00
+evaluate	value_engine/bivariate.py	191	20		py_codice_cartelle_radice	8	1.00
+evaluate	value_engine/markets.py	46	15		py_codice_cartelle_radice	9	1.00
+place	Betfair/safe_strategy/execution.py	1061	449		py_codice_Betfair	0	1.00
+place	Betfair/stream/live_order_worker.py	2931	14	_RecordingFlumineOps	py_codice_Betfair	1	1.00
+place	Betfair/stream/scalper/scalper_bot.py	3118	4	_CapturingOps	py_codice_Betfair	2	1.00
+place	Betfair/stream/scalper/sniper_bot.py	1222	4	_CapturingOps	py_codice_Betfair	2	1.00
+place	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2739	4	_CapturingOps	py_codice_Betfair	2	1.00
+place	laboratorio/scalper_lab/scalper_bot_base.py	1953	4	_CapturingOps	py_codice_cartelle_radice	2	1.00
+place	Betfair/stream/tempi_ordine.py	184	23		py_codice_Betfair	3	1.00
+place	Betfair/stream/tennis_scalper/condotta_ordini.py	619	4	_OpsCattura	py_codice_Betfair	4	1.00
+place	Betfair/stream/trading/submin.py	144	12	SubminOps	py_codice_Betfair	5	1.00
+place	Betfair/stream/trading/submin.py	195	46	FlumineSubminOps	py_codice_Betfair	6	1.00
+invia	Betfair/mike/porta_ordini.py	145	8	VistaMike	py_codice_Betfair	0	1.00
+invia	Betfair/omega/porta_ordini.py	162	10	VistaOmega	py_codice_Betfair	1	1.00
+invia	Betfair/safe_strategy/porta_ordini.py	525	2	PortaOggi	py_codice_Betfair	2	1.00
+invia	Betfair/safe_strategy/porta_ordini.py	699	19	PortaCanale	py_codice_Betfair	3	1.00
+invia	Betfair/stream/backtest/porta_banco.py	241	4	_CanaleBanco	py_codice_Betfair	4	1.00
+invia	Betfair/stream/backtest/porta_banco.py	513	9	PortaBanco	py_codice_Betfair	5	1.00
+invia	Betfair/stream/backtest/trasporto_rapido.py	383	14	_Safe	py_codice_Betfair	6	1.00
+invia	Betfair/stream/backtest/trasporto_rapido.py	438	22	_Omega	py_codice_Betfair	7	1.00
+invia	Betfair/stream/local_channel.py	564	13	LocalChannel	py_codice_Betfair	8	1.00
+ask_and_run_cli	fixtures_backfill.py	178	29		py_codice_radice	0	1.00
+ask_and_run_cli	injuries_backfill.py	333	18		py_codice_radice	1	1.00
+ask_and_run_cli	league_orchestrator.py	210	15		py_codice_radice	2	1.00
+ask_and_run_cli	per_fixture_backfill.py	1195	18		py_codice_radice	3	1.00
+ask_and_run_cli	standings_backfill.py	360	18		py_codice_radice	4	1.00
+ask_and_run_cli	top_assists_backfill.py	359	18		py_codice_radice	5	1.00
+ask_and_run_cli	top_cards_backfill.py	383	18		py_codice_radice	6	1.00
+ask_and_run_cli	top_scorers_backfill.py	359	18		py_codice_radice	7	1.00
+get_supabase	daily_yesterday_backfill.py	31	5		py_codice_radice	0	1.00
+get_supabase	injuries_backfill.py	47	5		py_codice_radice	1	1.00
+get_supabase	league_orchestrator.py	41	6		py_codice_radice	1	0.91
+get_supabase	standings_backfill.py	47	5		py_codice_radice	1	1.00
+get_supabase	top_assists_backfill.py	47	5		py_codice_radice	1	1.00
+get_supabase	top_cards_backfill.py	47	5		py_codice_radice	1	1.00
+get_supabase	top_scorers_backfill.py	47	5		py_codice_radice	1	1.00
+get_supabase	per_fixture_backfill.py	83	6		py_codice_radice	2	1.00
+statistiche	Betfair/stream/canale_bot.py	412	6		py_codice_Betfair	0	1.00
+statistiche	Betfair/stream/esiti_ordini_canale.py	585	5	EsitiOrdini	py_codice_Betfair	1	1.00
+statistiche	Betfair/stream/local_channel.py	764	4		py_codice_Betfair	2	1.00
+statistiche	Betfair/stream/local_channel.py	608	11	LocalChannel	py_codice_Betfair	3	1.00
+statistiche	Betfair/stream/sveglia_canale.py	229	6	Sveglia	py_codice_Betfair	4	1.00
+statistiche	Betfair/stream/tennis_live/canale_bot_tennis.py	323	3	CancelloBotControl	py_codice_Betfair	4	1.00
+statistiche	Betfair/stream/sveglia_canale.py	316	3	AscoltoScan	py_codice_Betfair	5	1.00
+statistiche	Betfair/stream/tennis_live/canale_bot_tennis.py	166	3	InoltroPosizioni	py_codice_Betfair	6	1.00
+verifica	Betfair/mike/certificazione.py	1867	25		py_codice_Betfair	0	1.00
+verifica	Betfair/omega/certificazione.py	1709	23		py_codice_Betfair	1	1.00
+verifica	Betfair/safe_strategy/certificazione.py	1825	37		py_codice_Betfair	2	1.00
+verifica	Betfair/safe_strategy/certificazione_tennis.py	1063	21		py_codice_Betfair	3	1.00
+verifica	Betfair/stream/backtest/chiusura_parziale.py	825	165	Sorveglianza	py_codice_Betfair	4	1.00
+verifica	Betfair/stream/backtest/proposte_modello.py	1041	190	Sorveglianza	py_codice_Betfair	5	1.00
+verifica	Betfair/stream/scalper/certificazione.py	1288	38		py_codice_Betfair	6	1.00
+verifica	Betfair/stream/tennis_live/certificazione_bot.py	1119	26		py_codice_Betfair	7	1.00
+_controllo	Betfair/mike/certificazione.py	67	17		py_codice_Betfair	0	1.00
+_controllo	Betfair/safe_strategy/certificazione_tennis.py	136	8		py_codice_Betfair	0	1.00
+_controllo	Betfair/omega/certificazione.py	187	12		py_codice_Betfair	1	1.00
+_controllo	Betfair/safe_strategy/certificazione.py	210	14		py_codice_Betfair	2	1.00
+_controllo	Betfair/safe_strategy/certificazione_k.py	55	17		py_codice_Betfair	3	1.00
+_controllo	Betfair/stream/scalper/certificazione.py	190	11		py_codice_Betfair	4	1.00
+_controllo	Betfair/stream/tennis_live/certificazione_bot.py	176	10		py_codice_Betfair	5	1.00
+_ko_epoch_ms	Betfair/stream/scalper/media_under_bot.py	1020	13	MediaUnderStrategy	py_codice_Betfair	0	1.00
+_ko_epoch_ms	Betfair/stream/scalper/scalper_bot.py	788	28	ScalperStrategy	py_codice_Betfair	1	1.00
+_ko_epoch_ms	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	802	28	TennisScalperStrategy	py_codice_Betfair	1	1.00
+_ko_epoch_ms	laboratorio/scalper_lab/scalper_bot_base.py	533	28	ScalperStrategy	py_codice_cartelle_radice	1	1.00
+_ko_epoch_ms	Betfair/stream/scalper/sniper_bot.py	295	17	SniperStrategy	py_codice_Betfair	2	1.00
+_ko_epoch_ms	laboratorio/scalper_lab/theta_strategy.py	133	17	ThetaStrategy	py_codice_cartelle_radice	2	1.00
+_ko_epoch_ms	laboratorio/scalper_lab/grid_strategy.py	149	19	GridStrategy	py_codice_cartelle_radice	3	1.00
+_process_once	Betfair/order_worker.py	59	68		py_codice_Betfair	0	1.00
+_process_once	Betfair/refresh_worker.py	35	45		py_codice_Betfair	1	1.00
+_process_once	Betfair/stream/daily_stop_worker.py	413	79		py_codice_Betfair	2	1.00
+_process_once	Betfair/stream/live_order_worker.py	3788	155		py_codice_Betfair	3	1.00
+_process_once	Betfair/stream/reconcile_worker.py	1290	37		py_codice_Betfair	4	1.00
+_process_once	Betfair/stream/risk_engine_worker.py	1184	34		py_codice_Betfair	5	1.00
+_process_once	Betfair/stream/xhedge_worker.py	80	53		py_codice_Betfair	6	1.00
+_validate	Betfair/client.py	71	16	BetfairClient	py_codice_Betfair	0	1.00
+_validate	Betfair/stream/tennis_live/guardie_tennis.py	194	17	ControlloModalitaBotTennis	py_codice_Betfair	1	1.00
+_validate	Betfair/stream/tennis_live/guardie_tennis.py	330	8	ControlloKillSwitchTennis	py_codice_Betfair	2	1.00
+_validate	Betfair/stream/tennis_live/guardie_tennis.py	360	19	ControlloModoOrdiniTennis	py_codice_Betfair	3	1.00
+_validate	Betfair/stream/trading/controls.py	289	35	LiveExposureControl	py_codice_Betfair	4	1.00
+_validate	Betfair/stream/trading/controls.py	341	21	LiveRateControl	py_codice_Betfair	5	1.00
+_validate	Betfair/stream/trading/controls.py	446	79	LiveEventExposureControl	py_codice_Betfair	6	1.00
+acceso	Betfair/omega/porta_ordini.py	68	3		py_codice_Betfair	0	1.00
+acceso	Betfair/safe_strategy/porta_ordini.py	134	3		py_codice_Betfair	1	1.00
+acceso	Betfair/stream/canale_bot.py	159	8		py_codice_Betfair	1	1.00
+acceso	Betfair/stream/auto_follow.py	116	6		py_codice_Betfair	2	1.00
+acceso	Betfair/stream/backtest/varianti_bot.py	198	2	Accensione	py_codice_Betfair	3	1.00
+acceso	Betfair/stream/tennis_live/esecutore_tennis.py	76	4		py_codice_Betfair	4	1.00
+acceso	Betfair/stream/tennis_live/iscrizione_a_caldo.py	80	7		py_codice_Betfair	5	1.00
+aggiorna	Betfair/safe_strategy/canale_scan.py	137	36	CacheScan	py_codice_Betfair	0	1.00
+aggiorna	Betfair/safe_strategy/selezione.py	442	11	SchedeFixture	py_codice_Betfair	1	1.00
+aggiorna	Betfair/stream/backtest/porta_banco.py	526	26	PortaBanco	py_codice_Betfair	2	1.00
+aggiorna	Betfair/stream/tennis_scalper/condotta_ordini.py	581	15	ResiduiRicordati	py_codice_Betfair	3	1.00
+aggiorna	Betfair/stream/valuta.py	192	24	CambioGbpEur	py_codice_Betfair	4	1.00
+aggiorna	api_quota.py	251	41	GestoreQuota	py_codice_radice	5	1.00
+aggiorna	api_quota.py	332	2	QuotaConPavimento	py_codice_radice	6	1.00
+log	Betfair/mike/db.py	71	10		py_codice_Betfair	0	1.00
+log	Betfair/omega/omega_db.py	61	9		py_codice_Betfair	1	1.00
+log	Betfair/safe_strategy/bot_db.py	77	9		py_codice_Betfair	2	1.00
+log	Betfair/stream/backtest/banco_comune.py	318	3	DbMemoria	py_codice_Betfair	3	1.00
+log	Betfair/stream/scalper/scalper_session.py	1268	8	Db	py_codice_Betfair	4	1.00
+log	Betfair/stream/scalper/validazione_hazard/banco.py	45	2		py_codice_Betfair	5	1.00
+log	migrations/backfill_engine_signals.py	236	3		py_codice_cartelle_radice	6	1.00
+run	AGGIORNA_CAMPO_db_json_analisi.py	208	156		py_codice_radice	0	1.00
+run	Betfair/safe_strategy/service.py	3277	24	ScoreFeedWorker	py_codice_Betfair	1	1.00
+run	Betfair/stream/frammenti_mercato.py	202	15	FrammentoMarketStream	py_codice_Betfair	2	1.00
+run	Betfair/stream/tennis_live/tennis_bot_service.py	1081	44		py_codice_Betfair	3	1.00
+run	Betfair/stream/tennis_scalper/backtest_pro.py	92	48		py_codice_Betfair	4	1.00
+run	Prediction/predictions_results_backfill.py	743	98		py_codice_cartelle_radice	5	1.00
+run	tmp_smoke_poisson_fixes.py	130	16		py_codice_radice	6	1.00
+settled_orders	Betfair/stream/backtest/sim_strategy.py	148	10	SimStrategy	py_codice_Betfair	0	1.00
+settled_orders	Betfair/stream/scalper/scalper_bot.py	756	3	ScalperStrategy	py_codice_Betfair	1	1.00
+settled_orders	Betfair/stream/scalper/sniper_bot.py	221	2	SniperStrategy	py_codice_Betfair	1	1.00
+settled_orders	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	649	3	TennisScalperStrategy	py_codice_Betfair	1	1.00
+settled_orders	laboratorio/scalper_lab/grid_strategy.py	125	2	GridStrategy	py_codice_cartelle_radice	1	1.00
+settled_orders	laboratorio/scalper_lab/scalper_bot_base.py	505	3	ScalperStrategy	py_codice_cartelle_radice	1	1.00
+settled_orders	laboratorio/scalper_lab/theta_strategy.py	113	2	ThetaStrategy	py_codice_cartelle_radice	1	1.00
+__str__	Betfair/mike/certificazione.py	54	4	Violazione	py_codice_Betfair	0	1.00
+__str__	Betfair/omega/certificazione.py	53	4	Violazione	py_codice_Betfair	1	1.00
+__str__	Betfair/safe_strategy/certificazione.py	115	7	Violazione	py_codice_Betfair	2	1.00
+__str__	Betfair/safe_strategy/certificazione_tennis.py	69	2	Violazione	py_codice_Betfair	3	1.00
+__str__	Betfair/stream/scalper/certificazione.py	111	3	Violazione	py_codice_Betfair	4	1.00
+__str__	Betfair/stream/tennis_live/certificazione_bot.py	89	3	Violazione	py_codice_Betfair	4	1.00
+_avvia_canale	Betfair/mike/service.py	6831	15		py_codice_Betfair	0	1.00
+_avvia_canale	Betfair/omega/omega_service.py	8590	15		py_codice_Betfair	1	1.00
+_avvia_canale	Betfair/safe_strategy/bot_service.py	10572	17		py_codice_Betfair	2	1.00
+_avvia_canale	Betfair/safe_strategy/service.py	2441	34	Scanner	py_codice_Betfair	3	1.00
+_avvia_canale	Betfair/stream/scalper/scalper_service.py	594	23		py_codice_Betfair	4	1.00
+_avvia_canale	Betfair/stream/tennis_live/tennis_bot_service.py	247	30		py_codice_Betfair	5	1.00
+_cancel_if_live	Betfair/stream/scalper/scalper_bot.py	3262	13	ScalperStrategy	py_codice_Betfair	0	1.00
+_cancel_if_live	laboratorio/scalper_lab/scalper_bot_base.py	2032	13	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_cancel_if_live	Betfair/stream/scalper/sniper_bot.py	1353	10	SniperStrategy	py_codice_Betfair	1	1.00
+_cancel_if_live	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2921	16	TennisScalperStrategy	py_codice_Betfair	2	1.00
+_cancel_if_live	laboratorio/scalper_lab/grid_strategy.py	465	9	GridStrategy	py_codice_cartelle_radice	3	1.00
+_cancel_if_live	laboratorio/scalper_lab/theta_strategy.py	383	9	ThetaStrategy	py_codice_cartelle_radice	4	1.00
+_ciclo	Betfair/stream/auto_follow.py	811	10	AutoFollow	py_codice_Betfair	0	1.00
+_ciclo	Betfair/stream/motore_ordini.py	841	36	MotoreOrdini	py_codice_Betfair	1	1.00
+_ciclo	Betfair/stream/scalper/hazard_atlas_sync.py	197	4		py_codice_Betfair	2	1.00
+_ciclo	Betfair/stream/scalper/hazard_atlas_sync.py	204	4		py_codice_Betfair	3	1.00
+_ciclo	Betfair/stream/tennis_live/esecutore_tennis.py	552	10	AgganciaTennis	py_codice_Betfair	4	1.00
+_ciclo	Betfair/stream/valuta.py	224	4		py_codice_Betfair	5	1.00
+_drive_flatten	Betfair/stream/scalper/scalper_bot.py	2247	204	ScalperStrategy	py_codice_Betfair	0	1.00
+_drive_flatten	Betfair/stream/scalper/sniper_bot.py	786	139	SniperStrategy	py_codice_Betfair	1	1.00
+_drive_flatten	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2161	160	TennisScalperStrategy	py_codice_Betfair	2	1.00
+_drive_flatten	laboratorio/scalper_lab/grid_strategy.py	397	39	GridStrategy	py_codice_cartelle_radice	3	1.00
+_drive_flatten	laboratorio/scalper_lab/scalper_bot_base.py	1570	84	ScalperStrategy	py_codice_cartelle_radice	4	1.00
+_drive_flatten	laboratorio/scalper_lab/theta_strategy.py	321	32	ThetaStrategy	py_codice_cartelle_radice	5	1.00
+_has_live	Betfair/stream/scalper/scalper_bot.py	3251	9	ScalperStrategy	py_codice_Betfair	0	1.00
+_has_live	laboratorio/scalper_lab/scalper_bot_base.py	2021	9	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_has_live	Betfair/stream/scalper/sniper_bot.py	1344	7	SniperStrategy	py_codice_Betfair	1	1.00
+_has_live	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2840	12	TennisScalperStrategy	py_codice_Betfair	2	1.00
+_has_live	laboratorio/scalper_lab/grid_strategy.py	457	6	GridStrategy	py_codice_cartelle_radice	3	1.00
+_has_live	laboratorio/scalper_lab/theta_strategy.py	375	6	ThetaStrategy	py_codice_cartelle_radice	4	1.00
+_manage	Betfair/stream/scalper/scalper_bot.py	1814	279	ScalperStrategy	py_codice_Betfair	0	1.00
+_manage	Betfair/stream/tennis_scalper/tennis_flb_bot.py	431	164	TennisFLBStrategy	py_codice_Betfair	1	1.00
+_manage	Betfair/stream/tennis_scalper/tennis_pro_bot.py	877	118	TennisProStrategy	py_codice_Betfair	2	1.00
+_manage	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1811	217	TennisScalperStrategy	py_codice_Betfair	3	1.00
+_manage	laboratorio/scalper_lab/scalper_bot_base.py	1328	165	ScalperStrategy	py_codice_cartelle_radice	4	1.00
+_manage	laboratorio/tennis_lab/tennis_lab.py	307	71	TennisLabStrategy	py_codice_cartelle_radice	5	1.00
+_p	Betfair/omega/omega_empirical.py	133	3		py_codice_Betfair	0	1.00
+_p	Betfair/omega/omega_empirical.py	231	3		py_codice_Betfair	1	1.00
+_p	Betfair/omega/omega_service.py	1570	16		py_codice_Betfair	2	1.00
+_p	Betfair/stream/scalper/sniper_bot.py	287	7	SniperStrategy	py_codice_Betfair	3	1.00
+_p	Betfair/stream/scalper/theta_bot.py	487	8	ThetaStrategy	py_codice_Betfair	4	1.00
+_p	laboratorio/scalper_lab/theta_strategy.py	116	7	ThetaStrategy	py_codice_cartelle_radice	5	1.00
+_parse_int	injuries_backfill.py	22	16		py_codice_radice	0	1.00
+_parse_int	standings_backfill.py	22	16		py_codice_radice	0	1.00
+_parse_int	top_assists_backfill.py	22	16		py_codice_radice	0	1.00
+_parse_int	top_cards_backfill.py	22	16		py_codice_radice	0	1.00
+_parse_int	top_scorers_backfill.py	22	16		py_codice_radice	0	1.00
+_parse_int	per_fixture_backfill.py	22	15		py_codice_radice	1	1.00
+_pubblica_proposte	Betfair/stream/scalper/scalper_bot.py	2211	9	ScalperStrategy	py_codice_Betfair	0	1.00
+_pubblica_proposte	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2133	6	TennisScalperStrategy	py_codice_Betfair	0	1.00
+_pubblica_proposte	Betfair/stream/scalper/sniper_bot.py	688	7	SniperStrategy	py_codice_Betfair	1	1.00
+_pubblica_proposte	Betfair/stream/tennis_scalper/tennis_flb_bot.py	155	8	TennisFLBStrategy	py_codice_Betfair	2	1.00
+_pubblica_proposte	Betfair/stream/tennis_scalper/tennis_pro_bot.py	304	7	TennisProStrategy	py_codice_Betfair	3	1.00
+_pubblica_proposte	Betfair/stream/tennis_scalper/tennis_swing_bot.py	176	6	TennisSwingStrategy	py_codice_Betfair	4	1.00
+_sleep_backoff	Prediction/predictions_results_backfill.py	102	5		py_codice_cartelle_radice	0	1.00
+_sleep_backoff	build_analytics_signals.py	65	3		py_codice_radice	1	1.00
+_sleep_backoff	build_direzione.py	60	3		py_codice_radice	1	1.00
+_sleep_backoff	enrich_analytics_snapshots.py	138	3		py_codice_radice	1	1.00
+_sleep_backoff	merge_engine_signals.py	55	3		py_codice_radice	1	1.00
+_sleep_backoff	refresh_analytics_bets.py	166	4		py_codice_radice	2	1.00
+check	Betfair/safe_strategy/certificazione.py	139	2	Valutazione	py_codice_Betfair	0	1.00
+check	Betfair/safe_strategy/risk.py	185	37		py_codice_Betfair	1	1.00
+check	Betfair/stream/scalper/theta_bot.py	273	11	ThetaConfirmBus	py_codice_Betfair	2	1.00
+check	tactical_engine/_verify_data_worldcup.py	26	5		py_codice_cartelle_radice	3	1.00
+check	tmp_smoke_ml_fixes.py	35	5		py_codice_radice	4	1.00
+check	tmp_smoke_stack.py	32	4		py_codice_radice	5	1.00
+mai_sollecitati	Betfair/mike/certificazione.py	1905	8		py_codice_Betfair	0	1.00
+mai_sollecitati	Betfair/omega/certificazione.py	1746	8		py_codice_Betfair	0	1.00
+mai_sollecitati	Betfair/safe_strategy/certificazione_tennis.py	1114	4		py_codice_Betfair	0	1.00
+mai_sollecitati	Betfair/safe_strategy/certificazione.py	1927	11		py_codice_Betfair	1	1.00
+mai_sollecitati	Betfair/stream/scalper/certificazione.py	1332	2		py_codice_Betfair	2	1.00
+mai_sollecitati	Betfair/stream/tennis_live/certificazione_bot.py	1152	4		py_codice_Betfair	2	1.00
+osserva	Betfair/mike/certificazione.py	1947	27		py_codice_Betfair	0	1.00
+osserva	Betfair/omega/certificazione.py	1779	35		py_codice_Betfair	1	1.00
+osserva	Betfair/safe_strategy/certificazione_tennis.py	1154	16		py_codice_Betfair	2	1.00
+osserva	Betfair/safe_strategy/service.py	346	50	SorvegliaFonte	py_codice_Betfair	3	1.00
+osserva	Betfair/stream/stream_muto.py	251	25	SorvegliaStream	py_codice_Betfair	4	1.00
+osserva	Betfair/stream/tempi_ordine.py	235	26		py_codice_Betfair	5	1.00
+per_codice	Betfair/mike/certificazione.py	2080	5	Referto	py_codice_Betfair	0	1.00
+per_codice	Betfair/omega/certificazione.py	1866	5	Referto	py_codice_Betfair	0	1.00
+per_codice	Betfair/safe_strategy/certificazione.py	1975	5	Referto	py_codice_Betfair	0	1.00
+per_codice	Betfair/safe_strategy/certificazione_tennis.py	1213	5	Referto	py_codice_Betfair	0	1.00
+per_codice	Betfair/stream/scalper/certificazione.py	1363	5	Referto	py_codice_Betfair	0	1.00
+per_codice	Betfair/stream/tennis_live/certificazione_bot.py	1185	5	Referto	py_codice_Betfair	0	1.00
+pulita	Betfair/mike/certificazione.py	2077	2	Referto	py_codice_Betfair	0	1.00
+pulita	Betfair/omega/certificazione.py	1863	2	Referto	py_codice_Betfair	0	1.00
+pulita	Betfair/safe_strategy/certificazione.py	1972	2	Referto	py_codice_Betfair	0	1.00
+pulita	Betfair/stream/scalper/certificazione.py	1360	2	Referto	py_codice_Betfair	0	1.00
+pulita	Betfair/stream/tennis_live/certificazione_bot.py	1182	2	Referto	py_codice_Betfair	0	1.00
+pulita	Betfair/safe_strategy/certificazione_tennis.py	1207	5	Referto	py_codice_Betfair	1	1.00
+riga	Betfair/safe_strategy/canale_scan.py	188	4	CacheScan	py_codice_Betfair	0	1.00
+riga	Betfair/stream/backtest/banco_comune.py	2792	4	ScannerReplay	py_codice_Betfair	1	1.00
+riga	Betfair/stream/backtest/trasporto_rapido.py	133	6	_Esito	py_codice_Betfair	2	1.00
+riga	Betfair/stream/backtest/trasporto_rapido.py	407	5	_Safe	py_codice_Betfair	3	1.00
+riga	Betfair/stream/backtest/trasporto_rapido.py	470	5	_Omega	py_codice_Betfair	3	1.00
+riga	api_quota.py	68	3	StatoQuota	py_codice_radice	4	1.00
+set_control	Betfair/mike/db.py	64	5		py_codice_Betfair	0	1.00
+set_control	Betfair/omega/omega_db.py	55	4		py_codice_Betfair	1	1.00
+set_control	Betfair/safe_strategy/bot_db.py	70	5		py_codice_Betfair	2	1.00
+set_control	Betfair/stream/backtest/banco_comune.py	276	2	DbMemoria	py_codice_Betfair	3	1.00
+set_control	Betfair/stream/scalper/scalper_service.py	79	4	Db	py_codice_Betfair	4	1.00
+set_control	Betfair/stream/scalper/scalper_session.py	1214	12	Db	py_codice_Betfair	5	1.00
+__call__	Betfair/stream/backtest/porta_banco.py	396	25	AllineaBancoTennis	py_codice_Betfair	0	1.00
+__call__	Betfair/stream/scalper/scalper_service.py	629	22	PubblicaSessioni	py_codice_Betfair	1	1.00
+__call__	Betfair/stream/tennis_live/iscrizione_a_caldo.py	241	10	LavoroFlumine	py_codice_Betfair	2	1.00
+__call__	Betfair/stream/valuta.py	325	2	MiddlewareValutaEur	py_codice_Betfair	3	1.00
+__call__	db_client.py	361	2	_Catena	py_codice_radice	4	1.00
+_b1	Betfair/mike/certificazione.py	155	27		py_codice_Betfair	0	1.00
+_b1	Betfair/omega/certificazione.py	414	8		py_codice_Betfair	1	1.00
+_b1	Betfair/safe_strategy/certificazione.py	277	4		py_codice_Betfair	2	1.00
+_b1	Betfair/stream/scalper/certificazione.py	505	21		py_codice_Betfair	3	1.00
+_b1	Betfair/stream/tennis_live/certificazione_bot.py	548	13		py_codice_Betfair	4	1.00
+_b2	Betfair/mike/certificazione.py	186	8		py_codice_Betfair	0	1.00
+_b2	Betfair/omega/certificazione.py	428	26		py_codice_Betfair	1	1.00
+_b2	Betfair/safe_strategy/certificazione.py	286	4		py_codice_Betfair	2	1.00
+_b2	Betfair/stream/scalper/certificazione.py	533	17		py_codice_Betfair	3	1.00
+_b2	Betfair/stream/tennis_live/certificazione_bot.py	566	8		py_codice_Betfair	4	1.00
+_b3	Betfair/mike/certificazione.py	199	9		py_codice_Betfair	0	1.00
+_b3	Betfair/omega/certificazione.py	479	9		py_codice_Betfair	1	1.00
+_b3	Betfair/safe_strategy/certificazione.py	295	8		py_codice_Betfair	2	1.00
+_b3	Betfair/stream/scalper/certificazione.py	578	12		py_codice_Betfair	3	1.00
+_b3	Betfair/stream/tennis_live/certificazione_bot.py	580	7		py_codice_Betfair	4	1.00
+_b4	Betfair/mike/certificazione.py	213	16		py_codice_Betfair	0	1.00
+_b4	Betfair/omega/certificazione.py	460	6		py_codice_Betfair	1	1.00
+_b4	Betfair/safe_strategy/certificazione.py	308	17		py_codice_Betfair	2	1.00
+_b4	Betfair/stream/scalper/certificazione.py	596	9		py_codice_Betfair	3	1.00
+_b4	Betfair/stream/tennis_live/certificazione_bot.py	593	7		py_codice_Betfair	4	1.00
+_begin_flatten	Betfair/stream/scalper/scalper_bot.py	2228	10	ScalperStrategy	py_codice_Betfair	0	1.00
+_begin_flatten	laboratorio/scalper_lab/scalper_bot_base.py	1551	10	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_begin_flatten	Betfair/stream/scalper/sniper_bot.py	770	15	SniperStrategy	py_codice_Betfair	1	1.00
+_begin_flatten	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2140	12	TennisScalperStrategy	py_codice_Betfair	2	1.00
+_begin_flatten	laboratorio/scalper_lab/theta_strategy.py	310	10	ThetaStrategy	py_codice_cartelle_radice	3	1.00
+_conta	Betfair/stream/esiti_ordini_canale.py	163	2	MemoriaEsiti	py_codice_Betfair	0	1.00
+_conta	Betfair/stream/esiti_ordini_canale.py	383	2	DbConSpecchioDalCanale	py_codice_Betfair	0	1.00
+_conta	Betfair/stream/scalper/validazione_hazard/stati.py	34	5		py_codice_Betfair	1	1.00
+_conta	Betfair/stream/tennis_live/canale_bot_tennis.py	170	5	InoltroPosizioni	py_codice_Betfair	2	1.00
+_conta	db_client.py	255	2		py_codice_radice	3	1.00
+_delete	injuries_backfill.py	207	15		py_codice_radice	0	1.00
+_delete	standings_backfill.py	237	15		py_codice_radice	1	1.00
+_delete	top_assists_backfill.py	233	15		py_codice_radice	2	1.00
+_delete	top_cards_backfill.py	242	15		py_codice_radice	3	1.00
+_delete	top_scorers_backfill.py	233	15		py_codice_radice	4	1.00
+_is_transient	build_analytics_signals.py	54	9		py_codice_radice	0	1.00
+_is_transient	build_direzione.py	49	9		py_codice_radice	0	1.00
+_is_transient	enrich_analytics_snapshots.py	111	9		py_codice_radice	0	1.00
+_is_transient	merge_engine_signals.py	44	9		py_codice_radice	0	1.00
+_is_transient	refresh_analytics_bets.py	150	14		py_codice_radice	1	1.00
+_k1	Betfair/mike/certificazione.py	1509	20		py_codice_Betfair	0	1.00
+_k1	Betfair/omega/certificazione.py	1944	24		py_codice_Betfair	1	1.00
+_k1	Betfair/safe_strategy/certificazione_k.py	269	27		py_codice_Betfair	2	1.00
+_k1	Betfair/stream/scalper/certificazione.py	643	10		py_codice_Betfair	3	1.00
+_k1	Betfair/stream/tennis_live/certificazione_bot.py	822	11		py_codice_Betfair	4	1.00
+_k2	Betfair/mike/certificazione.py	1533	13		py_codice_Betfair	0	1.00
+_k2	Betfair/omega/certificazione.py	1972	15		py_codice_Betfair	1	1.00
+_k2	Betfair/safe_strategy/certificazione_k.py	304	13		py_codice_Betfair	2	1.00
+_k2	Betfair/stream/scalper/certificazione.py	660	18		py_codice_Betfair	3	1.00
+_k2	Betfair/stream/tennis_live/certificazione_bot.py	839	21		py_codice_Betfair	4	1.00
+_k3	Betfair/mike/certificazione.py	1551	12		py_codice_Betfair	0	1.00
+_k3	Betfair/omega/certificazione.py	1992	10		py_codice_Betfair	1	1.00
+_k3	Betfair/safe_strategy/certificazione_k.py	327	31		py_codice_Betfair	2	1.00
+_k3	Betfair/stream/scalper/certificazione.py	684	13		py_codice_Betfair	3	1.00
+_k3	Betfair/stream/tennis_live/certificazione_bot.py	867	19		py_codice_Betfair	4	1.00
+_k4	Betfair/mike/certificazione.py	1567	12		py_codice_Betfair	0	1.00
+_k4	Betfair/omega/certificazione.py	2007	11		py_codice_Betfair	1	1.00
+_k4	Betfair/safe_strategy/certificazione_k.py	367	18		py_codice_Betfair	2	1.00
+_k4	Betfair/stream/scalper/certificazione.py	703	23		py_codice_Betfair	3	1.00
+_k4	Betfair/stream/tennis_live/certificazione_bot.py	892	23		py_codice_Betfair	4	1.00
+_main	Betfair/stream/runner.py	3149	19		py_codice_Betfair	0	1.00
+_main	Betfair/stream/tennis_live/tennis_bot_service.py	1127	53		py_codice_Betfair	1	1.00
+_main	Betfair/stream/tennis_live/tennis_runner.py	3465	15		py_codice_Betfair	2	1.00
+_main	Betfair/stream/uploader.py	260	11		py_codice_Betfair	3	1.00
+_main	Betfair/stream/watchdog.py	331	3		py_codice_Betfair	4	1.00
+_matched	Betfair/stream/scalper/sniper_bot.py	747	22	SniperStrategy	py_codice_Betfair	0	1.00
+_matched	Betfair/stream/tennis_scalper/tennis_flb_bot.py	165	18	TennisFLBStrategy	py_codice_Betfair	1	1.00
+_matched	laboratorio/tennis_lab/tennis_lab.py	103	18	TennisLabStrategy	py_codice_cartelle_radice	1	1.00
+_matched	laboratorio/scalper_lab/grid_strategy.py	378	18	GridStrategy	py_codice_cartelle_radice	2	1.00
+_matched	laboratorio/scalper_lab/theta_strategy.py	295	14	ThetaStrategy	py_codice_cartelle_radice	3	1.00
+_ora	Betfair/safe_strategy/service.py	617	3	Scanner	py_codice_Betfair	0	1.00
+_ora	Betfair/stream/ladder_canale.py	107	2	StatoLadder	py_codice_Betfair	1	1.00
+_ora	Betfair/stream/modo_ordini.py	144	2		py_codice_Betfair	2	1.00
+_ora	Betfair/stream/tennis_replay/caricamento.py	51	2		py_codice_Betfair	3	1.00
+_ora	Betfair/stream/tennis_scalper/condotta_ordini.py	315	10	UsciteEsatte	py_codice_Betfair	4	1.00
+_ora_ms	Betfair/safe_strategy/execution.py	64	5		py_codice_Betfair	0	1.00
+_ora_ms	Betfair/safe_strategy/porta_ordini.py	123	9		py_codice_Betfair	1	1.00
+_ora_ms	Betfair/stream/flusso_prezzi.py	135	2		py_codice_Betfair	2	1.00
+_ora_ms	Betfair/stream/motore_ordini.py	172	2		py_codice_Betfair	2	1.00
+_ora_ms	Betfair/stream/ladder_canale.py	56	2		py_codice_Betfair	3	1.00
+_orologio_s	Betfair/stream/scalper/scalper_bot.py	746	8	ScalperStrategy	py_codice_Betfair	0	1.00
+_orologio_s	Betfair/stream/tennis_scalper/tennis_flb_bot.py	319	11	TennisFLBStrategy	py_codice_Betfair	1	1.00
+_orologio_s	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2863	13	TennisScalperStrategy	py_codice_Betfair	1	1.00
+_orologio_s	Betfair/stream/tennis_scalper/tennis_swing_bot.py	236	7	TennisSwingStrategy	py_codice_Betfair	1	1.00
+_orologio_s	Betfair/stream/tennis_scalper/tennis_pro_bot.py	459	7	TennisProStrategy	py_codice_Betfair	2	1.00
+_prefisso_uscite	Betfair/stream/scalper/scalper_bot.py	2175	6	ScalperStrategy	py_codice_Betfair	0	1.00
+_prefisso_uscite	Betfair/stream/scalper/sniper_bot.py	640	8	SniperStrategy	py_codice_Betfair	1	1.00
+_prefisso_uscite	Betfair/stream/tennis_scalper/tennis_pro_bot.py	269	4	TennisProStrategy	py_codice_Betfair	2	1.00
+_prefisso_uscite	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2104	4	TennisScalperStrategy	py_codice_Betfair	3	1.00
+_prefisso_uscite	Betfair/stream/tennis_scalper/tennis_swing_bot.py	143	4	TennisSwingStrategy	py_codice_Betfair	4	1.00
+_q	Betfair/safe_strategy/bot_db.py	274	14		py_codice_Betfair	0	1.00
+_q	Betfair/safe_strategy/bot_db.py	354	9		py_codice_Betfair	1	1.00
+_q	Betfair/safe_strategy/proposte_opportunita.py	724	2		py_codice_Betfair	2	1.00
+_q	season_gaps.py	633	5		py_codice_radice	3	1.00
+_q	season_gaps.py	669	5		py_codice_radice	4	1.00
+_safe	Betfair/safe_strategy/db.py	465	4		py_codice_Betfair	0	1.00
+_safe	Betfair/stream/watchdog.py	210	7		py_codice_Betfair	1	1.00
+_safe	market_intelligence/audit.py	201	1		py_codice_cartelle_radice	2	1.00
+_safe	market_intelligence/backtest.py	123	2		py_codice_cartelle_radice	3	1.00
+_safe	market_intelligence/backtest_audit.py	20	2		py_codice_cartelle_radice	3	1.00
+_ts	Betfair/omega/omega_proposte.py	993	7		py_codice_Betfair	0	1.00
+_ts	Betfair/stream/backtest/proposte_modello.py	250	13		py_codice_Betfair	1	1.00
+_ts	Betfair/stream/scalper/atlante_a_domanda.py	95	10		py_codice_Betfair	2	1.00
+_ts	Betfair/stream/tennis_live/auto_mode.py	124	10		py_codice_Betfair	3	1.00
+_ts	season_aggregates.py	61	10		py_codice_radice	4	1.00
+_val	Betfair/stream/engine/live_trading_strategy.py	65	6		py_codice_Betfair	0	1.00
+_val	Betfair/stream/live_order_worker.py	819	5		py_codice_Betfair	1	1.00
+_val	Betfair/stream/tempi_ordine.py	266	5		py_codice_Betfair	2	1.00
+_val	Betfair/stream/tennis_live/tennis_live_order_worker.py	229	5		py_codice_Betfair	3	1.00
+_val	Betfair/stream/trading/controls.py	158	5		py_codice_Betfair	4	1.00
+_vivo	Betfair/safe_strategy/certificazione_k.py	222	2		py_codice_Betfair	0	1.00
+_vivo	Betfair/stream/backtest/banco_comune.py	984	2	MercatoFlumine	py_codice_Betfair	1	1.00
+_vivo	Betfair/stream/frammenti_mercato.py	577	5	GestoreFrammenti	py_codice_Betfair	2	1.00
+_vivo	Betfair/stream/scalper/certificazione.py	275	3		py_codice_Betfair	3	1.00
+_vivo	Betfair/stream/tennis_live/certificazione_bot.py	303	2		py_codice_Betfair	4	1.00
+disponibile	Betfair/mike/porta_ordini.py	139	5	VistaMike	py_codice_Betfair	0	1.00
+disponibile	Betfair/omega/porta_ordini.py	156	5	VistaOmega	py_codice_Betfair	0	1.00
+disponibile	Betfair/safe_strategy/porta_ordini.py	522	2	PortaOggi	py_codice_Betfair	1	1.00
+disponibile	Betfair/safe_strategy/porta_ordini.py	598	2	PortaCanale	py_codice_Betfair	2	1.00
+disponibile	Betfair/stream/backtest/porta_banco.py	510	2	PortaBanco	py_codice_Betfair	3	1.00
+esiti	Betfair/mike/porta_ordini.py	154	2	VistaMike	py_codice_Betfair	0	1.00
+esiti	Betfair/omega/porta_ordini.py	173	2	VistaOmega	py_codice_Betfair	0	1.00
+esiti	Betfair/safe_strategy/porta_ordini.py	528	2	PortaOggi	py_codice_Betfair	1	1.00
+esiti	Betfair/safe_strategy/porta_ordini.py	719	2	PortaCanale	py_codice_Betfair	2	1.00
+esiti	Betfair/stream/backtest/porta_banco.py	523	2	PortaBanco	py_codice_Betfair	3	1.00
+giro	Betfair/mike/certificazione.py	1772	26	SorveglianzaFirme	py_codice_Betfair	0	1.00
+giro	Betfair/stream/auto_follow.py	822	8	AutoFollow	py_codice_Betfair	1	1.00
+giro	Betfair/stream/backtest/uscite_manuali.py	392	27	Osservatore	py_codice_Betfair	2	1.00
+giro	Betfair/stream/ladder_canale.py	110	18	StatoLadder	py_codice_Betfair	3	1.00
+giro	Betfair/stream/tennis_live/esecutore_tennis.py	563	34	AgganciaTennis	py_codice_Betfair	4	1.00
+list_cleared_orders	Betfair/client.py	395	32	BetfairClient	py_codice_Betfair	0	1.00
+list_cleared_orders	Betfair/mike/service.py	208	5	_RealMarket	py_codice_Betfair	1	1.00
+list_cleared_orders	Betfair/omega/omega_market.py	1633	37		py_codice_Betfair	2	1.00
+list_cleared_orders	Betfair/safe_strategy/bot_service.py	119	5	_MercatoSafe	py_codice_Betfair	3	1.00
+list_cleared_orders	Betfair/stream/backtest/banco_comune.py	1028	3	MercatoFlumine	py_codice_Betfair	4	1.00
+list_current_orders	Betfair/client.py	361	33	BetfairClient	py_codice_Betfair	0	1.00
+list_current_orders	Betfair/mike/service.py	200	6	_RealMarket	py_codice_Betfair	1	1.00
+list_current_orders	Betfair/omega/omega_market.py	1565	7		py_codice_Betfair	2	1.00
+list_current_orders	Betfair/safe_strategy/bot_service.py	113	5	_MercatoSafe	py_codice_Betfair	3	1.00
+list_current_orders	Betfair/stream/backtest/banco_comune.py	1024	3	MercatoFlumine	py_codice_Betfair	4	1.00
+load	Betfair/safe_strategy/calibration.py	311	9	Calibrator	py_codice_Betfair	0	1.00
+load	_league_eval.py	38	15		py_codice_radice	1	1.00
+load	_stack_eval.py	37	15		py_codice_radice	2	1.00
+load	build_direzione.py	122	38		py_codice_radice	3	1.00
+load	tmp_validate_predict.py	34	9		py_codice_radice	4	1.00
+on_data	Betfair/safe_strategy/stream.py	152	3	_Listener	py_codice_Betfair	0	1.00
+on_data	Betfair/stream/frammenti_mercato.py	143	6	FrammentoListener	py_codice_Betfair	1	1.00
+on_data	Betfair/stream/raw_listener.py	307	6	RawTeeStreamListener	py_codice_Betfair	2	1.00
+on_data	Betfair/stream/tennis_live/tennis_recorder.py	321	6	_TennisRecListener	py_codice_Betfair	3	1.00
+on_data	Betfair/stream/tennis_scalper/record_multi.py	122	6	_MultiRawListener	py_codice_Betfair	4	1.00
+svuota	Betfair/mike/service.py	412	2	_Cache	py_codice_Betfair	0	1.00
+svuota	Betfair/omega/omega_service.py	185	2	_Cache	py_codice_Betfair	0	1.00
+svuota	Betfair/stream/backtest/porta_banco.py	103	2	_ScrittoreNullo	py_codice_Betfair	1	1.00
+svuota	Betfair/stream/motore_ordini.py	308	8	ScrittoreAsincrono	py_codice_Betfair	2	1.00
+svuota	Betfair/stream/trading/stato_mercato.py	212	5	AttesaRiapertura	py_codice_Betfair	3	1.00
+update_trade	Betfair/mike/db.py	183	6		py_codice_Betfair	0	1.00
+update_trade	Betfair/omega/omega_db.py	83	6		py_codice_Betfair	1	1.00
+update_trade	Betfair/safe_strategy/bot_db.py	99	6		py_codice_Betfair	2	1.00
+update_trade	Betfair/stream/backtest/banco_comune.py	304	5	DbMemoria	py_codice_Betfair	3	1.00
+update_trade	Betfair/stream/esiti_ordini_canale.py	366	5	DbConSpecchioDalCanale	py_codice_Betfair	4	1.00
+verifica_consapevolezza	Betfair/mike/certificazione.py	1581	27		py_codice_Betfair	0	1.00
+verifica_consapevolezza	Betfair/omega/certificazione.py	2128	28		py_codice_Betfair	1	1.00
+verifica_consapevolezza	Betfair/safe_strategy/certificazione.py	1879	21		py_codice_Betfair	2	1.00
+verifica_consapevolezza	Betfair/safe_strategy/certificazione_k.py	495	39		py_codice_Betfair	3	1.00
+verifica_consapevolezza	Betfair/safe_strategy/certificazione_tennis.py	1097	8		py_codice_Betfair	4	1.00
+_alert	Betfair/stream/daily_stop_worker.py	66	7		py_codice_Betfair	0	1.00
+_alert	Betfair/stream/motore_ordini.py	2430	3		py_codice_Betfair	1	1.00
+_alert	Betfair/stream/reconcile_worker.py	99	7		py_codice_Betfair	2	1.00
+_alert	Betfair/stream/risk_engine_worker.py	202	6		py_codice_Betfair	3	1.00
+_b5	Betfair/mike/certificazione.py	233	7		py_codice_Betfair	0	1.00
+_b5	Betfair/safe_strategy/certificazione.py	330	21		py_codice_Betfair	1	1.00
+_b5	Betfair/stream/scalper/certificazione.py	612	10		py_codice_Betfair	2	1.00
+_b5	Betfair/stream/tennis_live/certificazione_bot.py	606	15		py_codice_Betfair	3	1.00
+_b6	Betfair/mike/certificazione.py	358	8		py_codice_Betfair	0	1.00
+_b6	Betfair/safe_strategy/certificazione.py	356	19		py_codice_Betfair	1	1.00
+_b6	Betfair/stream/scalper/certificazione.py	628	5		py_codice_Betfair	2	1.00
+_b6	Betfair/stream/tennis_live/certificazione_bot.py	626	7		py_codice_Betfair	3	1.00
+_build	Ai Engine/ai_engine/ensemble_trainer.py	244	2		py_codice_cartelle_radice	0	1.00
+_build	Ai Engine/ai_engine/ensemble_trainer.py	270	8		py_codice_cartelle_radice	1	1.00
+_build	Ai Engine/ai_engine/ensemble_trainer.py	300	5		py_codice_cartelle_radice	2	1.00
+_build	merge_engine_signals.py	130	76		py_codice_radice	3	1.00
+_cancel	Betfair/stream/tennis_scalper/tennis_flb_bot.py	270	3	TennisFLBStrategy	py_codice_Betfair	0	1.00
+_cancel	Betfair/stream/tennis_scalper/tennis_pro_bot.py	550	3	TennisProStrategy	py_codice_Betfair	0	1.00
+_cancel	Betfair/stream/tennis_scalper/tennis_swing_bot.py	337	3	TennisSwingStrategy	py_codice_Betfair	0	1.00
+_cancel	laboratorio/tennis_lab/tennis_lab.py	151	7	TennisLabStrategy	py_codice_cartelle_radice	1	1.00
+_cancel_submins	Betfair/stream/scalper/scalper_bot.py	3019	8	ScalperStrategy	py_codice_Betfair	0	1.00
+_cancel_submins	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2627	8	TennisScalperStrategy	py_codice_Betfair	0	1.00
+_cancel_submins	laboratorio/scalper_lab/scalper_bot_base.py	1873	8	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_cancel_submins	Betfair/stream/scalper/sniper_bot.py	1162	7	SniperStrategy	py_codice_Betfair	1	1.00
+_ciclo_persistente	Betfair/mike/service.py	7289	14		py_codice_Betfair	0	1.00
+_ciclo_persistente	Betfair/omega/omega_service.py	8773	14		py_codice_Betfair	1	1.00
+_ciclo_persistente	Betfair/safe_strategy/bot_service.py	10877	12		py_codice_Betfair	2	1.00
+_ciclo_persistente	Betfair/safe_strategy/service.py	3331	8		py_codice_Betfair	3	1.00
+_connetti_ws	Betfair/safe_strategy/porta_ordini.py	532	7		py_codice_Betfair	0	1.00
+_connetti_ws	Betfair/stream/esiti_ordini_canale.py	226	6		py_codice_Betfair	1	1.00
+_connetti_ws	Betfair/stream/tennis_live/canale_bot_tennis.py	104	6		py_codice_Betfair	1	1.00
+_connetti_ws	Betfair/stream/sveglia_canale.py	247	6		py_codice_Betfair	2	1.00
+_dispatch	Betfair/mike/engine.py	3417	64		py_codice_Betfair	0	1.00
+_dispatch	Betfair/stream/live_order_worker.py	3679	37		py_codice_Betfair	1	1.00
+_dispatch	Betfair/stream/tennis_live/esecutore_tennis.py	219	19		py_codice_Betfair	2	1.00
+_dispatch	Betfair/stream/tennis_live/tennis_live_order_worker.py	1111	14		py_codice_Betfair	3	1.00
+_drive_submins	Betfair/stream/scalper/scalper_bot.py	3136	92	ScalperStrategy	py_codice_Betfair	0	1.00
+_drive_submins	Betfair/stream/scalper/sniper_bot.py	1240	85	SniperStrategy	py_codice_Betfair	1	1.00
+_drive_submins	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2757	81	TennisScalperStrategy	py_codice_Betfair	2	1.00
+_drive_submins	laboratorio/scalper_lab/scalper_bot_base.py	1971	48	ScalperStrategy	py_codice_cartelle_radice	3	1.00
+_gira	Betfair/safe_strategy/canale_scan.py	371	19	ClientScan	py_codice_Betfair	0	1.00
+_gira	Betfair/safe_strategy/porta_ordini.py	609	20	PortaCanale	py_codice_Betfair	1	1.00
+_gira	Betfair/stream/esiti_ordini_canale.py	281	31	ClientEsiti	py_codice_Betfair	2	1.00
+_gira	Betfair/stream/tennis_live/canale_bot_tennis.py	176	32	InoltroPosizioni	py_codice_Betfair	3	1.00
+_giro	Betfair/stream/backtest/banco_comune.py	2993	17	_Ponte	py_codice_Betfair	0	1.00
+_giro	Betfair/stream/motore_ordini.py	326	24	ScrittoreAsincrono	py_codice_Betfair	1	1.00
+_giro	Betfair/stream/saldo_evento.py	145	10		py_codice_Betfair	2	1.00
+_giro	Betfair/stream/sveglia_canale.py	321	32	AscoltoScan	py_codice_Betfair	3	1.00
+_intero	Betfair/stream/motore_ordini.py	371	8		py_codice_Betfair	0	1.00
+_intero	Betfair/stream/scalper/auto_mode.py	103	11		py_codice_Betfair	1	1.00
+_intero	Betfair/stream/tennis_live/auto_mode.py	76	11		py_codice_Betfair	1	1.00
+_intero	Betfair/stream/scalper/media_under_bot.py	301	5		py_codice_Betfair	2	1.00
+_is_limit	Betfair/odds_refresh.py	52	2		py_codice_Betfair	0	1.00
+_is_limit	Betfair/order_exec.py	57	2		py_codice_Betfair	0	1.00
+_is_limit	betfair_tennis_odds.py	44	2		py_codice_radice	0	1.00
+_is_limit	betfair_full_odds.py	53	2		py_codice_radice	1	1.00
+_j1	Betfair/mike/certificazione.py	897	9		py_codice_Betfair	0	1.00
+_j1	Betfair/omega/certificazione.py	978	8		py_codice_Betfair	1	1.00
+_j1	Betfair/safe_strategy/certificazione.py	1714	10		py_codice_Betfair	2	1.00
+_j1	Betfair/safe_strategy/certificazione_tennis.py	634	20		py_codice_Betfair	3	1.00
+_j2	Betfair/mike/certificazione.py	911	12		py_codice_Betfair	0	1.00
+_j2	Betfair/omega/certificazione.py	996	11		py_codice_Betfair	1	1.00
+_j2	Betfair/safe_strategy/certificazione.py	1730	7		py_codice_Betfair	2	1.00
+_j2	Betfair/safe_strategy/certificazione_tennis.py	666	31		py_codice_Betfair	3	1.00
+_j3	Betfair/mike/certificazione.py	928	8		py_codice_Betfair	0	1.00
+_j3	Betfair/omega/certificazione.py	1050	63		py_codice_Betfair	1	1.00
+_j3	Betfair/safe_strategy/certificazione.py	1747	8		py_codice_Betfair	2	1.00
+_j3	Betfair/safe_strategy/certificazione_tennis.py	703	16		py_codice_Betfair	3	1.00
+_j4	Betfair/mike/certificazione.py	942	22		py_codice_Betfair	0	1.00
+_j4	Betfair/omega/certificazione.py	1119	10		py_codice_Betfair	1	1.00
+_j4	Betfair/safe_strategy/certificazione.py	1762	14		py_codice_Betfair	2	1.00
+_j4	Betfair/safe_strategy/certificazione_tennis.py	749	18		py_codice_Betfair	3	1.00
+_j5	Betfair/mike/certificazione.py	971	36		py_codice_Betfair	0	1.00
+_j5	Betfair/omega/certificazione.py	1134	11		py_codice_Betfair	1	1.00
+_j5	Betfair/safe_strategy/certificazione.py	1781	7		py_codice_Betfair	2	1.00
+_j5	Betfair/safe_strategy/certificazione_tennis.py	789	10		py_codice_Betfair	3	1.00
+_k5	Betfair/omega/certificazione.py	2022	20		py_codice_Betfair	0	1.00
+_k5	Betfair/safe_strategy/certificazione_k.py	394	19		py_codice_Betfair	1	1.00
+_k5	Betfair/stream/scalper/certificazione.py	734	18		py_codice_Betfair	2	1.00
+_k5	Betfair/stream/tennis_live/certificazione_bot.py	925	54		py_codice_Betfair	3	1.00
+_k6	Betfair/omega/certificazione.py	2046	16		py_codice_Betfair	0	1.00
+_k6	Betfair/safe_strategy/certificazione_k.py	423	18		py_codice_Betfair	1	1.00
+_k6	Betfair/stream/scalper/certificazione.py	758	17		py_codice_Betfair	2	1.00
+_k6	Betfair/stream/tennis_live/certificazione_bot.py	1009	30		py_codice_Betfair	3	1.00
+_k7	Betfair/omega/certificazione.py	2074	52		py_codice_Betfair	0	1.00
+_k7	Betfair/safe_strategy/certificazione_k.py	457	28		py_codice_Betfair	1	1.00
+_k7	Betfair/stream/scalper/certificazione.py	783	13		py_codice_Betfair	2	1.00
+_k7	Betfair/stream/tennis_live/certificazione_bot.py	1046	14		py_codice_Betfair	3	1.00
+_net	Betfair/mike/engine.py	962	2		py_codice_Betfair	0	1.00
+_net	Betfair/stream/tennis_scalper/tennis_flb_bot.py	185	2	TennisFLBStrategy	py_codice_Betfair	1	1.00
+_net	laboratorio/tennis_lab/tennis_lab.py	123	2	TennisLabStrategy	py_codice_cartelle_radice	1	1.00
+_net	Betfair/stream/tennis_scalper/tennis_pro_bot.py	456	2	TennisProStrategy	py_codice_Betfair	2	1.00
+_net_position	Betfair/stream/engine/live_trading_strategy.py	407	18	LiveTradingStrategy	py_codice_Betfair	0	1.00
+_net_position	Betfair/stream/scalper/scalper_bot.py	2239	7	ScalperStrategy	py_codice_Betfair	1	1.00
+_net_position	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2153	7	TennisScalperStrategy	py_codice_Betfair	1	1.00
+_net_position	laboratorio/scalper_lab/scalper_bot_base.py	1562	7	ScalperStrategy	py_codice_cartelle_radice	1	1.00
+_parse_ts	Betfair/betfair_report_manager.py	1209	9	BetfairReportManager	py_codice_Betfair	0	1.00
+_parse_ts	Betfair/safe_strategy/engine.py	1945	10		py_codice_Betfair	1	1.00
+_parse_ts	Betfair/stream/scores/scan_feed.py	178	12		py_codice_Betfair	2	1.00
+_parse_ts	training_planner.py	88	8		py_codice_radice	3	1.00
+_pct	Betfair/safe_strategy/anomaly.py	133	2		py_codice_Betfair	0	1.00
+_pct	Betfair/safe_strategy/combos.py	117	2		py_codice_Betfair	1	1.00
+_pct	Betfair/safe_strategy/opportunity.py	1076	9	OpportunityModel	py_codice_Betfair	2	1.00
+_pct	Betfair/safe_strategy/service.py	3235	6	Cronometro	py_codice_Betfair	3	1.00
+_place_exact	Betfair/stream/scalper/scalper_bot.py	3028	107	ScalperStrategy	py_codice_Betfair	0	1.00
+_place_exact	Betfair/stream/scalper/sniper_bot.py	1170	69	SniperStrategy	py_codice_Betfair	1	1.00
+_place_exact	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2636	120	TennisScalperStrategy	py_codice_Betfair	2	1.00
+_place_exact	laboratorio/scalper_lab/scalper_bot_base.py	1882	88	ScalperStrategy	py_codice_cartelle_radice	3	1.00
+_r	Betfair/stream/scalper/atlante_v4.py	518	2		py_codice_Betfair	0	1.00
+_r	Betfair/stream/scalper/atlante_v4.py	308	9		py_codice_Betfair	1	1.00
+_r	Betfair/stream/scalper/genera_atlante.py	305	2		py_codice_Betfair	2	1.00
+_r	analytics_market_stats.py	306	2		py_codice_radice	3	1.00
+_result	Betfair/mike/service.py	3569	6		py_codice_Betfair	0	1.00
+_result	Betfair/stream/live_order_worker.py	860	39		py_codice_Betfair	1	1.00
+_result	Betfair/stream/risk_engine_worker.py	219	3		py_codice_Betfair	2	1.00
+_result	Betfair/stream/tennis_live/tennis_live_order_worker.py	367	27		py_codice_Betfair	3	1.00
+_sb	Betfair/mike/db.py	48	2		py_codice_Betfair	0	1.00
+_sb	Betfair/omega/omega_db.py	42	2		py_codice_Betfair	0	1.00
+_sb	Betfair/safe_strategy/bot_db.py	51	2		py_codice_Betfair	0	1.00
+_sb	Betfair/stream/auto_follow.py	376	5	FollowDb	py_codice_Betfair	1	1.00
+_side_min	Betfair/stream/scalper/scalper_bot.py	2950	9	ScalperStrategy	py_codice_Betfair	0	1.00
+_side_min	Betfair/stream/scalper/sniper_bot.py	1060	5	SniperStrategy	py_codice_Betfair	0	1.00
+_side_min	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2578	5	TennisScalperStrategy	py_codice_Betfair	1	1.00
+_side_min	laboratorio/scalper_lab/scalper_bot_base.py	1843	3	ScalperStrategy	py_codice_cartelle_radice	2	1.00
+_sink	Betfair/stream/tennis_live/tennis_runner.py	848	5		py_codice_Betfair	0	1.00
+_sink	Betfair/stream/tennis_scalper/backtest_pro.py	98	10		py_codice_Betfair	1	1.00
+_sink	Betfair/stream/tennis_scalper/run_tennis_pro.py	99	4		py_codice_Betfair	2	1.00
+_sink	Betfair/stream/tennis_scalper/run_tennis_scalper.py	242	5		py_codice_Betfair	3	1.00
+_size_direct_ok	Betfair/stream/scalper/scalper_bot.py	2960	5	ScalperStrategy	py_codice_Betfair	0	1.00
+_size_direct_ok	Betfair/stream/scalper/sniper_bot.py	1066	5	SniperStrategy	py_codice_Betfair	0	1.00
+_size_direct_ok	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2584	10	TennisScalperStrategy	py_codice_Betfair	1	1.00
+_size_direct_ok	laboratorio/scalper_lab/scalper_bot_base.py	1847	7	ScalperStrategy	py_codice_cartelle_radice	2	1.00
+_slot	Betfair/stream/scalper/scalper_bot.py	760	7	ScalperStrategy	py_codice_Betfair	0	1.00
+_slot	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	653	7	TennisScalperStrategy	py_codice_Betfair	0	1.00
+_slot	laboratorio/scalper_lab/scalper_bot_base.py	509	7	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_slot	laboratorio/scalper_lab/grid_strategy.py	128	7	GridStrategy	py_codice_cartelle_radice	1	1.00
+_to_int	Betfair/stream/scores/api_football.py	25	7		py_codice_Betfair	0	1.00
+_to_int	Betfair/stream/scores/betfair_inplay.py	27	7		py_codice_Betfair	0	1.00
+_to_int	Betfair/stream/tennis_scalper/tennis_score.py	29	5		py_codice_Betfair	1	1.00
+_to_int	build_inplay_intensity.py	40	5		py_codice_radice	2	1.00
+_track	Betfair/stream/scalper/scalper_bot.py	2967	10	ScalperStrategy	py_codice_Betfair	0	1.00
+_track	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2596	10	TennisScalperStrategy	py_codice_Betfair	0	1.00
+_track	laboratorio/scalper_lab/scalper_bot_base.py	1856	10	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_track	Betfair/stream/scalper/sniper_bot.py	1073	9	SniperStrategy	py_codice_Betfair	1	1.00
+_un_giro	Betfair/mike/service.py	7471	49		py_codice_Betfair	0	1.00
+_un_giro	Betfair/omega/omega_service.py	8841	51		py_codice_Betfair	1	1.00
+_un_giro	Betfair/safe_strategy/bot_service.py	10945	74		py_codice_Betfair	2	1.00
+_un_giro	Betfair/stream/scalper/scalper_service.py	918	59		py_codice_Betfair	3	1.00
+actionable	Betfair/stream/trading/dutching.py	53	2	DutchPlan	py_codice_Betfair	0	1.00
+actionable	Betfair/stream/trading/greenup.py	85	7	GreenupPlan	py_codice_Betfair	1	1.00
+actionable	Betfair/stream/trading/hedging.py	56	2	FlattenPlan	py_codice_Betfair	2	1.00
+actionable	Betfair/stream/trading/risk_engine.py	117	7	RiskOrder	py_codice_Betfair	3	1.00
+aggancia	Betfair/stream/auto_follow.py	593	20	AutoFollow	py_codice_Betfair	0	1.00
+aggancia	Betfair/stream/backtest/varianti_bot.py	406	13	SpecchioOrdini	py_codice_Betfair	1	1.00
+aggancia	Betfair/stream/motore_ordini.py	824	5	MotoreOrdini	py_codice_Betfair	2	1.00
+aggancia	Betfair/stream/tennis_live/esecutore_tennis.py	412	4	AgganciaTennis	py_codice_Betfair	3	1.00
+aggregates	Betfair/mike/db.py	393	44		py_codice_Betfair	0	1.00
+aggregates	Betfair/omega/omega_db.py	777	8		py_codice_Betfair	1	1.00
+aggregates	Betfair/safe_strategy/bot_db.py	315	51		py_codice_Betfair	2	1.00
+aggregates	Betfair/stream/backtest/banco_comune.py	341	2	DbMemoria	py_codice_Betfair	3	1.00
+attendi	Betfair/safe_strategy/porta_ordini.py	495	12	MemoriaComandi	py_codice_Betfair	0	1.00
+attendi	Betfair/stream/backtest/trasporto_rapido.py	342	7	BancoRapido	py_codice_Betfair	1	1.00
+attendi	Betfair/stream/saldo_evento.py	180	5		py_codice_Betfair	2	1.00
+attendi	Betfair/stream/sveglia_canale.py	172	55	Sveglia	py_codice_Betfair	3	1.00
+attiva	Betfair/stream/backtest/proposte_modello.py	410	5	Piano	py_codice_Betfair	0	1.00
+attiva	Betfair/stream/backtest/varianti_bot.py	195	2	Accensione	py_codice_Betfair	1	1.00
+attiva	Betfair/stream/esiti_ordini_canale.py	605	7		py_codice_Betfair	2	1.00
+attiva	Betfair/stream/saldo_evento.py	52	7		py_codice_Betfair	3	1.00
+attivo	Betfair/stream/backtest/trasporto.py	135	2		py_codice_Betfair	0	1.00
+attivo	Betfair/stream/backtest/uscite_manuali.py	251	40	Osservatore	py_codice_Betfair	1	1.00
+attivo	Betfair/stream/sveglia_canale.py	313	2	AscoltoScan	py_codice_Betfair	2	1.00
+attivo	Betfair/stream/tempi_ordine.py	88	3		py_codice_Betfair	3	1.00
+check_result	calibration_analysis.py	96	32		py_codice_radice	0	1.00
+check_result	generate_dynamic_cal.py	63	34		py_codice_radice	1	1.00
+check_result	master_backtest.py	397	39		py_codice_radice	2	1.00
+check_result	update_poisson_calibration.py	94	28		py_codice_radice	3	1.00
+close	Betfair/stream/backtest/porta_banco.py	200	2	WsBanco	py_codice_Betfair	0	1.00
+close	Betfair/stream/raw_listener.py	269	16	_RawState	py_codice_Betfair	1	1.00
+close	Betfair/stream/tennis_live/tennis_recorder.py	298	10	TennisRawTee	py_codice_Betfair	2	1.00
+close	Betfair/stream/tennis_scalper/record_multi.py	107	8	_MultiRawState	py_codice_Betfair	3	1.00
+copre	Betfair/omega/omega_v3.py	162	11		py_codice_Betfair	0	1.00
+copre	Betfair/stream/scores/scan_feed.py	385	16		py_codice_Betfair	1	1.00
+copre	api_quota.py	312	2	GestoreQuota	py_codice_radice	2	1.00
+copre	api_quota.py	344	2	QuotaConPavimento	py_codice_radice	2	1.00
+counts	Betfair/omega/omega_empirical.py	101	4	EmpiricalTable	py_codice_Betfair	0	1.00
+counts	Betfair/stream/recorder.py	176	3	MarketRecorderStrategy	py_codice_Betfair	1	1.00
+counts	Betfair/stream/tennis_live/tennis_recorder.py	294	3	TennisRawTee	py_codice_Betfair	1	1.00
+counts	Betfair/stream/tennis_scalper/record_multi.py	103	3	_MultiRawState	py_codice_Betfair	1	1.00
+fail_stale_processing	Betfair/mike/db.py	519	29		py_codice_Betfair	0	1.00
+fail_stale_processing	Betfair/omega/omega_db.py	314	17		py_codice_Betfair	1	1.00
+fail_stale_processing	Betfair/safe_strategy/bot_db.py	858	12		py_codice_Betfair	2	1.00
+fail_stale_processing	Betfair/stream/backtest/banco_comune.py	338	2	DbMemoria	py_codice_Betfair	3	1.00
+ferma_al_nuovo_avvio	Betfair/mike/service.py	3964	32		py_codice_Betfair	0	1.00
+ferma_al_nuovo_avvio	Betfair/omega/omega_service.py	7966	30		py_codice_Betfair	1	1.00
+ferma_al_nuovo_avvio	Betfair/safe_strategy/bot_service.py	10083	30		py_codice_Betfair	2	1.00
+ferma_al_nuovo_avvio	Betfair/stream/avvio_app.py	217	120		py_codice_Betfair	3	1.00
+fit	Ai Engine/ai_engine/ensemble_trainer.py	111	12	_XGBWrapper	py_codice_cartelle_radice	0	1.00
+fit	Ai Engine/ai_engine/ensemble_trainer.py	924	26	_KerasMetaWrapper	py_codice_cartelle_radice	1	1.00
+fit	Ai Engine/ai_engine/models/trainer.py	34	44	Trainer	py_codice_cartelle_radice	2	1.00
+fit	tactical_engine/model.py	103	121	DixonColesModel	py_codice_cartelle_radice	3	1.00
+get_live_order_mirror	Betfair/mike/db.py	690	4		py_codice_Betfair	0	1.00
+get_live_order_mirror	Betfair/omega/omega_db.py	683	9		py_codice_Betfair	1	1.00
+get_live_order_mirror	Betfair/safe_strategy/bot_db.py	1038	7		py_codice_Betfair	1	1.00
+get_live_order_mirror	Betfair/stream/esiti_ordini_canale.py	386	16	DbConSpecchioDalCanale	py_codice_Betfair	2	1.00
+get_score	Betfair/stream/scores/api_football.py	77	10	ApiFootballProvider	py_codice_Betfair	0	1.00
+get_score	Betfair/stream/scores/base.py	51	3	ScoreProvider	py_codice_Betfair	1	1.00
+get_score	Betfair/stream/scores/betfair_inplay.py	162	18	BetfairInPlayProvider	py_codice_Betfair	2	1.00
+get_score	Betfair/stream/scores/scan_feed.py	524	6	ScanFeedScoreProvider	py_codice_Betfair	3	1.00
+healthcheck	Betfair/stream/scores/api_football.py	88	2	ApiFootballProvider	py_codice_Betfair	0	1.00
+healthcheck	Betfair/stream/scores/base.py	55	3	ScoreProvider	py_codice_Betfair	1	1.00
+healthcheck	Betfair/stream/scores/betfair_inplay.py	195	4	BetfairInPlayProvider	py_codice_Betfair	2	1.00
+healthcheck	Betfair/stream/scores/scan_feed.py	539	2	ScanFeedScoreProvider	py_codice_Betfair	3	1.00
+insert_trade	Betfair/mike/db.py	175	6		py_codice_Betfair	0	1.00
+insert_trade	Betfair/omega/omega_db.py	75	6		py_codice_Betfair	1	1.00
+insert_trade	Betfair/safe_strategy/bot_db.py	91	6		py_codice_Betfair	2	1.00
+insert_trade	Betfair/stream/backtest/banco_comune.py	298	5	DbMemoria	py_codice_Betfair	3	1.00
+open_trades	Betfair/mike/db.py	196	12		py_codice_Betfair	0	1.00
+open_trades	Betfair/omega/omega_db.py	246	2		py_codice_Betfair	1	1.00
+open_trades	Betfair/safe_strategy/bot_db.py	164	15		py_codice_Betfair	2	1.00
+open_trades	Betfair/stream/backtest/banco_comune.py	313	3	DbMemoria	py_codice_Betfair	3	1.00
+place_order_live	Betfair/mike/service.py	152	9	_RealMarket	py_codice_Betfair	0	1.00
+place_order_live	Betfair/omega/omega_market.py	704	125		py_codice_Betfair	1	1.00
+place_order_live	Betfair/safe_strategy/bot_service.py	105	3	_MercatoSafe	py_codice_Betfair	2	1.00
+place_order_live	Betfair/stream/backtest/banco_comune.py	651	138	MercatoFlumine	py_codice_Betfair	3	1.00
+place_submin_live	Betfair/mike/service.py	163	14	_RealMarket	py_codice_Betfair	0	1.00
+place_submin_live	Betfair/omega/omega_market.py	1043	276		py_codice_Betfair	1	1.00
+place_submin_live	Betfair/safe_strategy/bot_service.py	109	3	_MercatoSafe	py_codice_Betfair	2	1.00
+place_submin_live	Betfair/stream/backtest/banco_comune.py	932	32	MercatoFlumine	py_codice_Betfair	3	1.00
+predict	Ai Engine/ai_engine/ensemble_trainer.py	127	3	_XGBWrapper	py_codice_cartelle_radice	0	1.00
+predict	Ai Engine/ai_engine/ensemble_trainer.py	967	4	_KerasMetaWrapper	py_codice_cartelle_radice	1	1.00
+predict	Ai Engine/ai_engine/models/voting.py	19	3	VotingModel	py_codice_cartelle_radice	2	1.00
+predict	tactical_engine/model.py	239	19	DixonColesModel	py_codice_cartelle_radice	3	1.00
+read_control	Betfair/mike/db.py	59	3		py_codice_Betfair	0	1.00
+read_control	Betfair/omega/omega_db.py	49	4		py_codice_Betfair	1	1.00
+read_control	Betfair/safe_strategy/bot_db.py	62	6		py_codice_Betfair	2	1.00
+read_control	Betfair/stream/backtest/banco_comune.py	273	2	DbMemoria	py_codice_Betfair	3	1.00
+richiedi	Betfair/stream/arresto_ordinato.py	62	8		py_codice_Betfair	0	1.00
+richiedi	Betfair/stream/auto_follow.py	234	53	PianoFollow	py_codice_Betfair	1	1.00
+richiedi	Betfair/stream/auto_follow.py	741	22	AutoFollow	py_codice_Betfair	2	1.00
+richiedi	Betfair/stream/tennis_live/esecutore_tennis.py	478	33	AgganciaTennis	py_codice_Betfair	3	1.00
+run_once	Betfair/mike/service.py	3998	372		py_codice_Betfair	0	1.00
+run_once	Betfair/omega/omega_service.py	8149	366		py_codice_Betfair	1	1.00
+run_once	Betfair/safe_strategy/bot_service.py	10115	336		py_codice_Betfair	2	1.00
+run_once	betfair_tennis_odds.py	197	86		py_codice_radice	3	1.00
+stop	Betfair/safe_strategy/service.py	3272	4	ScoreFeedWorker	py_codice_Betfair	0	1.00
+stop	Betfair/safe_strategy/stream.py	218	3	StreamShard	py_codice_Betfair	1	1.00
+stop	Betfair/safe_strategy/stream.py	565	3	MarketStreamPool	py_codice_Betfair	2	1.00
+stop	Betfair/stream/frammenti_mercato.py	218	4	FrammentoMarketStream	py_codice_Betfair	3	1.00
+svuota_le_cache	Betfair/mike/service.py	436	22		py_codice_Betfair	0	1.00
+svuota_le_cache	Betfair/omega/omega_proposte.py	179	4		py_codice_Betfair	1	1.00
+svuota_le_cache	Betfair/omega/omega_service.py	260	63		py_codice_Betfair	2	1.00
+svuota_le_cache	Betfair/safe_strategy/bot_service.py	11050	87		py_codice_Betfair	3	1.00
+ticks_between	Betfair/stream/scalper/scalper_bot.py	278	17		py_codice_Betfair	0	1.00
+ticks_between	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	145	17		py_codice_Betfair	0	1.00
+ticks_between	laboratorio/scalper_lab/scalper_bot_base.py	113	17		py_codice_cartelle_radice	0	1.00
+ticks_between	Betfair/stream/trading/risk_engine.py	78	11		py_codice_Betfair	1	1.00
+trades_for_event	Betfair/mike/db.py	210	3		py_codice_Betfair	0	1.00
+trades_for_event	Betfair/omega/omega_db.py	720	15		py_codice_Betfair	1	1.00
+trades_for_event	Betfair/safe_strategy/bot_db.py	204	13		py_codice_Betfair	2	1.00
+trades_for_event	Betfair/stream/backtest/banco_comune.py	310	2	DbMemoria	py_codice_Betfair	3	1.00
+url	Betfair/safe_strategy/porta_ordini.py	578	2	PortaCanale	py_codice_Betfair	0	1.00
+url	Betfair/stream/esiti_ordini_canale.py	261	2	ClientEsiti	py_codice_Betfair	1	1.00
+url	Betfair/stream/sveglia_canale.py	290	2	AscoltoScan	py_codice_Betfair	2	1.00
+url	Betfair/stream/tennis_live/canale_bot_tennis.py	152	2	InoltroPosizioni	py_codice_Betfair	3	1.00
+uscita_manuale_finita	Betfair/stream/tennis_scalper/tennis_flb_bot.py	688	6	TennisFLBStrategy	py_codice_Betfair	0	1.00
+uscita_manuale_finita	Betfair/stream/tennis_scalper/tennis_pro_bot.py	1278	8	TennisProStrategy	py_codice_Betfair	1	1.00
+uscita_manuale_finita	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1197	14	TennisScalperStrategy	py_codice_Betfair	2	1.00
+uscita_manuale_finita	Betfair/stream/tennis_scalper/tennis_swing_bot.py	775	6	TennisSwingStrategy	py_codice_Betfair	3	1.00
+win	Betfair/safe_strategy/combos.py	123	2		py_codice_Betfair	0	1.00
+win	Betfair/safe_strategy/combos.py	129	2		py_codice_Betfair	1	1.00
+win	Betfair/safe_strategy/combos.py	135	2		py_codice_Betfair	2	1.00
+win	Betfair/safe_strategy/combos.py	142	7		py_codice_Betfair	3	1.00
+__repr__	Betfair/stream/backtest/banco_comune.py	426	2	_Livello	py_codice_Betfair	0	1.00
+__repr__	Betfair/stream/backtest/porta_banco.py	127	2	ClienteLiveBanco	py_codice_Betfair	1	1.00
+__repr__	Betfair/stream/scalper/certificazione.py	1015	2	VistaBuchi	py_codice_Betfair	2	1.00
+_a1	Betfair/mike/certificazione.py	126	4		py_codice_Betfair	0	1.00
+_a1	Betfair/omega/certificazione.py	283	8		py_codice_Betfair	1	1.00
+_a1	Betfair/safe_strategy/certificazione_tennis.py	1056	2		py_codice_Betfair	2	1.00
+_aggiungi	Betfair/safe_strategy/certificazione.py	1329	11		py_codice_Betfair	0	1.00
+_aggiungi	Betfair/stream/tennis_live/tennis_runner.py	2711	16		py_codice_Betfair	1	1.00
+_aggiungi	cloud_retrain_shard.py	113	3		py_codice_radice	2	1.00
+_applica	Betfair/stream/auto_follow.py	863	39	AutoFollow	py_codice_Betfair	0	1.00
+_applica	Betfair/stream/tennis_live/tennis_runner.py	2574	48		py_codice_Betfair	1	1.00
+_applica	Betfair/stream/tennis_live/tennis_runner.py	2827	19		py_codice_Betfair	2	1.00
+_attendi	Betfair/safe_strategy/service.py	3302	15	ScoreFeedWorker	py_codice_Betfair	0	1.00
+_attendi	Betfair/stream/scalper/atlante_a_domanda.py	414	8	MotoreAtlante	py_codice_Betfair	1	1.00
+_attendi	Betfair/stream/scalper/scalper_service.py	812	5		py_codice_Betfair	2	1.00
+_avvia_sveglia	Betfair/mike/service.py	6925	37		py_codice_Betfair	0	1.00
+_avvia_sveglia	Betfair/omega/omega_service.py	8671	34		py_codice_Betfair	1	1.00
+_avvia_sveglia	Betfair/stream/tennis_live/tennis_bot_service.py	309	20		py_codice_Betfair	2	1.00
+_avvia_uscita_manuale	Betfair/stream/tennis_scalper/tennis_pro_bot.py	1239	38	TennisProStrategy	py_codice_Betfair	0	1.00
+_avvia_uscita_manuale	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1175	21	TennisScalperStrategy	py_codice_Betfair	1	1.00
+_avvia_uscita_manuale	Betfair/stream/tennis_scalper/tennis_swing_bot.py	709	65	TennisSwingStrategy	py_codice_Betfair	2	1.00
+_b7	Betfair/mike/certificazione.py	428	7		py_codice_Betfair	0	1.00
+_b7	Betfair/safe_strategy/certificazione.py	380	19		py_codice_Betfair	1	1.00
+_b7	Betfair/stream/tennis_live/certificazione_bot.py	639	10		py_codice_Betfair	2	1.00
+_blocco_apertura_modo	Betfair/stream/live_order_worker.py	184	22		py_codice_Betfair	0	1.00
+_blocco_apertura_modo	Betfair/stream/tennis_live/esecutore_tennis.py	169	7		py_codice_Betfair	1	1.00
+_blocco_apertura_modo	Betfair/stream/tennis_live/tennis_live_order_worker.py	96	24		py_codice_Betfair	2	1.00
+_c1	Betfair/mike/certificazione.py	248	13		py_codice_Betfair	0	1.00
+_c1	Betfair/omega/certificazione.py	498	11		py_codice_Betfair	1	1.00
+_c1	Betfair/safe_strategy/certificazione_tennis.py	978	34		py_codice_Betfair	2	1.00
+_cadenza_battito	Betfair/mike/service.py	4435	32		py_codice_Betfair	0	1.00
+_cadenza_battito	Betfair/omega/omega_service.py	7782	35		py_codice_Betfair	1	1.00
+_cadenza_battito	Betfair/safe_strategy/bot_service.py	10054	22		py_codice_Betfair	2	1.00
+_chiudi	Betfair/stream/frammenti_mercato.py	507	24	GestoreFrammenti	py_codice_Betfair	0	1.00
+_chiudi	Betfair/stream/motore_ordini.py	217	8	Diario	py_codice_Betfair	1	1.00
+_chiudi	Betfair/stream/scalper/atlante_a_domanda.py	409	4	MotoreAtlante	py_codice_Betfair	2	1.00
+_costruisci	Betfair/stream/runner.py	719	8		py_codice_Betfair	0	1.00
+_costruisci	Betfair/stream/tennis_live/tennis_runner.py	1472	4		py_codice_Betfair	1	1.00
+_costruisci	db_client.py	364	5	_Catena	py_codice_radice	2	1.00
+_dc_tau	Betfair/omega/omega_advisor.py	93	18		py_codice_Betfair	0	1.00
+_dc_tau	Betfair/omega/omega_model.py	275	11		py_codice_Betfair	1	1.00
+_dc_tau	Prediction/today_predictions_backfill.py	1193	15		py_codice_cartelle_radice	2	1.00
+_dormi_o_sveglia	Betfair/mike/service.py	6988	7		py_codice_Betfair	0	1.00
+_dormi_o_sveglia	Betfair/omega/omega_service.py	8724	12		py_codice_Betfair	1	1.00
+_dormi_o_sveglia	Betfair/stream/tennis_live/tennis_bot_service.py	336	7		py_codice_Betfair	2	1.00
+_e1	Betfair/mike/certificazione.py	443	7		py_codice_Betfair	0	1.00
+_e1	Betfair/omega/certificazione.py	732	10		py_codice_Betfair	1	1.00
+_e1	Betfair/safe_strategy/certificazione.py	606	12		py_codice_Betfair	2	1.00
+_e2	Betfair/mike/certificazione.py	455	86		py_codice_Betfair	0	1.00
+_e2	Betfair/omega/certificazione.py	750	25		py_codice_Betfair	1	1.00
+_e2	Betfair/safe_strategy/certificazione.py	623	15		py_codice_Betfair	2	1.00
+_enter_join	Betfair/stream/scalper/scalper_bot.py	1378	72	ScalperStrategy	py_codice_Betfair	0	1.00
+_enter_join	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1462	71	TennisScalperStrategy	py_codice_Betfair	0	0.97
+_enter_join	laboratorio/scalper_lab/scalper_bot_base.py	1024	72	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_enter_maker	Betfair/stream/scalper/scalper_bot.py	1343	34	ScalperStrategy	py_codice_Betfair	0	1.00
+_enter_maker	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1428	33	TennisScalperStrategy	py_codice_Betfair	0	0.94
+_enter_maker	laboratorio/scalper_lab/scalper_bot_base.py	989	34	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_env_float	Betfair/stream/auto_follow.py	105	9		py_codice_Betfair	0	1.00
+_env_float	Betfair/stream/scores/scan_feed.py	52	9		py_codice_Betfair	1	1.00
+_env_float	Betfair/stream/watchdog.py	180	15		py_codice_Betfair	2	1.00
+_env_int	Betfair/safe_strategy/stream.py	85	8		py_codice_Betfair	0	1.00
+_env_int	Betfair/stream/frammenti_mercato.py	107	8		py_codice_Betfair	1	1.00
+_env_int	seasons_catchup.py	78	4		py_codice_radice	2	1.00
+_fetch_matches	build_analytics_signals.py	348	12		py_codice_radice	0	1.00
+_fetch_matches	enrich_analytics_snapshots.py	209	46		py_codice_radice	1	1.00
+_fetch_matches	merge_engine_signals.py	115	13		py_codice_radice	2	1.00
+_file_for	Betfair/stream/recorder.py	160	10	MarketRecorderStrategy	py_codice_Betfair	0	1.00
+_file_for	Betfair/stream/tennis_live/tennis_recorder.py	137	10	TennisRawTee	py_codice_Betfair	1	1.00
+_file_for	Betfair/stream/tennis_scalper/record_multi.py	59	10	_MultiRawState	py_codice_Betfair	2	1.00
+_find_betfair_bm	market_intelligence/calibration.py	52	8		py_codice_cartelle_radice	0	1.00
+_find_betfair_bm	market_intelligence/signals.py	51	13		py_codice_cartelle_radice	0	1.00
+_find_betfair_bm	market_intelligence/edge_scorer.py	108	12		py_codice_cartelle_radice	1	1.00
+_flatten	Betfair/stream/scalper/scalper_bot.py	2661	44	ScalperStrategy	py_codice_Betfair	0	1.00
+_flatten	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2322	33	TennisScalperStrategy	py_codice_Betfair	0	0.93
+_flatten	laboratorio/scalper_lab/scalper_bot_base.py	1655	33	ScalperStrategy	py_codice_cartelle_radice	0	0.93
+_flow_sums	Betfair/stream/scalper/scalper_bot.py	1728	9	ScalperStrategy	py_codice_Betfair	0	1.00
+_flow_sums	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1732	9	TennisScalperStrategy	py_codice_Betfair	0	1.00
+_flow_sums	laboratorio/scalper_lab/scalper_bot_base.py	1249	9	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_get	Betfair/stream/scalper/hazard_atlas_sync.py	44	8		py_codice_Betfair	0	1.00
+_get	valida_motore_poisson.py	46	3		py_codice_radice	1	1.00
+_get	ventaglio_segnali.py	58	4		py_codice_radice	2	1.00
+_handle_cancelling	Betfair/stream/scalper/scalper_bot.py	2094	19	ScalperStrategy	py_codice_Betfair	0	1.00
+_handle_cancelling	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2029	16	TennisScalperStrategy	py_codice_Betfair	0	0.91
+_handle_cancelling	laboratorio/scalper_lab/scalper_bot_base.py	1494	16	ScalperStrategy	py_codice_cartelle_radice	0	0.91
+_hook	Betfair/stream/motore_ordini.py	1426	19		py_codice_Betfair	0	1.00
+_hook	Betfair/stream/motore_ordini.py	1490	4		py_codice_Betfair	1	1.00
+_hook	Betfair/stream/motore_ordini.py	2308	2		py_codice_Betfair	2	1.00
+_ids	Betfair/stream/backtest/uscite_manuali.py	243	5	Osservatore	py_codice_Betfair	0	1.00
+_ids	Betfair/stream/scalper/certificazione.py	287	2		py_codice_Betfair	1	1.00
+_ids	Betfair/stream/tennis_live/certificazione_bot.py	461	2		py_codice_Betfair	1	1.00
+_iso	Betfair/mike/service.py	309	2		py_codice_Betfair	0	1.00
+_iso	Betfair/stream/backtest/proposte_modello.py	265	2		py_codice_Betfair	1	1.00
+_iso	Betfair/stream/scalper/atlante_a_domanda.py	91	2		py_codice_Betfair	2	1.00
+_j6	Betfair/mike/certificazione.py	1044	83		py_codice_Betfair	0	1.00
+_j6	Betfair/omega/certificazione.py	1161	7		py_codice_Betfair	1	1.00
+_j6	Betfair/safe_strategy/certificazione.py	1795	7		py_codice_Betfair	2	1.00
+_lascia_uscire	Betfair/stream/scalper/scalper_bot.py	2186	24	ScalperStrategy	py_codice_Betfair	0	1.00
+_lascia_uscire	Betfair/stream/scalper/sniper_bot.py	649	38	SniperStrategy	py_codice_Betfair	1	1.00
+_lascia_uscire	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2112	20	TennisScalperStrategy	py_codice_Betfair	2	1.00
+_lato	Betfair/stream/backtest/trasporto_rapido.py	266	12	BancoRapido	py_codice_Betfair	0	1.00
+_lato	Betfair/stream/backtest/uscite_manuali.py	172	3		py_codice_Betfair	1	1.00
+_lato	Betfair/stream/scalper/media_under_bot.py	498	3		py_codice_Betfair	2	1.00
+_leggi	Betfair/mike/service.py	3325	8		py_codice_Betfair	0	1.00
+_leggi	Betfair/omega/omega_service.py	4951	6		py_codice_Betfair	1	1.00
+_leggi	Betfair/safe_strategy/selezione.py	492	6	SchedeFixture	py_codice_Betfair	2	1.00
+_line_key	Betfair/safe_strategy/anomaly.py	97	2		py_codice_Betfair	0	1.00
+_line_key	Betfair/safe_strategy/combos.py	105	2		py_codice_Betfair	0	1.00
+_line_key	Betfair/safe_strategy/opportunity.py	310	3		py_codice_Betfair	0	1.00
+_log	Betfair/safe_strategy/bot_service.py	10492	20		py_codice_Betfair	0	1.00
+_log	Betfair/safe_strategy/execution.py	2676	5		py_codice_Betfair	1	1.00
+_log	retrain_all_leagues.py	167	11		py_codice_radice	2	1.00
+_long_drift	Betfair/stream/scalper/scalper_bot.py	1738	4	ScalperStrategy	py_codice_Betfair	0	1.00
+_long_drift	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1742	4	TennisScalperStrategy	py_codice_Betfair	0	1.00
+_long_drift	laboratorio/scalper_lab/scalper_bot_base.py	1259	4	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_long_drift_signed	Betfair/stream/scalper/scalper_bot.py	1743	19	ScalperStrategy	py_codice_Betfair	0	1.00
+_long_drift_signed	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1747	19	TennisScalperStrategy	py_codice_Betfair	0	1.00
+_long_drift_signed	laboratorio/scalper_lab/scalper_bot_base.py	1264	19	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_manage_maker	Betfair/stream/scalper/scalper_bot.py	1524	163	ScalperStrategy	py_codice_Betfair	0	1.00
+_manage_maker	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1534	157	TennisScalperStrategy	py_codice_Betfair	0	0.96
+_manage_maker	laboratorio/scalper_lab/scalper_bot_base.py	1097	111	ScalperStrategy	py_codice_cartelle_radice	1	1.00
+_matched_position	Betfair/stream/scalper/scalper_bot.py	2711	31	ScalperStrategy	py_codice_Betfair	0	1.00
+_matched_position	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2385	27	TennisScalperStrategy	py_codice_Betfair	0	0.91
+_matched_position	laboratorio/scalper_lab/scalper_bot_base.py	1718	27	ScalperStrategy	py_codice_cartelle_radice	0	0.91
+_n	Betfair/omega/omega_engine.py	1217	5		py_codice_Betfair	0	1.00
+_n	Betfair/omega/omega_service.py	7943	5		py_codice_Betfair	1	1.00
+_n	Betfair/safe_strategy/proposte_opportunita.py	366	5		py_codice_Betfair	2	1.00
+_norm	Betfair/stream/tennis_scalper/tennis_pro_bot.py	78	2		py_codice_Betfair	0	1.00
+_norm	Betfair/stream/tennis_scalper/tennis_serve_data.py	27	2		py_codice_Betfair	1	1.00
+_norm	Betfair/stream/trading/risk_engine.py	126	7		py_codice_Betfair	2	1.00
+_now	Betfair/mike/service.py	305	2		py_codice_Betfair	0	1.00
+_now	Betfair/omega/omega_service.py	41	2		py_codice_Betfair	0	1.00
+_now	Betfair/safe_strategy/bot_service.py	312	2		py_codice_Betfair	0	1.00
+_numero	Betfair/safe_strategy/canale_scan.py	279	2		py_codice_Betfair	0	1.00
+_numero	Betfair/safe_strategy/proposte_opportunita.py	478	5		py_codice_Betfair	1	1.00
+_numero	Betfair/stream/scalper/media_under_bot.py	289	10		py_codice_Betfair	2	1.00
+_open_lock	Betfair/stream/scalper/scalper_bot.py	2114	53	ScalperStrategy	py_codice_Betfair	0	1.00
+_open_lock	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2046	50	TennisScalperStrategy	py_codice_Betfair	0	1.00
+_open_lock	laboratorio/scalper_lab/scalper_bot_base.py	1511	39	ScalperStrategy	py_codice_cartelle_radice	1	1.00
+_ora_iso	Betfair/safe_strategy/service.py	625	5	Scanner	py_codice_Betfair	0	1.00
+_ora_iso	Betfair/stream/auto_follow.py	452	2		py_codice_Betfair	1	1.00
+_ora_iso	Betfair/stream/motore_ordini.py	176	2		py_codice_Betfair	2	1.00
+_ordini_in_sequenza	Betfair/stream/scalper/scalper_bot.py	3006	12	ScalperStrategy	py_codice_Betfair	0	1.00
+_ordini_in_sequenza	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2614	12	TennisScalperStrategy	py_codice_Betfair	0	1.00
+_ordini_in_sequenza	Betfair/stream/scalper/sniper_bot.py	1039	12	SniperStrategy	py_codice_Betfair	1	1.00
+_outcome	Prediction/predictions_results_backfill.py	145	6		py_codice_cartelle_radice	0	1.00
+_outcome	market_intelligence/backtest.py	65	21		py_codice_cartelle_radice	1	1.00
+_outcome	tactical_engine/run_worldcup.py	24	4		py_codice_cartelle_radice	2	1.00
+_p1	Betfair/safe_strategy/certificazione.py	875	14		py_codice_Betfair	0	1.00
+_p1	Betfair/stream/scalper/certificazione.py	1227	12		py_codice_Betfair	1	1.00
+_p1	Betfair/stream/tennis_live/certificazione_bot.py	1069	10		py_codice_Betfair	2	1.00
+_p2	Betfair/safe_strategy/certificazione.py	894	15		py_codice_Betfair	0	1.00
+_p2	Betfair/stream/scalper/certificazione.py	1244	11		py_codice_Betfair	1	1.00
+_p2	Betfair/stream/tennis_live/certificazione_bot.py	1084	13		py_codice_Betfair	2	1.00
+_page	Prediction/predictions_results_backfill.py	241	15		py_codice_cartelle_radice	0	1.00
+_page	build_analytics_signals.py	331	9		py_codice_radice	1	1.00
+_page	merge_engine_signals.py	100	7		py_codice_radice	2	1.00
+_poisson_pmf	Betfair/omega/omega_advisor.py	86	5		py_codice_Betfair	0	1.00
+_poisson_pmf	Betfair/omega/omega_v3.py	310	4		py_codice_Betfair	1	1.00
+_poisson_pmf	Betfair/stream/engine/live_engine.py	20	4		py_codice_Betfair	2	1.00
+_position_row	Betfair/stream/engine/live_trading_strategy.py	376	30	LiveTradingStrategy	py_codice_Betfair	0	1.00
+_position_row	Betfair/stream/scalper/scalper_session.py	1107	2	_SessionOrderMirror	py_codice_Betfair	1	1.00
+_position_row	Betfair/stream/tennis_live/tennis_live_order_worker.py	1341	37		py_codice_Betfair	2	1.00
+_process_local_requests	Betfair/stream/live_order_worker.py	3457	137		py_codice_Betfair	0	1.00
+_process_local_requests	Betfair/stream/tennis_live/esecutore_tennis.py	283	2		py_codice_Betfair	1	1.00
+_process_local_requests	Betfair/stream/tennis_live/tennis_live_order_worker.py	1542	105		py_codice_Betfair	2	1.00
+_pubblica	Betfair/stream/runner.py	2362	3		py_codice_Betfair	0	1.00
+_pubblica	Betfair/stream/scalper/media_under_bot.py	2290	28	MediaUnderStrategy	py_codice_Betfair	1	1.00
+_pubblica	Betfair/stream/scalper/scalper_service.py	335	13		py_codice_Betfair	2	1.00
+_pubblica_stato	Betfair/mike/service.py	7279	8		py_codice_Betfair	0	1.00
+_pubblica_stato	Betfair/omega/omega_service.py	8753	18		py_codice_Betfair	1	1.00
+_pubblica_stato	Betfair/safe_strategy/bot_service.py	10607	19		py_codice_Betfair	2	1.00
+_q_ordini	Betfair/safe_strategy/certificazione_k.py	244	2		py_codice_Betfair	0	1.00
+_q_ordini	Betfair/stream/scalper/certificazione.py	407	2		py_codice_Betfair	1	1.00
+_q_ordini	Betfair/stream/tennis_live/certificazione_bot.py	477	2		py_codice_Betfair	2	1.00
+_q_rifiuti	Betfair/safe_strategy/certificazione_k.py	240	2		py_codice_Betfair	0	1.00
+_q_rifiuti	Betfair/stream/scalper/certificazione.py	435	2		py_codice_Betfair	1	1.00
+_q_rifiuti	Betfair/stream/tennis_live/certificazione_bot.py	481	2		py_codice_Betfair	2	1.00
+_r2	Betfair/mike/certificazione.py	1154	16		py_codice_Betfair	0	1.00
+_r2	Betfair/safe_strategy/bot_service.py	1376	8		py_codice_Betfair	1	1.00
+_r2	Betfair/stream/backtest/trasporto_rapido.py	597	13		py_codice_Betfair	2	1.00
+_read_matched_exposures	Betfair/stream/live_order_worker.py	1684	23		py_codice_Betfair	0	1.00
+_read_matched_exposures	Betfair/stream/tennis_live/esecutore_tennis.py	198	12		py_codice_Betfair	1	1.00
+_read_matched_exposures	Betfair/stream/tennis_live/tennis_live_order_worker.py	855	20		py_codice_Betfair	2	1.00
+_recent_move	Betfair/stream/scalper/scalper_bot.py	1763	11	ScalperStrategy	py_codice_Betfair	0	1.00
+_recent_move	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1767	11	TennisScalperStrategy	py_codice_Betfair	0	1.00
+_recent_move	laboratorio/scalper_lab/scalper_bot_base.py	1284	11	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_registra	Betfair/stream/backtest/porta_banco.py	714	13	PortaBanco	py_codice_Betfair	0	1.00
+_registra	Betfair/stream/backtest/proposte_modello.py	974	12	TraderProposte	py_codice_Betfair	1	1.00
+_registra	Betfair/stream/live_order_worker.py	3420	8	_SbDifferito	py_codice_Betfair	2	1.00
+_reset	Betfair/stream/scalper/scalper_bot.py	3277	25	ScalperStrategy	py_codice_Betfair	0	1.00
+_reset	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	2939	22	TennisScalperStrategy	py_codice_Betfair	1	1.00
+_reset	laboratorio/scalper_lab/scalper_bot_base.py	2047	16	ScalperStrategy	py_codice_cartelle_radice	2	1.00
+_residuo_non_piazzabile	Betfair/stream/tennis_scalper/tennis_flb_bot.py	409	21	TennisFLBStrategy	py_codice_Betfair	0	1.00
+_residuo_non_piazzabile	Betfair/stream/tennis_scalper/tennis_pro_bot.py	1199	38	TennisProStrategy	py_codice_Betfair	1	1.00
+_residuo_non_piazzabile	Betfair/stream/tennis_scalper/tennis_swing_bot.py	341	25	TennisSwingStrategy	py_codice_Betfair	2	1.00
+_resolve_market	Betfair/stream/live_order_worker.py	686	12		py_codice_Betfair	0	1.00
+_resolve_market	Betfair/stream/tennis_live/tennis_live_order_worker.py	310	11		py_codice_Betfair	1	1.00
+_resolve_market	Betfair/stream/tennis_live/tennis_runner.py	744	38		py_codice_Betfair	2	1.00
+_run_one_event	Betfair/stream/backtest/run_backtest.py	367	77		py_codice_Betfair	0	1.00
+_run_one_event	Betfair/stream/scalper/run_scalper.py	38	66		py_codice_Betfair	1	1.00
+_run_one_event	Betfair/stream/scalper/run_theta.py	69	96		py_codice_Betfair	2	1.00
+_s1	Betfair/mike/certificazione.py	1326	12		py_codice_Betfair	0	1.00
+_s1	Betfair/safe_strategy/certificazione_tennis.py	1020	13		py_codice_Betfair	1	1.00
+_s1	Betfair/stream/scalper/certificazione.py	806	13		py_codice_Betfair	2	1.00
+_s2	Betfair/mike/certificazione.py	1357	16		py_codice_Betfair	0	1.00
+_s2	Betfair/safe_strategy/certificazione_tennis.py	1038	5		py_codice_Betfair	1	1.00
+_s2	Betfair/stream/scalper/certificazione.py	826	14		py_codice_Betfair	2	1.00
+_s3	Betfair/mike/certificazione.py	1400	17		py_codice_Betfair	0	1.00
+_s3	Betfair/safe_strategy/certificazione_tennis.py	1047	5		py_codice_Betfair	1	1.00
+_s3	Betfair/stream/scalper/certificazione.py	848	19		py_codice_Betfair	2	1.00
+_s4	Betfair/mike/certificazione.py	1423	17		py_codice_Betfair	0	1.00
+_s4	Betfair/safe_strategy/certificazione_tennis.py	913	44		py_codice_Betfair	1	1.00
+_s4	Betfair/stream/scalper/certificazione.py	884	8		py_codice_Betfair	2	1.00
+_scrivi	Betfair/omega/omega_proposte.py	689	89		py_codice_Betfair	0	1.00
+_scrivi	Betfair/stream/scalper/validazione_hazard/banco.py	649	4		py_codice_Betfair	1	1.00
+_scrivi	Betfair/stream/tempi_ordine.py	425	8		py_codice_Betfair	2	1.00
+_sid	Betfair/stream/scalper/sniper_bot.py	1052	5	SniperStrategy	py_codice_Betfair	0	1.00
+_sid	laboratorio/scalper_lab/grid_strategy.py	357	6	GridStrategy	py_codice_cartelle_radice	1	1.00
+_sid	laboratorio/scalper_lab/theta_strategy.py	354	5	ThetaStrategy	py_codice_cartelle_radice	2	1.00
+_signal	Betfair/stream/scalper/scalper_bot.py	1775	38	ScalperStrategy	py_codice_Betfair	0	1.00
+_signal	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1779	31	TennisScalperStrategy	py_codice_Betfair	1	1.00
+_signal	laboratorio/scalper_lab/scalper_bot_base.py	1296	31	ScalperStrategy	py_codice_cartelle_radice	1	1.00
+_size	Betfair/safe_strategy/anomaly.py	85	3		py_codice_Betfair	0	1.00
+_size	Betfair/safe_strategy/combos.py	93	3		py_codice_Betfair	0	1.00
+_size	Betfair/stream/backtest/minimi_banco.py	125	5		py_codice_Betfair	1	1.00
+_sollecita	Betfair/stream/backtest/chiusura_parziale.py	820	3	Sorveglianza	py_codice_Betfair	0	1.00
+_sollecita	Betfair/stream/backtest/proposte_modello.py	994	3		py_codice_Betfair	1	1.00
+_sollecita	Betfair/stream/backtest/uscite_manuali.py	230	2	Osservatore	py_codice_Betfair	2	1.00
+_status_name	Betfair/stream/live_order_worker.py	826	6		py_codice_Betfair	0	1.00
+_status_name	Betfair/stream/tennis_live/tennis_live_order_worker.py	236	5		py_codice_Betfair	1	1.00
+_status_name	Betfair/stream/trading/submin.py	484	7		py_codice_Betfair	2	1.00
+_su_sveglia_dal_canale	Betfair/mike/service.py	6911	12		py_codice_Betfair	0	1.00
+_su_sveglia_dal_canale	Betfair/omega/omega_service.py	8656	13		py_codice_Betfair	0	1.00
+_su_sveglia_dal_canale	Betfair/stream/tennis_live/tennis_bot_service.py	299	8		py_codice_Betfair	1	1.00
+_tempi_on	Betfair/stream/engine/live_trading_strategy.py	40	3		py_codice_Betfair	0	1.00
+_tempi_on	Betfair/stream/live_order_worker.py	57	2		py_codice_Betfair	0	1.00
+_tempi_on	Betfair/stream/tennis_live/tennis_live_order_worker.py	38	3		py_codice_Betfair	0	1.00
+_try_enter	Betfair/stream/scalper/scalper_bot.py	1183	159	ScalperStrategy	py_codice_Betfair	0	1.00
+_try_enter	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1256	171	TennisScalperStrategy	py_codice_Betfair	0	0.93
+_try_enter	laboratorio/scalper_lab/scalper_bot_base.py	815	173	ScalperStrategy	py_codice_cartelle_radice	0	0.92
+_update_flow	Betfair/stream/scalper/scalper_bot.py	1688	39	ScalperStrategy	py_codice_Betfair	0	1.00
+_update_flow	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	1692	39	TennisScalperStrategy	py_codice_Betfair	0	1.00
+_update_flow	laboratorio/scalper_lab/scalper_bot_base.py	1209	39	ScalperStrategy	py_codice_cartelle_radice	0	1.00
+_upsert	build_analytics_signals.py	394	19		py_codice_radice	0	1.00
+_upsert	fix_storico_prob.py	54	14		py_codice_radice	1	1.00
+_upsert	merge_engine_signals.py	208	18		py_codice_radice	2	1.00
+_v	Betfair/omega/omega_service.py	7866	2		py_codice_Betfair	0	1.00
+_v	Betfair/safe_strategy/bot_service.py	6677	5		py_codice_Betfair	1	1.00
+_v	Betfair/stream/riserva_prezzi.py	79	9		py_codice_Betfair	2	1.00
+add_row	Betfair/money_management.py	1613	5		py_codice_Betfair	0	1.00
+add_row	Betfair/money_management.py	2705	4		py_codice_Betfair	1	1.00
+add_row	aggiorna_mm_sheets.py	322	4		py_codice_radice	2	1.00
+adesso	Betfair/stream/backtest/banco_comune.py	2618	2	ScannerReplay	py_codice_Betfair	0	1.00
+adesso	Betfair/stream/backtest/proposte_modello.py	402	2	Piano	py_codice_Betfair	1	1.00
+adesso	season_aggregates.py	280	3		py_codice_radice	2	1.00
+applica	Betfair/stream/auto_follow.py	361	2	SottoscrittoreStream	py_codice_Betfair	0	1.00
+applica	Betfair/stream/backtest/porta_banco.py	274	7	SottoscrittoreBanco	py_codice_Betfair	1	1.00
+applica	Betfair/stream/frammenti_mercato.py	532	44	GestoreFrammenti	py_codice_Betfair	2	1.00
+attendi_esito_bet	Betfair/mike/porta_ordini.py	157	2	VistaMike	py_codice_Betfair	0	1.00
+attendi_esito_bet	Betfair/omega/porta_ordini.py	176	2	VistaOmega	py_codice_Betfair	0	1.00
+attendi_esito_bet	Betfair/safe_strategy/porta_ordini.py	722	13	PortaCanale	py_codice_Betfair	1	1.00
+attivita_di	Betfair/safe_strategy/certificazione_tennis.py	128	2	Osservazione	py_codice_Betfair	0	1.00
+attivita_di	Betfair/stream/scalper/certificazione.py	178	2	Osservazione	py_codice_Betfair	1	1.00
+attivita_di	Betfair/stream/tennis_live/certificazione_bot.py	166	2	Osservazione	py_codice_Betfair	1	1.00
+avvia_client_scan	Betfair/mike/service.py	7047	39		py_codice_Betfair	0	1.00
+avvia_client_scan	Betfair/omega/omega_service.py	715	60		py_codice_Betfair	1	1.00
+avvia_client_scan	Betfair/safe_strategy/bot_service.py	9519	33		py_codice_Betfair	2	1.00
+binom_cdf	report_mm.py	17	4		py_codice_radice	0	1.00
+binom_cdf	tmp_analysis.py	10	4		py_codice_radice	1	1.00
+binom_cdf	tmp_analysis2.py	9	4		py_codice_radice	1	1.00
+brier	Betfair/safe_strategy/calibration.py	134	11		py_codice_Betfair	0	1.00
+brier	_league_eval.py	32	1		py_codice_radice	1	1.00
+brier	_stack_eval.py	28	2		py_codice_radice	2	1.00
+bucket	_certify_direction.py	28	6		py_codice_radice	0	1.00
+bucket	_league_eval.py	25	5		py_codice_radice	1	1.00
+bucket	valida_motore_poisson.py	79	10		py_codice_radice	2	1.00
+build	Betfair/omega/omega_db.py	146	3		py_codice_Betfair	0	1.00
+build	Betfair/omega/omega_db.py	205	3		py_codice_Betfair	1	1.00
+build	build_direzione.py	187	10		py_codice_radice	2	1.00
+calibrate	Betfair/safe_strategy/opportunity.py	383	11	OpportunityModel	py_codice_Betfair	0	1.00
+calibrate	Betfair/stream/engine/live_engine_pro.py	116	29		py_codice_Betfair	1	1.00
+calibrate	Betfair/stream/tennis_scalper/research_data.py	120	11		py_codice_Betfair	2	1.00
+cancel	Betfair/stream/live_order_worker.py	2946	2	_RecordingFlumineOps	py_codice_Betfair	0	1.00
+cancel	Betfair/stream/trading/submin.py	157	4	SubminOps	py_codice_Betfair	1	1.00
+cancel	Betfair/stream/trading/submin.py	242	4	FlumineSubminOps	py_codice_Betfair	2	1.00
+cancel_order_live	Betfair/mike/service.py	179	19	_RealMarket	py_codice_Betfair	0	1.00
+cancel_order_live	Betfair/omega/omega_market.py	1327	100		py_codice_Betfair	1	1.00
+cancel_order_live	Betfair/stream/backtest/banco_comune.py	833	58	MercatoFlumine	py_codice_Betfair	2	1.00
+chiudi	Betfair/stream/auto_follow.py	438	12	FollowDb	py_codice_Betfair	0	1.00
+chiudi	Betfair/stream/backtest/varianti_bot.py	420	14	SpecchioOrdini	py_codice_Betfair	1	1.00
+chiudi	Betfair/stream/motore_ordini.py	226	3	Diario	py_codice_Betfair	2	1.00
+ciclo	Betfair/stream/esiti_ordini_canale.py	621	5		py_codice_Betfair	0	1.00
+ciclo	Betfair/stream/esiti_ordini_canale.py	476	3	EsitiOrdini	py_codice_Betfair	1	1.00
+ciclo	Betfair/stream/scalper/atlante_a_domanda.py	424	100	MotoreAtlante	py_codice_Betfair	2	1.00
+compute_green	Betfair/stream/scalper/scalper_bot.py	297	23		py_codice_Betfair	0	1.00
+compute_green	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	164	23		py_codice_Betfair	0	1.00
+compute_green	laboratorio/scalper_lab/scalper_bot_base.py	132	23		py_codice_cartelle_radice	0	1.00
+confronta	Betfair/stream/backtest/trasporto.py	564	48		py_codice_Betfair	0	1.00
+confronta	Betfair/stream/orologio.py	115	42		py_codice_Betfair	1	1.00
+confronta	Betfair/stream/scalper/genera_atlante.py	1091	28		py_codice_Betfair	2	1.00
+delete_trade	Betfair/omega/omega_db.py	91	9		py_codice_Betfair	0	1.00
+delete_trade	Betfair/safe_strategy/bot_db.py	107	11		py_codice_Betfair	1	1.00
+delete_trade	Betfair/stream/esiti_ordini_canale.py	372	4	DbConSpecchioDalCanale	py_codice_Betfair	2	1.00
+difetti_di_progettazione	Betfair/mike/certificazione.py	1999	43		py_codice_Betfair	0	1.00
+difetti_di_progettazione	Betfair/omega/certificazione.py	1821	21		py_codice_Betfair	1	1.00
+difetti_di_progettazione	Betfair/safe_strategy/certificazione_tennis.py	1172	13		py_codice_Betfair	2	1.00
+emit	Betfair/safe_strategy/anomaly.py	235	73	_Ctx	py_codice_Betfair	0	1.00
+emit	Betfair/stream/backtest/trasporto_rapido.py	1299	4	_ContaLog	py_codice_Betfair	1	1.00
+emit	tmp_today_predictions.py	98	3		py_codice_radice	2	1.00
+empty	Betfair/omega/omega_empirical.py	98	2	EmpiricalTable	py_codice_Betfair	0	1.00
+empty	Betfair/omega/omega_empirical.py	199	2	MinuteTable	py_codice_Betfair	1	1.00
+empty	Betfair/safe_strategy/calibration.py	331	2	Calibrator	py_codice_Betfair	2	1.00
+enqueue_live_order	Betfair/mike/db.py	662	4		py_codice_Betfair	0	1.00
+enqueue_live_order	Betfair/omega/omega_db.py	634	7		py_codice_Betfair	0	1.00
+enqueue_live_order	Betfair/safe_strategy/bot_db.py	1003	4		py_codice_Betfair	0	1.00
+esegui	Betfair/stream/backtest/applica_bot.py	754	119		py_codice_Betfair	0	1.00
+esegui	Betfair/stream/backtest/banco_comune.py	2459	34	MotoreReplay	py_codice_Betfair	1	1.00
+esegui	season_backfill.py	161	59		py_codice_radice	2	1.00
+esposizione	Betfair/omega/omega_v3.py	278	14		py_codice_Betfair	0	1.00
+esposizione	Betfair/stream/backtest/chiusura_parziale.py	201	15		py_codice_Betfair	1	1.00
+esposizione	Betfair/stream/scalper/certificazione.py	369	15		py_codice_Betfair	2	1.00
+execute_place	Betfair/mike/service.py	739	339		py_codice_Betfair	0	1.00
+execute_place	Betfair/stream/backtest/minimi_banco.py	180	9		py_codice_Betfair	1	1.00
+execute_place	Betfair/stream/tennis_live/paper_execution.py	50	5	FreshDelaySimulatedExecution	py_codice_Betfair	2	1.00
+extract	report_mm.py	40	5		py_codice_radice	0	1.00
+extract	tmp_analysis.py	37	12		py_codice_radice	1	1.00
+extract	tmp_analysis2.py	35	7		py_codice_radice	2	1.00
+fetch_fixtures_for_date	Ai Engine/ai_engine/db_adapter.py	310	19		py_codice_cartelle_radice	0	1.00
+fetch_fixtures_for_date	Prediction/today_predictions_backfill.py	503	13		py_codice_cartelle_radice	1	1.00
+fetch_fixtures_for_date	daily_yesterday_backfill.py	49	4		py_codice_radice	2	1.00
+fetch_scan_rows	Betfair/mike/db.py	553	12		py_codice_Betfair	0	1.00
+fetch_scan_rows	Betfair/safe_strategy/bot_db.py	951	16		py_codice_Betfair	1	1.00
+fetch_scan_rows	Betfair/stream/backtest/banco_comune.py	326	2	DbMemoria	py_codice_Betfair	2	1.00
+find_matches	Betfair/stream/tennis_scalper/flb_backtest.py	73	4		py_codice_Betfair	0	1.00
+find_matches	laboratorio/tennis_lab/lab_grid.py	181	4		py_codice_cartelle_radice	0	1.00
+find_matches	laboratorio/tennis_lab/lab_grid_score.py	214	3		py_codice_cartelle_radice	1	1.00
+fixture_analysis	Betfair/mike/db.py	625	10		py_codice_Betfair	0	1.00
+fixture_analysis	Betfair/omega/omega_db.py	756	7		py_codice_Betfair	1	1.00
+fixture_analysis	Betfair/safe_strategy/bot_db.py	937	9		py_codice_Betfair	2	1.00
+get	Betfair/stream/backtest/porta_banco.py	307	2	_CaptureTutte	py_codice_Betfair	0	1.00
+get	Betfair/stream/scalper/genera_atlante.py	590	24	LettoreDB	py_codice_Betfair	1	1.00
+get	Betfair/stream/scalper/validazione_hazard/produzione.py	59	5	LettoreCache	py_codice_Betfair	2	1.00
+get_event	Betfair/mike/db.py	116	3		py_codice_Betfair	0	1.00
+get_event	Betfair/omega/omega_db.py	485	3		py_codice_Betfair	1	1.00
+get_event	Betfair/safe_strategy/bot_db.py	917	6		py_codice_Betfair	2	1.00
+get_live_order_request	Betfair/mike/db.py	675	5		py_codice_Betfair	0	1.00
+get_live_order_request	Betfair/omega/omega_db.py	655	8		py_codice_Betfair	1	1.00
+get_live_order_request	Betfair/safe_strategy/bot_db.py	1018	7		py_codice_Betfair	1	1.00
+get_live_order_request_by_ref	Betfair/mike/db.py	668	5		py_codice_Betfair	0	1.00
+get_live_order_request_by_ref	Betfair/omega/omega_db.py	643	10		py_codice_Betfair	1	1.00
+get_live_order_request_by_ref	Betfair/safe_strategy/bot_db.py	1009	7		py_codice_Betfair	1	1.00
+get_trade	Betfair/mike/db.py	191	3		py_codice_Betfair	0	1.00
+get_trade	Betfair/omega/omega_db.py	250	7		py_codice_Betfair	1	1.00
+get_trade	Betfair/safe_strategy/bot_db.py	120	6		py_codice_Betfair	2	1.00
+incassa	Betfair/safe_strategy/canale_scan.py	430	30	ClientScan	py_codice_Betfair	0	1.00
+incassa	Betfair/safe_strategy/porta_ordini.py	671	26	PortaCanale	py_codice_Betfair	1	1.00
+incassa	Betfair/stream/esiti_ordini_canale.py	313	19	ClientEsiti	py_codice_Betfair	2	1.00
+keep_alive	Betfair/omega/omega_market.py	140	10		py_codice_Betfair	0	1.00
+keep_alive	Betfair/stream/auth.py	83	8		py_codice_Betfair	1	1.00
+keep_alive	Betfair/stream/client_paper_affiancato.py	49	2	PaperCompanionClient	py_codice_Betfair	2	1.00
+key	Betfair/omega/omega_model.py	1150	13		py_codice_Betfair	0	1.00
+key	Betfair/omega/omega_model.py	1175	6		py_codice_Betfair	1	1.00
+key	Betfair/stream/tennis_scalper/tennis_score.py	63	4	TennisScore	py_codice_Betfair	2	1.00
+kinds	Betfair/safe_strategy/certificazione_tennis.py	125	2	Osservazione	py_codice_Betfair	0	1.00
+kinds	Betfair/stream/backtest/banco_comune.py	322	2	DbMemoria	py_codice_Betfair	1	1.00
+kinds	Betfair/stream/tennis_live/certificazione_bot.py	163	2	Osservazione	py_codice_Betfair	2	1.00
+list_account_cleared_bets	Betfair/mike/service.py	246	16	_RealMarket	py_codice_Betfair	0	1.00
+list_account_cleared_bets	Betfair/safe_strategy/bot_service.py	130	2	_MercatoSafe	py_codice_Betfair	1	1.00
+list_account_cleared_bets	Betfair/stream/backtest/banco_comune.py	1090	33	MercatoFlumine	py_codice_Betfair	2	1.00
+list_account_cleared_markets	Betfair/mike/service.py	264	28	_RealMarket	py_codice_Betfair	0	1.00
+list_account_cleared_markets	Betfair/safe_strategy/bot_service.py	133	2	_MercatoSafe	py_codice_Betfair	1	1.00
+list_account_cleared_markets	Betfair/stream/backtest/banco_comune.py	1145	30	MercatoFlumine	py_codice_Betfair	2	1.00
+list_events	Betfair/client.py	259	22	BetfairClient	py_codice_Betfair	0	1.00
+list_events	Betfair/mike/db.py	99	15		py_codice_Betfair	1	1.00
+list_events	Betfair/stream/backtest/banco_comune.py	280	6	DbMemoria	py_codice_Betfair	2	1.00
+live_follow_status	Betfair/mike/db.py	650	4		py_codice_Betfair	0	1.00
+live_follow_status	Betfair/omega/omega_db.py	615	7		py_codice_Betfair	1	1.00
+live_follow_status	Betfair/safe_strategy/bot_db.py	987	6		py_codice_Betfair	1	1.00
+margine	api_quota.py	65	2	StatoQuota	py_codice_radice	0	1.00
+margine	api_quota.py	297	8	GestoreQuota	py_codice_radice	1	1.00
+margine	api_quota.py	338	2	QuotaConPavimento	py_codice_radice	2	1.00
+micro_price	Betfair/stream/scalper/scalper_bot.py	244	19		py_codice_Betfair	0	1.00
+micro_price	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	111	19		py_codice_Betfair	0	1.00
+micro_price	laboratorio/scalper_lab/scalper_bot_base.py	79	19		py_codice_cartelle_radice	0	1.00
+normalizza	Betfair/safe_strategy/veto_campionati.py	115	7		py_codice_Betfair	0	1.00
+normalizza	Betfair/stream/modo_ordini.py	80	9		py_codice_Betfair	1	1.00
+normalizza	Betfair/stream/tennis_scalper/superficie.py	281	8		py_codice_Betfair	2	1.00
+ok	Betfair/safe_strategy/execution.py	292	2	PlaceOutcome	py_codice_Betfair	0	1.00
+ok	Betfair/stream/backtest/proposte_modello.py	832	2	Clic	py_codice_Betfair	1	1.00
+ok	Betfair/stream/backtest/trasporto_rapido.py	130	2	_Esito	py_codice_Betfair	2	1.00
+ora	Betfair/stream/backtest/banco_comune.py	2604	2	ScannerReplay	py_codice_Betfair	0	1.00
+ora	Betfair/stream/backtest/trasporto_rapido.py	212	3	BancoRapido	py_codice_Betfair	1	1.00
+ora	Betfair/stream/tempi_ordine.py	93	3		py_codice_Betfair	2	1.00
+order_state_by_bet_id	Betfair/mike/service.py	215	10	_RealMarket	py_codice_Betfair	0	1.00
+order_state_by_bet_id	Betfair/omega/omega_market.py	1462	61		py_codice_Betfair	1	1.00
+order_state_by_bet_id	Betfair/stream/backtest/banco_comune.py	1032	38	MercatoFlumine	py_codice_Betfair	2	1.00
+parse_scoreline	Betfair/omega/omega_engine.py	95	6		py_codice_Betfair	0	1.00
+parse_scoreline	Betfair/omega/omega_v3.py	126	4		py_codice_Betfair	1	1.00
+parse_scoreline	Betfair/safe_strategy/engine.py	164	6		py_codice_Betfair	2	1.00
+partite_dal_feed	Betfair/stream/auto_follow.py	516	15		py_codice_Betfair	0	1.00
+partite_dal_feed	Betfair/stream/scalper/auto_mode.py	212	36		py_codice_Betfair	1	1.00
+partite_dal_feed	Betfair/stream/tennis_live/auto_mode.py	141	38		py_codice_Betfair	2	1.00
+pct	tactical_engine/report.py	11	2		py_codice_cartelle_radice	0	1.00
+pct	valida_motore_poisson.py	134	2		py_codice_radice	1	1.00
+pct	valida_ventaglio.py	131	4		py_codice_radice	2	1.00
+pending_requests	Betfair/mike/db.py	462	3		py_codice_Betfair	0	1.00
+pending_requests	Betfair/safe_strategy/bot_db.py	604	6		py_codice_Betfair	1	1.00
+pending_requests	Betfair/stream/backtest/banco_comune.py	332	2	DbMemoria	py_codice_Betfair	2	1.00
+percorso	Betfair/stream/arresto_ordinato.py	46	2		py_codice_Betfair	0	1.00
+percorso	Betfair/stream/motore_ordini.py	195	2	Diario	py_codice_Betfair	1	1.00
+percorso	Betfair/stream/valuta.py	146	2	CambioGbpEur	py_codice_Betfair	2	1.00
+pianifica	Betfair/stream/frammenti_mercato.py	237	29		py_codice_Betfair	0	1.00
+pianifica	Betfair/stream/tennis_live/iscrizione_a_caldo.py	169	54		py_codice_Betfair	1	1.00
+pianifica	season_backfill.py	100	24		py_codice_radice	2	1.00
+pop_requests	Betfair/stream/backtest/porta_banco.py	235	5	_CanaleBanco	py_codice_Betfair	0	1.00
+pop_requests	Betfair/stream/local_channel.py	673	9	LocalChannel	py_codice_Betfair	1	1.00
+pop_requests	Betfair/stream/tennis_live/esecutore_tennis.py	306	2	CanaleSoloComandi	py_codice_Betfair	2	1.00
+porta_esistente	Betfair/mike/porta_ordini.py	196	3		py_codice_Betfair	0	1.00
+porta_esistente	Betfair/omega/porta_ordini.py	220	5		py_codice_Betfair	0	1.00
+porta_esistente	Betfair/safe_strategy/porta_ordini.py	770	6		py_codice_Betfair	1	1.00
+predict_proba	Ai Engine/ai_engine/ensemble_trainer.py	124	2	_XGBWrapper	py_codice_cartelle_radice	0	1.00
+predict_proba	Ai Engine/ai_engine/ensemble_trainer.py	951	15	_KerasMetaWrapper	py_codice_cartelle_radice	1	1.00
+predict_proba	Ai Engine/ai_engine/models/voting.py	15	3	VotingModel	py_codice_cartelle_radice	2	1.00
+publish	Betfair/safe_strategy/service.py	2839	16	Scanner	py_codice_Betfair	0	1.00
+publish	Betfair/stream/local_channel.py	757	5		py_codice_Betfair	1	1.00
+publish	Betfair/stream/local_channel.py	620	52	LocalChannel	py_codice_Betfair	2	1.00
+read_book	Betfair/mike/service.py	146	4	_RealMarket	py_codice_Betfair	0	1.00
+read_book	Betfair/omega/omega_market.py	571	34		py_codice_Betfair	1	1.00
+read_book	Betfair/stream/backtest/banco_comune.py	1452	15	MercatoFlumine	py_codice_Betfair	2	1.00
+ref_annullo	Betfair/mike/porta_ordini.py	56	5		py_codice_Betfair	0	1.00
+ref_annullo	Betfair/omega/porta_ordini.py	80	6		py_codice_Betfair	1	1.00
+ref_annullo	Betfair/safe_strategy/porta_ordini.py	204	14		py_codice_Betfair	2	1.00
+ref_ordine	Betfair/mike/porta_ordini.py	50	4		py_codice_Betfair	0	1.00
+ref_ordine	Betfair/omega/porta_ordini.py	73	5		py_codice_Betfair	1	1.00
+ref_ordine	Betfair/safe_strategy/porta_ordini.py	190	12		py_codice_Betfair	2	1.00
+regola	Betfair/stream/backtest/chiusura_parziale.py	121	2		py_codice_Betfair	0	1.00
+regola	Betfair/stream/backtest/proposte_modello.py	218	2		py_codice_Betfair	0	1.00
+regola	Betfair/stream/backtest/uscite_manuali.py	156	2		py_codice_Betfair	1	1.00
+replace	Betfair/stream/live_order_worker.py	2949	2	_RecordingFlumineOps	py_codice_Betfair	0	1.00
+replace	Betfair/stream/trading/submin.py	162	3	SubminOps	py_codice_Betfair	1	1.00
+replace	Betfair/stream/trading/submin.py	247	8	FlumineSubminOps	py_codice_Betfair	2	1.00
+revoke_live_order_request	Betfair/mike/db.py	682	6		py_codice_Betfair	0	1.00
+revoke_live_order_request	Betfair/omega/omega_db.py	665	16		py_codice_Betfair	1	1.00
+revoke_live_order_request	Betfair/safe_strategy/bot_db.py	1027	9		py_codice_Betfair	2	1.00
+riepilogo	Betfair/stream/backtest/chiusura_parziale.py	701	17	GuastoChiusuraParziale	py_codice_Betfair	0	1.00
+riepilogo	Betfair/stream/backtest/proposte_modello.py	1360	34	BancoProposte	py_codice_Betfair	1	1.00
+riepilogo	Betfair/stream/backtest/uscite_manuali.py	563	6	Osservatore	py_codice_Betfair	2	1.00
+risolvi	Betfair/stream/backtest/trasporto_rapido.py	398	8	_Safe	py_codice_Betfair	0	1.00
+risolvi	Betfair/stream/backtest/trasporto_rapido.py	461	8	_Omega	py_codice_Betfair	1	1.00
+risolvi	Betfair/stream/tennis_scalper/superficie.py	298	17		py_codice_Betfair	2	1.00
+round_to_tick	Betfair/omega/omega_engine.py	70	6		py_codice_Betfair	0	1.00
+round_to_tick	Betfair/order_exec.py	115	4		py_codice_Betfair	1	1.00
+round_to_tick	Betfair/stream/live_order_build.py	146	5		py_codice_Betfair	2	1.00
+run_backfill	Prediction/backfill_historical_analysis.py	68	69		py_codice_cartelle_radice	0	1.00
+run_backfill	football_data_scraper/backfill.py	364	145		py_codice_cartelle_radice	1	1.00
+run_backfill	migrations/backfill_engine_signals.py	232	51		py_codice_cartelle_radice	2	1.00
+run_for_date	Ai Engine/ai_engine/serving_batch.py	43	53		py_codice_cartelle_radice	0	1.00
+run_for_date	Prediction/today_predictions_backfill.py	2399	362		py_codice_cartelle_radice	1	1.00
+run_for_date	tactical_engine/serving.py	192	84		py_codice_cartelle_radice	2	1.00
+runner_heartbeat	Betfair/mike/db.py	656	4		py_codice_Betfair	0	1.00
+runner_heartbeat	Betfair/omega/omega_db.py	624	8		py_codice_Betfair	1	1.00
+runner_heartbeat	Betfair/safe_strategy/bot_db.py	995	6		py_codice_Betfair	1	1.00
+scanner_status	Betfair/mike/db.py	567	8		py_codice_Betfair	0	1.00
+scanner_status	Betfair/safe_strategy/bot_db.py	969	11		py_codice_Betfair	1	1.00
+scanner_status	Betfair/stream/backtest/banco_comune.py	329	2	DbMemoria	py_codice_Betfair	2	1.00
+set_request_status	Betfair/mike/db.py	499	18		py_codice_Betfair	0	1.00
+set_request_status	Betfair/safe_strategy/bot_db.py	836	20		py_codice_Betfair	1	1.00
+set_request_status	Betfair/stream/backtest/banco_comune.py	335	2	DbMemoria	py_codice_Betfair	2	1.00
+sgancia	Betfair/stream/auto_follow.py	614	13	AutoFollow	py_codice_Betfair	0	1.00
+sgancia	Betfair/stream/motore_ordini.py	830	3	MotoreOrdini	py_codice_Betfair	1	1.00
+sgancia	Betfair/stream/tennis_live/esecutore_tennis.py	417	3	AgganciaTennis	py_codice_Betfair	2	1.00
+sim_flat	report_mm.py	83	7		py_codice_radice	0	1.00
+sim_flat	tmp_analysis.py	88	7		py_codice_radice	1	1.00
+sim_flat	tmp_analysis2.py	106	7		py_codice_radice	2	1.00
+sim_puro	report_mm.py	47	11		py_codice_radice	0	1.00
+sim_puro	tmp_analysis.py	50	14		py_codice_radice	1	1.00
+sim_puro	tmp_analysis2.py	84	10		py_codice_radice	2	1.00
+statistiche_sveglia	Betfair/mike/service.py	6973	13		py_codice_Betfair	0	1.00
+statistiche_sveglia	Betfair/omega/omega_service.py	8707	15		py_codice_Betfair	1	1.00
+statistiche_sveglia	Betfair/stream/tennis_live/tennis_bot_service.py	331	3		py_codice_Betfair	2	1.00
+stato_ordine	Betfair/stream/scalper/certificazione.py	215	10		py_codice_Betfair	0	1.00
+stato_ordine	Betfair/stream/tennis_live/certificazione_bot.py	200	16		py_codice_Betfair	0	1.00
+stato_ordine	Betfair/stream/tennis_scalper/condotta_ordini.py	651	9		py_codice_Betfair	1	1.00
+stream_di_mercato	Betfair/stream/auto_follow.py	349	4		py_codice_Betfair	0	1.00
+stream_di_mercato	Betfair/stream/sottoscrizione_a_caldo.py	47	16		py_codice_Betfair	1	1.00
+stream_di_mercato	Betfair/stream/stream_muto.py	113	17		py_codice_Betfair	2	1.00
+upsert_events	Betfair/mike/db.py	144	21		py_codice_Betfair	0	1.00
+upsert_events	Betfair/omega/omega_db.py	300	4		py_codice_Betfair	1	1.00
+upsert_events	Betfair/stream/backtest/banco_comune.py	293	3	DbMemoria	py_codice_Betfair	2	1.00
+wilson	_certify_direction.py	46	4		py_codice_radice	0	1.00
+wilson	_certify_direction_report.py	211	7		py_codice_radice	1	1.00
+wilson	certify_backtest_strategy.py	59	8		py_codice_radice	2	1.00
+wom_imbalance	Betfair/stream/scalper/scalper_bot.py	265	11		py_codice_Betfair	0	1.00
+wom_imbalance	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	132	11		py_codice_Betfair	0	1.00
+wom_imbalance	laboratorio/scalper_lab/scalper_bot_base.py	100	11		py_codice_cartelle_radice	0	1.00
+write_message	Betfair/stream/raw_listener.py	151	91	_RawState	py_codice_Betfair	0	1.00
+write_message	Betfair/stream/tennis_live/tennis_recorder.py	148	70	TennisRawTee	py_codice_Betfair	1	1.00
+write_message	Betfair/stream/tennis_scalper/record_multi.py	70	32	_MultiRawState	py_codice_Betfair	2	1.00
