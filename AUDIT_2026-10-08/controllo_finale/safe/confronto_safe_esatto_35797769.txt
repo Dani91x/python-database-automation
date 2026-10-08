@@ -1,0 +1,33 @@
+scenari rif=23 nuovo=23
+OK  35797769 [base]  tick=117442 decisioni= 6451 azioni=   2 stati=running/live [COMPLETE]
+OK  35797769 [cap-stretto]  tick=121046 decisioni= 6459 azioni=   1 stati=running/live [COMPLETE]
+OK  35797769 [bot-fermo]  tick=120899 decisioni= 6456 azioni=   3 stati=stopped/live [COMPLETE]
+OK  35797769 [esiti-ignoti]  tick=116568 decisioni= 6451 azioni=   6 stati=running/live [COMPLETE]
+OK  35797769 [feed-stantio]  tick=121046 decisioni= 6459 azioni=   1 stati=running/live [COMPLETE]
+OK  35797769 [riavvio]  tick=120899 decisioni= 6456 azioni=   3 stati=running/live [COMPLETE]
+OK  35797769 [paper]  tick=121046 decisioni= 6459 azioni=   1 stati=running/paper [COMPLETE]
+OK  35797769 [ordini-manuali]  tick=120899 decisioni= 6456 azioni=   3 stati=running/live [COMPLETE]
+OK  35797769 [due-lay]  tick=120846 decisioni= 6453 azioni=   5 stati=running/live [COMPLETE]
+OK  35797769 [manuale-e-bot]  tick=117375 decisioni= 6450 azioni=   4 stati=running/live [COMPLETE]
+OK  35797769 [cashout-globale]  tick=117792 decisioni= 6452 azioni=   3 stati=running/live [COMPLETE]
+OK  35797769 [chiusura-fuori-app]  tick=117781 decisioni= 6452 azioni=   2 stati=running/live [COMPLETE]
+OK  35797769 [chiusura-fuori-app-ridotta]  tick=117781 decisioni= 6452 azioni=   2 stati=running/live [COMPLETE]
+OK  35797769 [chiusura-fuori-app-canale]  tick=117781 decisioni= 6452 azioni=   2 stati=running/live [COMPLETE]
+OK  35797769 [rifiuti-betfair]  tick=117422 decisioni= 6452 azioni=   2 stati=running/live [COMPLETE]
+OK  35797769 [timeout-dopo-accettazione]  tick=117434 decisioni= 6451 azioni=   2 stati=running/live [COMPLETE]
+OK  35797769 [chiusura-abbinata-in-parte]  tick=117295 decisioni= 6447 azioni=   5 stati=running/live [COMPLETE]
+OK  35797769 [selezione-aggiuntiva]  tick=117442 decisioni= 6451 azioni=   2 stati=running/live [COMPLETE]
+OK  35797769 [proposta-approvata]  tick=117197 decisioni= 6445 azioni=   7 stati=running/live [COMPLETE]
+OK  35797769 [proposta-scaduta]  tick=117442 decisioni= 6451 azioni=   3 stati=running/live [COMPLETE]
+OK  35797769 [proposta-anomalia-effimera]  tick=117280 decisioni= 6447 azioni=   5 stati=running/live [COMPLETE]
+OK  35797769 [combos-automatiche]  tick=117284 decisioni= 6446 azioni=   5 stati=running/live [COMPLETE]
+OK  35797769 [combos-gamba-automatica]  tick=117284 decisioni= 6446 azioni=   5 stati=running/live [COMPLETE]
+ESITI IDENTICI: True
+righe differenti ATTESE (save_event_model / get_event): 9
+blocchi con differenze NON ATTESE: 2
+== [cap-stretto]
+   PRIMA:       nota: attivita' del servizio: diagnosi x26, skip x7, replay_richiesta_manuale x1
+   DOPO:        nota: attivita' del servizio: diagnosi x26, skip x7, replay_richiesta_manuale x1, flusso_non_dichiarato x1
+== [bot-fermo]
+   PRIMA:       nota: attivita' del servizio: replay_richiesta_manuale x2, settle x2, place x1, diagnosi x1, place_parziale x1, cashout x1, settle_position x1
+   DOPO:        nota: attivita' del servizio: replay_richiesta_manuale x2, settle x2, flusso_non_dichiarato x1, place x1, diagnosi x1, place_parziale x1, cashout x1, settle_position x1
