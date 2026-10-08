@@ -5218,3 +5218,14 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   tutte confermate: `omega_market.py:704` (`place_order_live` REST diretto), `order_exec.py:215`, `execution.py:1219`,
   `avvio_app.py:173` (avvio conosce i bot per nome), `mike/db.py:175-181` (id dal cloud), `dossier.py:147` (cache senza
   scadenza) vs `omega_service.py:106` (6 h), `desktop/main.js:401-410` (watchdog morto non riavviato), `:937`.
+- 17:05 tappa 3 ACCETTATA: E1 Mike, E2 Omega, E3 Safe (+ scanner), E4 Scalper calcio. Verifica a campione:
+  `mike/service.py:4259-4264` e `config.py:350` (cadenza 1 s / 5 s a riposo: spiega 255 -> 48 richieste/min senza
+  cambi di codice), `omega_v3.py:115` (`K_MINIMO = 2.0` dormiente), `omega_config.py:417-420`, `bot_service.py:10957`,
+  `scalper_bot.py:2818` (`freno_live` nel percorso del tick), `tennis_scalper_bot.py:274` (copia dichiarata),
+  `one_green_per_phase` False nel bot vs true in `scalper.ts:117` (VERO). **E1 RESPINTA e corretta**: il reperto D6
+  (limiti 100 nel frontend) era FALSO (`mike.ts:552-553` = 100_000, script che leggeva male `_`); ritirato, 0 differenze
+  Python/TS sui 107 parametri.
+- 17:30 tappa 4 ACCETTATA: E5 Tennis, B punteggi, F money management. Verifica: `money_management.py` e' il «Quant Fund»
+  su Google Sheets (non usato dai bot; riscritto dal workflow settimanale), `trading/daily_pnl.py:49` (stop su profit
+  lordi), `reconcile_worker.py:747`, `omega_service.py:62-66` (assente = fresco), `poller.py:79-82`,
+  `registro_bot.py:53` (registrazioni tennis fuori dal repo, `~/Desktop/tennis_rec`).

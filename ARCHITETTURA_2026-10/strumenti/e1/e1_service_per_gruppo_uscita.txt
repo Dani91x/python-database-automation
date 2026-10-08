@@ -1,0 +1,6 @@
+def/class di primo livello: 165 righe in def: 7450 file: 7552
+D_scheletro 1671
+C_porta_ordini_e_ciclo_ordine 3258
+F_regolamento_e_conto 868
+E1_colla_di_Mike 1631
+non assegnate: 22 [('_result', 22)]

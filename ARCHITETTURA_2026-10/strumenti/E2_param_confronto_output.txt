@@ -1,0 +1,5 @@
+chiavi: Python _SPEC=87  TS PARAM_DEFAULTS=87  TS GROUPS=87
+solo Python: []  solo TS defaults: []
+in GROUPS non in Python: []  in Python non in GROUPS: []
+differenze default/limiti: 0
+chiavi TS GROUPS senza min/max (select/boolean/testo): 21
