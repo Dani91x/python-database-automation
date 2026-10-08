@@ -5234,3 +5234,5 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   `applica_bot.py:365,375` (genera `replayBotCatalogo.ts`), `banco_comune.py:1642` (impronta flumine 2.13.11),
   `App.tsx:39,100` (QueryClient montato, 0 `useQuery(`), `weekly_poisson_calibration.yml:43,60` (CI riscrive
   `money_management.py`), `predict_fixture.py:986` (import di `market_intelligence`).
+- 18:20 `01_FUNZIONALITA.md`: 970 voci da 15 schede, generato e rieseguibile (`strumenti/f01_assembla_funzionalita.py`);
+  campione verificato (`auth.py:156` CustodeSessione, `motore_ordini.py:692` MotoreOrdini).

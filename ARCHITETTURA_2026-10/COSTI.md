@@ -15,3 +15,4 @@ Cumulativo = spesa totale (coordinatore + delegati).
 | 17:05 | 4. Ondata 3 (E1 Mike, E2 Omega, E3 Safe, E4 Scalper calcio) + verifica; E1 respinta su D6 (falso) e corretta | 92,70 | |
 | 17:30 | 5. Ondata 4 (E5 Tennis, B punteggi, F money management) + verifica | 100,20 | |
 | 18:05 | 6. Ondata 5 (H banco, J frontend, K cartelle e codice morto) + verifica | 108,70 | |
+| 18:20 | 7. `01_FUNZIONALITA.md` generato dalle schede (970 voci) con `strumenti/f01_assembla_funzionalita.py` | 109,10 | |
