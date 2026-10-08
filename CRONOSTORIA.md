@@ -5240,3 +5240,10 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   8 processi invece di 18, righe -10,4% sicuro / -17,5% con le decisioni (il -80% globale NON e' dimostrato: strati attorno ai
   bot -45/-73%, strategia identica per regola). Verifica del coordinatore: quota di commento dei runner rimisurata 35,4% /
   28,8% (04 dice 38% / 33%: altro metodo, stesso ordine). `05` interrotto a meta' da un errore di rete del delegato.
+- 19:25 `05_PIANO_DI_MIGRAZIONE.md` ACCETTATO (972 righe): T0A/T0B/T0C + T1..T26; 112-146 giorni di lavoro, ~13-17
+  settimane con due linee (cloud + PC), le sole fasi 0-1-2 del 02/10 = 8-10 settimane (il doppio delle 5-6 stimate il 02/10:
+  replay lenti, congelamento e ombre non previsti allora); 79 decisioni U-01..U-79 ordinate per urgenza (7 bloccano la tappa 0).
+  Verifica INDIPENDENTE del coordinatore: `strumenti/f05_verifica_copertura.py` = 971 id di 01 coperti, 0 mancanti, 0 doppi,
+  0 inesistenti; falsificata (G-013 -> G-999: 1 mancante + 1 inesistente, rosso). Citazioni: `banco_comune.py:1844`
+  (`LATENZA_LETTURA_S = 0.120`), `ambiente_runner.js:69,75` (code a 0,15 s nell'app). Ladder: canale 200 ms
+  (`config_stream.py:74`), upsert DB 0,3 s nell'app (`ambiente_runner.js:70`): 04 corretto.

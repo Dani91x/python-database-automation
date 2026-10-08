@@ -17,3 +17,4 @@ Cumulativo = spesa totale (coordinatore + delegati).
 | 18:05 | 6. Ondata 5 (H banco, J frontend, K cartelle e codice morto) + verifica | 108,70 | |
 | 18:20 | 7. `01_FUNZIONALITA.md` generato dalle schede (970 voci) con `strumenti/f01_assembla_funzionalita.py` | 109,10 | |
 | 19:00 | 8. Sintesi Opus: `04_ARCHITETTURA_OBIETTIVO.md` completo; `05` a meta' (delegato interrotto da errore di rete, ENOTFOUND) | 118,59 | dato comunicato dall'utente (40,94 + 77,65 del secondo processo) |
+| 19:25 | 9. `05_PIANO_DI_MIGRAZIONE.md` completato dal delegato Opus (ripreso dopo l'errore di rete) + verifica indipendente della copertura | 126,50 | 40,94 + 85,51 |
