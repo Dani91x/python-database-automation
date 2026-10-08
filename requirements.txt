@@ -27,6 +27,10 @@ python-Levenshtein  # backend veloce per thefuzz
 # silenzioso può rompere il restart path mentre un bot continua a tradare (money-critical).
 flumine==2.13.11            # framework streaming/recording (sopra betfairlightweight)
 betfairlightweight[speed]==2.23.2  # pin esplicito + extra [speed] (parsing stream C, best practice ufficiale flumine)
+# Banco di certificazione (`python -m Betfair.stream.backtest.certifica`): core fisici per
+# `--worker N` e picco di memoria dei worker. Senza, il tetto dei worker e' stimato dai thread
+# (nproc//2) e il referto lo dichiara (08/10, decisione D-14b). Versione del .venv del PC.
+psutil==7.2.2
 
 # ── Opzionale / heavy (meta-learner neurale) ─────────────────────────────────
 # L'ensemble degrada con grazia a LogisticRegression se assenti (try/except import).

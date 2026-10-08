@@ -1518,9 +1518,10 @@ def _certifica_evento(event_id: str, *, data_dir: str,
 
     # 08/10 (controllo finale, reperto D-13): la cache dei lambda di
     # `omega_service` (catena di Safe) scade a orologio di PARETE: si azzera a
-    # OGNI scenario, non solo per gli scenari delle proposte, cosi' il referto
-    # non dipende dalla velocita' della macchina ne' dal numero di worker.
-    PM.azzera_cache_lambda()
+    # OGNI scenario, all'ingresso e all'uscita, dentro
+    # `_pulisci_cache_di_processo` qui sotto (08/10 sera, decisione D-13: come
+    # RB-5 di Omega), cosi' il referto non dipende dalla velocita' della
+    # macchina ne' dal numero di worker.
 
     # OGNI REPLAY PARTE DA UN PROCESSO PULITO. Con la pool (`--worker N`) piu'
     # coppie evento x scenario girano nello STESSO processo figlio, una dopo
@@ -1745,6 +1746,20 @@ def _pulisci_cache_di_processo() -> None:
     farebbe mentire il replay successivo nello stesso interprete (e la suite,
     che li esegue tutti dentro lo stesso `pytest`)."""
     _riavvia_processo()
+    # 08/10 sera (DECISIONE DELL'UTENTE D-13): `omega_service._LAMBDA_CACHE`
+    # e' di processo (la catena dei lambda di Safe) e scade dopo 900 s di
+    # orologio di PARETE: ereditata da uno scenario all'altro, il punto in cui
+    # il modello si ricalcola (e la nota dei metodi assenti dal banco) dipende
+    # dalla velocita' della macchina. Si azzera fra uno scenario e l'altro,
+    # all'ingresso e all'uscita di ogni replay, come RB-5 di Omega. NON al
+    # riavvio a meta' partita (`_riavvia_processo`, scenario `riavvio`): in
+    # produzione la Safe riavviata rilegge l'evento (`bot_db.get_event`,
+    # tabella omega_events: fixture e modello salvato da Omega), che il banco
+    # della Safe NON esercita (registrazione senza anagrafica); azzerarla li'
+    # ricalcolerebbe i lambda dal solo mercato di quel momento e cambierebbe lo
+    # scenario senza renderlo piu' fedele. Divergenza dichiarata nel referto
+    # del banco (decisioni_sera, D-13).
+    PM.azzera_cache_lambda()
 
 
 def _componi_note(out: CERT.Referto, strategia: Any, banco: ScannerReplay,

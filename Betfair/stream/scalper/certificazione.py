@@ -532,8 +532,14 @@ def _b1(o: Osservazione) -> Optional[str]:
             quando=_q_inplay, persistente=True)
 def _b2(o: Osservazione) -> Optional[str]:
     toll = {c.get("chiave"): float(c.get("tolleranza") or 0.02) for c in o.credenze}
+    cicli = {c.get("chiave"): int(c.get("cicli") or 0) for c in o.credenze}
     for chiave, (w, l) in sorted((o.esposizioni or {}).items()):
-        tol = max(EPS, toll.get(chiave, 0.02))
+        # 08/10 sera (DECISIONE DELL'UTENTE D-1, cantiere 15): la stessa
+        # tolleranza PER CICLO di K5. Ogni ciclo completato puo' lasciare fino
+        # a 0,02 (il monitor DONE del bot) e i resti si sommano sulla
+        # selezione; `tolleranza_slot` copre il ciclo corrente. Prima B2
+        # confrontava il TOTALE di piu' cicli con la tolleranza di uno solo.
+        tol = max(EPS, toll.get(chiave, 0.02) + 0.02 * max(0, cicli.get(chiave, 0)))
         if abs(w - l) > tol + EPS:
             return ("in gioco la selezione %s ha un'esposizione abbinata "
                     "sbilanciata di %.2f (se vince %.2f, se perde %.2f), oltre "

@@ -803,3 +803,53 @@ def test_il_banco_vede_i_rifiuti_anche_quando_il_bot_non_li_segue(simulato):
     assert all(CERT._rifiutato(r) for r in righe)
     senza = SimpleNamespace(ordini_di=lambda _ss: [], rifiuti=None)
     assert R._Banco.righe_correnti(senza, s, CERT.credenze(s)) == []
+
+
+# ===========================================================================
+# D-1 (08/10 sera, DECISIONE DELL'UTENTE, cantiere 15): B2 usa la stessa
+# tolleranza PER CICLO di K5. Credenze VERE dalla strategia VERA.
+# Soglia effettiva = tolleranza_slot + 0,02 x cicli + EPS (0,011), come K5.
+# ===========================================================================
+def _slot_con_cicli(stato: str, cicli: int, sbilancio: float) -> CERT.Osservazione:
+    s = _strategia()
+    m = _Mercato()
+    slot = s._slot(m.market_id, 7)
+    slot.status = stato
+    slot.cycles = cicli                # cicli COMPLETATI dal bot
+    cred = CERT.credenze(s)
+    assert cred[0]["cicli"] == cicli and cred[0]["tolleranza"] == 0.02
+    esp = {(m.market_id, 7): (round(sbilancio, 4), 0.0)}
+    return _oss(inplay=True, sessione_viva=True, esposizioni=esp, credenze=cred)
+
+
+def _b2_su_slot(cicli: int, sbilancio: float) -> List[str]:
+    # FLATTENING: in gioco, slot vivo (B2 lo giudica, K5 no)
+    return _codici(_slot_con_cicli(SB.FLATTENING, cicli, sbilancio),
+                   giri=CERT.GIRI_DI_TOLLERANZA)
+
+
+def test_d1_b2_resti_di_due_cicli_dentro_la_tolleranza_per_ciclo(simulato):
+    # il caso di sel 58805 (35797769): 0,017 + 0,020 su due cicli completati
+    assert "B2" not in _b2_su_slot(2, 0.017 + 0.020)
+
+
+def test_d1_b2_rosso_oltre_la_tolleranza_di_un_ciclo(simulato):
+    # un ciclo: 0,02 + 0,02 x 1 + EPS = 0,051. 0,06 -> rosso; 0,05 sta
+    # dentro (come per K5: e' il bordo, non uno sforamento)
+    assert "B2" in _b2_su_slot(1, 0.06)
+    assert "B2" not in _b2_su_slot(1, 0.05)
+    # senza cicli completati vale la tolleranza di sempre (0,02 + EPS)
+    assert "B2" in _b2_su_slot(0, 0.037)
+    assert "B2" not in _b2_su_slot(0, 0.019)
+
+
+@pytest.mark.parametrize("cicli", [0, 1, 2, 5])
+def test_d1_b2_e_k5_hanno_la_stessa_soglia_per_ciclo(simulato, cicli):
+    # una sola regola: per ogni numero di cicli e ogni sbilancio, B2 (slot vivo
+    # in gioco) e K5 (slot chiuso) danno lo stesso giudizio
+    for centesimi in range(0, 30):
+        sb = centesimi / 100.0 + 0.005
+        b2 = "B2" in _b2_su_slot(cicli, sb)
+        k5 = "K5" in _codici(_slot_con_cicli(SB.IDLE, cicli, sb),
+                             giri=CERT.GIRI_DI_TOLLERANZA)
+        assert b2 == k5, (cicli, sb, b2, k5)

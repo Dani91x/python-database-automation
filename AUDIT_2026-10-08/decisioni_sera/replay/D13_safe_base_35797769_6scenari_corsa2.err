@@ -1,0 +1,4 @@
+WARNING:safe.execution:[safe.exec] punta 2.17 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.17 dichiarato (trade 2)
+WARNING:safe.execution:[safe.exec] punta 2.38 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.38 dichiarato (trade 5)
+CRITICAL:safe.bot:[safe.bot] 35797769: partita CHIUSA DALL'UTENTE (cashout) -> il bot non gestisce piu' nulla su di essa
+WARNING:safe.execution:[safe.exec] punta 2.17 -> 2.00 (multiplo di 0,50 per difetto): residuo 0.17 dichiarato (trade 2)

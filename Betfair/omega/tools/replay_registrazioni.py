@@ -1181,27 +1181,17 @@ SCENARI_DESCRITTI: Dict[str, str] = {
 
 QUANTI_GUASTI = 2
 
-#: 08/10 (cantiere 7, RB-5; catalogo §7.37) - LE CACHE DI PROCESSO DI
-#: `omega_service` CHE `svuota_le_cache` NON TOCCA. Il banco le azzerava SOLO al
-#: riavvio a meta' partita (``_riavvia_processo``), MAI fra uno scenario e il
-#: successivo dello stesso processo (`--worker 1`, o un figlio della pool
-#: riusato): lo stato di uno scenario entrava nel seguente. Due casi provati:
-#:  * le tabelle storiche (HT->FT e per minuto, `_empirical_table` /
-#:    `_minute_table`): la nota `[NON ESERCITABILE]` la scriveva solo il PRIMO
-#:    scenario che le leggeva (reperto RB-5 del 07/10);
-#:  * `_LEG_RETRY` (i tentativi falliti per gamba): sulla 35760084 `apertura`
-#:    dopo `paper` (codice di partenza) dava 438 decisioni / 0 azioni invece di
-#:    467 / 2 - il '3 - 3' non si apriva piu' (prova nel referto del cantiere 7).
-#: Elenco ESPLICITO, mai un `dir()`: quello di sempre del riavvio piu' le due
-#: tabelle. Lo usano il riavvio e ``AmbienteOmega`` (ingresso e uscita di ogni
-#: replay): ogni scenario parte come un processo appena avviato. Come Omega
-#: usa queste cache non si tocca.
+#: 08/10 (cantiere 7, RB-5; catalogo par.7.37) - le cache di processo di
+#: `omega_service` che `svuota_le_cache` non tocca si azzerano fra uno scenario
+#: e il successivo (prima solo al riavvio a meta' partita): le tabelle storiche
+#: `_empirical_table` / `_minute_table` (nota `[NON ESERCITABILE]` scritta dal
+#: solo PRIMO scenario che le leggeva) e `_LEG_RETRY` (35760084 `apertura` dopo
+#: `paper`: 438 decisioni / 0 azioni invece di 467 / 2). 08/10 sera (DECISIONE
+#: DELL'UTENTE D-14c): l'elenco e' UNO SOLO, `STATO_DI_PROCESSO_FRA_SCENARI`
+#: qui sotto, usato da `_processo_nuovo` (ingresso e uscita di ogni replay) e
+#: dal riavvio a meta' partita (`_riavvia_processo`). Le due tabelle storiche
+#: restano nominate qui per i test di RB-5.
 CACHE_TABELLE_STORICHE = ("_EMPIRICAL_CACHE", "_MINUTE_CACHE")
-CACHE_DI_PROCESSO_DEL_BANCO = (
-    "_LEG_RETRY", "_SKIP_SEEN", "_BLIND_CYCLES", "_MARKET_FIT_CACHE",
-    "_LAMBDA_CACHE", "_IDLE_STATS_AT",
-    "_CATENA_OMEGA",                                # 04/10: blocchi di catena
-) + CACHE_TABELLE_STORICHE                          # 08/10 (RB-5)
 
 
 #: 08/10 (cantiere 7, RB-2): lo scanner del banco di Omega consegna i book con
@@ -1223,32 +1213,28 @@ def esposizioni_omega(trades: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return SDB._righe_esposte(vive, "omega", "calcio")
 
 
-def _azzera_cache_di_processo() -> List[str]:
-    """Svuota le cache di ``CACHE_DI_PROCESSO_DEL_BANCO``; torna i nomi di
-    quelle che avevano qualcosa dentro."""
-    azzerati: List[str] = []
-    for nome in CACHE_DI_PROCESSO_DEL_BANCO:
-        d = getattr(S, nome, None)
-        if isinstance(d, dict) and d:
-            d.clear()
-            azzerati.append(nome)
-    return azzerati
-
-
 def _riavvia_processo() -> List[str]:
-    """Butta via le cache di PROCESSO di `omega_service`, come un riavvio.
+    """Butta via lo stato di PROCESSO di `omega_service`, come un riavvio VERO.
+
+    08/10 sera (DECISIONE DELL'UTENTE D-14c): un riavvio vero perde TUTTO lo
+    stato di processo, non un sottoinsieme. Prima si azzeravano 7 stati su 20
+    (`svuota_le_cache` piu' l'elenco di RB-5): restavano, fra gli altri,
+    `_EVENTS_REFRESH_AT` (il refresh degli eventi non ripartiva dopo il
+    riavvio), `_LEG_RETRY_DB`, `_DAILY_GOAL_WRITTEN`, `_REALLY_OVER_CACHE`,
+    `_ULTIMO_STATO_SCANNER_OMEGA` e i due avvisi "una volta per processo".
+    Ora il riavvio e' `_processo_nuovo()`, la STESSA funzione (e lo stesso
+    elenco, `STATO_DI_PROCESSO_FRA_SCENARI`) dell'ingresso di ogni scenario:
+    una sola fonte di verita'.
 
     Non tocca il database in memoria: quello e' il DB e in produzione
-    sopravvive. Torna l'elenco di cio' che e' stato azzerato — un riavvio che
-    non si sa che cosa ha buttato non prova niente.
+    sopravvive. Torna l'elenco di cio' che e' stato azzerato (gli stati che
+    avevano qualcosa dentro) - un riavvio che non si sa che cosa ha buttato
+    non prova niente.
     """
-    azzerati: List[str] = []
-    S.svuota_le_cache()
-    azzerati.append("svuota_le_cache (feed, scanner, aggregati, insiemi, fasi)")
-    # 08/10 (RB-5): l'elenco esplicito del banco (quello di sempre del riavvio
-    # piu' le tabelle storiche, che un riavvio vero perde anch'esso)
-    azzerati.extend(_azzera_cache_di_processo())
-    return azzerati
+    pieni = [nome for nome in STATO_DI_PROCESSO_FRA_SCENARI if getattr(S, nome)]
+    _processo_nuovo()
+    return (["svuota_le_cache (feed, scanner, aggregati, insiemi, fasi)"] + pieni
+            + ["avvisi di processo (aggregati senza modalita', flusso non dichiarato)"])
 
 
 # 08/10 (cantiere 11) - LO STATO DI PROCESSO CHE `svuota_le_cache` NON TOCCA.
@@ -2194,8 +2180,9 @@ class AmbienteOmega:
         # usciva «da 8534488 s». Stesso aggancio di `_mono`: l'orologio di
         # mercato per la durata del replay, rimesso a posto all'uscita.
         FP._ora_ms = (lambda: int(float(self.banco.ora) * 1000))  # type: ignore[assignment]
-        _processo_nuovo()   # 08/10 (cantiere 11): svuota_le_cache + stato di processo + avvisi
-        _azzera_cache_di_processo()               # 08/10 (cantiere 7, RB-5)
+        # 08/10 (cantiere 11 e RB-5; D-14c: un solo elenco): svuota_le_cache
+        # + stato di processo + avvisi
+        _processo_nuovo()
         return self
 
     def __exit__(self, *_exc: Any) -> None:
@@ -2204,7 +2191,6 @@ class AmbienteOmega:
         SF._SHARED_CACHE = self._prima["_SHARED_CACHE"]   # type: ignore[assignment]
         FP._ora_ms = self._prima["_ora_ms"]               # type: ignore[assignment]
         _processo_nuovo()
-        _azzera_cache_di_processo()               # 08/10 (cantiere 7, RB-5)
 
 
 # ---------------------------------------------------------------------------
