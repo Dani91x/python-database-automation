@@ -1,0 +1,3 @@
+time.windows.com: offset ms (PC indietro se >0) ['-826', '-846', '-844', '-844', '-844'] | RTT ms ['66', '35', '32', '37', '33']
+pool.ntp.org: offset ms (PC indietro se >0) ['-833', '-845', '-844', '-845', '-845'] | RTT ms ['46', '21', '22', '21', '21']
+time.cloudflare.com: offset ms (PC indietro se >0) ['-835', '-843', '-843', '-844', '-840'] | RTT ms ['30', '13', '13', '13', '20']

@@ -1,0 +1,456 @@
+interval	frontend/src/anteprima/tennisFinto.ts:137	setInterval(
+rpc	frontend/src/certification/realClient.ts:146	betfair_live_is_owner
+rpc_dyn	frontend/src/certification/realClient.ts:155	name
+interval	frontend/src/components/controlroom/BottoneChiudiRiga.tsx:29	_MS = 1
+interval	frontend/src/components/controlroom/CashOutGlobale.tsx:35	_MS = 1
+interval	frontend/src/components/controlroom/InterruttoreUscite.tsx:26	_MS = 4
+interval	frontend/src/components/controlroom/PannelloBot.tsx:96	POLL_SEC =
+interval	frontend/src/components/controlroom/PannelloBot.tsx:568	_MS = 4
+interval	frontend/src/components/controlroom/PannelloBot.tsx:623	setInterval(
+interval	frontend/src/components/controlroom/QuoteMercato.tsx:28	_MS = 1
+canale	frontend/src/components/controlroom/RigaCapacitaMercati.tsx:31	calcio
+interval	frontend/src/components/controlroom/RigaCapacitaMercati.tsx:46	setInterval(
+interval	frontend/src/components/controlroom/RigaFreno.tsx:31	_MS = 4
+interval	frontend/src/components/controlroom/RigaFreno.tsx:32	_MS = 3
+canale	frontend/src/components/controlroom/RigaFreno.tsx:122	calcio
+interval	frontend/src/components/controlroom/RigaFreno.tsx:137	setInterval(
+interval	frontend/src/components/controlroom/RigaFreno.tsx:143	setInterval(
+interval	frontend/src/components/controlroom/RigaOrdiniReali.tsx:47	_MS = 4
+interval	frontend/src/components/controlroom/RigaOrdiniReali.tsx:48	_MS = 3
+interval	frontend/src/components/controlroom/RigaOrdiniReali.tsx:50	_MS = 2
+canale	frontend/src/components/controlroom/RigaOrdiniReali.tsx:122	calcio
+interval	frontend/src/components/controlroom/RigaOrdiniReali.tsx:154	setInterval(
+interval	frontend/src/components/controlroom/RigaOrdiniReali.tsx:160	setInterval(
+interval	frontend/src/components/controlroom/SchedaChiusura.tsx:94	setInterval(
+interval	frontend/src/components/controlroom/SchedaChiusuraOmega.tsx:69	setInterval(
+interval	frontend/src/components/controlroom/SchedaPropostaOpportunita.tsx:207	setInterval(
+interval	frontend/src/components/controlroom/chiudiRiga.ts:364	_MS = 1
+interval	frontend/src/components/controlroom/testata/FasciaStop.tsx:70	_MS = 1
+interval	frontend/src/components/controlroom/useControlRoom.ts:210	_MS = 3
+interval	frontend/src/components/controlroom/useControlRoom.ts:234	_MS = 1
+interval	frontend/src/components/controlroom/useControlRoom.ts:1498	setInterval(
+canale	frontend/src/components/controlroom/useControlRoom.ts:1514	scanner
+canale	frontend/src/components/controlroom/useControlRoom.ts:1567	scanner
+canale	frontend/src/components/controlroom/useControlRoom.ts:1590	bot
+canale	frontend/src/components/controlroom/useControlRoom.ts:1724	bot
+canale	frontend/src/components/controlroom/useControlRoom.ts:1731	bot
+canale	frontend/src/components/controlroom/useControlRoom.ts:1750	tennis_bot
+canale	frontend/src/components/controlroom/useControlRoom.ts:1795	scalper
+canale	frontend/src/components/controlroom/useControlRoom.ts:1857	sport
+interval	frontend/src/components/controlroom/useControlRoom.ts:1902	setInterval(
+canale	frontend/src/components/controlroom/useControlRoom.ts:1923	calcio
+canale	frontend/src/components/controlroom/useControlRoom.ts:1937	s
+interval	frontend/src/components/controlroom/useControlRoom.ts:1991	setInterval(
+interval	frontend/src/components/controlroom/useControlRoom.ts:3276	setInterval(
+interval	frontend/src/components/controlroom/useControlRoom.ts:3774	setInterval(
+interval	frontend/src/components/controlroom/useSeguiOrdini.ts:30	_MS = 9
+interval	frontend/src/components/controlroom/useSeguiOrdini.ts:34	_MS = 2
+interval	frontend/src/components/controlroom/useSeguiOrdini.ts:135	setInterval(
+canale	frontend/src/components/controlroom/useTennisVivo.ts:111	tennis
+interval	frontend/src/components/controlroom/useTennisVivo.ts:253	setInterval(
+from	frontend/src/components/dashboard/FixtureSelector.tsx:30	fixture_predictions
+from	frontend/src/components/dashboard/MatchesList.tsx:157	fixture_predictions
+from	frontend/src/components/landing/AuthSection.tsx:74	leads
+interval	frontend/src/components/live/DepthPanel.tsx:194	setInterval(
+interval	frontend/src/components/live/DutchingPanel.tsx:68	_MS = 1
+interval	frontend/src/components/live/DutchingPanel.tsx:125	setInterval(
+canale	frontend/src/components/live/FlussoStreamBanner.tsx:16	sport
+interval	frontend/src/components/live/FlussoStreamBanner.tsx:29	setInterval(
+interval	frontend/src/components/live/GridView.tsx:59	_MS = 6
+interval	frontend/src/components/live/GridView.tsx:61	POLL_MS =
+interval	frontend/src/components/live/GridView.tsx:62	_MS = 2
+interval	frontend/src/components/live/GridView.tsx:289	setInterval(
+interval	frontend/src/components/live/HabitatCard.tsx:50	setInterval(
+interval	frontend/src/components/live/LadderView.tsx:198	POLL_MS =
+interval	frontend/src/components/live/LadderView.tsx:199	_MS = 1
+interval	frontend/src/components/live/LadderView.tsx:203	_MS = 6
+interval	frontend/src/components/live/LadderView.tsx:1593	setInterval(
+interval	frontend/src/components/live/LadderView.tsx:1800	setInterval(
+interval	frontend/src/components/live/LiveControlsPanel.tsx:132	setInterval(
+interval	frontend/src/components/live/LiveSignalPanel.tsx:22	_MS = 3
+interval	frontend/src/components/live/LiveSignalPanel.tsx:100	setInterval(
+interval	frontend/src/components/live/LiveTradingPanel.tsx:183	setInterval(
+interval	frontend/src/components/live/MiniPriceChart.tsx:13	_MS = 1
+interval	frontend/src/components/live/RiskRulesPanel.tsx:267	setInterval(
+interval	frontend/src/components/live/ScalperPanel.tsx:153	setInterval(
+interval	frontend/src/components/live/SelectionChartPanel.tsx:37	_MS = 1
+interval	frontend/src/components/live/TerminalPositionsRail.tsx:32	POLL_MS =
+interval	frontend/src/components/live/TerminalPositionsRail.tsx:96	setInterval(
+interval	frontend/src/components/live/XHedgePanel.tsx:37	_MS = 3
+canale	frontend/src/components/live/XHedgePanel.tsx:176	calcio
+interval	frontend/src/components/live/XHedgePanel.tsx:205	setInterval(
+interval	frontend/src/components/live/XHedgePanel.tsx:321	setInterval(
+interval	frontend/src/components/mike/MikeCashOutButton.tsx:23	_MS = 1
+interval	frontend/src/components/mike/MikeMatchCard.tsx:355	_MS = 1
+interval	frontend/src/components/mike/useMike.ts:33	POLL_MS =
+interval	frontend/src/components/mike/useMike.ts:35	_MS = 1
+interval	frontend/src/components/mike/useMike.ts:188	setInterval(
+canale	frontend/src/components/mike/useMike.ts:292	mike
+interval	frontend/src/components/mike/useMikeClock.ts:19	setInterval(
+canale	frontend/src/components/mike/useMikeEventoAlMs.ts:12	mike
+canale	frontend/src/components/mike/useMikeEventoAlMs.ts:31	mike
+interval	frontend/src/components/omega/ManualPanel.tsx:181	setInterval(
+interval	frontend/src/components/omega/ManualPanel.tsx:210	setInterval(
+interval	frontend/src/components/omega/MissionCard.tsx:230	setInterval(
+interval	frontend/src/components/omega/MissionPanel.tsx:299	setInterval(
+interval	frontend/src/components/omega/MissionPanel.tsx:333	setInterval(
+interval	frontend/src/components/omega/MissionPanel.tsx:374	setInterval(
+interval	frontend/src/components/safestrategy/InvestAction.tsx:79	_MS = 1
+interval	frontend/src/components/safestrategy/OpportunityGroup.tsx:134	_MS = 6
+interval	frontend/src/components/safestrategy/SafeStrategyProvider.tsx:69	POLL_MS =
+interval	frontend/src/components/safestrategy/SafeStrategyProvider.tsx:71	_MS = 4
+interval	frontend/src/components/safestrategy/SafeStrategyProvider.tsx:76	_MS = 5
+interval	frontend/src/components/safestrategy/SafeStrategyProvider.tsx:269	setInterval(
+interval	frontend/src/components/safestrategy/SafeStrategyProvider.tsx:301	setInterval(
+interval	frontend/src/components/safestrategy/useSafeBot.ts:28	POLL_MS =
+interval	frontend/src/components/safestrategy/useSafeBot.ts:35	_MS = 1
+interval	frontend/src/components/safestrategy/useSafeBot.ts:36	_MS = 4
+interval	frontend/src/components/safestrategy/useSafeBot.ts:251	setInterval(
+canale	frontend/src/components/safestrategy/useSafeBot.ts:387	safe
+realtime	frontend/src/components/tennis/TennisBotPanel.tsx:51	postgres_changes
+interval	frontend/src/components/tennis/TennisBotPanel.tsx:53	_MS = 3
+interval	frontend/src/components/tennis/TennisBotPanel.tsx:511	setInterval(
+interval	frontend/src/components/tennis/TennisBotPanel.tsx:521	setInterval(
+realtime	frontend/src/components/tennis/TennisLadderColumn.tsx:64	postgres_changes
+interval	frontend/src/components/tennis/TennisMatchStats.tsx:38	_MS = 1
+interval	frontend/src/components/tennis/TennisMatchStats.tsx:113	setInterval(
+interval	frontend/src/components/trading/CashOutButton.tsx:128	_MS = 1
+interval	frontend/src/components/watchlist/PlacedOrdersPanel.tsx:15	_MS = 3
+interval	frontend/src/components/watchlist/PlacedOrdersPanel.tsx:16	_MS = 1
+interval	frontend/src/components/watchlist/WatchlistPanel.tsx:184	setInterval(
+rpc_dyn	frontend/src/lib/__fixtures__/replayBarraDbFinto.ts:185	m[1]
+rpc	frontend/src/lib/analytics.ts:81	get_analytics_filters
+rpc	frontend/src/lib/analytics.ts:106	get_analytics
+rpc	frontend/src/lib/analytics.ts:115	get_analytics_rows
+rpc	frontend/src/lib/analytics.ts:175	get_decisions_filters
+rpc	frontend/src/lib/analytics.ts:180	get_decisions
+rpc	frontend/src/lib/analytics.ts:328	backtest_strategy
+rpc	frontend/src/lib/analytics.ts:334	list_strategies
+rpc	frontend/src/lib/analytics.ts:340	save_strategy
+rpc	frontend/src/lib/analytics.ts:346	delete_strategy
+rpc	frontend/src/lib/analytics.ts:351	run_strategy
+rpc	frontend/src/lib/analytics.ts:385	run_strategy_rows
+rpc	frontend/src/lib/analytics.ts:456	request_backtest
+rpc	frontend/src/lib/analytics.ts:463	list_backtest_runs
+rpc	frontend/src/lib/analytics.ts:473	list_backtest_results
+realtime	frontend/src/lib/analytics.ts:523	.channel(
+realtime	frontend/src/lib/analytics.ts:525	postgres_changes
+rpc	frontend/src/lib/betfair.ts:23	get_betfair_fixtures
+rpc	frontend/src/lib/betfair.ts:32	get_betfair_odds
+rpc	frontend/src/lib/betfair.ts:44	get_betfair_full_odds
+rpc	frontend/src/lib/betfair.ts:53	get_betfair_direction_odds
+interval	frontend/src/lib/betfair.ts:77	POLL_MS =
+interval	frontend/src/lib/betfair.ts:78	_MS = 6
+rpc	frontend/src/lib/betfair.ts:81	request_betfair_refresh
+rpc	frontend/src/lib/betfair.ts:90	get_betfair_refresh_request
+interval	frontend/src/lib/betfair.ts:156	POLL_MS =
+interval	frontend/src/lib/betfair.ts:157	_MS = 9
+rpc	frontend/src/lib/betfair.ts:167	request_betfair_order
+rpc	frontend/src/lib/betfair.ts:177	get_betfair_order_request
+rpc	frontend/src/lib/betfair.ts:238	get_betfair_orders
+interval	frontend/src/lib/chiuseGiornata.ts:40	_MS = 6
+rpc_dyn	frontend/src/lib/chiuseGiornata.ts:146	RPC_CHIUSE_GIORNATA as never
+interval	frontend/src/lib/chiuseGiornata.ts:167	_MS = 5
+from	frontend/src/lib/controlRoomProposte.ts:371	safe_strategy_requests
+rpc	frontend/src/lib/controlRoomProposte.ts:400	safe_request_approve
+rpc	frontend/src/lib/controlRoomProposte.ts:409	safe_request_ignore
+realtime	frontend/src/lib/controlRoomProposte.ts:418	.channel(
+realtime	frontend/src/lib/controlRoomProposte.ts:419	.on('postgres
+rpc	frontend/src/lib/dailyHistory.ts:270	get_omega_daily
+rpc	frontend/src/lib/dailyHistory.ts:293	get_safe_daily
+rpc	frontend/src/lib/dailyHistory.ts:301	get_omega_day_trades
+rpc	frontend/src/lib/dailyHistory.ts:339	get_omega_daily
+rpc	frontend/src/lib/dailyHistory.ts:344	get_omega_daily
+rpc	frontend/src/lib/dailyHistory.ts:353	get_omega_day_trades
+rpc	frontend/src/lib/dailyHistory.ts:356	get_omega_day_trades
+rpc	frontend/src/lib/dailyHistory.ts:371	get_storico_stake
+rpc	frontend/src/lib/dailyHistory.ts:397	get_safe_day_trades
+rpc	frontend/src/lib/dailyHistory.ts:412	get_mike_daily
+rpc	frontend/src/lib/dailyHistory.ts:420	get_mike_day_trades
+rpc	frontend/src/lib/direzione.ts:50	get_direction
+rpc	frontend/src/lib/direzione.ts:73	get_direction_eta
+interval	frontend/src/lib/esitoAbbinamento.ts:64	_MS = 1
+interval	frontend/src/lib/fairOverlay.ts:32	_MS = 1
+from	frontend/src/lib/fixtureModels.ts:70	fixture_predictions
+rpc	frontend/src/lib/fixtureModels.ts:89	get_poisson_calibration_eta
+from	frontend/src/lib/fixtureModels.ts:97	fixture_predictions
+rpc	frontend/src/lib/live.ts:37	get_live_follows
+rpc	frontend/src/lib/live.ts:51	segui_live_apri_partita
+realtime	frontend/src/lib/live.ts:77	.channel(
+realtime	frontend/src/lib/live.ts:79	postgres_changes
+from	frontend/src/lib/live.ts:140	live_now
+realtime	frontend/src/lib/live.ts:159	.channel(
+realtime	frontend/src/lib/live.ts:161	postgres_changes
+rpc	frontend/src/lib/live.ts:193	list_replays
+rpc	frontend/src/lib/live.ts:339	get_replay
+interval	frontend/src/lib/live.ts:366	_MS = 1
+interval	frontend/src/lib/live.ts:373	_MS = 4
+rpc_dyn	frontend/src/lib/live.ts:386	rpcFrames
+rpc	frontend/src/lib/live.ts:433	get_replay_meta
+from	frontend/src/lib/live.ts:560	live_signals
+realtime	frontend/src/lib/live.ts:574	.channel(
+realtime	frontend/src/lib/live.ts:576	postgres_changes
+from	frontend/src/lib/live.ts:621	live_ladder
+realtime	frontend/src/lib/live.ts:637	.channel(
+realtime	frontend/src/lib/live.ts:639	postgres_changes
+rpc	frontend/src/lib/live.ts:668	get_live_alerts
+realtime	frontend/src/lib/live.ts:679	.channel(
+realtime	frontend/src/lib/live.ts:681	postgres_changes
+rpc	frontend/src/lib/live.ts:691	ack_alert
+interval	frontend/src/lib/liveOrders.ts:118	POLL_MS =
+interval	frontend/src/lib/liveOrders.ts:119	_MS = 9
+rpc	frontend/src/lib/liveOrders.ts:133	request_betfair_live_order
+rpc	frontend/src/lib/liveOrders.ts:143	get_betfair_live_order
+rpc	frontend/src/lib/liveOrders.ts:483	request_live_risk_rule
+rpc	frontend/src/lib/liveOrders.ts:494	cancel_live_risk_rule
+rpc	frontend/src/lib/liveOrders.ts:501	get_live_risk_rules
+rpc	frontend/src/lib/liveOrders.ts:510	get_live_orders
+rpc	frontend/src/lib/liveOrders.ts:518	get_live_positions
+realtime	frontend/src/lib/liveOrders.ts:526	postgres_changes
+realtime	frontend/src/lib/liveOrders.ts:538	.channel(
+realtime	frontend/src/lib/liveOrders.ts:540	postgres_changes
+realtime	frontend/src/lib/liveOrders.ts:554	.channel(
+realtime	frontend/src/lib/liveOrders.ts:556	postgres_changes
+rpc	frontend/src/lib/liveOrders.ts:615	get_live_xhedge
+rpc	frontend/src/lib/liveOrders.ts:676	get_live_settings
+rpc	frontend/src/lib/liveOrders.ts:684	set_live_kill_switch
+rpc	frontend/src/lib/liveOrders.ts:693	set_live_order_mode
+rpc	frontend/src/lib/liveOrders.ts:705	set_live_settings
+rpc	frontend/src/lib/liveOrders.ts:712	get_live_audit
+rpc	frontend/src/lib/liveOrders.ts:769	get_live_settled
+from	frontend/src/lib/liveOrders.ts:795	betfair_live_risk_state
+realtime	frontend/src/lib/liveOrders.ts:806	.channel(
+realtime	frontend/src/lib/liveOrders.ts:808	postgres_changes
+rpc	frontend/src/lib/liveOrders.ts:851	get_live_orders_account_open
+rpc	frontend/src/lib/liveOrders.ts:862	get_live_positions_all
+rpc	frontend/src/lib/liveOrders.ts:869	get_live_positions_event
+rpc	frontend/src/lib/liveOrders.ts:915	get_live_journal
+rpc	frontend/src/lib/liveOrders.ts:932	set_live_journal_note
+from	frontend/src/lib/liveOrders.ts:981	betfair_live_account
+realtime	frontend/src/lib/liveOrders.ts:991	.channel(
+realtime	frontend/src/lib/liveOrders.ts:994	.on('postgres
+realtime	frontend/src/lib/liveOrders.ts:1007	.channel(
+realtime	frontend/src/lib/liveOrders.ts:1009	postgres_changes
+from	frontend/src/lib/liveOrders.ts:1034	betfair_live_heartbeat
+realtime	frontend/src/lib/liveOrders.ts:1044	.channel(
+realtime	frontend/src/lib/liveOrders.ts:1046	postgres_changes
+interval	frontend/src/lib/localChannel.ts:70	_MS = 1
+interval	frontend/src/lib/localChannel.ts:71	_MS = 1
+interval	frontend/src/lib/localChannel.ts:72	_MS = 5
+interval	frontend/src/lib/localChannel.ts:73	_MS = 1
+canale	frontend/src/lib/localChannel.ts:302	sport
+canale	frontend/src/lib/localChannel.ts:341	canale
+canale	frontend/src/lib/localTransport.ts:84	sport
+canale	frontend/src/lib/localTransport.ts:203	sport
+canale	frontend/src/lib/localTransport.ts:263	sport
+interval	frontend/src/lib/localTransport.ts:381	setInterval(
+canale	frontend/src/lib/localTransport.ts:572	sport
+canale	frontend/src/lib/localTransport.ts:574	sport
+rpc	frontend/src/lib/marketDelays.ts:134	get_market_delays
+rpc	frontend/src/lib/marketFrequency.ts:154	get_market_frequency
+rpc	frontend/src/lib/marketFrequency.ts:168	get_league_seasons
+interval	frontend/src/lib/matching.ts:50	_MS = 5
+interval	frontend/src/lib/mediaUnder.ts:258	_MS = 2
+rpc	frontend/src/lib/mediaUnderAttiva.ts:17	scalper_media_attiva_adesso
+rpc	frontend/src/lib/mike.ts:2228	mike_activate
+rpc	frontend/src/lib/mike.ts:2234	mike_stop
+rpc	frontend/src/lib/mike.ts:2240	mike_update_params
+rpc	frontend/src/lib/mike.ts:2248	get_mike_state
+rpc	frontend/src/lib/mike.ts:2268	get_mike_trades
+rpc	frontend/src/lib/mike.ts:2274	mike_request
+from	frontend/src/lib/mike.ts:2301	mike_requests
+realtime	frontend/src/lib/mike.ts:2360	.channel(
+realtime	frontend/src/lib/mike.ts:2362	.on('postgres
+rpc	frontend/src/lib/omega.ts:1317	omega_activate
+rpc	frontend/src/lib/omega.ts:1325	omega_stop
+rpc	frontend/src/lib/omega.ts:1333	omega_update_params
+rpc	frontend/src/lib/omega.ts:1343	get_omega_state
+rpc	frontend/src/lib/omega.ts:1362	get_omega_trades
+realtime	frontend/src/lib/omega.ts:1370	.channel(
+realtime	frontend/src/lib/omega.ts:1371	.on('postgres
+realtime	frontend/src/lib/omega.ts:1372	.on('postgres
+realtime	frontend/src/lib/omega.ts:1377	.on('postgres
+rpc	frontend/src/lib/omega.ts:1398	omega_eventi_chiusi_dall_utente
+rpc	frontend/src/lib/omega.ts:1421	omega_evento_riprendi
+rpc	frontend/src/lib/omega.ts:1501	omega_request
+rpc	frontend/src/lib/omega.ts:1507	get_omega_events
+interval	frontend/src/lib/omega.ts:1518	_MS = 3
+rpc	frontend/src/lib/omega.ts:1562	get_omega_market
+rpc	frontend/src/lib/omega.ts:1568	get_omega_manual_requests
+rpc	frontend/src/lib/omegaMissions.ts:150	omega_mission_activate
+rpc	frontend/src/lib/omegaMissions.ts:162	omega_mission_stop
+rpc	frontend/src/lib/omegaMissions.ts:174	omega_mission_follow
+rpc	frontend/src/lib/omegaMissions.ts:190	set_follow_record
+rpc	frontend/src/lib/omegaMissions.ts:198	get_omega_missions
+realtime	frontend/src/lib/omegaMissions.ts:215	.channel(
+realtime	frontend/src/lib/omegaMissions.ts:216	.on('postgres
+realtime	frontend/src/lib/omegaMissions.ts:217	.on('postgres
+rpc	frontend/src/lib/omegaProposte.ts:292	get_omega_proposte
+rpc	frontend/src/lib/omegaProposte.ts:338	omega_request_approve
+rpc	frontend/src/lib/omegaProposte.ts:348	omega_request_ignore
+realtime	frontend/src/lib/omegaProposte.ts:365	.channel(
+realtime	frontend/src/lib/omegaProposte.ts:366	.on('postgres
+interval	frontend/src/lib/opportunities/tier1_quasi.ts:571	_MS = 1
+rpc	frontend/src/lib/personalReport.ts:325	add_personal_trade
+rpc	frontend/src/lib/personalReport.ts:333	add_trade_leg
+rpc	frontend/src/lib/personalReport.ts:340	settle_personal_trade
+rpc	frontend/src/lib/personalReport.ts:370	get_cash_movements
+rpc	frontend/src/lib/personalReport.ts:378	set_trade_time_operative
+rpc	frontend/src/lib/personalReport.ts:388	get_personal_report
+rpc	frontend/src/lib/personalReport.ts:403	reset_personal_report
+rpc	frontend/src/lib/personalReport.ts:410	get_personal_trades
+rpc	frontend/src/lib/proposteUscite.ts:90	scalper_approva_uscita
+rpc	frontend/src/lib/proposteUscite.ts:91	tennis_bot_approva_uscita
+rpc	frontend/src/lib/replayBot.ts:228	request_backtest
+rpc	frontend/src/lib/replayBot.ts:236	get_replay_bot_esito
+interval	frontend/src/lib/replayOperazioni.ts:80	_MS = 5
+interval	frontend/src/lib/replayTimelineEvents.ts:92	_MS = 1
+interval	frontend/src/lib/replayTimelineEvents.ts:95	_MS = 1
+interval	frontend/src/lib/replayVerificaBarra.ts:132	_MS = 1
+interval	frontend/src/lib/replayVerificaBarra.ts:134	_MS = 4
+interval	frontend/src/lib/replayVerificaBarra.ts:136	_MS = 3
+interval	frontend/src/lib/replayVerificaBarra.ts:137	_MS = 6
+interval	frontend/src/lib/replayVerificaBarra.ts:142	_MS = 1
+interval	frontend/src/lib/replayVerificaBarra.ts:143	_MS = 6
+interval	frontend/src/lib/replayVerificaBarra.ts:144	_MS = 7
+interval	frontend/src/lib/replayVerificaBarraCalcio.ts:55	_MS = 1
+interval	frontend/src/lib/replayVerificaBarraCalcio.ts:58	_MS = 5
+rpc	frontend/src/lib/replayVerificaBarraDb.ts:56	get_replay_meta
+rpc	frontend/src/lib/reportistiche.ts:140	get_direction_report
+rpc	frontend/src/lib/reportistiche.ts:147	get_direction_report_matches
+rpc	frontend/src/lib/reportistiche.ts:180	get_direction_report_fixture
+interval	frontend/src/lib/rilettureMirate.ts:23	_MS = 2
+interval	frontend/src/lib/ritorno.ts:56	_MS = 1
+rpc	frontend/src/lib/safeBot.ts:369	get_safe_aggregates
+interval	frontend/src/lib/safeBot.ts:1094	_MS = 2
+interval	frontend/src/lib/safeBot.ts:1098	_MS = 1
+interval	frontend/src/lib/safeBot.ts:1102	_MS = 4
+rpc	frontend/src/lib/safeBot.ts:1147	safe_activate
+rpc	frontend/src/lib/safeBot.ts:1155	safe_stop
+rpc	frontend/src/lib/safeBot.ts:1161	safe_update_params
+rpc	frontend/src/lib/safeBot.ts:1177	get_safe_state
+rpc	frontend/src/lib/safeBot.ts:1201	get_safe_activity
+from	frontend/src/lib/safeBot.ts:1206	safe_strategy_activity
+rpc	frontend/src/lib/safeBot.ts:1215	get_safe_trades
+rpc	frontend/src/lib/safeBot.ts:1224	safe_request
+rpc	frontend/src/lib/safeBot.ts:1394	safe_request_approve
+from	frontend/src/lib/safeBot.ts:1418	safe_strategy_requests
+from	frontend/src/lib/safeBot.ts:1467	safe_strategy_requests
+from	frontend/src/lib/safeBot.ts:1486	safe_strategy_requests
+realtime	frontend/src/lib/safeBot.ts:1499	.channel(
+realtime	frontend/src/lib/safeBot.ts:1500	.on('postgres
+realtime	frontend/src/lib/safeBot.ts:1501	.on('postgres
+realtime	frontend/src/lib/safeBot.ts:1502	.on('postgres
+realtime	frontend/src/lib/safeBot.ts:1504	.on('postgres
+interval	frontend/src/lib/safeBot.ts:1531	_MS = 3
+from	frontend/src/lib/safeBot.ts:1544	safe_strategy_opportunities
+realtime	frontend/src/lib/safeBot.ts:1555	.channel(
+realtime	frontend/src/lib/safeBot.ts:1557	postgres_changes
+from	frontend/src/lib/safeBot.ts:2183	betfair_live_heartbeat
+from	frontend/src/lib/safeBot.ts:2195	live_follow
+from	frontend/src/lib/safeStrategyScan.ts:343	safe_strategy_scan
+from	frontend/src/lib/safeStrategyScan.ts:350	safe_strategy_status
+realtime	frontend/src/lib/safeStrategyScan.ts:365	.channel(
+realtime	frontend/src/lib/safeStrategyScan.ts:367	postgres_changes
+realtime	frontend/src/lib/safeStrategyScan.ts:387	.channel(
+realtime	frontend/src/lib/safeStrategyScan.ts:389	postgres_changes
+rpc	frontend/src/lib/scalper.ts:148	scalper_activate
+rpc	frontend/src/lib/scalper.ts:160	scalper_stop
+rpc	frontend/src/lib/scalper.ts:168	get_scalper_state
+rpc	frontend/src/lib/scalperControlRoom.ts:140	get_scalper_control_room
+rpc	frontend/src/lib/scalperControlRoom.ts:166	scalper_auto_activate
+rpc	frontend/src/lib/scalperControlRoom.ts:177	scalper_auto_stop
+rpc	frontend/src/lib/scalperControlRoom.ts:188	scalper_auto_update
+rpc	frontend/src/lib/scalperControlRoom.ts:298	scalper_stop_sessione
+rpc	frontend/src/lib/scalperControlRoom.ts:313	scalper_uscite_automatiche
+from	frontend/src/lib/tacticalEngine.ts:60	fixture_predictions
+rpc	frontend/src/lib/tennis.ts:82	get_tennis_fixtures
+rpc	frontend/src/lib/tennis.ts:108	get_tennis_full_odds
+rpc	frontend/src/lib/tennis.ts:123	request_tennis_refresh
+rpc	frontend/src/lib/tennis.ts:129	get_tennis_refresh_request
+rpc	frontend/src/lib/tennis.ts:168	get_tennis_follows
+rpc	frontend/src/lib/tennis.ts:180	tennis_follow_event
+rpc	frontend/src/lib/tennis.ts:198	tennis_set_follow_record
+from	frontend/src/lib/tennis.ts:209	tennis_live_now
+realtime	frontend/src/lib/tennis.ts:222	.channel(
+realtime	frontend/src/lib/tennis.ts:224	postgres_changes
+realtime	frontend/src/lib/tennis.ts:240	.channel(
+realtime	frontend/src/lib/tennis.ts:242	postgres_changes
+from	frontend/src/lib/tennis.ts:263	tennis_live_ladder
+realtime	frontend/src/lib/tennis.ts:273	.channel(
+realtime	frontend/src/lib/tennis.ts:275	postgres_changes
+rpc	frontend/src/lib/tennis.ts:422	request_tennis_live_order
+rpc	frontend/src/lib/tennis.ts:437	get_tennis_live_order
+rpc	frontend/src/lib/tennis.ts:483	request_tennis_live_order
+rpc	frontend/src/lib/tennis.ts:498	get_tennis_live_order
+rpc	frontend/src/lib/tennis.ts:506	get_tennis_live_orders
+rpc	frontend/src/lib/tennis.ts:517	get_tennis_live_positions
+realtime	frontend/src/lib/tennis.ts:528	postgres_changes
+realtime	frontend/src/lib/tennis.ts:539	.channel(
+realtime	frontend/src/lib/tennis.ts:541	postgres_changes
+realtime	frontend/src/lib/tennis.ts:555	.channel(
+realtime	frontend/src/lib/tennis.ts:557	postgres_changes
+rpc	frontend/src/lib/tennis.ts:571	get_tennis_live_positions_all
+rpc	frontend/src/lib/tennis.ts:837	get_tennis_bots_state
+realtime	frontend/src/lib/tennis.ts:846	postgres_changes
+realtime	frontend/src/lib/tennis.ts:851	.channel(
+realtime	frontend/src/lib/tennis.ts:853	postgres_changes
+realtime	frontend/src/lib/tennis.ts:858	postgres_changes
+rpc	frontend/src/lib/tennis.ts:876	tennis_bot_arm
+rpc	frontend/src/lib/tennis.ts:889	tennis_bot_disarm
+rpc	frontend/src/lib/tennis.ts:966	tennis_bot_service_set_uscite
+rpc	frontend/src/lib/tennis.ts:981	get_tennis_bot_services
+rpc	frontend/src/lib/tennis.ts:997	tennis_bot_service_activate
+rpc	frontend/src/lib/tennis.ts:1008	tennis_bot_service_stop
+rpc	frontend/src/lib/tennis.ts:1022	tennis_bot_service_update_params
+rpc	frontend/src/lib/tennis.ts:1080	get_tennis_bot_daily
+rpc	frontend/src/lib/tennis.ts:1124	get_tennis_bot_orders_today
+rpc	frontend/src/lib/tennisReplay.ts:114	list_replays_tennis
+rpc	frontend/src/lib/tennisReplay.ts:124	get_replay_tennis_meta
+interval	frontend/src/lib/useApplicaBot.ts:16	_MS = 2
+interval	frontend/src/lib/useApplicaBot.ts:18	_MS = 3
+interval	frontend/src/lib/useApplicaBot.ts:51	setInterval(
+canale	frontend/src/lib/useOrdiniCanale.ts:27	sport
+canale	frontend/src/lib/usePosizioniCanale.ts:33	sport
+rpc	frontend/src/lib/watchlist.ts:110	add_to_watchlist
+rpc	frontend/src/lib/watchlist.ts:117	get_watchlist
+rpc	frontend/src/lib/watchlist.ts:126	delete_from_watchlist
+rpc	frontend/src/lib/watchlist.ts:134	set_watchlist_follow_live
+rpc	frontend/src/lib/watchlist.ts:144	set_watchlist_decision
+interval	frontend/src/pages/Board.tsx:80	setInterval(
+canale	frontend/src/pages/Board.tsx:85	sport
+from	frontend/src/pages/Dashboard.tsx:50	fixture_predictions
+interval	frontend/src/pages/LivePnl.tsx:238	setInterval(
+interval	frontend/src/pages/LivePnl.tsx:261	setInterval(
+interval	frontend/src/pages/LivePnl.tsx:274	setInterval(
+interval	frontend/src/pages/MarketWatch.tsx:180	setInterval(
+canale	frontend/src/pages/MarketWatch.tsx:206	calcio
+interval	frontend/src/pages/MarketWatch.tsx:226	setInterval(
+interval	frontend/src/pages/MarketWatch.tsx:287	setInterval(
+canale	frontend/src/pages/MarketWatch.tsx:311	tennis
+interval	frontend/src/pages/MarketWatch.tsx:327	setInterval(
+interval	frontend/src/pages/MatchReplay.tsx:75	_MS = 1
+interval	frontend/src/pages/MatchReplay.tsx:76	_MS = 3
+interval	frontend/src/pages/MatchReplay.tsx:244	_MS = 1
+interval	frontend/src/pages/MatchReplay.tsx:749	setInterval(
+interval	frontend/src/pages/Mike.tsx:95	setInterval(
+interval	frontend/src/pages/Mike.tsx:102	setInterval(
+interval	frontend/src/pages/Omega.tsx:86	_MS = 1
+canale	frontend/src/pages/Omega.tsx:233	omega
+interval	frontend/src/pages/Omega.tsx:274	setInterval(
+interval	frontend/src/pages/Omega.tsx:292	setInterval(
+interval	frontend/src/pages/Omega.tsx:301	setInterval(
+interval	frontend/src/pages/SafeStrategy.tsx:138	setInterval(
+interval	frontend/src/pages/SafeStrategy.tsx:190	setInterval(
+interval	frontend/src/pages/SafeStrategy.tsx:607	setInterval(
+interval	frontend/src/pages/SeguiLive.tsx:226	setInterval(
+interval	frontend/src/pages/SeguiLive.tsx:283	setInterval(
+interval	frontend/src/pages/SeguiLive.tsx:299	setInterval(
+interval	frontend/src/pages/SeguiLive.tsx:888	setInterval(
+interval	frontend/src/pages/SeguiLive.tsx:1012	setInterval(
+interval	frontend/src/pages/StoricoSport.tsx:76	setInterval(
+interval	frontend/src/pages/TennisReplay.tsx:86	_MS = 1
+interval	frontend/src/pages/TennisReplay.tsx:87	_MS = 3
+interval	frontend/src/pages/TennisReplay.tsx:89	_MS = 1
+interval	frontend/src/pages/TennisReplay.tsx:455	setInterval(
+interval	frontend/src/pages/TennisTerminal.tsx:96	setInterval(

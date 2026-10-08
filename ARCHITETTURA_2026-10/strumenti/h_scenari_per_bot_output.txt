@@ -1,0 +1,33 @@
+mike         Betfair/mike/tools/replay_registrazioni.py:1899  26 scenari
+   base, taker, cap-stretto, bot-fermo, senza-seconda-puntata, feed-stantio, esiti-ignoti, taker-esiti-ignoti, riavvio, gol-precoce, cashout-globale, chiuso-fuori-app, copertura-rifiutata, copertura-rifiutata-legacy, copertura-legacy, cashout-dopo-copertura, rifiuti-betfair, <CP.SCENARIO>, ko-green-parziale, fermo-copertura, lettura-dati-ko, firma-dopo-gol-decisivo, firma-dopo-gol-decisivo-senza-chiusura, uscite-in-perdita-firmate, uscite-automatiche, punteggio-ko
+omega        Betfair/omega/tools/replay_registrazioni.py:1085  20 scenari
+   base, giornata-reale, apertura, paper, cap-stretto, bot-fermo, feed-stantio, esiti-ignoti, riavvio, manuale-e-bot, cashout-globale, proposta-approvata, uscite-automatiche, v4, v4-riavvio, v4-bot-fermo, v3, rifiuti-betfair, chiuso-fuori-app, <CP.SCENARIO>
+safe         Betfair/safe_strategy/tools/replay_registrazioni.py:211  18 scenari
+   base, cap-stretto, bot-fermo, esiti-ignoti, feed-stantio, riavvio, paper, ordini-manuali, due-lay, manuale-e-bot, cashout-globale, chiusura-fuori-app, chiusura-fuori-app-ridotta, rifiuti-betfair, timeout-dopo-accettazione, <CP.SCENARIO>, selezione-aggiuntiva, <**espansione>
+safe_tennis  Betfair/safe_strategy/tools/replay_tennis.py:352  17 scenari
+   base, paper, paper-iniettata, catalogo-assente, posizione-iniettata, approvata-subito, mai-approvata, bot-fermo, feed-stantio, esiti-ignoti, rifiuti-betfair, uscita-ignota, riavvio, chiusura-fuori-app, chiusura-fuori-app-ridotta, <CP.SCENARIO>, <**espansione>
+scalper      Betfair/stream/scalper/tools/replay_registrazioni.py:767  20 scenari
+   base, paper, senza-missione, bot-fermo, kill-switch, esiti-ignoti, rifiuti-betfair, riavvio, <CP.SCENARIO>, sniper, sniper-paper, sniper-uscite-auto, <UM.SCENARIO_MANUALI>, <UM.SCENARIO_FIRMATE>, auto-live, media-under, media-under-paper, media-under-35, <**espansione>, <**espansione>
+tennis       Betfair/stream/tennis_live/tools/replay_bot.py:139  17 scenari
+   base, gate-aperto, dry-run, bot-fermo, rifiuti-betfair, feed-stantio, parziali, riavvio, catalogo-assente, live, <CP.SCENARIO>, chiudi-ora, <UM.SCENARIO_MANUALI>, <UM.SCENARIO_FIRMATE>, soldi-veri, soldi-veri-prova, soldi-veri-paper
+
+scenari distinti: 67; presenti in >=2 adattatori:
+   <**espansione>                     safe,safe_tennis,scalper
+   <CP.SCENARIO>                      mike,omega,safe,safe_tennis,scalper,tennis
+   <UM.SCENARIO_FIRMATE>              scalper,tennis
+   <UM.SCENARIO_MANUALI>              scalper,tennis
+   base                               mike,omega,safe,safe_tennis,scalper,tennis
+   bot-fermo                          mike,omega,safe,safe_tennis,scalper,tennis
+   cap-stretto                        mike,omega,safe
+   cashout-globale                    mike,omega,safe
+   catalogo-assente                   safe_tennis,tennis
+   chiuso-fuori-app                   mike,omega
+   chiusura-fuori-app                 safe,safe_tennis
+   chiusura-fuori-app-ridotta         safe,safe_tennis
+   esiti-ignoti                       mike,omega,safe,safe_tennis,scalper
+   feed-stantio                       mike,omega,safe,safe_tennis,tennis
+   manuale-e-bot                      omega,safe
+   paper                              omega,safe,safe_tennis,scalper
+   riavvio                            mike,omega,safe,safe_tennis,scalper,tennis
+   rifiuti-betfair                    mike,omega,safe,safe_tennis,scalper,tennis
+   uscite-automatiche                 mike,omega

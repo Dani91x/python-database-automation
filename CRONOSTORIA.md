@@ -5190,3 +5190,12 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   delegati Sonnet in parallelo: inventario (00), competitor (02), misure di oggi (07), schede A, B, C, D, E1 Mike,
   E2 Omega, E3 Safe, E4 Scalper calcio, E5 Tennis, F, G1 dati, G2 algoritmi del cloud, H banco, I processi h24,
   J frontend, K cartelle e codice morto.
+- 14:33 ripresa dopo l'arresto del primo processo (12:37, 40,94 USD): delegati interrotti senza schede; script e uscite
+  in `ARCHITETTURA_2026-10/strumenti/` riusati. Delegati da ora in primo piano, 4 alla volta.
+- 15:35 tappa 1 ACCETTATA: `00_INVENTARIO.md` (2.165 righe), `02_COMPETITOR.md` (63 fonti), `07_MISURE_OGGI.md`,
+  `03_SCHEDE_COMPONENTI/A_CONNESSIONE_BETFAIR.md` (86 funzionalita'). Verifica del coordinatore a campione, tutte
+  confermate sul codice: `runner.py:743-755` (ladder: publish sul canale poi upsert DB nello stesso thread),
+  `safe_strategy/stream.py:66` (`_CONFLATE_MS = 1000` dello scanner), `config_stream.py:311` (risk engine a 1 s),
+  `trading/risk_engine.py:21-23`, `desktop/main.js:756` (terzo login Betfair, web SSO); `read_book` in produzione 2
+  definizioni (`mike/service.py:146`, `omega/omega_market.py:571`), non 17 come nel brief. Reperti per il piano: 10/10
+  connessioni stream nel caso peggiore, scanner senza ripresa clk, orologio del PC +844 ms, 9,6 buchi >5 s per ora in-play.

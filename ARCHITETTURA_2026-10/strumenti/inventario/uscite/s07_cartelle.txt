@@ -1,0 +1,83 @@
+== PER CARTELLA (solo file di produzione py_codice_*; archi = coppie file->file) ==
+cartella                           file   righe archi_interni verso_altre  da_altre  file_mai_importati_da_prod
+Betfair/safe_strategy                26   34635            53          83        43                           2
+Betfair/stream/*.py                  44   25850           101          50       197                           2
+<radice>                             88   24803           127          31        69                          63
+Betfair/stream/scalper               32   21620            70          42        13                           7
+Betfair/omega                        15   20913            34          47        34                           3
+Betfair/mike                         10   17755            15          50         2                           1
+Betfair/stream/backtest              16   13391            28          66         2                           1
+Betfair/stream/tennis_live           15   11638            38          85        12                           1
+Betfair/stream/tennis_scalper        18    8943            18          24        28                           7
+Ai Engine                            40    8845            51           5        18                          11
+Betfair/*.py                         11    6821             8          14        21                           2
+laboratorio                          17    5356            15          11         0                           6
+Betfair/stream/trading               12    4301             5           4        79                           0
+Prediction                            5    3911             1           9         3                           3
+market_intelligence                   9    2513            13           7         1                           3
+tactical_engine                      12    1515            11           6         2                           6
+Betfair/stream/engine                 4    1444             1           9        15                           0
+football_data_scraper                 7    1392             5           3         0                           2
+Betfair/stream/scores                 6     989             5           5        16                           0
+sql                                   5     909             2           3         0                           4
+Betfair/stream/tennis_replay          4     811             3           9         3                           0
+value_engine                         10     729            16           1         7                           3
+migrations                            1     294             0           2         1                           0
+
+== I 40 ARCHI cartella -> cartella PIU PESANTI (n. coppie file->file) ==
+  Betfair/stream/tennis_live         -> Betfair/stream/*.py                  56
+  Betfair/safe_strategy              -> Betfair/stream/*.py                  35
+  Betfair/stream/scalper             -> Betfair/stream/*.py                  22
+  Betfair/stream/*.py                -> Betfair/stream/trading               21
+  Betfair/stream/backtest            -> Betfair/stream/*.py                  20
+  Betfair/safe_strategy              -> Betfair/omega                        17
+  Betfair/mike                       -> Betfair/stream/*.py                  16
+  Betfair/stream/tennis_live         -> Betfair/stream/tennis_scalper        16
+  Betfair/stream/backtest            -> Betfair/safe_strategy                15
+  Betfair/stream/tennis_scalper      -> Betfair/stream/*.py                  15
+  <radice>                           -> Ai Engine                            15
+  Betfair/omega                      -> Betfair/stream/*.py                  14
+  Betfair/stream/*.py                -> <radice>                             13
+  Betfair/omega                      -> Betfair/safe_strategy                12
+  <radice>                           -> Betfair/*.py                         11
+  Betfair/mike                       -> Betfair/safe_strategy                10
+  Betfair/stream/backtest            -> Betfair/omega                        10
+  Betfair/stream/scalper             -> Betfair/stream/trading               10
+  Betfair/*.py                       -> <radice>                              9
+  Betfair/mike                       -> Betfair/stream/trading                9
+  Betfair/safe_strategy              -> Betfair/stream/trading                9
+  Betfair/stream/backtest            -> Betfair/stream/tennis_live            9
+  Betfair/stream/tennis_scalper      -> Betfair/stream/trading                9
+  Betfair/stream/tennis_live         -> Betfair/stream/trading                8
+  Betfair/mike                       -> Betfair/omega                         7
+  Betfair/stream/*.py                -> Betfair/stream/scores                 7
+  Prediction                         -> <radice>                              7
+  market_intelligence                -> <radice>                              7
+  Betfair/omega                      -> Betfair/stream/trading                6
+  Betfair/safe_strategy              -> Betfair/stream/tennis_scalper         6
+  Betfair/safe_strategy              -> Betfair/stream/scalper                6
+  tactical_engine                    -> <radice>                              6
+  Betfair/stream/backtest            -> Betfair/stream/trading                5
+  Betfair/stream/engine              -> Betfair/stream/*.py                   5
+  Betfair/stream/tennis_replay       -> Betfair/stream/*.py                   5
+  laboratorio                        -> Betfair/stream/tennis_scalper         5
+  Ai Engine                          -> <radice>                              4
+  Betfair/omega                      -> Betfair/stream/scores                 4
+  Betfair/safe_strategy              -> <radice>                              4
+  Betfair/stream/backtest            -> Betfair/stream/engine                 4
+
+== CICLI fra cartelle (archi in entrambe le direzioni) ==
+  Betfair/safe_strategy <-> Betfair/stream/*.py: 35 / 2
+  Betfair/stream/*.py <-> Betfair/stream/trading: 21 / 3
+  Betfair/safe_strategy <-> Betfair/omega: 17 / 12
+  <radice> <-> Ai Engine: 15 / 4
+  Betfair/stream/*.py <-> <radice>: 13 / 2
+  <radice> <-> Betfair/*.py: 11 / 9
+  Betfair/stream/*.py <-> Betfair/stream/scores: 7 / 1
+  Prediction <-> <radice>: 7 / 3
+  Betfair/safe_strategy <-> Betfair/stream/scalper: 6 / 2
+  Betfair/stream/engine <-> Betfair/stream/*.py: 5 / 3
+  Betfair/stream/*.py <-> Betfair/*.py: 4 / 1
+  Betfair/stream/scores <-> Betfair/safe_strategy: 2 / 1
+  Betfair/stream/tennis_live <-> Betfair/stream/tennis_replay: 2 / 1
+  Betfair/*.py <-> migrations: 1 / 1

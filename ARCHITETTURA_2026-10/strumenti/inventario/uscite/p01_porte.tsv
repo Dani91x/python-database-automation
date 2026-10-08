@@ -1,0 +1,341 @@
+porta	tipo	file	riga	testo
+47319	def	Betfair/mike/config.py	32	LOCK_PORT_DEFAULT = 47319
+47333	cit	Betfair/mike/db.py	24	# --- F3 (18/09): le righe che Mike scrive escono ANCHE sul canale 47333 ------
+47331	cit	Betfair/mike/porta_ordini.py	9	canale di comando ``/comando/mike`` (47331): la STESSA strada di Safe e Omega.
+47319	cit	Betfair/mike/service.py	137	Mike e' un PROCESSO separato (lock 47319), quindi legare qui il ref
+47336	cit	Betfair/mike/service.py	455	# 23/09: le righe arrivate dal canale 47336 sono memoria di PROCESSO come
+47336	cit	Betfair/mike/service.py	1392	# 47336 (lo stesso payload che va su ``safe_strategy_status``). Piu' vecchio di
+47331	cit	Betfair/mike/service.py	2955	# LIVE pubblica sul canale 47331 (topic ``conto``) gli ordini del conto che lo
+47336	cit	Betfair/mike/service.py	3048	# 23/09: il client e le righe del canale 47336. Citato nell'elenco SOLO se
+47336	cit	Betfair/mike/service.py	4059	# locale 47336 (fuse con quelle del DB, vince la piu' recente); spento, e'
+47333	cit	Betfair/mike/service.py	6781	# Porta di default 47333, accanto a quelle gia' in uso dal runner (47331 calcio,
+47331	cit	Betfair/mike/service.py	6781	# Porta di default 47333, accanto a quelle gia' in uso dal runner (47331 calcio,
+47332	cit	Betfair/mike/service.py	6782	# 47332 tennis). Un canale PER BOT e non uno condiviso: quello del runner accetta
+47333	def	Betfair/mike/service.py	6784	_PORTA_CANALE = 47333
+47331	cit	Betfair/mike/service.py	6800	47331). ACCESO di serie (regola dell'utente del 25/09: i canali al
+47336	cit	Betfair/mike/service.py	6867	canale 47336: regola dell'utente, una fonte un client).
+47333	cit	Betfair/mike/service.py	6912	"""F6: il SOLO messaggio che il canale 47333 puo' ricevere.
+47336	cit	Betfair/mike/service.py	6930	client verso il canale 47336 (regola dell'utente: una fonte, un client).
+47333	cit	Betfair/mike/service.py	6933	resta solo la sveglia da UI (canale 47333, indipendente da questa).
+47336	cit	Betfair/mike/service.py	6940	"righe (MIKE_LEGGE_CANALE acceso): nessun secondo client su 47336.")
+47336	cit	Betfair/mike/service.py	6998	# LE RIGHE DELLO SCANNER DAL CANALE LOCALE 47336 (23/09) - SPENTO di serie
+47333	cit	Betfair/mike/service.py	7004	# ``feed_cache_s``); il canale lo usava soltanto in uscita (47333) e per la
+47336	cit	Betfair/mike/service.py	7054	verso il canale 47336 (regola dell'utente: una fonte, un client): porta le
+47336	cit	Betfair/mike/service.py	7077	"per il 47336, il database resta la lista e il ripiego)",
+47336	cit	Betfair/mike/service.py	7451	# sotto (un solo client per il canale 47336, righe + sveglia fuse).
+47336	cit	Betfair/mike/service.py	7453	# 23/09: righe dello scanner dal canale 47336 (``MIKE_LEGGE_CANALE``).
+47331	cit	Betfair/mike/service.py	7458	# (canale 47331, /lettore/conto). Senza canale: la REST a cadenza.
+47334	cit	Betfair/omega/omega_db.py	19	# --- F3 (18/09): le righe che Omega scrive escono ANCHE sul canale 47334 -----
+47336	cit	Betfair/omega/omega_service.py	206	# 23/09 - LE RIGHE DELLO SCANNER DAL CANALE LOCALE 47336 (interruttore
+47336	cit	Betfair/omega/omega_service.py	517	# ``safe_strategy_scan`` anche sul canale locale 47336 (topic ``scan_calcio``).
+47334	cit	Betfair/omega/omega_service.py	563	# UI (canale 47334) resta com'e'.
+47336	cit	Betfair/omega/omega_service.py	733	# processo sulla STESSA porta (47336) per lo STESSO scopo (righe di
+47331	cit	Betfair/omega/omega_service.py	791	"""Accende il lettore degli esiti degli ordini (canale del runner 47331,
+47331	cit	Betfair/omega/omega_service.py	3123	# F6 (24/09) - LA PORTA A COMANDI (canale di comando del runner, 47331).
+47331	cit	Betfair/omega/omega_service.py	4126	lo specchio TERMINALE arriva dal canale del runner (47331, topic ``order``)
+47313	def	Betfair/omega/omega_service.py	8520	_SINGLE_INSTANCE_PORT = 47313  # lock single-instance (come tennis 47312)
+47312	def	Betfair/omega/omega_service.py	8520	_SINGLE_INSTANCE_PORT = 47313  # lock single-instance (come tennis 47312)
+47334	cit	Betfair/omega/omega_service.py	8584	# Porta 47334, accanto a 47331 (calcio), 47332 (tennis) e 47333 (Mike). Un
+47331	cit	Betfair/omega/omega_service.py	8584	# Porta 47334, accanto a 47331 (calcio), 47332 (tennis) e 47333 (Mike). Un
+47332	cit	Betfair/omega/omega_service.py	8584	# Porta 47334, accanto a 47331 (calcio), 47332 (tennis) e 47333 (Mike). Un
+47333	cit	Betfair/omega/omega_service.py	8584	# Porta 47334, accanto a 47331 (calcio), 47332 (tennis) e 47333 (Mike). Un
+47334	def	Betfair/omega/omega_service.py	8587	_PORTA_CANALE = 47334
+47334	cit	Betfair/omega/omega_service.py	8657	"""F6: il SOLO messaggio che il canale 47334 puo' ricevere.
+47336	cit	Betfair/omega/omega_service.py	8824	# 23/09: le righe dello scanner dal canale 47336. A interruttore
+47331	cit	Betfair/omega/omega_service.py	8827	# 23/09: gli esiti degli ordini in coda dal canale del runner (47331). A
+47313	cit	Betfair/omega/omega_service.py	8900	lock.close()  # rilascia esplicitamente il lock socket 47313
+47331	cit	Betfair/omega/porta_ordini.py	5	comando ``/comando/omega`` (47331), il DB resta diario e ripiego.
+47335	cit	Betfair/safe_strategy/bot_db.py	26	# --- F3 (18/09): le righe che Safe scrive escono ANCHE sul canale 47335 ------
+47318	cit	Betfair/safe_strategy/bot_service.py	3	Un unico processo locale (lock 127.0.0.1:47318) che, come ``omega_service``:
+47318	def	Betfair/safe_strategy/bot_service.py	139	_SINGLE_INSTANCE_PORT = 47318  # omega=47313, tennis=47312, safe bot=47318
+47313	def	Betfair/safe_strategy/bot_service.py	139	_SINGLE_INSTANCE_PORT = 47318  # omega=47313, tennis=47312, safe bot=47318
+47312	def	Betfair/safe_strategy/bot_service.py	139	_SINGLE_INSTANCE_PORT = 47318  # omega=47313, tennis=47312, safe bot=47318
+47318	def	Betfair/safe_strategy/bot_service.py	139	_SINGLE_INSTANCE_PORT = 47318  # omega=47313, tennis=47312, safe bot=47318
+47336	cit	Betfair/safe_strategy/bot_service.py	9478	#   · ``SAFE_BOT_LEGGE_CANALE``  le righe di scan dal canale 47336;
+47335	cit	Betfair/safe_strategy/bot_service.py	9479	#   · ``SAFE_BOT_SVEGLIA_CANALE`` il canale del bot (47335) accetta la SOLA
+47335	cit	Betfair/safe_strategy/bot_service.py	9500	#: canale 47335 (nessun parametro d'ordine: il comando resta la riga sul DB).
+47335	cit	Betfair/safe_strategy/bot_service.py	9555	"""Il canale 47335 accetta la SOLA sveglia. Non solleva MAI.
+47335	cit	Betfair/safe_strategy/bot_service.py	10566	# Porta 47335, accanto a 47331 (calcio), 47332 (tennis), 47333 (Mike) e 47334
+47331	cit	Betfair/safe_strategy/bot_service.py	10566	# Porta 47335, accanto a 47331 (calcio), 47332 (tennis), 47333 (Mike) e 47334
+47332	cit	Betfair/safe_strategy/bot_service.py	10566	# Porta 47335, accanto a 47331 (calcio), 47332 (tennis), 47333 (Mike) e 47334
+47333	cit	Betfair/safe_strategy/bot_service.py	10566	# Porta 47335, accanto a 47331 (calcio), 47332 (tennis), 47333 (Mike) e 47334
+47334	cit	Betfair/safe_strategy/bot_service.py	10566	# Porta 47335, accanto a 47331 (calcio), 47332 (tennis), 47333 (Mike) e 47334
+47335	def	Betfair/safe_strategy/bot_service.py	10569	_PORTA_CANALE = 47335
+47336	cit	Betfair/safe_strategy/bot_service.py	10922	# il client che legge le righe dello scanner dal canale 47336, e la sveglia
+47335	cit	Betfair/safe_strategy/bot_service.py	10923	# che la UI puo' mandare sul canale del bot 47335 (sola sveglia, nessun
+47331	cit	Betfair/safe_strategy/bot_service.py	10927	# 23/09: gli esiti degli ordini in coda dal canale del runner (47331), con
+47336	cit	Betfair/safe_strategy/canale_scan.py	6	sul canale locale 47336 (``scan_calcio`` / ``scan_tennis`` / ``scanner_stato``)
+47335	cit	Betfair/safe_strategy/canale_scan.py	64	#: Il canale del bot Safe (47335) accetta la SOLA sveglia dalla UI.
+47336	def	Betfair/safe_strategy/canale_scan.py	69	PORTA_SCAN = 47336
+47335	cit	Betfair/safe_strategy/canale_scan.py	478	"""Il canale del bot (47335) accetta la SOLA sveglia. Torna ``True`` se
+47331	cit	Betfair/safe_strategy/porta_ordini.py	5	processo). Il bot gli parla sul canale locale del runner (47331 calcio, 47332
+47332	cit	Betfair/safe_strategy/porta_ordini.py	5	processo). Il bot gli parla sul canale locale del runner (47331 calcio, 47332
+47331	cit	Betfair/safe_strategy/porta_ordini.py	19	``SAFE_ORDINI_VIA_CANALE`` (calcio, 47331, attore ``safe``) e
+47332	cit	Betfair/safe_strategy/porta_ordini.py	20	``SAFE_TENNIS_ORDINI_VIA_CANALE`` (tennis, 47332, attore ``safe_tennis``).
+47331	def	Betfair/safe_strategy/porta_ordini.py	75	PORTA_CALCIO = 47331
+47332	def	Betfair/safe_strategy/porta_ordini.py	76	PORTA_TENNIS = 47332
+47315	def	Betfair/safe_strategy/service.py	74	_LOCK_PORT = int(os.getenv("SAFE_STRATEGY_LOCK_PORT", "47315"))
+47336	cit	Betfair/safe_strategy/service.py	78	# Porta 47336, accanto a 47331 (runner calcio), 47332 (runner tennis), 47333
+47331	cit	Betfair/safe_strategy/service.py	78	# Porta 47336, accanto a 47331 (runner calcio), 47332 (runner tennis), 47333
+47332	cit	Betfair/safe_strategy/service.py	78	# Porta 47336, accanto a 47331 (runner calcio), 47332 (runner tennis), 47333
+47333	cit	Betfair/safe_strategy/service.py	78	# Porta 47336, accanto a 47331 (runner calcio), 47332 (runner tennis), 47333
+47334	cit	Betfair/safe_strategy/service.py	79	# (Mike), 47334 (Omega), 47335 (bot Safe). Nessun processo nuovo: il canale
+47335	cit	Betfair/safe_strategy/service.py	79	# (Mike), 47334 (Omega), 47335 (bot Safe). Nessun processo nuovo: il canale
+47336	def	Betfair/safe_strategy/service.py	91	_PORTA_CANALE_SCAN = 47336
+47332	cit	Betfair/stream/backtest/trasporto.py	62	# 25/09 (F8): Safe tennis sul canale 47332 del runner TENNIS (motore con
+47331	cit	Betfair/stream/backtest/trasporto.py	111	# usava la porta VERA del canale verso 47331, senza runner ne' token:
+47333	cit	Betfair/stream/canale_bot.py	82	# Mike (47333)
+47334	cit	Betfair/stream/canale_bot.py	85	# Omega (47334)
+47335	cit	Betfair/stream/canale_bot.py	89	# Safe (47335) - due topic, mai uno solo con un campo sport
+47337	cit	Betfair/stream/canale_bot.py	94	# servizio dei 4 bot tennis (47337)
+47337	cit	Betfair/stream/canale_bot.py	97	# RUNNER, inoltrata sul 47337 dal ponte: `tennis_live/canale_bot_tennis.py`);
+47338	cit	Betfair/stream/canale_bot.py	103	# scalper calcio (47338, 25/09): `scalper_stato` = riga di
+47331	cit	Betfair/stream/canale_bot.py	111	# runner calcio (47331, 25/09 voce 12 dell'audit tempo reale): la riga di
+47331	cit	Betfair/stream/canale_bot.py	116	# RUNNER calcio (47331) e tennis (47332), 25/09 punto 6 dell'audit tempo
+47332	cit	Betfair/stream/canale_bot.py	116	# RUNNER calcio (47331) e tennis (47332), 25/09 punto 6 dell'audit tempo
+47337	def	Betfair/stream/canale_bot.py	135	PORTA_TENNIS_BOT = 47337
+47338	cit	Betfair/stream/canale_bot.py	140	#: non possono pubblicare sul 47338; pubblica il supervisore, che legge gia'
+47338	def	Betfair/stream/canale_bot.py	142	PORTA_SCALPER = 47338
+47331	cit	Betfair/stream/canale_bot.py	278	e' il suo canale (``LIVE_LOCAL_WS_PORT`` 47331 / ``TENNIS_LOCAL_WS_PORT``
+47332	cit	Betfair/stream/canale_bot.py	279	47332), come per ``ladder``/``now``/``auto_follow``/``betfair_live_xhedge``:
+47331	cit	Betfair/stream/esiti_ordini_canale.py	8	locale 47331 (topic ``order``, ``db.upsert_live_order``: la riga esatta dello
+47331	def	Betfair/stream/esiti_ordini_canale.py	82	PORTA = 47331
+47331	cit	Betfair/stream/esiti_ordini_canale.py	104	"""La porta del canale del runner calcio: ``LIVE_LOCAL_WS_PORT`` o 47331."""
+47336	cit	Betfair/stream/flusso_prezzi.py	43	al millisecondo (47336) la stessa riga esce nello stesso istante;
+47332	cit	Betfair/stream/live_order_worker.py	547	# ``LIVE_ORDER_MODE`` che ``modo_ordini`` legge: sul 47332 il messaggio
+47331	cit	Betfair/stream/local_channel.py	42	# pagina aperta sulla macchina poteva collegarsi a ws://127.0.0.1:47331 e
+47330	cit	Betfair/stream/local_channel.py	48	#    ``desktop/main.js`` su 127.0.0.1:47330) e quelle scritte a mano in
+47330	cit	Betfair/stream/local_channel.py	67	# la UI dell'app desktop (desktop/main.js: UI_PORT = 47330, carica 127.0.0.1)
+47330	cit	Betfair/stream/local_channel.py	68	ORIGINI_APP = frozenset({"http://127.0.0.1:47330", "http://localhost:47330"})
+47330	cit	Betfair/stream/local_channel.py	68	ORIGINI_APP = frozenset({"http://127.0.0.1:47330", "http://localhost:47330"})
+47331	cit	Betfair/stream/local_channel.py	727	fosse 47331 (che ESEGUE ORDINI VERI) si sarebbe allargato il canale che
+47332	cit	Betfair/stream/modo_ordini.py	259	"""Il modo effettivo del TENNIS col perche' (canale 47332, ``tennis_live_now``,
+47331	cit	Betfair/stream/reconcile_worker.py	151	# 18/09: publish SEMPRE sul canale locale (127.0.0.1:47331, zero costo DB),
+47336	cit	Betfair/stream/riserva_prezzi.py	11	canale 47336 o DB), e SOLO se lo scanner dichiara vivi i prezzi di QUEL mercato
+47311	def	Betfair/stream/runner.py	1254	_RUNNER_LOCK_PORT = int(os.getenv("LIVE_RUNNER_LOCK_PORT", "47311"))
+47331	cit	Betfair/stream/runner.py	1484	"""25/09 (punto 6) - il battito del runner anche sul canale 47331, topic
+47331	cit	Betfair/stream/runner.py	1523	esce sul canale 47331, topic ``flusso_stream``, a ogni battito. Mai solleva."""
+47331	cit	Betfair/stream/runner.py	2334	# comandi del canale 47331 (``/order`` di sempre e ``/comando/<attore>``), con
+47331	cit	Betfair/stream/runner.py	2539	gira, ma il canale locale 47331 e' gia' aperto e accetta i comandi del desktop.
+47331	def	Betfair/stream/runner.py	2640	ch = _lc.start_channel(int(os.getenv("LIVE_LOCAL_WS_PORT", "47331")), "calcio")
+47314	cit	Betfair/stream/scalper/run_scalper_live.py	49	# SCALPER_SVC_LOCK_PORT, 47314). Un solo padrone degli ordini dello scalper
+47314	def	Betfair/stream/scalper/run_scalper_live.py	52	CLI_LOCK_PORT_DEFAULT = "47314"
+47338	cit	Betfair/stream/scalper/scalper_service.py	19	* 25/09 CANALE 47338 (``SCALPER_CANALE=1``, sola lettura): pubblica la riga
+47338	cit	Betfair/stream/scalper/scalper_service.py	336	"""Sul canale 47338 (se acceso). Mai un'eccezione verso il chiamante."""
+47338	cit	Betfair/stream/scalper/scalper_service.py	595	"""Il canale locale dello scalper (47338, SOLA LETTURA), nel supervisore
+47314	def	Betfair/stream/scalper/scalper_service.py	855	int(os.getenv("SCALPER_SVC_LOCK_PORT", "47314")), "scalper-svc")
+47338	cit	Betfair/stream/scalper/scalper_service.py	869	# 25/09 - AUTO-MODE + CANALE 47338. La guardia d'avvio dell'interruttore
+47336	cit	Betfair/stream/scores/scan_feed.py	84	# canale 47336 (``scan_calcio``/``scan_tennis``) a ogni cambio, prima del freno
+47336	cit	Betfair/stream/scores/scan_feed.py	125	e' un CLIENT della porta che lo scanner gia' possiede (47336), non una
+47331	cit	Betfair/stream/stream_muto.py	214	#: le chiavi del messaggio ``flusso_stream`` sul canale del runner (calcio 47331,
+47332	cit	Betfair/stream/stream_muto.py	215	#: tennis 47332), in UN POSTO SOLO: la UI (``runnerCanale.ts``) le legge cosi'
+47336	def	Betfair/stream/sveglia_canale.py	68	PORTA_SCAN = 47336
+47333	cit	Betfair/stream/sveglia_canale.py	72	#: Il SOLO messaggio che i canali dei bot (47333 Mike, 47334 Omega, 47337 bot
+47334	cit	Betfair/stream/sveglia_canale.py	72	#: Il SOLO messaggio che i canali dei bot (47333 Mike, 47334 Omega, 47337 bot
+47337	cit	Betfair/stream/sveglia_canale.py	72	#: Il SOLO messaggio che i canali dei bot (47333 Mike, 47334 Omega, 47337 bot
+47336	cit	Betfair/stream/sveglia_canale.py	96	"""La porta del canale dello scanner: ``SAFE_SCAN_WS_PORT`` o 47336."""
+47336	cit	Betfair/stream/sveglia_canale.py	256	"""Client del canale dello scanner (47336) che NON conserva i payload.
+47331	cit	Betfair/stream/tempi_ordine.py	8	strada=canale   ``/order`` del canale 47331 (``_process_local_requests``, anche
+47332	cit	Betfair/stream/tempi_ordine.py	11	strada=tennis   runner tennis: canale 47332 (via=canale) e coda
+47337	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	1	"""canale_bot_tennis.py - 24/09: i 4 bot tennis in Control Room DAL LORO CANALE (47337).
+47332	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	9	* il RUNNER tennis (``tennis_runner``, canale 47332) ospita i bot, piazza gli
+47337	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	13	* il PONTE (``tennis_bot_service --bridge-only``, canale 47337) scrive gli
+47337	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	18	possono uscire direttamente sul 47337. Qui ci sono i due pezzi che chiudono il
+47337	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	23	manda comandi, riceve solo quel topic) e ripubblica sul 47337 il messaggio
+47337	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	29	Con ``TENNIS_RUNNER_SVEGLIA_CANALE=1`` il runner ascolta il 47337
+47337	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	35	* ``TENNIS_BOT_CANALE`` (gia' esistente, lo stesso del canale 47337): accende
+47332	def	Betfair/stream/tennis_live/canale_bot_tennis.py	69	PORTA_RUNNER = 47332
+47332	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	85	"""La porta del canale del runner tennis: ``TENNIS_LOCAL_WS_PORT`` o 47332."""
+47332	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	102	# 1) L'INOLTRO NEL PONTE: runner (47332) -> ponte (47337)
+47337	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	102	# 1) L'INOLTRO NEL PONTE: runner (47332) -> ponte (47337)
+47337	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	114	(il 47337 nel ponte). Non solleva mai."""
+47337	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	129	processo (47337) le righe d'ordine dei 4 bot, IDENTICHE.
+47337	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	247	il canale del processo attivo (senza 47337 non c'e' dove ripubblicare).
+47337	cit	Betfair/stream/tennis_live/canale_bot_tennis.py	336	"""Aggancia il runner al canale del PONTE (47337, topic
+47332	cit	Betfair/stream/tennis_live/esecutore_tennis.py	4	tennis non montava il motore ordini (``/comando/safe_tennis`` sul 47332 riceveva
+47332	cit	Betfair/stream/tennis_live/esecutore_tennis.py	299	"""Il ``LocalChannel`` del 47332 visto dal motore: tutto passa, tranne le
+47332	cit	Betfair/stream/tennis_live/guardie_tennis.py	45	non si esegue e i comandi del canale 47332 ricevono subito il rifiuto.
+47332	cit	Betfair/stream/tennis_live/guardie_tennis.py	238	# 04/10 (passo 6) - IL RUNNER TENNIS DICHIARA IL SUO MODO ORDINI. Sul 47332 il topic
+47331	cit	Betfair/stream/tennis_live/guardie_tennis.py	242	# funzione del calcio non pubblica fuori dal 47331). Solo al cambio, zero IO:
+47337	cit	Betfair/stream/tennis_live/tennis_bot_service.py	231	# Porta 47337, accanto a 47331 (runner calcio), 47332 (runner tennis), 47333
+47331	cit	Betfair/stream/tennis_live/tennis_bot_service.py	231	# Porta 47337, accanto a 47331 (runner calcio), 47332 (runner tennis), 47333
+47332	cit	Betfair/stream/tennis_live/tennis_bot_service.py	231	# Porta 47337, accanto a 47331 (runner calcio), 47332 (runner tennis), 47333
+47333	cit	Betfair/stream/tennis_live/tennis_bot_service.py	231	# Porta 47337, accanto a 47331 (runner calcio), 47332 (runner tennis), 47333
+47334	cit	Betfair/stream/tennis_live/tennis_bot_service.py	232	# (Mike), 47334 (Omega), 47335 (Safe), 47336 (scanner). Era l'asimmetria piu'
+47335	cit	Betfair/stream/tennis_live/tennis_bot_service.py	232	# (Mike), 47334 (Omega), 47335 (Safe), 47336 (scanner). Era l'asimmetria piu'
+47336	cit	Betfair/stream/tennis_live/tennis_bot_service.py	232	# (Mike), 47334 (Omega), 47335 (Safe), 47336 (scanner). Era l'asimmetria piu'
+47332	cit	Betfair/stream/tennis_live/tennis_bot_service.py	240	# runner tennis, che ha gia' il suo canale 47332: un processo ha un canale solo
+47337	cit	Betfair/stream/tennis_live/tennis_bot_service.py	287	# sul canale 47337: nessun dato d'ordine sul canale, il comando resta la riga
+47337	cit	Betfair/stream/tennis_live/tennis_bot_service.py	300	"""F6: il SOLO messaggio che il canale 47337 puo' ricevere. Alza la sveglia
+47312	def	Betfair/stream/tennis_live/tennis_bot_service.py	1104	lock_port = int(os.getenv("TENNIS_RUNNER_LOCK_PORT", "47312"))
+47312	cit	Betfair/stream/tennis_live/tennis_bot_service.py	1140	# sotto watchdog. Questo processo faceva la CORSA al lock 47312: se
+47337	cit	Betfair/stream/tennis_live/tennis_bot_service.py	1152	# F3: il canale 47337 vive QUI e solo qui (vedi ``_avvia_canale``).
+47332	cit	Betfair/stream/tennis_live/tennis_bot_service.py	1154	# 24/09: le righe d'ordine dei 4 bot le scrive il RUNNER (47332): il
+47337	cit	Betfair/stream/tennis_live/tennis_bot_service.py	1155	# ponte le legge come LETTORE e le inoltra identiche sul 47337
+47337	cit	Betfair/stream/tennis_live/tennis_db.py	38	# ``desktop/main.js:268``) e' il 47337; dentro il runner tennis e' il 47332.
+47332	cit	Betfair/stream/tennis_live/tennis_db.py	38	# ``desktop/main.js:268``) e' il 47337; dentro il runner tennis e' il 47332.
+47332	cit	Betfair/stream/tennis_live/tennis_db.py	610	# 47332); il ponte la inoltra identica sul 47337 (`canale_bot_tennis.py`).
+47337	cit	Betfair/stream/tennis_live/tennis_db.py	610	# 47332); il ponte la inoltra identica sul 47337 (`canale_bot_tennis.py`).
+47331	cit	Betfair/stream/tennis_live/tennis_live_order_worker.py	1652	calcio (B-1 del 23/09 sul 47331), per il canale 47332.
+47332	cit	Betfair/stream/tennis_live/tennis_live_order_worker.py	1652	calcio (B-1 del 23/09 sul 47331), per il canale 47332.
+47332	cit	Betfair/stream/tennis_live/tennis_live_order_worker.py	1712	# i comandi del canale 47332 ricevono SUBITO il rifiuto (niente accumulo in
+47332	cit	Betfair/stream/tennis_live/tennis_runner.py	107	# 23/09: cadenza (ms) del ladder sul CANALE locale 47332 (0 = a ogni book nuovo,
+47337	cit	Betfair/stream/tennis_live/tennis_runner.py	1700	# del ponte (47337, ``tennis_bot_armamento``) una riga di armatura per una
+47312	def	Betfair/stream/tennis_live/tennis_runner.py	2049	_TENNIS_LOCK_PORT = int(os.getenv("TENNIS_RUNNER_LOCK_PORT", "47312"))
+47332	cit	Betfair/stream/tennis_live/tennis_runner.py	2230	ed esce sul canale 47332, topic ``flusso_stream``. Mai solleva."""
+47332	cit	Betfair/stream/tennis_live/tennis_runner.py	2897	# ``MotoreOrdini`` del calcio sul canale 47332, col ``_dispatch`` vero del worker
+47332	cit	Betfair/stream/tennis_live/tennis_runner.py	3093	PARCHEGGIATO in attesa, sul suo canale (47332), topic ``battito``
+47332	def	Betfair/stream/tennis_live/tennis_runner.py	3157	_ch = _lc.start_channel(int(os.getenv("TENNIS_LOCAL_WS_PORT", "47332")), "tennis")
+47332	cit	Betfair/stream/tennis_live/tennis_runner.py	3160	# 25/09 (F8) - motore ordini sul 47332 (opt-in): montato PRIMA del primo
+47331	cit	Betfair/stream/xhedge_worker.py	124	# runner (47331), DOPO la scrittura riuscita e con cio' che la
+47316	def	betfair_tennis_odds.py	305	int(os.getenv("TENNIS_ODDS_LOCK_PORT", "47316")), "tennis-odds")
+47330	cit	desktop/main.js	5	//   (a) mini server HTTP statico su 127.0.0.1:47330 che serve ../frontend/dist
+47330	cit	desktop/main.js	10	//   (c) BrowserWindow 1600x900 → http://127.0.0.1:47330/board.
+47330	def	desktop/main.js	27	const UI_PORT = 47330;
+47331	cit	desktop/main.js	50	// I canali 47331 (calcio) e 47332 (tennis) ESEGUONO ORDINI VERI. Un WebSocket
+47332	cit	desktop/main.js	50	// I canali 47331 (calcio) e 47332 (tennis) ESEGUONO ORDINI VERI. Un WebSocket
+47312	cit	desktop/main.js	430	// due processi si contendevano il lock 47312 e, a seconda di chi vinceva, il
+47315	cit	desktop/main.js	440	// single-instance lock su 127.0.0.1:47315. Nessun ordine, mai.
+47313	cit	desktop/main.js	446	// da /omega, e di default in PAPER. Single-instance lock su 127.0.0.1:47313 → niente doppio
+47318	cit	desktop/main.js	455	// solo le richieste manuali e i settlement. Lock single-instance 127.0.0.1:47318.
+47319	cit	desktop/main.js	460	// processa richieste manuali, protezioni e settlement. Lock 127.0.0.1:47319.
+47316	cit	desktop/main.js	473	// raddoppiata (il job ha anche un lock di singola istanza sulla porta 47316).
+47331	cit	desktop/preload.js	2	// (ws://127.0.0.1:47331/47332), nessuna API Node esposta al renderer.
+47332	cit	desktop/preload.js	2	// (ws://127.0.0.1:47331/47332), nessuna API Node esposta al renderer.
+47972	cit	frontend/src/anteprima/controlRoomFinto.ts	458	selection_id: 47972, selection_name: 'Under 2.5 Goals', side: 'back', price: 1.6, size: 3, liability: 3,
+47972	cit	frontend/src/anteprima/giornataBot.ts	63	sel(47972 + line * 2, `Under ${line} Goals`, under[0], under[1], 410, 380),
+47973	cit	frontend/src/anteprima/giornataBot.ts	64	sel(47973 + line * 2, `Over ${line} Goals`, over[0], over[1], 120, 96),
+47979	cit	frontend/src/anteprima/omegaMissioniFinto.ts	48	selection_id: 47979, runner_name: 'Under 3.5 Goals', back_price: 1.22, back_size: 412, line: 3.5,
+47977	cit	frontend/src/anteprima/safeBotFinto.ts	130	selection_id: 47977, selection_name: 'Under 2.5 Goals', side: 'back', price: 1.58,
+47980	cit	frontend/src/anteprima/safeBotFinto.ts	134	market_id: '1.248120446', selection_id: 47980, selection_name: 'Over 3.5 Goals', side: 'lay',
+47979	cit	frontend/src/anteprima/safeBotFinto.ts	148	market_id: '1.248120016', selection_id: 47979, selection_name: 'Under 3.5 Goals', side: 'back',
+47979	cit	frontend/src/anteprima/safeBotFinto.ts	153	{ market_type: 'OVER_UNDER_35', market_id: '1.248120016', selection_id: 47979, selection_name: 'Under 3.5 Goals',
+47981	cit	frontend/src/anteprima/safeBotFinto.ts	155	{ market_type: 'OVER_UNDER_45', market_id: '1.248120017', selection_id: 47981, selection_name: 'Under 4.5 Goals',
+47999	cit	frontend/src/anteprima/seguiLiveDati.ts	50	inter: 47999, torino: 48351, draw: 58805,
+47972	cit	frontend/src/anteprima/seguiLiveDati.ts	52	under25: 47972, over25: 47973, under35: 1222347, over35: 1222346,
+47973	cit	frontend/src/anteprima/seguiLiveDati.ts	52	under25: 47972, over25: 47973, under35: 1222347, over35: 1222346,
+47331	cit	frontend/src/components/controlroom/RigaCapacitaMercati.tsx	9	// il motivo, mai in silenzio. Solo lettura: dal canale 47331 (topic
+47331	cit	frontend/src/components/controlroom/RigaFreno.tsx	13	//   * lo stato del freno: dal canale del runner calcio (47331, topic
+47331	cit	frontend/src/components/controlroom/RigaFreno.tsx	120	// il canale del runner calcio (47331): hello e topic `modo_ordini`
+47331	cit	frontend/src/components/controlroom/RigaFreno.tsx	193	title="da dove viene lo stato: canale del runner calcio (47331, al cambio) o database (get_live_settings, ogni 30 s)">
+47331	cit	frontend/src/components/controlroom/RigaOrdiniReali.tsx	21	// 25/09 (voce 6 dell'audit tempo reale) - IL CANALE DEL RUNNER CALCIO (47331)
+47331	cit	frontend/src/components/controlroom/RigaOrdiniReali.tsx	120	// 25/09 (voce 6): il canale 47331 - stato, hello, `now` col modo ordini
+47331	cit	frontend/src/components/controlroom/RigaOrdiniReali.tsx	215	title="da dove viene il modo mostrato: canale del runner calcio (47331, hello/now/modo_ordini: eta' dell'ultima notizia, il modo_ordini vale fino al c
+47332	cit	frontend/src/components/controlroom/SchedaPartita.tsx	240	title="canale del runner tennis (47332, topic now) o database (realtime tennis_live_now, ripiego)">
+47331	cit	frontend/src/components/controlroom/testata/TesseraRunner.tsx	10	//   * QUALE runner: "Runner CALCIO (canale 47331)" / "Runner TENNIS (canale 47332)";
+47332	cit	frontend/src/components/controlroom/testata/TesseraRunner.tsx	10	//   * QUALE runner: "Runner CALCIO (canale 47331)" / "Runner TENNIS (canale 47332)";
+47331	def	frontend/src/components/controlroom/testata/TesseraRunner.tsx	32	export const PORTA_RUNNER: Record<SportRunner, number> = { calcio: 47331, tennis: 47332 };
+47332	def	frontend/src/components/controlroom/testata/TesseraRunner.tsx	32	export const PORTA_RUNNER: Record<SportRunner, number> = { calcio: 47331, tennis: 47332 };
+47333	cit	frontend/src/components/controlroom/useControlRoom.ts	7	//     dai canali locali (47333/47334/47335) è COMUNQUE scritto su Postgres. Se
+47334	cit	frontend/src/components/controlroom/useControlRoom.ts	7	//     dai canali locali (47333/47334/47335) è COMUNQUE scritto su Postgres. Se
+47335	cit	frontend/src/components/controlroom/useControlRoom.ts	7	//     dai canali locali (47333/47334/47335) è COMUNQUE scritto su Postgres. Se
+47338	cit	frontend/src/components/controlroom/useControlRoom.ts	151	// 25/09 - lo scalper dal SUO canale (47338): overlay sul giro dei 30 s
+47337	cit	frontend/src/components/controlroom/useControlRoom.ts	675	* 24/09 - IL CANALE DEI 4 BOT TENNIS (47337, `tennis_bot_service --bridge-only`),
+47332	cit	frontend/src/components/controlroom/useControlRoom.ts	681	* Sola lettura: i comandi tennis passano da 47332 con token.
+47331	cit	frontend/src/components/controlroom/useControlRoom.ts	962	* 47331 e' collegato (processo vivo; eta' = ultimo messaggio: saldo ~20 s,
+47332	cit	frontend/src/components/controlroom/useControlRoom.ts	967	/** il runner TENNIS (47332): solo dal canale, non ha un battito sul
+47336	cit	frontend/src/components/controlroom/useControlRoom.ts	971	/** 25/09 (voce 14) - lo stato dello scanner: push `scanner_stato` (47336)
+47336	cit	frontend/src/components/controlroom/useControlRoom.ts	1084	* messaggio scanner accettato dal canale 47336 è FRESCO (stessa soglia
+47336	cit	frontend/src/components/controlroom/useControlRoom.ts	1146	// 47336 (v. `fonteScan` nel VM): `null` finché il canale non parla.
+47337	cit	frontend/src/components/controlroom/useControlRoom.ts	1284	// esistono, il canale 47337 (`tennis_bot_stato`) ne sovrappone le colonne
+47338	cit	frontend/src/components/controlroom/useControlRoom.ts	1333	*  se un messaggio del canale 47338 e' piu' fresco del database) */
+47338	cit	frontend/src/components/controlroom/useControlRoom.ts	1410	// canale 47338 e gia' applicata e' piu' fresca del giro
+47336	cit	frontend/src/components/controlroom/useControlRoom.ts	1509	// 25/09 (voce 14) - LO STATO DELLO SCANNER ANCHE DAL CANALE 47336
+47336	cit	frontend/src/components/controlroom/useControlRoom.ts	1558	// STADIO B1/B2a (18/09, raccordo) — CANALE LOCALE SCANNER (47336,
+47334	cit	frontend/src/components/controlroom/useControlRoom.ts	1615	// I MESSAGGI PER RIGA di Omega (47334), Safe (47335) e Mike (47333): la
+47335	cit	frontend/src/components/controlroom/useControlRoom.ts	1615	// I MESSAGGI PER RIGA di Omega (47334), Safe (47335) e Mike (47333): la
+47333	cit	frontend/src/components/controlroom/useControlRoom.ts	1615	// I MESSAGGI PER RIGA di Omega (47334), Safe (47335) e Mike (47333): la
+47337	cit	frontend/src/components/controlroom/useControlRoom.ts	1741	// ---------------------------------- 24/09: i 4 bot tennis dal canale 47337
+47338	cit	frontend/src/components/controlroom/useControlRoom.ts	1786	// ------------------------------- 25/09: lo scalper calcio dal canale 47338
+47331	cit	frontend/src/components/controlroom/useControlRoom.ts	1837	// Il runner calcio (47331) e quello tennis (47332): connessione, `hello` e
+47332	cit	frontend/src/components/controlroom/useControlRoom.ts	1837	// Il runner calcio (47331) e quello tennis (47332): connessione, `hello` e
+47331	cit	frontend/src/components/controlroom/useControlRoom.ts	1918	// 24/09 - IL P&L REALE DEL CONTO anche dal canale del runner (47331,
+47338	cit	frontend/src/components/controlroom/useControlRoom.ts	2034	// canale 47338 (stesso oggetto se il canale tace: niente ricalcoli)
+47333	cit	frontend/src/components/controlroom/useControlRoom.ts	4232	* Lo stesso valore per OGNI bot. I canali locali (47333/47334/47335) esistono
+47334	cit	frontend/src/components/controlroom/useControlRoom.ts	4232	* Lo stesso valore per OGNI bot. I canali locali (47333/47334/47335) esistono
+47335	cit	frontend/src/components/controlroom/useControlRoom.ts	4232	* Lo stesso valore per OGNI bot. I canali locali (47333/47334/47335) esistono
+47332	cit	frontend/src/components/controlroom/useTennisVivo.ts	32	// locale (47332, topic `now`, `Betfair/stream/tennis_live/tennis_db.py:291`:
+47336	cit	frontend/src/components/controlroom/useTennisVivo.ts	39	// Il topic `scan_tennis` dello scanner (47336) NON si usa qui: porta la riga di
+47332	cit	frontend/src/components/controlroom/useTennisVivo.ts	110	// 25/09 (voce 5): la stessa riga dal canale del runner tennis (47332)
+47332	cit	frontend/src/components/controlroom/useTennisVivo.ts	153	/** 25/09 (voce 5): da dove viene la riga (canale 47332 o realtime del
+47331	cit	frontend/src/components/live/LiveTradingPanel.tsx	125	// 25/09 (voce 13): push `position` del runner calcio (47331) sulle righe del
+47331	cit	frontend/src/components/live/StandaloneLadder.tsx	64	// fix B33 punto 1: canale locale calcio al ms (47331) come via
+47331	cit	frontend/src/components/live/TerminalPositionsRail.tsx	58	// 25/09 (voce 13): push `position` del runner calcio (47331) sulle righe del
+47331	cit	frontend/src/components/live/XHedgePanel.tsx	165	// arriva anche dal canale del runner calcio (47331, `betfair_live_xhedge`),
+47331	cit	frontend/src/components/live/XHedgePanel.tsx	404	title="da dove arriva l'analisi: canale del runner (47331, subito dopo la scrittura) o database (poll di ripiego)">
+47333	cit	frontend/src/components/mike/useMikeEventoAlMs.ts	5	// esistente (ws://127.0.0.1:47333, topic `mike_event`, `service._pubblica_evento`)
+47332	cit	frontend/src/components/tennis/TennisLadderColumn.tsx	93	// ---- CANALE LOCALE tennis (desktop, ws://127.0.0.1:47332) ----
+47332	cit	frontend/src/components/tennis/TennisLadderColumn.tsx	97	// ladder: canale 47332 al tick, tennis_live_ladder realtime solo a canale assente/muto.
+47332	cit	frontend/src/components/tennis/TennisLadderColumn.tsx	155	title="Canale LOCALE attivo (ws://127.0.0.1:47332): ladder e ordini direttamente dal runner tennis sul PC — latenza ~0. Se cade, fallback automatico a
+47972	cit	frontend/src/lib/__fixtures__/scalperFinti.ts	31	event_id: '35760084', market_id: '1.200', selection_id: 47972, side: 'back',
+47331	cit	frontend/src/lib/canaleRunner.ts	2	// canaleRunner.ts - 23/09: i topic `now` e `position` dei RUNNER (calcio 47331,
+47332	cit	frontend/src/lib/canaleRunner.ts	3	// tennis 47332) come sovrapposizione del poll/realtime del database, per le
+47331	cit	frontend/src/lib/capacitaMercati.ts	3	// calcio e le partite idonee rimaste FUORI, dal canale 47331.
+47331	cit	frontend/src/lib/composizioneObiettivo.ts	218	// canale 47331, topic `account`): netto (profit - commissione del mercato),
+47331	cit	frontend/src/lib/flussoStreamRunner.ts	3	// Il runner calcio (47331) e quello tennis (47332) pubblicano il topic
+47332	cit	frontend/src/lib/flussoStreamRunner.ts	3	// Il runner calcio (47331) e quello tennis (47332) pubblicano il topic
+47332	cit	frontend/src/lib/interruttori.ts	688	/** modo che il runner TENNIS dichiara sul suo canale (hello/battito, 47332):
+47332	cit	frontend/src/lib/interruttori.ts	696	* (canale 47332: governa il tetto del runner tennis) o 'diretta' (coda/REST:
+47332	cit	frontend/src/lib/interruttori.ts	743	*   · tennis (Safe tennis via canale 47332, i 4 bot ospitati nel runner tennis):
+47331	cit	frontend/src/lib/interruttori.ts	748	*   · calcio Safe (base/esatto/punta/modello/a mano) e Omega via canale 47331,
+47336	cit	frontend/src/lib/localChannel.ts	32	// STADIO B (18/09, raccordo) — `scanner` (47336, topic `scan_calcio`/
+47337	cit	frontend/src/lib/localChannel.ts	33	// `scan_tennis`/`scanner_stato`) e `tennis_bot` (47337, topic
+47338	cit	frontend/src/lib/localChannel.ts	38	// 25/09 - `scalper` (47338, topic `scalper_stato`/`scalper_sessioni`): il
+47331	cit	frontend/src/lib/localChannel.ts	61	// porte fisse del runner (vedi local_channel.py: calcio 47331 · tennis 47332).
+47332	cit	frontend/src/lib/localChannel.ts	61	// porte fisse del runner (vedi local_channel.py: calcio 47331 · tennis 47332).
+47331	cit	frontend/src/lib/localChannel.ts	63	calcio: 47331, tennis: 47332,     // runner (comandi + push)
+47332	cit	frontend/src/lib/localChannel.ts	63	calcio: 47331, tennis: 47332,     // runner (comandi + push)
+47333	cit	frontend/src/lib/localChannel.ts	64	mike: 47333, omega: 47334, safe: 47335,   // bot (solo push)
+47334	cit	frontend/src/lib/localChannel.ts	64	mike: 47333, omega: 47334, safe: 47335,   // bot (solo push)
+47335	cit	frontend/src/lib/localChannel.ts	64	mike: 47333, omega: 47334, safe: 47335,   // bot (solo push)
+47336	cit	frontend/src/lib/localChannel.ts	65	scanner: 47336,     // scanner unico (safe_strategy_scan): scan_calcio/scan_tennis/scanner_stato
+47337	cit	frontend/src/lib/localChannel.ts	66	tennis_bot: 47337,  // 4 bot tennis: tennis_bot_stato/tennis_bot_posizioni
+47338	cit	frontend/src/lib/localChannel.ts	67	scalper: 47338,     // 25/09 scalper calcio (supervisore): scalper_stato/scalper_sessioni
+47331	cit	frontend/src/lib/localChannel.ts	75	// C1 (24/09) - TOKEN DI SESSIONE. I canali del runner (47331/47332) accettano
+47332	cit	frontend/src/lib/localChannel.ts	75	// C1 (24/09) - TOKEN DI SESSIONE. I canali del runner (47331/47332) accettano
+47333	cit	frontend/src/lib/localChannel.ts	317	// porta del bot giusto: Mike 47333, Omega 47334, Safe 47335, i 4 bot tennis
+47334	cit	frontend/src/lib/localChannel.ts	317	// porta del bot giusto: Mike 47333, Omega 47334, Safe 47335, i 4 bot tennis
+47335	cit	frontend/src/lib/localChannel.ts	317	// porta del bot giusto: Mike 47333, Omega 47334, Safe 47335, i 4 bot tennis
+47337	cit	frontend/src/lib/localChannel.ts	318	// insieme su 47337 (canale unico, non uno a bot). BEST-EFFORT PURO: se il
+47338	cit	frontend/src/lib/localChannel.ts	326	// (47338) ma di SOLA pubblicazione: il supervisore rilegge l'interruttore
+47333	cit	frontend/src/lib/mike.ts	2384	// Il servizio Mike spinge le schede su ws://127.0.0.1:47333 a OGNI giro, mentre
+47333	cit	frontend/src/lib/righeCanale.ts	11	//   topic: mike_posizioni (47333) - omega_posizioni, omega_proposta (47334) -
+47334	cit	frontend/src/lib/righeCanale.ts	11	//   topic: mike_posizioni (47333) - omega_posizioni, omega_proposta (47334) -
+47335	cit	frontend/src/lib/righeCanale.ts	12	//          safe_posizioni_calcio, safe_posizioni_tennis, safe_proposta (47335)
+47331	cit	frontend/src/lib/runnerCanale.ts	3	// (calcio 47331, tennis 47332) e il modo ordini "OFF/PAPER/LIVE" dal canale
+47332	cit	frontend/src/lib/runnerCanale.ts	3	// (calcio 47331, tennis 47332) e il modo ordini "OFF/PAPER/LIVE" dal canale
+47336	cit	frontend/src/lib/safeStrategyScan.ts	283	/** un messaggio del canale locale scanner (47336): STESSA riga di
+47331	cit	frontend/src/lib/saldoBetfair.ts	54	* LOCALE del runner (porta 47331, topic "account", vedi
+47331	cit	frontend/src/lib/saldoBetfair.ts	119	// calcio 47331, runner tennis 47332, Mike 47333, Omega 47334, Safe 47335)
+47332	cit	frontend/src/lib/saldoBetfair.ts	119	// calcio 47331, runner tennis 47332, Mike 47333, Omega 47334, Safe 47335)
+47333	cit	frontend/src/lib/saldoBetfair.ts	119	// calcio 47331, runner tennis 47332, Mike 47333, Omega 47334, Safe 47335)
+47334	cit	frontend/src/lib/saldoBetfair.ts	119	// calcio 47331, runner tennis 47332, Mike 47333, Omega 47334, Safe 47335)
+47335	cit	frontend/src/lib/saldoBetfair.ts	119	// calcio 47331, runner tennis 47332, Mike 47333, Omega 47334, Safe 47335)
+47338	cit	frontend/src/lib/scalperCanale.ts	2	// scalperCanale.ts - 25/09: LO SCALPER CALCIO DAL SUO CANALE (47338).
+47338	cit	frontend/src/lib/scalperControlRoom.ts	19	// FONTE E ETA'. 25/09: il SUPERVISORE pubblica sul canale locale 47338
+47338	cit	frontend/src/lib/scalperControlRoom.ts	629	/** 25/09 - la riga viene dal canale locale 47338: da quanti secondi */
+47336	cit	frontend/src/lib/statoBotCanale.ts	161	* Il push `scanner_stato` (47336) sulla riga di stato gia' letta.
+47331	cit	frontend/src/lib/useOrdiniCanale.ts	4	// dello sport (calcio 47331, tennis 47332, via getLocalChannel: nessuna porta
+47332	cit	frontend/src/lib/useOrdiniCanale.ts	4	// dello sport (calcio 47331, tennis 47332, via getLocalChannel: nessuna porta
+47331	cit	frontend/src/lib/usePosizioniCanale.ts	4	// 47331, tennis 47332, via getLocalChannel: nessuna porta nuova) e tiene le
+47332	cit	frontend/src/lib/usePosizioniCanale.ts	4	// 47331, tennis 47332, via getLocalChannel: nessuna porta nuova) e tiene le
+47331	cit	frontend/src/lib/xhedgeCanale.ts	3	// cross-market (`betfair_live_xhedge`) dal canale del runner calcio (47331)
+47331	def	frontend/src/pages/Board.tsx	122	Canale locale {sport} non attivo (ws://127.0.0.1:{sport === 'calcio' ? 47331 : 47332}).
+47332	def	frontend/src/pages/Board.tsx	122	Canale locale {sport} non attivo (ws://127.0.0.1:{sport === 'calcio' ? 47331 : 47332}).
+47332	cit	frontend/src/pages/ControlRoom.tsx	242	// 25/09 (voce 6): il runner TENNIS ha il suo canale (47332); se tace
+47336	cit	frontend/src/pages/ControlRoom.tsx	1069	riga dello scanner (47336) e' arrivata da li' da poco,
+47336	cit	frontend/src/pages/ControlRoom.tsx	1078	title="stato dello scanner: canale locale (push scanner_stato, 47336) o database (safe_strategy_status, realtime)">
+47337	cit	frontend/src/pages/ControlRoom.tsx	1088	// 24/09: i 4 bot tennis in una voce (canale 47337)
+47331	cit	frontend/src/pages/LivePnl.tsx	205	// (calcio 47331, tennis 47332) sovrapposti alle righe del poll di 15 s, che
+47332	cit	frontend/src/pages/LivePnl.tsx	205	// (calcio 47331, tennis 47332) sovrapposti alle righe del poll di 15 s, che
+47331	cit	frontend/src/pages/MarketWatch.tsx	33	// (calcio 47331, tennis 47332) e si SOVRAPPONGONO a cio' che il database ha
+47332	cit	frontend/src/pages/MarketWatch.tsx	33	// (calcio 47331, tennis 47332) e si SOVRAPPONGONO a cio' che il database ha
+47332	cit	frontend/src/pages/MarketWatch.tsx	307	// canale locale tennis (47332): push `now` dei match seguiti.
+47333	cit	frontend/src/pages/Mike.tsx	424	title="Canale LOCALE attivo (ws://127.0.0.1:47333): quote, P&L e stato arrivano direttamente dal bot sul PC, senza passare dal database. Se cade, fall
+47334	cit	frontend/src/pages/Omega.tsx	92	// ws://127.0.0.1:47334 a ogni giro, senza passare dal database.
+47334	cit	frontend/src/pages/Omega.tsx	569	title="Canale LOCALE attivo (ws://127.0.0.1:47334): i numeri di testata arrivano direttamente dal bot sul PC, senza passare dal database. Omega aggior
+47331	cit	frontend/src/pages/SeguiLive.tsx	62	// ws://127.0.0.1:47331 è connesso, ladder e ordini viaggiano in locale; quando è
+47331	cit	frontend/src/pages/SeguiLive.tsx	229	// CANALE LOCALE (23/09): push `position` del runner calcio (47331) sovrapposti
+47331	cit	frontend/src/pages/SeguiLive.tsx	507	title="Canale LOCALE attivo (ws://127.0.0.1:47331): ladder, quote e ordini direttamente dal runner sul PC — latenza ~0. Se cade, fallback automatico a
+47972	cit	laboratorio/scalper_lab/grid_strategy.py	173	finestra scoreless 0'-50'): sortPriority 1 = UNDER (47972: 2.16->1.32,
+47973	cit	laboratorio/scalper_lab/grid_strategy.py	174	scende col tempo senza gol), sortPriority 2 = OVER (47973: 1.86->4.30,

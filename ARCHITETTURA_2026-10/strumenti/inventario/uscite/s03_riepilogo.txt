@@ -1,0 +1,166 @@
+chiamate trovate: 966
+per tipo e chiamante: rest_dinamico/audit=20, rest_dinamico/prod=5, rest_dinamico/strum=2, rest_rpc/prod=1, rest_tabella/audit=2, rest_tabella/prod=1, rest_tabella/test=7, rpc/audit=4, rpc/frontend=164, rpc/prod=53, rpc/strum=2, rpc/test=16, storage/prod=7, table/audit=49, table/frontend=26, table/prod=552, table/strum=30, table/test=25
+
+== A. `.table(` / `.from_(` PER FILE (produzione + strumenti, ordinati) - da confrontare con il brief ==
+   53  Betfair/stream/db.py
+   46  Betfair/safe_strategy/bot_db.py
+   44  Betfair/omega/omega_db.py
+   39  Betfair/stream/tennis_live/tennis_db.py
+   32  Betfair/mike/db.py
+   20  Betfair/stream/scalper/scalper_session.py
+   18  Prediction/today_predictions_backfill.py
+   17  Betfair/stream/live_order_worker.py
+   16  Betfair/stream/scalper/scalper_service.py
+   12  Betfair/safe_strategy/db.py
+    9  season_gaps.py
+    7  Betfair/betfair_report_manager.py
+    7  Betfair/money_management.py
+    7  Betfair/order_worker.py
+    7  Betfair/stream/auto_follow.py
+    7  Betfair/stream/reconcile_worker.py
+    7  Betfair/stream/risk_engine_worker.py
+    7  tactical_engine/serving.py
+    6  market_intelligence/backtest_audit.py
+    5  _certify_direction.py
+    5  compute_ml_post_calibration.py
+    5  enrich_analytics_snapshots.py
+    5  per_fixture_backfill.py
+    4  Betfair/odds_refresh.py
+    4  Betfair/refresh_worker.py
+    4  Betfair/stream/tennis_replay/caricamento.py
+    4  Prediction/predictions_results_backfill.py
+    4  api_quota.py
+    4  backfill_poisson_calibrated.py
+    4  build_analytics_signals.py
+  brief par.1: stream/db.py 53, safe/bot_db.py 46, omega/omega_db.py 44, tennis_db.py 39, mike/db.py 32, scalper_session 20, live_order_worker 18, scalper_service 16, safe/db.py 12
+
+== B. `.rpc(` per file (produzione) ==
+    6  Betfair/omega/omega_db.py
+    4  _certify_personal_report.py
+    3  Betfair/stream/live_order_worker.py
+    3  _certify_direction_report.py
+    3  _certify_signal_context.py
+    3  import_betfair_operations.py
+    3  season_gaps.py
+    2  Betfair/mike/db.py
+    2  Betfair/safe_strategy/bot_db.py
+    2  Betfair/stream/modo_ordini.py
+    2  _certify_betfair.py
+    2  _certify_betfair_full.py
+    2  ventaglio_segnali.py
+    1  Betfair/safe_strategy/db.py
+    1  Betfair/stream/daily_stop_worker.py
+    1  Betfair/stream/risk_engine_worker.py
+    1  Betfair/stream/runner.py
+    1  Betfair/stream/trading/controls.py
+    1  Prediction/predictions_results_backfill.py
+    1  _certify_delay_context.py
+
+== C. TABELLE ==
+tabelle distinte (nome letterale) usate da codice Python di produzione: 88
+tabelle distinte usate dal frontend (src, non test): 17
+tabelle distinte usate da prod o frontend: 89   (brief: 55 tabelle usate dal codice)
+tabelle distinte usate da QUALSIASI file (anche test/strumenti/audit): 94
+nomi non letterali (prod/frontend) da risolvere a mano: 6: <dinamico:MU.TABELLA_ORDINI_CONTO>; <dinamico:name>; <dinamico:nome>; <dinamico:t>; <dinamico:tabella>; <dinamico:table>
+oggetti definiti nei .sql tracciati: tabelle 103, viste 7, funzioni 217
+  tabelle definite in migrations/ o sql/: 103
+
+-- tabelle USATE da prod/frontend ma NON definite in nessun .sql tracciato (tabelle/viste):
+   17: ai_model_registry, api_call_log, api_coverage_by_season, fixture_predictions, injuries, leads, match_events, match_odds, match_team_stats, matches, ml_post_calibration, model_performance, season_backfill_state, standings, top_assists, top_cards, top_scorers
+
+-- tabelle DEFINITE in migrations/sql ma mai usate da prod/frontend (usate solo da test/strumenti/audit o per niente):
+   analytics_prob_staging                         test=0 strum=0 audit=0
+   analytics_riepilogo_decisioni                  test=0 strum=0 audit=0
+   analytics_riepilogo_meta                       test=0 strum=0 audit=0
+   analytics_riepilogo_segnali                    test=0 strum=0 audit=0
+   betfair_live_settings                          test=0 strum=0 audit=0
+   book_odds_cache                                test=0 strum=0 audit=0
+   book_odds_cache_fonte                          test=0 strum=0 audit=0
+   hazard_atlas                                   test=0 strum=0 audit=1
+   hazard_atlas_leghe                             test=0 strum=0 audit=0
+   live_market_snapshots                          test=0 strum=0 audit=0
+   live_score_timeline                            test=0 strum=0 audit=0
+   omega_build_jobs                               test=0 strum=0 audit=0
+   omega_ht_ft_transitions                        test=0 strum=0 audit=0
+   omega_ht_ft_transitions_pre_ledger             test=0 strum=0 audit=0
+   omega_ht_ft_transitions_raw                    test=0 strum=0 audit=0
+   omega_minute_league_counts                     test=0 strum=2 audit=0
+   omega_minute_league_counts_pre_ledger          test=0 strum=0 audit=0
+   omega_minute_transitions                       test=0 strum=1 audit=0
+   omega_minute_transitions_pre_ledger            test=0 strum=0 audit=0
+   omega_minute_transitions_raw                   test=0 strum=0 audit=0
+   omega_requests                                 test=0 strum=0 audit=0
+   omega_transitions_league_counts                test=0 strum=0 audit=0
+   omega_transitions_ledger                       test=0 strum=0 audit=0
+   omega_transitions_runs                         test=0 strum=0 audit=0
+   omega_transitions_state                        test=0 strum=0 audit=0
+   personal_cash_movements                        test=0 strum=0 audit=0
+   personal_trade_legs                            test=0 strum=0 audit=0
+   sicurezza_bk                                   test=0 strum=0 audit=0
+   strategies                                     test=0 strum=0 audit=0
+   tennis_refresh_requests                        test=0 strum=0 audit=0
+   tennis_replay_punteggio                        test=0 strum=0 audit=0
+   tennis_replay_snapshots                        test=0 strum=0 audit=0
+   totale: 32
+
+-- viste definite e mai referenziate da .table()/.from():
+   v_clv_summary
+   v_es_concordance_roi
+   v_es_emission_by_engine_market
+   v_es_reject_funnel
+   v_roi_by_market
+   v_roi_by_track
+
+== D. RPC ==
+RPC distinte chiamate da prod/frontend: 170; da qualsiasi file: 174
+-- RPC chiamate da prod/frontend ma non definite come funzione nei .sql tracciati:
+   fetch_missing_fixture_coverage, rpc
+-- funzioni definite nei .sql ma mai chiamate da prod/frontend (possibile uso da trigger/cron/altre funzioni):
+   49: _analytics_filters_live, _decisions_filters_live, _feat_expr, _prob_bucket, _tennis_bot_control_json, analyze_by_league, analyze_feature, backtest_strategy_rows, block_non_owner_signup, book_odds, flush_analytics_prob_staging, get_posizioni_chiuse_giornata, get_replay_frames, get_replay_tennis_frames, get_tennis_bot_day_trades, get_theta_confirm_requests, hazard_atlas_salva_versione, inizio_partita_evento, inizio_partita_sql, mike_aggregates_sql, omega_aggregates_sql, omega_build_ht_ft_transitions, omega_build_minute_transitions_reset, omega_build_minute_transitions_run, omega_build_minute_transitions_schedule, omega_build_minute_transitions_step, omega_snapshot_daily_goal, omega_transitions_compare, omega_transitions_ledger_counts, omega_transitions_nightly, omega_transitions_publish, omega_transitions_schedule, omega_transitions_status, omega_transitions_step, omega_transitions_unpublish, posizioni_chiuse_tabella, posizioni_chiuse_tabella_partita, recompute_personal_trade, refresh_analytics_bets, refresh_analytics_bets_range_diag, refresh_analytics_riepilogo, safe_aggregates_sql, safe_set_mode, sicurezza_bk, tennis_is_owner, theta_confirm_decide, trading_daily_history, trading_day_trades, update_updated_at_column
+
+== E. TABELLE PIU' TOCCATE DA PRODUZIONE (n. chiamate prod | frontend) ==
+  72 |   6  fixture_predictions
+  40 |   0  matches
+  23 |   1  live_follow
+  24 |   0  betfair_live_order_requests
+  17 |   4  safe_strategy_requests
+  15 |   0  betfair_live_orders
+  14 |   0  safe_strategy_trades
+  14 |   0  <dinamico:table>
+  12 |   0  ai_model_registry
+  10 |   1  safe_strategy_scan
+  11 |   0  omega_events
+  11 |   0  scalper_control
+  10 |   0  season_backfill_state
+  10 |   0  omega_trades
+   9 |   1  live_now
+  10 |   0  tennis_bot_control
+   9 |   0  tennis_live_order_queue
+   9 |   0  live_alerts
+   8 |   0  mike_trades
+   7 |   1  safe_strategy_status
+   7 |   0  api_coverage_by_season
+   7 |   0  <dinamico:tabella>
+   7 |   0  betfair_market_odds
+   7 |   0  omega_manual_requests
+   7 |   0  betfair_order_requests
+   7 |   0  betfair_live_risk_rules
+   6 |   1  tennis_live_now
+   6 |   0  mike_events
+   5 |   1  mike_requests
+   4 |   2  betfair_live_heartbeat
+   6 |   0  analytics_signals
+   6 |   0  api_call_log
+   5 |   0  tennis_live_follow
+   5 |   0  ml_post_calibration
+   5 |   0  match_odds
+   5 |   0  betfair_live_positions
+   5 |   0  engine_signals
+   4 |   0  tennis_markets
+   4 |   0  betfair_refresh_requests
+   3 |   1  safe_strategy_opportunities
+   3 |   1  betfair_live_account
+   4 |   0  scalper_activity
+   4 |   0  match_team_stats
+   4 |   0  direction_pagella
+   4 |   0  bet_features

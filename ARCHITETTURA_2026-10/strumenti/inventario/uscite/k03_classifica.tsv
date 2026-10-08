@@ -1,0 +1,158 @@
+voce	tipo	file	riga_py_prod	riga_py_tutte	ultimo_commit	imp_prod_esterni	imp_da_test	imp_strum_audit	lanciatori_automatici	citata_da_frontend	classe	motivo
+.agent	cartella	1	0	0	2026-03-03	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+.claude	cartella	1	0	0	2026-09-17	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+.github	cartella	10	0	0	2026-10-04	0	0	0			VIVA	10 workflow GitHub Actions: sono i lanciatori cloud dei job di calcolo (vedi sezione 7 del documento)
+AGGIORNA_CAMPO_db_json_analisi.py	file	1	404	404	2026-06-10	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+ARCHITETTURA_2026-10	cartella	4	0	211	2026-10-08	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-09-24	cartella	7	0	0	2026-09-24	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-09-25	cartella	658	0	13286	2026-10-04	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-09-26	cartella	18	0	921	2026-09-26	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-09-28	cartella	183	0	4752	2026-09-29	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-09-29	cartella	71	0	960	2026-09-29	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-09-30	cartella	224	0	1944	2026-09-30	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-10-01	cartella	318	0	421	2026-10-01	0	0	0		frontend/src/index.css:444	ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-10-02	cartella	144	0	3306	2026-10-02	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-10-04	cartella	130	0	1132	2026-10-05	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-10-05	cartella	52	0	616	2026-10-06	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-10-06	cartella	37	0	463	2026-10-06	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-10-07	cartella	182	0	2130	2026-10-07	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+AUDIT_2026-10-08	cartella	33	0	0	2026-10-08	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+Ai Engine	cartella	54	8845	10402	2026-09-21	11	12	0	.github/workflows/retrain_models.yml:222		VIVA	importata da 11 file di produzione esterni (es. Betfair/betfair_report_manager.py); lanciatore .github/workflows/retrain_models.yml:222
+Betfair	cartella	941	169111	382414	2026-10-08	19	3035	3	.github/workflows/hazard_atlas.yml:109|.github/workflows/weekly_poisson_calibration.yml:60|aggiorna_modelli.bat:4		VIVA	cuore del prodotto (avviata da desktop/main.js o servita dall'app)
+Prediction	cartella	8	3911	6983	2026-09-26	3	2	0	.github/workflows/predictions_results_backfill.yml:78|.github/workflows/today_predictions_backfill.yml:44	frontend/src/components/dashboard/HeroMatch.tsx:1	VIVA	importata da 3 file di produzione esterni (es. AGGIORNA_CAMPO_db_json_analisi.py); lanciatore .github/workflows/predictions_results_backfill.yml:78; citata dal frontend frontend/src/components/dashboard/HeroMatch.tsx:1
+SCHEMI_BOT	cartella	93	0	1640	2026-10-02	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+Telegram bot	cartella	12	0	0	2026-06-22	0	0	0			NON_VERIFICABILE	Edge Functions Supabase in Deno/TypeScript (supabase/functions/telegram-bot, make-daily-post): il codice non e' Python, non e' importato da nulla nel repo; lo stato di deploy e' sul cloud
+_AUDIT_2026_05	cartella	109	0	1887	2026-06-10	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+_certify_betfair.py	file	1	87	87	2026-06-24	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+_certify_betfair_full.py	file	1	37	37	2026-06-24	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+_certify_delay_context.py	file	1	102	102	2026-06-24	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+_certify_direction.py	file	1	248	248	2026-06-25	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+_certify_direction_report.py	file	1	641	641	2026-06-25	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+_certify_personal_report.py	file	1	511	511	2026-06-24	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+_certify_signal_context.py	file	1	96	96	2026-06-24	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+_league_eval.py	file	1	100	100	2026-06-24	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+_stack_eval.py	file	1	118	118	2026-06-24	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+admin_reset_password.py	file	1	93	93	2026-06-22	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+aggiorna_mm_sheets.py	file	1	542	542	2026-07-03	0	0	0	aggiorna_report.bat:25|aggiorna_report_veloce.bat:21|aggiorna_solo_fogli.bat:14		VIVA	lanciatore aggiorna_report.bat:25
+aggiorna_modelli.bat	file	1	0	0	2026-04-02	0	0	0			ARCHIVIO	script di lancio manuale (nessun lanciatore automatico lo richiama)
+aggiorna_quote_betfair.bat	file	1	0	0	2026-07-10	0	0	0		frontend/src/lib/betfair.ts:102	ARCHIVIO	citata dalla UI come istruzione di lancio manuale: frontend/src/lib/betfair.ts:102
+aggiorna_report.bat	file	1	0	0	2026-06-24	0	0	0	aggiorna_modelli.bat:34	frontend/src/components/dashboard/MatchesList.tsx:278	VIVA	lanciatore aggiorna_modelli.bat:34; citata dal frontend frontend/src/components/dashboard/MatchesList.tsx:278
+aggiorna_report_betfair.bat	file	1	0	0	2026-07-06	0	0	0	importa_ultimi_15_giorni.bat:12		VIVA	lanciatore importa_ultimi_15_giorni.bat:12
+aggiorna_report_veloce.bat	file	1	0	0	2026-07-10	0	0	0			ARCHIVIO	script di lancio manuale (nessun lanciatore automatico lo richiama)
+aggiorna_solo_fogli.bat	file	1	0	0	2026-03-30	0	0	0			ARCHIVIO	script di lancio manuale (nessun lanciatore automatico lo richiama)
+aggiorna_solo_fogli.py	file	1	46	46	2026-03-16	0	0	0	aggiorna_solo_fogli.bat:10		VIVA	lanciatore aggiorna_solo_fogli.bat:10
+analytics_market_stats.py	file	1	307	307	2026-06-22	1	2	0			VIVA	importata da 1 file di produzione esterni (es. enrich_analytics_snapshots.py)
+analytics_settlement.py	file	1	125	125	2026-06-22	4	1	0			VIVA	importata da 4 file di produzione esterni (es. _certify_direction_report.py)
+analyze_recovery.py	file	1	283	283	2026-06-10	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+analyze_threshold.py	file	1	308	308	2026-06-10	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+api_client.py	file	1	137	137	2026-09-25	14	2	0			VIVA	importata da 14 file di produzione esterni (es. Betfair/stream/scores/api_football.py)
+api_quota.py	file	1	345	345	2026-09-25	2	3	0			VIVA	importata da 2 file di produzione esterni (es. league_orchestrator.py)
+avvia_omega_service.bat	file	1	0	0	2026-07-12	0	0	0		frontend/src/components/omega/ManualPanel.tsx:362	ARCHIVIO	citata dalla UI come istruzione di lancio manuale: frontend/src/components/omega/ManualPanel.tsx:362
+avvia_scalper_service.bat	file	1	0	0	2026-07-02	0	0	0		frontend/src/components/live/HabitatCard.tsx:66	ARCHIVIO	citata dalla UI come istruzione di lancio manuale: frontend/src/components/live/HabitatCard.tsx:66
+backfill_poisson_calibrated.py	file	1	209	209	2026-06-22	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+betfair_full_odds.py	file	1	300	300	2026-07-10	0	0	0	aggiorna_report.bat:30	frontend/src/components/dashboard/BetfairOddsPanel.tsx:110	VIVA	lanciatore aggiorna_report.bat:30; citata dal frontend frontend/src/components/dashboard/BetfairOddsPanel.tsx:110
+betfair_tennis_odds.py	file	1	322	322	2026-09-09	0	0	0	desktop/main.js:480		VIVA	lanciatore desktop/main.js:480
+build_analytics_signals.py	file	1	452	452	2026-09-26	2	2	0	.github/workflows/predictions_results_backfill.yml:96		VIVA	importata da 2 file di produzione esterni (es. _certify_direction.py); lanciatore .github/workflows/predictions_results_backfill.yml:96
+build_direzione.py	file	1	238	238	2026-09-21	0	1	0	.github/workflows/predictions_results_backfill.yml:163		VIVA	lanciatore .github/workflows/predictions_results_backfill.yml:163
+build_inplay_intensity.py	file	1	331	331	2026-06-29	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+calibration_analysis.py	file	1	622	622	2026-06-10	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+certify_backtest_strategy.py	file	1	202	202	2026-06-23	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+check_gh.py	file	1	13	13	2026-04-02	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+cleanup_models.py	file	1	138	138	2026-03-10	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+cloud_retrain_shard.py	file	1	373	373	2026-09-21	0	1	0	.github/workflows/retrain_models.yml:281		VIVA	lanciatore .github/workflows/retrain_models.yml:281
+compress_models.py	file	1	197	197	2026-03-16	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+compute_ml_post_calibration.py	file	1	320	320	2026-06-16	0	0	0	.github/workflows/ml_calibration.yml:78		VIVA	lanciatore .github/workflows/ml_calibration.yml:78
+config.py	file	1	58	58	2026-02-25	17	0	0			VIVA	importata da 17 file di produzione esterni (es. Betfair/betfair_report_manager.py)
+daily_yesterday_backfill.py	file	1	396	396	2026-09-25	0	3	0	.github/workflows/daily_yesterday_backfill.yml:36		VIVA	lanciatore .github/workflows/daily_yesterday_backfill.yml:36
+db_client.py	file	1	410	410	2026-09-28	108	31	10			VIVA	importata da 108 file di produzione esterni (es. AGGIORNA_CAMPO_db_json_analisi.py)
+db_delete_retry.py	file	1	53	53	2026-09-25	6	1	0			VIVA	importata da 6 file di produzione esterni (es. injuries_backfill.py)
+desktop	cartella	7	0	0	2026-10-06	0	0	0	Betfair/stream/avvio_app.py:11|Betfair/stream/watchdog.py:17		VIVA	cuore del prodotto (avviata da desktop/main.js o servita dall'app)
+direzione.py	file	1	77	77	2026-06-24	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+docs	cartella	2	0	0	2026-07-17	0	0	0			ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+enrich_analytics_snapshots.py	file	1	583	583	2026-09-24	0	1	0	.github/workflows/predictions_results_backfill.yml:131		VIVA	lanciatore .github/workflows/predictions_results_backfill.yml:131
+fetch_logs.ps1	file	1	0	0	2026-04-02	0	0	0			ARCHIVIO	script di lancio manuale (nessun lanciatore automatico lo richiama)
+fetch_summary.ps1	file	1	0	0	2026-04-02	0	0	0			ARCHIVIO	script di lancio manuale (nessun lanciatore automatico lo richiama)
+fix_storico_prob.py	file	1	123	123	2026-06-22	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+fixtures_backfill.py	file	1	210	210	2026-02-12	2	2	0			VIVA	importata da 2 file di produzione esterni (es. daily_yesterday_backfill.py)
+football_data_scraper	cartella	7	1392	1392	2026-03-13	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+frontend	cartella	946	0	0	2026-10-08	0	0	0	desktop/main.js:174|desktop/package.json:5		VIVA	cuore del prodotto (avviata da desktop/main.js o servita dall'app)
+generate_dc_rho.py	file	1	259	259	2026-09-21	0	1	0	.github/workflows/weekly_poisson_calibration.yml:54		VIVA	lanciatore .github/workflows/weekly_poisson_calibration.yml:54
+generate_dynamic_cal.py	file	1	596	596	2026-09-21	0	1	0	.github/workflows/weekly_poisson_calibration.yml:36		VIVA	lanciatore .github/workflows/weekly_poisson_calibration.yml:36
+import_betfair_operations.py	file	1	428	428	2026-07-06	0	0	0	aggiorna_report_betfair.bat:21|importa_ultimi_15_giorni.bat:19		VIVA	lanciatore aggiorna_report_betfair.bat:21
+importa_ultimi_15_giorni.bat	file	1	0	0	2026-07-06	0	0	0			ARCHIVIO	script di lancio manuale (nessun lanciatore automatico lo richiama)
+injuries_backfill.py	file	1	354	354	2026-09-25	1	1	0			VIVA	importata da 1 file di produzione esterni (es. season_aggregates.py)
+install_worker_autostart.ps1	file	1	0	0	2026-06-28	0	0	0			ARCHIVIO	script di lancio manuale (nessun lanciatore automatico lo richiama)
+laboratorio	cartella	20	5356	5601	2026-09-25	0	1	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 1 importazioni da test); ha __main__ lanciabile a mano
+league_orchestrator.py	file	1	262	262	2026-09-25	0	3	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 3 importazioni da test); ha __main__ lanciabile a mano
+leagues_mapper.py	file	1	406	406	2026-10-04	0	3	0	.github/workflows/leagues_mapper.yml:47		VIVA	lanciatore .github/workflows/leagues_mapper.yml:47
+load_poisson_calibration_to_db.py	file	1	72	72	2026-06-20	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+logger.py	file	1	100	100	2026-07-03	9	0	0			VIVA	importata da 9 file di produzione esterni (es. Prediction/today_predictions_backfill.py)
+market_intelligence	cartella	12	2513	2513	2026-06-10	1	0	0			VIVA	importata da 1 file di produzione esterni (es. Ai Engine/ai_engine/predict_fixture.py)
+master_backtest.py	file	1	1660	1660	2026-09-21	3	1	0			VIVA	importata da 3 file di produzione esterni (es. generate_dc_rho.py)
+merge_engine_signals.py	file	1	280	280	2026-09-26	0	2	0	.github/workflows/predictions_results_backfill.yml:108		VIVA	lanciatore .github/workflows/predictions_results_backfill.yml:108
+migrations	cartella	175	294	294	2026-10-08	1	0	0	.github/workflows/hazard_atlas.yml:91		ARCHIVIO	cartella storica o di dati: SQL applicato dall'utente
+missing_fixtures_backfill.py	file	1	131	131	2026-02-12	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+parse.py	file	1	12	12	2026-04-02	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+per_fixture_backfill.py	file	1	1216	1216	2026-09-25	5	2	0			VIVA	importata da 5 file di produzione esterni (es. daily_yesterday_backfill.py)
+poisson_calibrator.py	file	1	215	215	2026-06-20	2	0	0			VIVA	importata da 2 file di produzione esterni (es. Prediction/today_predictions_backfill.py)
+refresh_analytics_bets.py	file	1	281	281	2026-09-24	0	2	0	.github/workflows/predictions_results_backfill.yml:148		VIVA	lanciatore .github/workflows/predictions_results_backfill.yml:148
+refresh_dashboard.py	file	1	20	20	2026-03-14	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+registrazioni_banco	cartella	7	0	0	2026-10-05	0	0	0		frontend/src/lib/__fixtures__/replayBarraTutte.ts:22	ARCHIVIO	cartella storica o di dati: audit, schemi, documenti o registrazioni
+report_mm.py	file	1	202	202	2026-04-02	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+reset_ai_models.py	file	1	114	114	2026-03-13	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+retrain_all_leagues.py	file	1	631	631	2026-06-13	1	0	0	aggiorna_modelli.bat:28		VIVA	importata da 1 file di produzione esterni (es. cloud_retrain_shard.py); lanciatore aggiorna_modelli.bat:28
+sanity_check.py	file	1	211	211	2026-03-04	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+season_aggregates.py	file	1	282	282	2026-09-28	3	4	0			VIVA	importata da 3 file di produzione esterni (es. league_orchestrator.py)
+season_backfill.py	file	1	240	240	2026-09-25	2	1	0			VIVA	importata da 2 file di produzione esterni (es. league_orchestrator.py)
+season_gaps.py	file	1	679	679	2026-09-28	6	5	0			VIVA	importata da 6 file di produzione esterni (es. daily_yesterday_backfill.py)
+seasons_catchup.py	file	1	1022	1022	2026-10-04	1	6	0	.github/workflows/seasons_catchup.yml:88		VIVA	importata da 1 file di produzione esterni (es. league_orchestrator.py); lanciatore .github/workflows/seasons_catchup.yml:88
+simulate_recovery_forward.py	file	1	287	287	2026-06-10	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+sql	cartella	9	909	909	2026-06-19	0	0	0		frontend/src/components/controlroom/useControlRoom.ts:2596	ARCHIVIO	cartella storica o di dati: SQL applicato dall'utente
+standings_backfill.py	file	1	381	381	2026-09-25	1	1	0			VIVA	importata da 1 file di produzione esterni (es. season_aggregates.py)
+start_backtest_worker.bat	file	1	0	0	2026-06-28	0	0	0			ARCHIVIO	script di lancio manuale (nessun lanciatore automatico lo richiama)
+start_order_server.py	file	1	56	56	2026-06-29	0	0	0	aggiorna_quote_betfair.bat:9		VIVA	lanciatore aggiorna_quote_betfair.bat:9
+stream_api.bat	file	1	0	0	2026-07-10	0	0	0			ARCHIVIO	script di lancio manuale (nessun lanciatore automatico lo richiama)
+tactical_engine	cartella	20	1515	2817	2026-09-26	2	19	0		frontend/src/lib/tacticalEngine.ts:61	VIVA	importata da 2 file di produzione esterni (es. Betfair/stream/engine/live_engine_pro.py); citata dal frontend frontend/src/lib/tacticalEngine.ts:61
+test.py	file	1	37	37	2026-03-30	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+test_actions_fail_rumoroso_2026_09_25.py	file	1	0	251	2026-09-25	0	1	0			TEST	test pytest di radice (non e' codice di produzione)
+test_actions_pipeline_paginazione.py	file	1	0	1723	2026-09-24	0	1	0			TEST	test pytest di radice (non e' codice di produzione)
+test_analytics_market_stats.py	file	1	0	233	2026-06-22	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_analytics_settlement.py	file	1	0	128	2026-06-22	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_backfill_automatico_2026_09_25.py	file	1	0	1270	2026-09-25	0	4	0			TEST	test pytest di radice (non e' codice di produzione)
+test_build_analytics_signals_kickoff_2026_09_26.py	file	1	0	78	2026-09-26	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_calibrazione_lettura_db.py	file	1	0	906	2026-09-21	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_catchup_57014_2026_09_28.py	file	1	0	612	2026-09-28	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_catchup_attesa_concorrenti_2026_09_26.py	file	1	0	123	2026-09-26	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_catchup_avviso_buchi_2026_10_04.py	file	1	0	192	2026-10-04	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_catchup_p4_2026_09_25.py	file	1	0	514	2026-09-25	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_cloud_retrain_shard_ritentativi_2026_09_21.py	file	1	0	385	2026-09-21	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_daily_niente_aggregati_2026_09_25.py	file	1	0	102	2026-09-25	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_delete_ritentativi_2026_09_25.py	file	1	0	386	2026-09-25	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_leagues_mapper_ritentativi_2026_10_04.py	file	1	0	201	2026-10-04	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_merge_engine_signals_kickoff_2026_09_26.py	file	1	0	97	2026-09-26	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_omega_transizioni_notturne_2026_09_25.py	file	1	0	507	2026-09-25	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_orchestratore_niente_refresh_mv_2026_09_25.py	file	1	0	101	2026-09-25	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_refresh_analytics_bets_v2_2026_09_24.py	file	1	0	247	2026-09-24	0	0	0			TEST	test pytest di radice (non e' codice di produzione)
+test_riserva_dinamica_2026_09_25.py	file	1	0	263	2026-09-25	0	1	0			TEST	test pytest di radice (non e' codice di produzione)
+tmp_analysis.py	file	1	188	188	2026-04-02	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+tmp_analysis2.py	file	1	139	139	2026-04-02	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+tmp_predict_today.py	file	1	117	117	2026-06-10	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+tmp_smoke_ml_fixes.py	file	1	196	196	2026-06-10	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+tmp_smoke_poisson_fixes.py	file	1	148	148	2026-06-11	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+tmp_smoke_stack.py	file	1	138	138	2026-06-10	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+tmp_today_predictions.py	file	1	141	141	2026-06-10	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+tmp_train_today.py	file	1	73	73	2026-06-10	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+tmp_validate_league.py	file	1	66	66	2026-06-10	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+tmp_validate_predict.py	file	1	76	76	2026-06-10	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+tools	cartella	5	0	839	2026-10-07	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+top_assists_backfill.py	file	1	380	380	2026-09-25	1	1	0			VIVA	importata da 1 file di produzione esterni (es. season_aggregates.py)
+top_cards_backfill.py	file	1	404	404	2026-09-25	1	1	0			VIVA	importata da 1 file di produzione esterni (es. season_aggregates.py)
+top_scorers_backfill.py	file	1	380	380	2026-09-25	1	1	0			VIVA	importata da 1 file di produzione esterni (es. season_aggregates.py)
+training_planner.py	file	1	293	293	2026-06-19	2	0	0			VIVA	importata da 2 file di produzione esterni (es. cloud_retrain_shard.py)
+update_dashboard_only.py	file	1	31	31	2026-03-13	0	0	0			MORTA	nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+update_poisson_calibration.py	file	1	606	606	2026-09-21	0	1	0	.github/workflows/weekly_poisson_calibration.yml:43		VIVA	lanciatore .github/workflows/weekly_poisson_calibration.yml:43
+valida_motore_poisson.py	file	1	169	169	2026-06-20	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+valida_ventaglio.py	file	1	179	179	2026-06-20	0	0	0			ARCHIVIO	nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ lanciabile a mano
+validate_walkforward.py	file	1	138	138	2026-06-15	0	0	0	.github/workflows/validate_models.yml:91		VIVA	lanciatore .github/workflows/validate_models.yml:91
+value_engine	cartella	12	729	859	2026-06-17	4	3	0			VIVA	importata da 4 file di produzione esterni (es. Betfair/omega/omega_model.py)
+ventaglio_segnali.py	file	1	350	350	2026-06-20	1	0	0			VIVA	importata da 1 file di produzione esterni (es. valida_ventaglio.py)

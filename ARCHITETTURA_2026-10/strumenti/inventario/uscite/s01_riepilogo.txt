@@ -1,0 +1,389 @@
+HEAD dfae4541  file tracciati: 4716
+tracciati ma assenti dal disco: 0; binari (righe non contate): 324
+file tracciati modificati nel working tree (git status, senza '??'): 5
+    M ARCHITETTURA_2026-10/COSTI.md
+    M ARCHITETTURA_2026-10/strumenti/BRIEF_COMUNE_DELEGATI.md
+    M db_client.py
+    M per_fixture_backfill.py
+    M season_gaps.py
+
+== A. TOTALE PER CATEGORIA ==
+categoria                       file       righe
+altro_dati_json_csv              379     1024505
+altro_html                        15      199005
+py_test                          591      193411
+altro_txt_log                    818      187039
+py_codice_Betfair                213      169111
+frontend_codice                  426      125573
+documenti                        417      123903
+altro_patch                       91      118828
+frontend_test                    366       73535
+frontend_altro                   151       45900
+py_strumenti                      76       35486
+sql                              179       35244
+py_script_audit                  368       33539
+py_codice_cartelle_radice        106       25464
+py_codice_radice                  88       24803
+altro_script_config              111       12663
+generati                           1       11099
+desktop_altro                      2        5323
+desktop_codice                     4        1117
+desktop_test                       1          66
+altro_binari_pdf_img_pkl         313           0
+TOTALE                          4716     2445614
+
+== A2. MACRO-CATEGORIE (compito §1) ==
+macro                                                          file      righe
+1 codice Python produzione (Betfair/)                           213     169111
+2 codice Python radice (*.py)                                    88      24803
+3 codice Python altre cartelle di radice                        106      25464
+4 test Python                                                   591     193411
+5 strumenti (tools/ e */tools/)                                  76      35486
+6 script Python nelle cartelle AUDIT/SCHEMI/ARCHITETTURA        368      33539
+7 frontend codice (src, ts/tsx/js/css)                          426     125573
+8 frontend test                                                 366      73535
+9 frontend altro (config, public, lock, ...)                    151      45900
+10 desktop altro (package-lock ecc.)                              2       5323
+10 desktop codice (js)                                            4       1117
+10 desktop test                                                   1         66
+11 SQL                                                          179      35244
+12 documenti (.md)                                              417     123903
+13 GENERATI (dichiarati nelle prime 15 righe)                     1      11099
+14 ALTRO: altro_binari_pdf_img_pkl                              313          0
+14 ALTRO: altro_dati_json_csv                                   379    1024505
+14 ALTRO: altro_html                                             15     199005
+14 ALTRO: altro_patch                                            91     118828
+14 ALTRO: altro_script_config                                   111      12663
+14 ALTRO: altro_txt_log                                         818     187039
+
+== A3. FILE GENERATI (categoria 'generati') ==
+   11099  frontend/src/lib/replayBotCatalogo.ts
+
+== A4. COSA CONTIENE IL VECCHIO BLOCCO 'altro' (1,7 M di righe): per cartella di radice e per i 12 file piu grandi di ogni sottocategoria ==
+-- altro_binari_pdf_img_pkl: 313 file, 0 righe
+   per cartella: AUDIT_2026-09-25=0, AUDIT_2026-10-01=0, AUDIT_2026-10-07=0, Betfair=0, _AUDIT_2026_05=0, registrazioni_banco=0
+          0  registrazioni_banco/35797769/35797769.scores.jsonl.gz
+          0  registrazioni_banco/35797769/35797769.raw.jsonl.gz
+          0  registrazioni_banco/35760084/35760084.scores.jsonl.gz
+          0  registrazioni_banco/35760084/35760084.raw.jsonl.gz
+          0  _AUDIT_2026_05/cache/xg_94.pkl
+-- altro_dati_json_csv: 379 file, 1024505 righe
+   per cartella: Betfair=479424, AUDIT_2026-09-25=454612, <radice>=36058, market_intelligence=25009, AUDIT_2026-10-02=10922, SCHEMI_BOT=8051, AUDIT_2026-10-08=4379, _AUDIT_2026_05=1963
+     229179  Betfair/omega/data/hazard_atlas_v2.json
+     167313  Betfair/omega/data/hazard_atlas_v1.json
+      69250  AUDIT_2026-09-25/misura_punto8_dati/o1_con_estensione.json
+      68040  AUDIT_2026-09-25/e2e_fase2/plancia/vm_2026-09-26T09-34-19-809Z.json
+      66839  AUDIT_2026-09-25/e2e_fase2/plancia/vm_2026-09-26T09-59-09-535Z.json
+-- altro_html: 15 file, 199005 righe
+   per cartella: SCHEMI_BOT=198708, AUDIT_2026-10-01=297
+      15017  SCHEMI_BOT/sistema/schemi/01_vista_insieme.html
+      15014  SCHEMI_BOT/sistema/schemi/07_porta_degli_ordini.html
+      15008  SCHEMI_BOT/sistema/schemi/06_scanner_feed_unico.html
+      15006  SCHEMI_BOT/sistema/schemi/02_processi_e_guardiani.html
+      15005  SCHEMI_BOT/sistema/schemi/08_app_letture_e_comandi.html
+-- altro_patch: 91 file, 118828 righe
+   per cartella: AUDIT_2026-10-02=53220, AUDIT_2026-09-30=36601, AUDIT_2026-10-01=18378, AUDIT_2026-09-25=8297, AUDIT_2026-09-29=1419, AUDIT_2026-10-07=533, AUDIT_2026-10-04=380
+      13512  AUDIT_2026-10-02/MIKE_FEED_STANTIO_LOOP.patch
+      13491  AUDIT_2026-10-02/FRONTEND_MINORI.patch
+       5961  AUDIT_2026-10-02/MIKE_CHIUSURA_INTEGRATA.patch
+       5774  AUDIT_2026-10-02/SCANNER_MAI_CIECO.patch
+       5668  AUDIT_2026-10-02/RUNNER_MINIMI_CORREZIONI.patch
+-- altro_script_config: 111 file, 12663 righe
+   per cartella: AUDIT_2026-09-25=4640, AUDIT_2026-10-01=2992, Telegram bot=1790, .github=1199, AUDIT_2026-09-30=457, tools=404, <radice>=366, AUDIT_2026-09-28=298
+       1129  AUDIT_2026-09-25/e2e_fase1/strumenti/percorsi.e2e.test.tsx
+        811  Telegram bot/supabase/functions/telegram-bot/index.ts
+        476  AUDIT_2026-10-01/REDESIGN/prototipo/js/s_controlroom.js
+        473  AUDIT_2026-09-25/O2_banco_pglite_2026-09-25.mjs
+        404  tools/review/review-control-room.js
+-- altro_txt_log: 818 file, 187039 righe
+   per cartella: AUDIT_2026-09-25=34273, AUDIT_2026-10-07=32962, AUDIT_2026-10-04=27755, <radice>=19065, AUDIT_2026-09-28=11530, Betfair=11398, AUDIT_2026-10-02=11391, AUDIT_2026-09-30=10411
+       8797  log_yesterday_utf8.txt
+       7285  AUDIT_2026-10-07/certificazione_db/p3_7_import_prova.txt
+       5516  AUDIT_2026-09-25/e2e_fase3_sessB/evidenze/analytics_Reportistiche.txt
+       5008  AUDIT_2026-09-25/e2e_fase2/morte_subscription_1040_1044.txt
+       4104  tmp_train_today_log.txt
+
+== B. PER CARTELLA DI RADICE (tutti i file tracciati) ==
+cartella                             file      righe  categorie principali (righe)
+Betfair                               941     896461  altro_dati_json_csv=479424, py_test=178889, py_codice_Betfair=169111, py_strumenti=34414
+AUDIT_2026-09-25                      658     532215  altro_dati_json_csv=454612, altro_txt_log=34273, documenti=16584, py_script_audit=13172
+frontend                              946     256463  frontend_codice=125573, frontend_test=73535, frontend_altro=45900, generati=11099
+SCHEMI_BOT                             93     228102  altro_html=198708, documenti=19700, altro_dati_json_csv=8051, py_script_audit=1640
+<file di radice>                      204     107284  altro_dati_json_csv=36058, py_codice_radice=24803, altro_txt_log=19065, documenti=18673
+AUDIT_2026-10-02                      144      83592  altro_patch=53220, altro_txt_log=11391, altro_dati_json_csv=10922, documenti=4753
+AUDIT_2026-09-30                      224      57332  altro_patch=36601, altro_txt_log=10411, documenti=7919, py_script_audit=1928
+AUDIT_2026-10-07                      182      40024  altro_txt_log=32962, documenti=4278, py_script_audit=2130, altro_patch=533
+AUDIT_2026-10-01                      318      37330  altro_patch=18378, altro_txt_log=7742, documenti=6208, altro_script_config=2992
+migrations                            175      35013  sql=33835, documenti=884, py_codice_cartelle_radice=294
+AUDIT_2026-10-04                      130      31680  altro_txt_log=27755, documenti=2413, py_script_audit=1132, altro_patch=380
+market_intelligence                    12      27522  altro_dati_json_csv=25009, py_codice_cartelle_radice=2513
+AUDIT_2026-09-28                      183      24728  altro_txt_log=11530, documenti=8148, py_script_audit=4752, altro_script_config=298
+Ai Engine                              54      11990  py_codice_cartelle_radice=8845, documenti=1588, py_test=1557
+AUDIT_2026-09-29                       71      11653  altro_txt_log=6096, documenti=3178, altro_patch=1419, py_script_audit=960
+AUDIT_2026-10-08                       33      10825  altro_txt_log=6005, altro_dati_json_csv=4379, documenti=441
+AUDIT_2026-10-05                       52       7781  altro_txt_log=5423, altro_dati_json_csv=1091, documenti=620, py_script_audit=616
+Prediction                              8       7172  py_codice_cartelle_radice=3911, py_test=3072, altro_script_config=189
+desktop                                 7       6506  desktop_altro=5323, desktop_codice=1117, desktop_test=66
+laboratorio                            20       5826  py_codice_cartelle_radice=5356, py_test=245, documenti=225
+AUDIT_2026-10-06                       37       4294  altro_txt_log=2895, documenti=483, py_script_audit=463, altro_dati_json_csv=393
+_AUDIT_2026_05                        109       3934  altro_dati_json_csv=1963, py_script_audit=1887, documenti=84, altro_binari_pdf_img_pkl=0
+Telegram bot                           12       3071  altro_script_config=1790, altro_dati_json_csv=1281, sql=0
+tactical_engine                        20       2817  py_codice_cartelle_radice=1515, py_test=1069, py_strumenti=233
+AUDIT_2026-09-26                       18       2397  documenti=1272, py_script_audit=921, altro_script_config=111, altro_txt_log=93
+AUDIT_2026-09-24                        7       2199  documenti=2199
+sql                                     9       1795  py_codice_cartelle_radice=909, sql=886
+football_data_scraper                   7       1392  py_codice_cartelle_radice=1392
+tools                                   5       1243  py_strumenti=839, altro_script_config=404
+.github                                10       1199  altro_script_config=1199
+value_engine                           12        859  py_codice_cartelle_radice=729, py_test=130, altro_dati_json_csv=0
+ARCHITETTURA_2026-10                    4        561  documenti=350, py_script_audit=211
+docs                                    2        276  documenti=276
+registrazioni_banco                     7         56  documenti=34, altro_dati_json_csv=22, altro_binari_pdf_img_pkl=0
+.agent                                  1         14  documenti=14
+.claude                                 1          8  altro_dati_json_csv=8
+
+== C. Betfair/ PER SOTTOCARTELLA (solo .py: codice | test | strumenti, righe) ==
+cartella                                         codice     test   strum.  file cod.
+Betfair/safe_strategy                             34635    39451     7355         26
+Betfair/stream                                    25850        0        0         44
+Betfair/stream/scalper                            21620        0     4355         32
+Betfair/omega                                     20913    27138    11136         15
+Betfair/mike                                      17755    28605     3198         10
+Betfair/stream/backtest                           13391        0     3640         16
+Betfair/stream/tennis_live                        11638    13498     1679         15
+Betfair/stream/tennis_scalper                      8943     3797        0         18
+Betfair/*.py (radice del pacchetto)                6821      537        0         11
+Betfair/stream/trading                             4301        0        0         12
+Betfair/stream/engine                              1444        0        0          4
+Betfair/stream/scores                               989        0        0          6
+Betfair/stream/tennis_replay                        811      853        0          4
+Betfair/stream/tests                                  0    63644        0          0
+Betfair/stream/tools                                  0        0     1177          0
+Betfair/tests                                         0     1366        0          0
+Betfair/tools                                         0        0     1874          0
+
+== D. 25 FILE PIU GRANDI: py_codice_Betfair ==
+   11136  Betfair/safe_strategy/bot_service.py
+    8936  Betfair/omega/omega_service.py
+    7551  Betfair/mike/service.py
+    5359  Betfair/mike/engine.py
+    3997  Betfair/stream/live_order_worker.py
+    3483  Betfair/stream/tennis_live/tennis_runner.py
+    3444  Betfair/safe_strategy/service.py
+    3397  Betfair/money_management.py
+    3315  Betfair/stream/scalper/scalper_bot.py
+    3171  Betfair/stream/runner.py
+    3093  Betfair/safe_strategy/execution.py
+    3046  Betfair/stream/backtest/banco_comune.py
+    2974  Betfair/stream/tennis_scalper/tennis_scalper_bot.py
+    2637  Betfair/stream/scalper/media_under_bot.py
+    2472  Betfair/stream/scalper/certificazione.py
+    2434  Betfair/stream/motore_ordini.py
+    2303  Betfair/stream/scalper/scalper_session.py
+    2254  Betfair/safe_strategy/engine.py
+    2160  Betfair/omega/certificazione.py
+    2084  Betfair/mike/certificazione.py
+    2036  Betfair/safe_strategy/certificazione.py
+    1831  Betfair/stream/tennis_live/tennis_live_order_worker.py
+    1794  Betfair/omega/omega_market.py
+    1778  Betfair/stream/backtest/trasporto_rapido.py
+    1737  Betfair/betfair_report_manager.py
+
+== D. 25 FILE PIU GRANDI: py_codice_radice ==
+    1660  master_backtest.py
+    1216  per_fixture_backfill.py
+    1022  seasons_catchup.py
+     679  season_gaps.py
+     641  _certify_direction_report.py
+     631  retrain_all_leagues.py
+     622  calibration_analysis.py
+     606  update_poisson_calibration.py
+     596  generate_dynamic_cal.py
+     583  enrich_analytics_snapshots.py
+     542  aggiorna_mm_sheets.py
+     511  _certify_personal_report.py
+     452  build_analytics_signals.py
+     428  import_betfair_operations.py
+     410  db_client.py
+     406  leagues_mapper.py
+     404  top_cards_backfill.py
+     404  AGGIORNA_CAMPO_db_json_analisi.py
+     396  daily_yesterday_backfill.py
+     381  standings_backfill.py
+     380  top_scorers_backfill.py
+     380  top_assists_backfill.py
+     373  cloud_retrain_shard.py
+     354  injuries_backfill.py
+     350  ventaglio_segnali.py
+
+== D. 25 FILE PIU GRANDI: frontend_codice ==
+    4322  frontend/src/components/controlroom/useControlRoom.ts
+    2984  frontend/src/components/live/LadderView.tsx
+    2454  frontend/src/lib/mike.ts
+    2256  frontend/src/lib/safeBot.ts
+    2106  frontend/src/index.css
+    1740  frontend/src/pages/ControlRoom.tsx
+    1731  frontend/src/lib/safeStrategy.ts
+    1705  frontend/src/pages/SafeStrategy.tsx
+    1655  frontend/src/lib/omega.ts
+    1533  frontend/src/lib/interruttori.ts
+    1372  frontend/src/pages/SeguiLive.tsx
+    1285  frontend/src/lib/dailyHistory.ts
+    1280  frontend/src/pages/MatchReplay.tsx
+    1220  frontend/src/lib/controlRoom.ts
+    1174  frontend/src/components/mike/MikeMatchCard.tsx
+    1129  frontend/src/lib/tennis.ts
+    1057  frontend/src/lib/liveOrders.ts
+    1053  frontend/src/components/controlroom/PannelloBot.tsx
+    1051  frontend/src/lib/posizioniChiuse.ts
+     978  frontend/src/lib/replayOperazioni.ts
+     975  frontend/src/components/live/ScalperPanel.tsx
+     946  frontend/src/components/omega/MissionPanel.tsx
+     932  frontend/src/components/safestrategy/BotParamsSheet.tsx
+     917  frontend/src/components/controlroom/PosizioniChiuse.tsx
+     912  frontend/src/pages/Omega.tsx
+
+== D. 25 FILE PIU GRANDI: py_test ==
+    4025  Betfair/safe_strategy/tests/test_bot_service.py
+    2147  Prediction/test_today_predictions_backfill_resilienza.py
+    1723  test_actions_pipeline_paginazione.py
+    1685  Betfair/safe_strategy/tests/test_audit_2026_09_11.py
+    1458  Betfair/stream/tests/test_motore_ordini_2026_09_24.py
+    1382  Betfair/safe_strategy/tests/test_execution.py
+    1340  Betfair/stream/tests/test_reconcile_worker.py
+    1298  Betfair/omega/test_omega_audit_2026_09_11.py
+    1274  Betfair/omega/test_omega_service.py
+    1270  test_backfill_automatico_2026_09_25.py
+    1254  Betfair/safe_strategy/tests/test_cert_2026_09_13.py
+    1229  Betfair/mike/tests/test_mike_audit_2026_09_11.py
+    1209  Betfair/safe_strategy/tests/test_engine.py
+    1169  Betfair/safe_strategy/tests/test_incidente_quote_2026_09_17.py
+    1146  Betfair/safe_strategy/tests/test_combos_anomalie_proposte_2026_09_18.py
+    1120  Betfair/safe_strategy/tests/test_certificazione_c3_2026_09_16.py
+    1111  Betfair/mike/tests/test_mike_engine.py
+    1106  Betfair/stream/tests/test_banco_comune_2026_09_16.py
+    1096  Betfair/safe_strategy/tests/test_porta_ordini_f5_2026_09_24.py
+    1080  Betfair/omega/test_omega_replay_2026_09_16.py
+    1078  Betfair/stream/tests/test_live_order_worker.py
+     992  Betfair/safe_strategy/tests/test_canale_scanner_al_ms_2026_09_18.py
+     981  Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py
+     955  Betfair/safe_strategy/tests/test_replay_tennis_2026_09_16.py
+     942  Betfair/stream/tests/test_cashout_pro_2026_09_10.py
+
+== D. 25 FILE PIU GRANDI: frontend_test ==
+    2321  frontend/src/pages/ControlRoom.test.tsx
+    1367  frontend/src/components/controlroom/useControlRoom.test.tsx
+     935  frontend/src/lib/interruttori.test.ts
+     910  frontend/src/lib/safeBot.test.ts
+     834  frontend/src/pages/Mike.test.tsx
+     834  frontend/src/lib/controlRoom.test.ts
+     829  frontend/src/lib/safeStrategy.test.ts
+     782  frontend/src/components/safestrategy/BotParamsSheet.test.tsx
+     760  frontend/src/lib/dailyHistory.test.ts
+     718  frontend/src/lib/mike.test.ts
+     708  frontend/src/pages/SafeStrategy.test.tsx
+     670  frontend/src/pages/Omega.test.tsx
+     642  frontend/src/components/live/LadderView.test.tsx
+     639  frontend/src/components/controlroom/PannelloBot.test.tsx
+     555  frontend/src/components/trading/designSystem.test.tsx
+     526  frontend/src/components/controlroom/SchedaPartita.test.tsx
+     509  frontend/src/lib/safeBot.contracts.test.ts
+     506  frontend/src/lib/posizioniChiuse.test.ts
+     491  frontend/src/lib/liveOrders.test.ts
+     485  frontend/src/pages/SafeStrategy.modalita.test.tsx
+     468  frontend/src/lib/cashOutPartita.test.ts
+     460  frontend/src/lib/replayVerificaBarra.test.ts
+     456  frontend/src/components/mike/MikeMatchCard.test.tsx
+     443  frontend/src/components/controlroom/testata/FasciaStop.test.tsx
+     440  frontend/src/pages/StoricoSport.test.tsx
+
+== D. 25 FILE PIU GRANDI: py_strumenti ==
+    3803  Betfair/stream/scalper/tools/replay_registrazioni.py
+    2795  Betfair/omega/tools/misura_ingresso_passivo.py
+    2593  Betfair/omega/tools/replay_registrazioni.py
+    2370  Betfair/mike/tools/replay_registrazioni.py
+    2092  Betfair/safe_strategy/tools/replay_registrazioni.py
+    1679  Betfair/stream/tennis_live/tools/replay_bot.py
+    1577  Betfair/safe_strategy/tools/replay_tennis.py
+    1477  Betfair/omega/tools/m2_pesi.py
+     973  Betfair/safe_strategy/tools/synth_safe.py
+     881  Betfair/stream/tools/validate_recordings.py
+     876  Betfair/safe_strategy/tools/validate_opportunity.py
+     779  Betfair/mike/tools/synth_mike.py
+     777  Betfair/stream/backtest/tools/misura_punto8/test_misura_punto8.py
+     635  Betfair/tools/verifica_pnl_2026_09_12.py
+     534  Betfair/omega/tools/superficie_liability.py
+     499  Betfair/omega/tools/misura_k.py
+     484  Betfair/stream/backtest/tools/misura_punto8/o1_catena_lambda.py
+     465  Betfair/omega/tools/k_in_gioco.py
+     455  tools/replay_barra_fixture.py
+     447  Betfair/safe_strategy/tools/backtest_opportunity.py
+     432  Betfair/omega/tools/banco_modelli.py
+     407  Betfair/tools/verifica_75_condizioni_2026_09_13.py
+     405  Betfair/omega/tools/deriva_margine.py
+     396  Betfair/stream/backtest/tools/misura_punto8/estrai_db.py
+     353  Betfair/omega/tools/verifica_transizioni_2026_09_25.py
+
+== F. frontend/src PER CARTELLA (righe: codice | test | generati; file codice) ==
+cartella                       codice     test  generati  file cod.
+lib                             45369    28786     11099        148
+components/controlroom          17426    16699         0         55
+pages                           14042     8757         0         25
+components/live                  9831     3589         0         21
+components/dashboard             6399      563         0         32
+components/safestrategy          5125     3206         0         12
+anteprima                        4651        0         0         22
+components/trading               4346     3222         0         25
+components/omega                 3262     2192         0          6
+components/tennis                2549      599         0          7
+(src/*)                          2426        0         0          4
+components/replay                2268      731         0         15
+components/mike                  2148     2066         0          7
+components/watchlist             1980        0         0          4
+components/ui                     903        0         0         15
+components/landing                865        0         0          8
+certification                     523     1718         0          6
+components/report                 488        0         0          2
+components/shell                  473      241         0          5
+components/tennis-replay          169       43         0          2
+fotografia                        165      865         0          1
+components                        124        0         0          2
+hooks                              31        0         0          1
+integrations                       10        0         0          1
+test                                0      258         0          0
+
+== E. CONFRONTO CON PAR. 1 DEL BRIEF DEL PIANO (valore del brief | valore misurato | esito) ==
+Backend codice (Betfair/ + radice, no test/tools)    brief   271857 | misurato   193914 | DIVERSO (-77943)  file brief 256 | misurati 301
+  Betfair/stream/                                    brief    88987 | misurato    88987 | UGUALE
+    stream/scalper                                   brief    21620 | misurato    21620 | UGUALE
+    stream/tennis_live                               brief    11638 | misurato    11638 | UGUALE
+    stream/tennis_scalper                            brief     8943 | misurato     8943 | UGUALE
+    stream/backtest                                  brief    13391 | misurato    13391 | UGUALE
+    stream/trading                                   brief     4301 | misurato     4301 | UGUALE
+  Betfair/omega/                                     brief    37500 | misurato    20913 | DIVERSO (-16587)
+  Betfair/safe_strategy/                             brief    34635 | misurato    34635 | UGUALE
+  Betfair/mike/                                      brief    17755 | misurato    17755 | UGUALE
+  Betfair/*.py (radice del pacchetto)                brief     7358 | misurato     6821 | DIVERSO (-537)
+    Betfair/omega/omega_service.py                   brief     8936 | misurato     8936 | UGUALE
+    Betfair/safe_strategy/bot_service.py             brief    11136 | misurato    11136 | UGUALE
+    Betfair/safe_strategy/service.py                 brief     3444 | misurato     3444 | UGUALE
+    Betfair/safe_strategy/execution.py               brief     3093 | misurato     3093 | UGUALE
+    Betfair/safe_strategy/engine.py                  brief     2254 | misurato     2254 | UGUALE
+    Betfair/mike/service.py                          brief     7551 | misurato     7551 | UGUALE
+    Betfair/mike/engine.py                           brief     5359 | misurato     5359 | UGUALE
+    Betfair/money_management.py                      brief     3397 | misurato     3397 | UGUALE
+    Betfair/betfair_report_manager.py                brief     1737 | misurato     1737 | UGUALE
+    frontend/src/lib/replayBotCatalogo.ts            brief    11099 | misurato    11099 | UGUALE
+    frontend/src/components/controlroom/useControlRoom.ts brief     4322 | misurato     4322 | UGUALE
+RICOSTRUZIONE brief: .py di Betfair/ fuori da dir tests/tools/test: 256 file, 186235 righe (somma componenti del brief 88987+37500+34635+17755+7358 = 186235)
+   di cui Betfair/omega/: 55 file, 37500 righe (codice vero 20913 + test_*.py sparsi in omega/ 16587)
+   => il totale dichiarato dal brief (271.857) NON e' riproducibile: la somma delle sue componenti e' 186.235
+Test Python                                          brief   163079 | misurato   193411 | DIVERSO (+30332)
+Strumenti (tools/, */tools/)                         brief    35486 | misurato    35486 | UGUALE
+Frontend src codice                                  brief   133686 | misurato   125573 | DIVERSO (-8113)
+Frontend test                                        brief    73428 | misurato    73535 | DIVERSO (+107)
+Desktop (js, tutti)                                  brief     1183 | misurato     1183 | UGUALE
+Desktop (solo codice, senza .test.js)                brief     1183 | misurato     1117 | DIVERSO (-66)
+SQL (tutti i .sql)                                   brief    33835 | misurato    35244 | DIVERSO (+1409)
+SQL (solo migrations/)                               brief    33835 | misurato    33835 | UGUALE
+

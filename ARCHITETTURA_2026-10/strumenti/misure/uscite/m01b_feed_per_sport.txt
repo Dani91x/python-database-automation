@@ -1,0 +1,14 @@
+# M1b feed raw per sport: 40 file, lettura 34 s
+
+## sport 1 (calcio): eventi 39, messaggi 1071934, MB raw 277.4, minuti in-play (somma intervalli) 3037
+   intervalli fra messaggi in-play : n=866666 p50=105 p95=425 p99=971 max=2626782 ms
+   intervalli per-mercato in-play  : n=2179799 p50=306 p95=3518 p99=11289 max=6035657 ms
+   buchi in-play >5s/>10s/>30s     : 486/230/106
+   buchi in-play >5s per ora in-play: 9.60
+   betDelay delle definizioni in-play: {5: 6388, 8: 30, 12: 246}
+
+## sport None (sconosciuto): eventi 1, messaggi 10, MB raw 0.0, minuti in-play (somma intervalli) 0
+   intervalli fra messaggi in-play : n=0
+   intervalli per-mercato in-play  : n=0
+   buchi in-play >5s/>10s/>30s     : 0/0/0
+   betDelay delle definizioni in-play: {}

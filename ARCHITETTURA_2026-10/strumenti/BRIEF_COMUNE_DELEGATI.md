@@ -64,3 +64,17 @@ In coda: **Decisioni per l'utente** (se ce ne sono) e **Cosa ho verificato di pe
 
 Quando hai finito, rispondi al coordinatore con: percorso del file scritto, numero di funzionalita' elencate,
 righe oggi / stima dopo, i 3-5 difetti principali, cio' che non hai potuto verificare. Breve.
+
+## Ripresa ed efficienza (aggiunta alle 14:40 dell'08/10, vincolante)
+
+- Il primo giro di delegati e' stato interrotto alle 12:37 prima di scrivere le schede. Sul disco restano
+  script e uscite utili: `ARCHITETTURA_2026-10/strumenti/inventario/uscite/` (righe per file `s01_*`, grafo degli
+  import e candidati morti `s02_*`, matrice tabelle/RPC `s03_*`, funzioni duplicate `s04_*`, radice `k01_*`),
+  `strumenti/dati_g1/uscite/` (chiamate DB Python/frontend, schema SQL, gemelle), `strumenti/dati_J/`,
+  `strumenti/misure/uscite/` (feed dalle registrazioni), `strumenti/*_gemell*.py` e `h_*_output.txt`.
+  PARTI DA LI': rieseguili se servono, verifica a campione 2-3 righe contro il codice, citali come fonte.
+- Budget stretto: lavora per grep, `sed -n 'a,bp'`, indici di funzioni (`grep -n "^def \|^class \|^    def "`),
+  non leggere per intero file > 1.500 righe. Tetto indicativo: 70 chiamate di strumenti. Scheda di 400-900 righe:
+  densa di `file:riga` e numeri, niente prosa di riempimento.
+- Scrivi la scheda PRESTO (bozza completa dopo l'esplorazione) e poi raffinala: un'interruzione non deve
+  lasciare il file vuoto.

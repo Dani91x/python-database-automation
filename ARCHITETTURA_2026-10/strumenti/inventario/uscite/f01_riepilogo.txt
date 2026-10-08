@@ -1,0 +1,77 @@
+== ROTTE (albero di default 'off', App.tsx:110-296) e chiusura degli import ==
+rotta                 pagina                                       righe pag file chiusura righe chiusura  RPC  tab  canali
+*                     pages/NotFound.tsx                                  20             3             83    0    0       0
+/                     pages/LandingPage.tsx                               47            21           1541    0    1       0
+/analytics            pages/Analytics.tsx                                506            17           3989   24    3       0
+/board                pages/Board.tsx                                    304            41          14653   48    8       2
+/check-email          pages/CheckEmail.tsx                                91             3            154    0    0       0
+/control-room         pages/ControlRoom.tsx                             1740           167          60168  110   15      10
+/dashboard            pages/Dashboard.tsx                                313            50           7270   20    1       0
+/ladder-popout        pages/LadderPopout.tsx                              51            42          15255   48    8       2
+/live-pnl             pages/LivePnl.tsx                                  537            24           9541   48    8       2
+/market-watch         pages/MarketWatch.tsx                              504            26           9663   48    8       4
+/match-replay         pages/MatchReplay.tsx                             1280            84          35668   50    8       2
+/mike                 pages/Mike.tsx                                     799           107          38886  100   15       3
+/multi-ladder         pages/MultiLadder.tsx                              197            42          15401   48    8       2
+/omega                pages/Omega.tsx                                    912            80          32322  105   15       3
+/report-personale     pages/ReportPersonale.tsx                          905            12           2373   17    0       0
+/reset-password       pages/ResetPassword.tsx                            177             7            474    0    0       0
+/safe-strategy        pages/SafeStrategy.tsx                            1705           122          45222  100   15       3
+/segui-live           pages/SeguiLive.tsx                               1372            76          24207   57    8       3
+/select-sport         pages/SelectSport.tsx                              211             5            315    0    0       0
+/storico/calcio       pages/StoricoSport.tsx                             725            59          26995   97   15       2
+/storico/tennis       pages/StoricoSport.tsx                             725            59          26995   97   15       2
+/tennis               pages/TennisDashboard.tsx                           33            15           3975   48    8       0
+/tennis/replay        pages/TennisReplay.tsx                             811            90          36829   52    8       2
+/tennis/terminal      pages/TennisTerminal.tsx                           320            56          18234   48    8       2
+/trade-journal        pages/TradeJournal.tsx                             328             6           1547   19    3       0
+/watchlist            pages/Watchlist.tsx                                154            19           4252   29    3       0
+
+== ACCESSI AI DATI PER FILE (non test), primi 45 per RPC distinte (un file di lib/ e' il wrapper tipizzato usato dalle pagine) ==
+lib/tennis.ts                                             rpc= 22 tab= 2 canali= 0 realtime=13 fetch= 0 intervalli= 0
+lib/liveOrders.ts                                         rpc= 19 tab= 3 canali= 0 realtime=10 fetch= 0 intervalli= 0
+lib/analytics.ts                                          rpc= 14 tab= 0 canali= 0 realtime= 2 fetch= 0 intervalli= 0
+lib/omega.ts                                              rpc= 11 tab= 0 canali= 0 realtime= 4 fetch= 0 intervalli= 0
+lib/safeBot.ts                                            rpc=  9 tab= 5 canali= 0 realtime= 7 fetch= 0 intervalli= 0
+lib/betfair.ts                                            rpc=  9 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/personalReport.ts                                     rpc=  8 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/live.ts                                               rpc=  7 tab= 3 canali= 0 realtime=10 fetch= 0 intervalli= 0
+lib/dailyHistory.ts                                       rpc=  7 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/scalperControlRoom.ts                                 rpc=  6 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/mike.ts                                               rpc=  6 tab= 1 canali= 0 realtime= 2 fetch= 0 intervalli= 0
+lib/watchlist.ts                                          rpc=  5 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/omegaMissions.ts                                      rpc=  5 tab= 0 canali= 0 realtime= 3 fetch= 0 intervalli= 0
+lib/scalper.ts                                            rpc=  3 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/reportistiche.ts                                      rpc=  3 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/omegaProposte.ts                                      rpc=  3 tab= 0 canali= 0 realtime= 2 fetch= 0 intervalli= 0
+lib/tennisReplay.ts                                       rpc=  2 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/replayBot.ts                                          rpc=  2 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/proposteUscite.ts                                     rpc=  2 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/marketFrequency.ts                                    rpc=  2 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/direzione.ts                                          rpc=  2 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/controlRoomProposte.ts                                rpc=  2 tab= 1 canali= 0 realtime= 2 fetch= 0 intervalli= 0
+lib/replayVerificaBarraDb.ts                              rpc=  1 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/mediaUnderAttiva.ts                                   rpc=  1 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/marketDelays.ts                                       rpc=  1 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/fixtureModels.ts                                      rpc=  1 tab= 1 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+pages/TennisTerminal.tsx                                  rpc=  0 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 1
+pages/TennisReplay.tsx                                    rpc=  0 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 1
+pages/StoricoSport.tsx                                    rpc=  0 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 1
+pages/SeguiLive.tsx                                       rpc=  0 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 5
+pages/SafeStrategy.tsx                                    rpc=  0 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 3
+pages/Omega.tsx                                           rpc=  0 tab= 0 canali= 1 realtime= 0 fetch= 0 intervalli= 3
+pages/Mike.tsx                                            rpc=  0 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 2
+pages/MatchReplay.tsx                                     rpc=  0 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 1
+pages/MarketWatch.tsx                                     rpc=  0 tab= 0 canali= 2 realtime= 0 fetch= 0 intervalli= 4
+pages/LivePnl.tsx                                         rpc=  0 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 3
+pages/Dashboard.tsx                                       rpc=  0 tab= 1 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+pages/Board.tsx                                           rpc=  0 tab= 0 canali= 1 realtime= 0 fetch= 0 intervalli= 1
+lib/usePosizioniCanale.ts                                 rpc=  0 tab= 0 canali= 1 realtime= 0 fetch= 0 intervalli= 0
+lib/useOrdiniCanale.ts                                    rpc=  0 tab= 0 canali= 1 realtime= 0 fetch= 0 intervalli= 0
+lib/useApplicaBot.ts                                      rpc=  0 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 1
+lib/uiShell.ts                                            rpc=  0 tab= 0 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/tacticalEngine.ts                                     rpc=  0 tab= 1 canali= 0 realtime= 0 fetch= 0 intervalli= 0
+lib/safeStrategyScan.ts                                   rpc=  0 tab= 2 canali= 0 realtime= 4 fetch= 0 intervalli= 0
+lib/localTransport.ts                                     rpc=  0 tab= 0 canali= 1 realtime= 0 fetch= 0 intervalli= 1
+
+TOTALE frontend/src non test: RPC distinte 150, tabelle .from distinte 17, chiamate .rpc non letterali 2

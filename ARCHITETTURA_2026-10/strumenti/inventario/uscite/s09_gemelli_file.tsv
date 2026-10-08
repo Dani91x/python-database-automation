@@ -1,0 +1,7 @@
+gruppo	file_a	file_b	funzioni_a	funzioni_b	in_comune_per_nome	identiche	simili_090	diverse	righe_gemelle_lato_a	righe_tot_a	diverse_stessa_struttura	righe_struttura_lato_a
+scalper	Betfair/stream/scalper/scalper_bot.py	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	69	61	49	20	7	22	806	3315	0	0
+scalper	Betfair/stream/scalper/scalper_bot.py	laboratorio/scalper_lab/scalper_bot_base.py	69	43	41	22	5	14	866	3315	0	0
+scalper	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	laboratorio/scalper_lab/scalper_bot_base.py	61	43	42	23	3	16	649	2974	0	0
+db	Betfair/safe_strategy/bot_db.py	Betfair/omega/omega_db.py	61	66	28	2	3	23	29	1044	2	25
+db	Betfair/safe_strategy/bot_db.py	Betfair/mike/db.py	61	42	26	3	0	23	8	1044	0	0
+db	Betfair/omega/omega_db.py	Betfair/mike/db.py	66	42	22	2	0	20	4	1081	0	0

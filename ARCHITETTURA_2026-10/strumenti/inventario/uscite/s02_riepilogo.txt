@@ -1,0 +1,237 @@
+moduli .py tracciati: 1442; non analizzabili (SyntaxError): 0
+per categoria: py_test=591, py_script_audit=368, py_codice_Betfair=213, py_codice_cartelle_radice=106, py_codice_radice=88, py_strumenti=76
+archi interni (prod+strumenti verso qualsiasi): 1462
+import dinamici (import_module/__import__) nel codice: Betfair/omega/omega_service.py=1, Betfair/safe_strategy/bot_service.py=1, Betfair/safe_strategy/tools/replay_registrazioni.py=1, Betfair/stream/backtest/registro_bot.py=2
+
+== Gruppi candidati morti (moduli di produzione) ==
+A_nessun_riferimento: 26 moduli
+B_solo_main_o_stringa: 73 moduli
+C_solo_test: 1 moduli
+D_solo_strumenti_audit: 27 moduli
+
+== Librerie chiave per categoria di file (n. file che le importano) ==
+betfairlightweight   totale   99 file: py_test=61, py_codice_Betfair=26, py_script_audit=6, py_strumenti=5, py_codice_cartelle_radice=1
+flumine              totale  163 file: py_test=91, py_codice_Betfair=51, py_codice_cartelle_radice=10, py_strumenti=7, py_script_audit=4
+supabase             totale   13 file: py_script_audit=6, py_strumenti=4, py_codice_Betfair=1, py_codice_radice=1, py_codice_cartelle_radice=1
+requests             totale   17 file: py_codice_Betfair=5, py_script_audit=4, py_test=4, py_codice_radice=4
+httpx                totale   18 file: py_test=10, py_codice_radice=7, py_codice_Betfair=1
+websockets           totale   24 file: py_script_audit=11, py_codice_Betfair=7, py_test=5, py_strumenti=1
+aiohttp              totale    0 file: 
+urllib               totale    0 file: 
+socket               totale    0 file: 
+websocket            totale    0 file: 
+postgrest            totale   12 file: py_test=10, py_codice_Betfair=2
+psycopg2             totale    0 file: 
+sqlalchemy           totale    0 file: 
+
+== Chi parla con l'esterno: file di PRODUZIONE (py_codice_*) per libreria chiave ==
+-- betfairlightweight: 27 file
+   Betfair/safe_strategy/service.py:633
+   Betfair/safe_strategy/stream.py:149
+   Betfair/stream/auth.py:13
+   Betfair/stream/backtest/banco_comune.py:1910
+   Betfair/stream/backtest/certifica.py:235
+   Betfair/stream/board_worker.py:59
+   Betfair/stream/raw_listener.py:21
+   Betfair/stream/reconcile_worker.py:493
+   Betfair/stream/recorder.py:21
+   Betfair/stream/runner.py:29
+   Betfair/stream/scalper/habitat_scan.py:45
+   Betfair/stream/scalper/run_scalper_live.py:84
+   Betfair/stream/scalper/scalper_session.py:1326
+   Betfair/stream/scores/betfair_inplay.py:16
+   Betfair/stream/sottoscrizione_a_caldo.py:67
+   Betfair/stream/tennis_live/mercati_registrati.py:45
+   Betfair/stream/tennis_live/tennis_recorder.py:43
+   Betfair/stream/tennis_live/tennis_runner.py:45
+   Betfair/stream/tennis_replay/convertitore.py:40
+   Betfair/stream/tennis_scalper/backtest_pro.py:24
+   Betfair/stream/tennis_scalper/record_multi.py:30
+   Betfair/stream/tennis_scalper/record_tennis.py:21
+   Betfair/stream/tennis_scalper/research_data.py:14
+   Betfair/stream/tennis_scalper/run_tennis_pro.py:22
+   Betfair/stream/tennis_scalper/run_tennis_scalper.py:28
+   Betfair/stream/valuta.py:83
+   laboratorio/tennis_lab/lab_grid_score.py:100
+-- flumine: 61 file
+   Betfair/safe_strategy/proposte_opportunita.py:679
+   Betfair/stream/backtest/banco_comune.py:1492
+   Betfair/stream/backtest/certifica.py:236
+   Betfair/stream/backtest/chiusura_parziale.py:441
+   Betfair/stream/backtest/minimi_banco.py:172
+   Betfair/stream/backtest/porta_banco.py:701
+   Betfair/stream/backtest/run_backtest.py:39
+   Betfair/stream/backtest/sim_strategy.py:34
+   Betfair/stream/backtest/trasporto_rapido.py:1362
+   Betfair/stream/client_paper_affiancato.py:13
+   Betfair/stream/engine/live_trading_strategy.py:33
+   Betfair/stream/frammenti_mercato.py:72
+   Betfair/stream/live_order_build.py:39
+   Betfair/stream/raw_listener.py:22
+   Betfair/stream/recorder.py:22
+   Betfair/stream/runner.py:31
+   Betfair/stream/saldo_evento.py:238
+   Betfair/stream/scalper/certificazione.py:1496
+   Betfair/stream/scalper/media_under_bot.py:86
+   Betfair/stream/scalper/run_scalper.py:20
+   Betfair/stream/scalper/run_scalper_live.py:206
+   Betfair/stream/scalper/run_theta.py:33
+   Betfair/stream/scalper/scalper_bot.py:55
+   Betfair/stream/scalper/scalper_session.py:1325
+   Betfair/stream/scalper/sniper_bot.py:34
+   Betfair/stream/scalper/theta_bot.py:55
+   Betfair/stream/sottoscrizione_a_caldo.py:52
+   Betfair/stream/tennis_live/certificazione_bot.py:871
+   Betfair/stream/tennis_live/guardie_tennis.py:57
+   Betfair/stream/tennis_live/iscrizione_a_caldo.py:263
+   Betfair/stream/tennis_live/paper_execution.py:38
+   Betfair/stream/tennis_live/tennis_live_order_worker.py:224
+   Betfair/stream/tennis_live/tennis_recorder.py:44
+   Betfair/stream/tennis_live/tennis_runner.py:49
+   Betfair/stream/tennis_scalper/backtest_pro.py:22
+   Betfair/stream/tennis_scalper/condotta_ordini.py:234
+   Betfair/stream/tennis_scalper/flb_backtest.py:23
+   Betfair/stream/tennis_scalper/record_multi.py:31
+   Betfair/stream/tennis_scalper/record_tennis.py:20
+   Betfair/stream/tennis_scalper/run_tennis_pro.py:20
+   Betfair/stream/tennis_scalper/run_tennis_scalper.py:26
+   Betfair/stream/tennis_scalper/tennis_flb_bot.py:31
+   Betfair/stream/tennis_scalper/tennis_pro_bot.py:37
+   Betfair/stream/tennis_scalper/tennis_scalper_bot.py:55
+   Betfair/stream/tennis_scalper/tennis_swing_bot.py:16
+   Betfair/stream/tennis_scalper/tune_tennis.py:22
+   Betfair/stream/trading/controls.py:40
+   Betfair/stream/trading/dutching.py:25
+   Betfair/stream/trading/greenup.py:49
+   Betfair/stream/trading/risk_engine.py:36
+   Betfair/stream/valuta.py:316
+   laboratorio/scalper_lab/bt_lab.py:31
+   laboratorio/scalper_lab/bt_theta.py:23
+   laboratorio/scalper_lab/grid_strategy.py:36
+   laboratorio/scalper_lab/scalper_bot_base.py:55
+   laboratorio/scalper_lab/theta_strategy.py:32
+   laboratorio/tennis_lab/lab_grid.py:24
+   laboratorio/tennis_lab/lab_grid_score.py:21
+   laboratorio/tennis_lab/tennis_lab.py:27
+   laboratorio/tennis_lab/tennis_lab_score.py:31
+   laboratorio/tennis_lab/validate.py:24
+-- supabase: 3 file
+   Betfair/stream/tennis_live/tennis_db.py:22
+   db_client.py:6
+   football_data_scraper/fix_snapshot_time.py:12
+-- requests: 9 file
+   Betfair/client.py:10
+   Betfair/omega/omega_market.py:508
+   Betfair/stream/auth.py:14
+   Betfair/stream/runner_lifecycle.py:242
+   Betfair/stream/tennis_live/paper_execution.py:36
+   admin_reset_password.py:17
+   api_client.py:3
+   api_quota.py:40
+   seasons_catchup.py:151
+-- httpx: 8 file
+   Betfair/stream/runner_lifecycle.py:248
+   build_analytics_signals.py:34
+   build_direzione.py:16
+   db_client.py:52
+   enrich_analytics_snapshots.py:76
+   leagues_mapper.py:10
+   merge_engine_signals.py:28
+   refresh_analytics_bets.py:67
+-- websockets: 7 file
+   Betfair/mike/service.py:6814
+   Betfair/safe_strategy/canale_scan.py:407
+   Betfair/safe_strategy/porta_ordini.py:535
+   Betfair/stream/esiti_ordini_canale.py:229
+   Betfair/stream/local_channel.py:292
+   Betfair/stream/sveglia_canale.py:250
+   Betfair/stream/tennis_live/canale_bot_tennis.py:107
+-- aiohttp: 0 file
+
+== Altre librerie esterne (non stdlib) nel codice di produzione: n. file ==
+   flumine                       61
+   numpy                         37
+   pandas                        35
+   betfairlightweight            27
+   sklearn                       11
+   requests                       9
+   gspread                        9
+   httpx                          8
+   websockets                     7
+   scipy                          6
+   dotenv                         4
+   supabase                       3
+   lightgbm                       3
+   thefuzz                        3
+   matplotlib                     3
+   imblearn                       2
+   tensorflow                     2
+   postgrest                      2
+   boruta                         1
+   keras                          1
+   optuna                         1
+   xgboost                        1
+   pytz                           1
+   gspread_formatting             1
+   smart_open                     1
+   psutil                         1
+   openpyxl                       1
+
+== Moduli di produzione piu' importati (n. importatori di produzione) ==
+  108  db_client  (db_client.py)
+   54  Betfair.stream  (Betfair/stream/__init__.py)
+   24  Betfair.safe_strategy  (Betfair/safe_strategy/__init__.py)
+   22  Betfair.omega  (Betfair/omega/__init__.py)
+   21  Betfair.stream.local_channel  (Betfair/stream/local_channel.py)
+   21  Betfair.stream.db  (Betfair/stream/db.py)
+   19  Betfair.stream.trading.minimi_it  (Betfair/stream/trading/minimi_it.py)
+   17  config  (config.py)
+   17  Betfair.stream.trading  (Betfair/stream/trading/__init__.py)
+   17  Betfair.stream.config_stream  (Betfair/stream/config_stream.py)
+   16  Betfair.stream.canale_bot  (Betfair/stream/canale_bot.py)
+   15  Betfair.stream.live_order_build  (Betfair/stream/live_order_build.py)
+   14  api_client  (api_client.py)
+   14  Betfair.stream.auth  (Betfair/stream/auth.py)
+   12  Betfair.stream.scalper.scalper_bot  (Betfair/stream/scalper/scalper_bot.py)
+   11  Betfair.stream.trading.submin  (Betfair/stream/trading/submin.py)
+   11  Betfair.stream.trading.stato_mercato  (Betfair/stream/trading/stato_mercato.py)
+   11  Betfair.stream.tennis_scalper.tennis_score  (Betfair/stream/tennis_scalper/tennis_score.py)
+   10  Betfair.stream.uscite_proposte  (Betfair/stream/uscite_proposte.py)
+   10  Betfair.stream.scalper  (Betfair/stream/scalper/__init__.py)
+   10  Betfair.stream.live_order_worker  (Betfair/stream/live_order_worker.py)
+   10  Betfair.stream.avvio_app  (Betfair/stream/avvio_app.py)
+   10  Betfair.safe_strategy.execution  (Betfair/safe_strategy/execution.py)
+   10  Betfair.omega.omega_engine  (Betfair/omega/omega_engine.py)
+   10  Ai Engine.ai_engine.db_adapter  (Ai Engine/ai_engine/db_adapter.py)
+    9  logger  (logger.py)
+    9  Betfair.stream.single_instance  (Betfair/stream/single_instance.py)
+    9  Betfair.stream.scalper.hazard_atlas  (Betfair/stream/scalper/hazard_atlas.py)
+    9  Betfair.stream.arresto_ordinato  (Betfair/stream/arresto_ordinato.py)
+    8  Betfair.stream.trading.controls  (Betfair/stream/trading/controls.py)
+
+== Moduli di produzione con piu' import interni (accoppiamento in uscita) ==
+   42  Betfair/stream/tennis_live/tennis_runner.py  (3483 righe)
+   40  Betfair/stream/runner.py  (3171 righe)
+   35  Betfair/omega/omega_service.py  (8936 righe)
+   30  Betfair/safe_strategy/bot_service.py  (11136 righe)
+   25  Betfair/mike/service.py  (7551 righe)
+   23  Betfair/stream/backtest/trasporto_rapido.py  (1778 righe)
+   22  Betfair/stream/scalper/scalper_session.py  (2303 righe)
+   20  Betfair/stream/live_order_worker.py  (3997 righe)
+   20  Betfair/safe_strategy/service.py  (3444 righe)
+   18  Betfair/safe_strategy/execution.py  (3093 righe)
+   15  Betfair/stream/tennis_live/tennis_live_order_worker.py  (1831 righe)
+   14  Betfair/stream/tennis_live/tennis_bot_service.py  (1183 righe)
+   13  Betfair/stream/tennis_live/guardie_tennis.py  (487 righe)
+   13  Betfair/stream/backtest/certifica.py  (1084 righe)
+   13  Betfair/stream/backtest/banco_comune.py  (3046 righe)
+   12  Betfair/stream/scalper/validazione_hazard/banco.py  (695 righe)
+   12  Betfair/stream/scalper/scalper_service.py  (982 righe)
+   11  Betfair/omega/omega_market.py  (1794 righe)
+   10  Betfair/safe_strategy/opportunity.py  (1103 righe)
+    9  seasons_catchup.py  (1022 righe)
+    9  Betfair/stream/tennis_live/esecutore_tennis.py  (618 righe)
+    9  Betfair/omega/omega_proposte.py  (1235 righe)
+    9  Betfair/mike/db.py  (693 righe)
+    9  Ai Engine/ai_engine/runner.py  (68 righe)
+    9  Ai Engine/ai_engine/predict_fixture.py  (1124 righe)

@@ -1,0 +1,167 @@
+== VIVA: 54 voci, 203478 righe py di produzione, 422842 righe py totali ==
+  Betfair                                      prod=169111 py=382414  2026-10-08  cuore del prodotto (avviata da desktop/main.js o servita dall'app)
+  Ai Engine                                    prod=  8845 py= 10402  2026-09-21  importata da 11 file di produzione esterni (es. Betfair/betfair_report_manager.py); lanciatore .github/workflows/retrain_models.yml:222
+  Prediction                                   prod=  3911 py=  6983  2026-09-26  importata da 3 file di produzione esterni (es. AGGIORNA_CAMPO_db_json_analisi.py); lanciatore .github/workflows/predictions_results_backfill
+  tactical_engine                              prod=  1515 py=  2817  2026-09-26  importata da 2 file di produzione esterni (es. Betfair/stream/engine/live_engine_pro.py); citata dal frontend frontend/src/lib/tacticalEngin
+  market_intelligence                          prod=  2513 py=  2513  2026-06-10  importata da 1 file di produzione esterni (es. Ai Engine/ai_engine/predict_fixture.py)
+  master_backtest.py                           prod=  1660 py=  1660  2026-09-21  importata da 3 file di produzione esterni (es. generate_dc_rho.py)
+  per_fixture_backfill.py                      prod=  1216 py=  1216  2026-09-25  importata da 5 file di produzione esterni (es. daily_yesterday_backfill.py)
+  seasons_catchup.py                           prod=  1022 py=  1022  2026-10-04  importata da 1 file di produzione esterni (es. league_orchestrator.py); lanciatore .github/workflows/seasons_catchup.yml:88
+  value_engine                                 prod=   729 py=   859  2026-06-17  importata da 4 file di produzione esterni (es. Betfair/omega/omega_model.py)
+  season_gaps.py                               prod=   679 py=   679  2026-09-28  importata da 6 file di produzione esterni (es. daily_yesterday_backfill.py)
+  retrain_all_leagues.py                       prod=   631 py=   631  2026-06-13  importata da 1 file di produzione esterni (es. cloud_retrain_shard.py); lanciatore aggiorna_modelli.bat:28
+  update_poisson_calibration.py                prod=   606 py=   606  2026-09-21  lanciatore .github/workflows/weekly_poisson_calibration.yml:43
+  generate_dynamic_cal.py                      prod=   596 py=   596  2026-09-21  lanciatore .github/workflows/weekly_poisson_calibration.yml:36
+  enrich_analytics_snapshots.py                prod=   583 py=   583  2026-09-24  lanciatore .github/workflows/predictions_results_backfill.yml:131
+  aggiorna_mm_sheets.py                        prod=   542 py=   542  2026-07-03  lanciatore aggiorna_report.bat:25
+  build_analytics_signals.py                   prod=   452 py=   452  2026-09-26  importata da 2 file di produzione esterni (es. _certify_direction.py); lanciatore .github/workflows/predictions_results_backfill.yml:96
+  import_betfair_operations.py                 prod=   428 py=   428  2026-07-06  lanciatore aggiorna_report_betfair.bat:21
+  db_client.py                                 prod=   410 py=   410  2026-09-28  importata da 108 file di produzione esterni (es. AGGIORNA_CAMPO_db_json_analisi.py)
+  leagues_mapper.py                            prod=   406 py=   406  2026-10-04  lanciatore .github/workflows/leagues_mapper.yml:47
+  top_cards_backfill.py                        prod=   404 py=   404  2026-09-25  importata da 1 file di produzione esterni (es. season_aggregates.py)
+  daily_yesterday_backfill.py                  prod=   396 py=   396  2026-09-25  lanciatore .github/workflows/daily_yesterday_backfill.yml:36
+  standings_backfill.py                        prod=   381 py=   381  2026-09-25  importata da 1 file di produzione esterni (es. season_aggregates.py)
+  top_assists_backfill.py                      prod=   380 py=   380  2026-09-25  importata da 1 file di produzione esterni (es. season_aggregates.py)
+  top_scorers_backfill.py                      prod=   380 py=   380  2026-09-25  importata da 1 file di produzione esterni (es. season_aggregates.py)
+  cloud_retrain_shard.py                       prod=   373 py=   373  2026-09-21  lanciatore .github/workflows/retrain_models.yml:281
+  injuries_backfill.py                         prod=   354 py=   354  2026-09-25  importata da 1 file di produzione esterni (es. season_aggregates.py)
+  ventaglio_segnali.py                         prod=   350 py=   350  2026-06-20  importata da 1 file di produzione esterni (es. valida_ventaglio.py)
+  api_quota.py                                 prod=   345 py=   345  2026-09-25  importata da 2 file di produzione esterni (es. league_orchestrator.py)
+  betfair_tennis_odds.py                       prod=   322 py=   322  2026-09-09  lanciatore desktop/main.js:480
+  compute_ml_post_calibration.py               prod=   320 py=   320  2026-06-16  lanciatore .github/workflows/ml_calibration.yml:78
+  analytics_market_stats.py                    prod=   307 py=   307  2026-06-22  importata da 1 file di produzione esterni (es. enrich_analytics_snapshots.py)
+  betfair_full_odds.py                         prod=   300 py=   300  2026-07-10  lanciatore aggiorna_report.bat:30; citata dal frontend frontend/src/components/dashboard/BetfairOddsPanel.tsx:110
+  training_planner.py                          prod=   293 py=   293  2026-06-19  importata da 2 file di produzione esterni (es. cloud_retrain_shard.py)
+  season_aggregates.py                         prod=   282 py=   282  2026-09-28  importata da 3 file di produzione esterni (es. league_orchestrator.py)
+  refresh_analytics_bets.py                    prod=   281 py=   281  2026-09-24  lanciatore .github/workflows/predictions_results_backfill.yml:148
+  merge_engine_signals.py                      prod=   280 py=   280  2026-09-26  lanciatore .github/workflows/predictions_results_backfill.yml:108
+  generate_dc_rho.py                           prod=   259 py=   259  2026-09-21  lanciatore .github/workflows/weekly_poisson_calibration.yml:54
+  season_backfill.py                           prod=   240 py=   240  2026-09-25  importata da 2 file di produzione esterni (es. league_orchestrator.py)
+  build_direzione.py                           prod=   238 py=   238  2026-09-21  lanciatore .github/workflows/predictions_results_backfill.yml:163
+  poisson_calibrator.py                        prod=   215 py=   215  2026-06-20  importata da 2 file di produzione esterni (es. Prediction/today_predictions_backfill.py)
+  fixtures_backfill.py                         prod=   210 py=   210  2026-02-12  importata da 2 file di produzione esterni (es. daily_yesterday_backfill.py)
+  validate_walkforward.py                      prod=   138 py=   138  2026-06-15  lanciatore .github/workflows/validate_models.yml:91
+  api_client.py                                prod=   137 py=   137  2026-09-25  importata da 14 file di produzione esterni (es. Betfair/stream/scores/api_football.py)
+  analytics_settlement.py                      prod=   125 py=   125  2026-06-22  importata da 4 file di produzione esterni (es. _certify_direction_report.py)
+  logger.py                                    prod=   100 py=   100  2026-07-03  importata da 9 file di produzione esterni (es. Prediction/today_predictions_backfill.py)
+  config.py                                    prod=    58 py=    58  2026-02-25  importata da 17 file di produzione esterni (es. Betfair/betfair_report_manager.py)
+  start_order_server.py                        prod=    56 py=    56  2026-06-29  lanciatore aggiorna_quote_betfair.bat:9
+  db_delete_retry.py                           prod=    53 py=    53  2026-09-25  importata da 6 file di produzione esterni (es. injuries_backfill.py)
+  aggiorna_solo_fogli.py                       prod=    46 py=    46  2026-03-16  lanciatore aggiorna_solo_fogli.bat:10
+  .github                                      prod=     0 py=     0  2026-10-04  10 workflow GitHub Actions: sono i lanciatori cloud dei job di calcolo (vedi sezione 7 del documento)
+  aggiorna_report.bat                          prod=     0 py=     0  2026-06-24  lanciatore aggiorna_modelli.bat:34; citata dal frontend frontend/src/components/dashboard/MatchesList.tsx:278
+  aggiorna_report_betfair.bat                  prod=     0 py=     0  2026-07-06  lanciatore importa_ultimi_15_giorni.bat:12
+  desktop                                      prod=     0 py=     0  2026-10-06  cuore del prodotto (avviata da desktop/main.js o servita dall'app)
+  frontend                                     prod=     0 py=     0  2026-10-08  cuore del prodotto (avviata da desktop/main.js o servita dall'app)
+
+== ARCHIVIO: 64 voci, 13183 righe py di produzione, 47936 righe py totali ==
+  AUDIT_2026-09-25                             prod=     0 py= 13286  2026-10-04  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  laboratorio                                  prod=  5356 py=  5601  2026-09-25  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 1 importazioni da test); ha __main__ 
+  AUDIT_2026-09-28                             prod=     0 py=  4752  2026-09-29  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  AUDIT_2026-10-02                             prod=     0 py=  3306  2026-10-02  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  AUDIT_2026-10-07                             prod=     0 py=  2130  2026-10-07  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  AUDIT_2026-09-30                             prod=     0 py=  1944  2026-09-30  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  _AUDIT_2026_05                               prod=     0 py=  1887  2026-06-10  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  SCHEMI_BOT                                   prod=     0 py=  1640  2026-10-02  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  football_data_scraper                        prod=  1392 py=  1392  2026-03-13  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  AUDIT_2026-10-04                             prod=     0 py=  1132  2026-10-05  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  AUDIT_2026-09-29                             prod=     0 py=   960  2026-09-29  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  AUDIT_2026-09-26                             prod=     0 py=   921  2026-09-26  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  sql                                          prod=   909 py=   909  2026-06-19  cartella storica o di dati: SQL applicato dall'utente
+  tools                                        prod=     0 py=   839  2026-10-07  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  _certify_direction_report.py                 prod=   641 py=   641  2026-06-25  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  AUDIT_2026-10-05                             prod=     0 py=   616  2026-10-06  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  _certify_personal_report.py                  prod=   511 py=   511  2026-06-24  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  AUDIT_2026-10-06                             prod=     0 py=   463  2026-10-06  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  AUDIT_2026-10-01                             prod=     0 py=   421  2026-10-01  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  AGGIORNA_CAMPO_db_json_analisi.py            prod=   404 py=   404  2026-06-10  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  build_inplay_intensity.py                    prod=   331 py=   331  2026-06-29  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  migrations                                   prod=   294 py=   294  2026-10-08  cartella storica o di dati: SQL applicato dall'utente
+  league_orchestrator.py                       prod=   262 py=   262  2026-09-25  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 3 importazioni da test); ha __main__ 
+  _certify_direction.py                        prod=   248 py=   248  2026-06-25  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  ARCHITETTURA_2026-10                         prod=     0 py=   211  2026-10-08  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  sanity_check.py                              prod=   211 py=   211  2026-03-04  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  backfill_poisson_calibrated.py               prod=   209 py=   209  2026-06-22  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  certify_backtest_strategy.py                 prod=   202 py=   202  2026-06-23  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  compress_models.py                           prod=   197 py=   197  2026-03-16  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  tmp_smoke_ml_fixes.py                        prod=   196 py=   196  2026-06-10  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  valida_ventaglio.py                          prod=   179 py=   179  2026-06-20  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  valida_motore_poisson.py                     prod=   169 py=   169  2026-06-20  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  tmp_smoke_poisson_fixes.py                   prod=   148 py=   148  2026-06-11  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  cleanup_models.py                            prod=   138 py=   138  2026-03-10  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  missing_fixtures_backfill.py                 prod=   131 py=   131  2026-02-12  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  fix_storico_prob.py                          prod=   123 py=   123  2026-06-22  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  _stack_eval.py                               prod=   118 py=   118  2026-06-24  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  reset_ai_models.py                           prod=   114 py=   114  2026-03-13  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  _certify_delay_context.py                    prod=   102 py=   102  2026-06-24  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  _league_eval.py                              prod=   100 py=   100  2026-06-24  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  _certify_signal_context.py                   prod=    96 py=    96  2026-06-24  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  admin_reset_password.py                      prod=    93 py=    93  2026-06-22  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  _certify_betfair.py                          prod=    87 py=    87  2026-06-24  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  direzione.py                                 prod=    77 py=    77  2026-06-24  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  tmp_train_today.py                           prod=    73 py=    73  2026-06-10  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  load_poisson_calibration_to_db.py            prod=    72 py=    72  2026-06-20  nessun importatore di produzione ne' lanciatore automatico; importata da test/strumenti/audit (0 file, 0 importazioni da test); ha __main__ 
+  .agent                                       prod=     0 py=     0  2026-03-03  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  .claude                                      prod=     0 py=     0  2026-09-17  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  AUDIT_2026-09-24                             prod=     0 py=     0  2026-09-24  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  AUDIT_2026-10-08                             prod=     0 py=     0  2026-10-08  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  aggiorna_modelli.bat                         prod=     0 py=     0  2026-04-02  script di lancio manuale (nessun lanciatore automatico lo richiama)
+  aggiorna_quote_betfair.bat                   prod=     0 py=     0  2026-07-10  citata dalla UI come istruzione di lancio manuale: frontend/src/lib/betfair.ts:102
+  aggiorna_report_veloce.bat                   prod=     0 py=     0  2026-07-10  script di lancio manuale (nessun lanciatore automatico lo richiama)
+  aggiorna_solo_fogli.bat                      prod=     0 py=     0  2026-03-30  script di lancio manuale (nessun lanciatore automatico lo richiama)
+  avvia_omega_service.bat                      prod=     0 py=     0  2026-07-12  citata dalla UI come istruzione di lancio manuale: frontend/src/components/omega/ManualPanel.tsx:362
+  avvia_scalper_service.bat                    prod=     0 py=     0  2026-07-02  citata dalla UI come istruzione di lancio manuale: frontend/src/components/live/HabitatCard.tsx:66
+  docs                                         prod=     0 py=     0  2026-07-17  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  fetch_logs.ps1                               prod=     0 py=     0  2026-04-02  script di lancio manuale (nessun lanciatore automatico lo richiama)
+  fetch_summary.ps1                            prod=     0 py=     0  2026-04-02  script di lancio manuale (nessun lanciatore automatico lo richiama)
+  importa_ultimi_15_giorni.bat                 prod=     0 py=     0  2026-07-06  script di lancio manuale (nessun lanciatore automatico lo richiama)
+  install_worker_autostart.ps1                 prod=     0 py=     0  2026-06-28  script di lancio manuale (nessun lanciatore automatico lo richiama)
+  registrazioni_banco                          prod=     0 py=     0  2026-10-05  cartella storica o di dati: audit, schemi, documenti o registrazioni
+  start_backtest_worker.bat                    prod=     0 py=     0  2026-06-28  script di lancio manuale (nessun lanciatore automatico lo richiama)
+  stream_api.bat                               prod=     0 py=     0  2026-07-10  script di lancio manuale (nessun lanciatore automatico lo richiama)
+
+== MORTA: 18 voci, 2717 righe py di produzione, 2717 righe py totali ==
+  calibration_analysis.py                      prod=   622 py=   622  2026-06-10  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  analyze_threshold.py                         prod=   308 py=   308  2026-06-10  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  simulate_recovery_forward.py                 prod=   287 py=   287  2026-06-10  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  analyze_recovery.py                          prod=   283 py=   283  2026-06-10  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  report_mm.py                                 prod=   202 py=   202  2026-04-02  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  tmp_analysis.py                              prod=   188 py=   188  2026-04-02  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  tmp_today_predictions.py                     prod=   141 py=   141  2026-06-10  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  tmp_analysis2.py                             prod=   139 py=   139  2026-04-02  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  tmp_smoke_stack.py                           prod=   138 py=   138  2026-06-10  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  tmp_predict_today.py                         prod=   117 py=   117  2026-06-10  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  tmp_validate_predict.py                      prod=    76 py=    76  2026-06-10  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  tmp_validate_league.py                       prod=    66 py=    66  2026-06-10  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  _certify_betfair_full.py                     prod=    37 py=    37  2026-06-24  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  test.py                                      prod=    37 py=    37  2026-03-30  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  update_dashboard_only.py                     prod=    31 py=    31  2026-03-13  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  refresh_dashboard.py                         prod=    20 py=    20  2026-03-14  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  check_gh.py                                  prod=    13 py=    13  2026-04-02  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+  parse.py                                     prod=    12 py=    12  2026-04-02  nessun importatore, nessun lanciatore, nessuna citazione, nessun __main__
+
+== NON_VERIFICABILE: 1 voci, 0 righe py di produzione, 0 righe py totali ==
+  Telegram bot                                 prod=     0 py=     0  2026-06-22  Edge Functions Supabase in Deno/TypeScript (supabase/functions/telegram-bot, make-daily-post): il codice non e' Python, non e' importato da 
+
+== TEST: 20 voci, 0 righe py di produzione, 8319 righe py totali ==
+  test_actions_pipeline_paginazione.py         prod=     0 py=  1723  2026-09-24  test pytest di radice (non e' codice di produzione)
+  test_backfill_automatico_2026_09_25.py       prod=     0 py=  1270  2026-09-25  test pytest di radice (non e' codice di produzione)
+  test_calibrazione_lettura_db.py              prod=     0 py=   906  2026-09-21  test pytest di radice (non e' codice di produzione)
+  test_catchup_57014_2026_09_28.py             prod=     0 py=   612  2026-09-28  test pytest di radice (non e' codice di produzione)
+  test_catchup_p4_2026_09_25.py                prod=     0 py=   514  2026-09-25  test pytest di radice (non e' codice di produzione)
+  test_omega_transizioni_notturne_2026_09_25.py prod=     0 py=   507  2026-09-25  test pytest di radice (non e' codice di produzione)
+  test_delete_ritentativi_2026_09_25.py        prod=     0 py=   386  2026-09-25  test pytest di radice (non e' codice di produzione)
+  test_cloud_retrain_shard_ritentativi_2026_09_21.py prod=     0 py=   385  2026-09-21  test pytest di radice (non e' codice di produzione)
+  test_riserva_dinamica_2026_09_25.py          prod=     0 py=   263  2026-09-25  test pytest di radice (non e' codice di produzione)
+  test_actions_fail_rumoroso_2026_09_25.py     prod=     0 py=   251  2026-09-25  test pytest di radice (non e' codice di produzione)
+  test_refresh_analytics_bets_v2_2026_09_24.py prod=     0 py=   247  2026-09-24  test pytest di radice (non e' codice di produzione)
+  test_analytics_market_stats.py               prod=     0 py=   233  2026-06-22  test pytest di radice (non e' codice di produzione)
+  test_leagues_mapper_ritentativi_2026_10_04.py prod=     0 py=   201  2026-10-04  test pytest di radice (non e' codice di produzione)
+  test_catchup_avviso_buchi_2026_10_04.py      prod=     0 py=   192  2026-10-04  test pytest di radice (non e' codice di produzione)
+  test_analytics_settlement.py                 prod=     0 py=   128  2026-06-22  test pytest di radice (non e' codice di produzione)
+  test_catchup_attesa_concorrenti_2026_09_26.py prod=     0 py=   123  2026-09-26  test pytest di radice (non e' codice di produzione)
+  test_daily_niente_aggregati_2026_09_25.py    prod=     0 py=   102  2026-09-25  test pytest di radice (non e' codice di produzione)
+  test_orchestratore_niente_refresh_mv_2026_09_25.py prod=     0 py=   101  2026-09-25  test pytest di radice (non e' codice di produzione)
+  test_merge_engine_signals_kickoff_2026_09_26.py prod=     0 py=    97  2026-09-26  test pytest di radice (non e' codice di produzione)
+  test_build_analytics_signals_kickoff_2026_09_26.py prod=     0 py=    78  2026-09-26  test pytest di radice (non e' codice di produzione)
+

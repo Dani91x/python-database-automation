@@ -1,0 +1,82 @@
+citazioni file:riga distinte nell'inventario del 02/10: 277 in 69 file
+  stessa_riga                    149  (53.8%)
+  spostata                       124  (44.8%)
+  TESTO_CAMBIATO_O_SPARITO         3  (1.1%)
+  riga_vuota_a_base                1  (0.4%)
+
+file con piu' citazioni NON piu' al loro posto (spostate o cambiate):
+  desktop/main.js                                                tot= 24 stessa=  0 spostata= 22 cambiata/sparita=  2
+  Betfair/mike/service.py                                        tot= 17 stessa=  2 spostata= 15 cambiata/sparita=  0
+  Betfair/omega/omega_service.py                                 tot= 15 stessa=  0 spostata= 15 cambiata/sparita=  0
+  Betfair/stream/runner.py                                       tot= 11 stessa=  2 spostata=  9 cambiata/sparita=  0
+  Betfair/safe_strategy/bot_service.py                           tot= 12 stessa=  4 spostata=  8 cambiata/sparita=  0
+  Betfair/safe_strategy/execution.py                             tot=  6 stessa=  0 spostata=  6 cambiata/sparita=  0
+  Betfair/stream/tennis_live/tennis_runner.py                    tot=  6 stessa=  0 spostata=  6 cambiata/sparita=  0
+  Betfair/omega/omega_market.py                                  tot=  7 stessa=  2 spostata=  5 cambiata/sparita=  0
+  Betfair/stream/backtest/banco_comune.py                        tot=  6 stessa=  1 spostata=  5 cambiata/sparita=  0
+  Betfair/stream/live_order_worker.py                            tot= 10 stessa=  6 spostata=  4 cambiata/sparita=  0
+  Betfair/stream/trading/minimi_it.py                            tot=  4 stessa=  0 spostata=  4 cambiata/sparita=  0
+  Betfair/order_exec.py                                          tot=  3 stessa=  0 spostata=  3 cambiata/sparita=  0
+  Betfair/stream/live_order_build.py                             tot=  3 stessa=  0 spostata=  3 cambiata/sparita=  0
+  Betfair/stream/scalper/scalper_service.py                      tot=  7 stessa=  4 spostata=  3 cambiata/sparita=  0
+  Betfair/stream/scalper/scalper_session.py                      tot=  3 stessa=  0 spostata=  3 cambiata/sparita=  0
+  Betfair/stream/backtest/registro_bot.py                        tot=  2 stessa=  0 spostata=  2 cambiata/sparita=  0
+  Betfair/stream/scalper/scalper_bot.py                          tot=  2 stessa=  0 spostata=  1 cambiata/sparita=  1
+  Betfair/stream/motore_ordini.py                                tot=  4 stessa=  3 spostata=  1 cambiata/sparita=  0
+  Betfair/stream/tennis_live/tennis_bot_service.py               tot=  6 stessa=  5 spostata=  1 cambiata/sparita=  0
+  Betfair/stream/tests/test_contratto_strada_unica_2026_09_25.py tot=  2 stessa=  1 spostata=  1 cambiata/sparita=  0
+
+git diff --numstat 22d19cc..HEAD: file toccati 873
+cartella                                        file   +righe   -righe
+SCHEMI_BOT                                        45   199149        0
+frontend/src                                     174    46180      381
+AUDIT_2026-10-07                                 176    40024        0
+AUDIT_2026-10-04                                 130    31680        0
+Betfair/stream                                   123    24139      601
+dynamic_cal.json                                   1     9084     8476
+AUDIT_2026-10-08                                  33    10833        0
+AUDIT_2026-10-05                                  52     7783        0
+AUDIT_2026-10-06                                  37     4296        0
+Betfair/safe_strategy                             17     2792      103
+Betfair/omega                                     22     2346      155
+Betfair/mike                                      19     1558       70
+migrations                                         6      646        0
+tools                                              2      572        0
+ARCHITETTURA_2026-10                               4      544        0
+AUDIT_2026-10-02                                   1      342        0
+CRONOSTORIA.md                                     1      306        0
+desktop                                            4      178       33
+test_leagues_mapper_ritentativi_2026_10_04.py      1      201        0
+test_catchup_avviso_buchi_2026_10_04.py            1      192        0
+frontend/scripts                                   1      159        0
+dc_rho_by_league.json                              1       62       55
+PIANO_OTTIMIZZAZIONE_GLOBALE_2026-10-02.md         1      100        0
+leagues_mapper.py                                  1       76       15
+registrazioni_banco                                3       56        0
+seasons_catchup.py                                 1       44        2
+Betfair/money_management.py                        1       18       18
+.github                                            3       13        9
+Betfair/order_exec.py                              1       18        0
+AUDIT_2026-09-25                                   1        1        1
+
+name-status 22d19cc..HEAD: A=663, M=210
+file Python di produzione AGGIUNTI dopo il 02/10 (8):
+  Betfair/stream/backtest/applica_bot.py
+  Betfair/stream/backtest/varianti_bot.py
+  Betfair/stream/scalper/media_under_bot.py
+  Betfair/stream/tennis_live/mercati_registrati.py
+  Betfair/stream/tennis_replay/__init__.py
+  Betfair/stream/tennis_replay/caricamento.py
+  Betfair/stream/tennis_replay/convertitore.py
+  Betfair/stream/tennis_replay/importa.py
+file Python TOLTI dopo il 02/10 (non audit): 0
+
+commit dopo 22d19cc: 221; data base: 2026-10-02
+
+righe oggi dei file piu' grandi (inventario 02/10 I-1: valori al 02/10 tra parentesi dove noti)
+  Betfair/safe_strategy/bot_service.py           02/10 (dichiarato)  10862 | a 22d19cc  10862 | oggi  11136
+  Betfair/omega/omega_service.py                 02/10 (dichiarato)   8709 | a 22d19cc   8709 | oggi   8936
+  Betfair/mike/service.py                        02/10 (dichiarato)   7496 | a 22d19cc   7496 | oggi   7551
+  Betfair/mike/engine.py                         02/10 (dichiarato)   5097 | a 22d19cc   5097 | oggi   5359
+  Betfair/stream/live_order_worker.py            02/10 (dichiarato)   3991 | a 22d19cc   3991 | oggi   3997
+  Betfair/safe_strategy/service.py               02/10 (dichiarato)   3444 | a 22d19cc   3444 | oggi   3444

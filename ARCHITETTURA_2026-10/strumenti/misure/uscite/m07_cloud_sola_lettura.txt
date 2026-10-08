@@ -1,0 +1,37 @@
+# M7 - cloud Supabase in SOLA LETTURA (8/10/2026 ~12:44 UTC). Strumento: MCP supabase execute_sql, SOLO SELECT.
+# Progetto dqbwaocvlzbxfrpacsac (eu-north-1, Postgres 17.6, ACTIVE_HEALTHY). Le query sono riportate cosi' come eseguite
+# (accorciate dove lunghe). Nessuna scrittura. Nessun valore di colonna dei dati utente e' riportato qui.
+
+## Q1 dimensione database
+select pg_size_pretty(pg_database_size(current_database())) ; -> 52 GB ; 173 tabelle in pg_stat_user_tables ; max_connections 60 ; 5 connessioni, 1 attiva
+## Q2 avvio e statistiche
+select pg_postmaster_start_time(), (select stats_reset from pg_stat_statements_info) ; -> avvio e reset di pg_stat_statements 2026-10-08 07:28:19 UTC
+   (uptime 5:16:04 alla misura). TUTTI i contatori (n_tup_ins/upd/del, pg_stat_statements) ripartono da li': per le tabelle
+   n_tup_* dei bot valgono 0 (nessun bot acceso dopo le 07:21 UTC, ultima riga dei log). Quindi n_tup_* e pg_stat_statements NON
+   descrivono la giornata dei bot: servono per i soli lavori batch di questa mattina (analytics).
+## Q3 tabelle piu' grandi (pg_class.reltuples = stima; heap + indici = totale)
+ match_odds 92.477.800 righe ~ 17 GB + 3,8 GB indici = 20 GB | match_lineups 24.269.508 = 7,6 GB | match_player_stats 5.407.244 = 6,8 GB
+ match_events 9.849.575 = 5,6 GB | matches 1.494.534 = 3,0 GB | live_market_snapshots 1.288.493 = 2,4 GB | match_team_stats 6.402.814 = 1,35 GB
+ analytics_signals 1.252.609 = 1,1 GB (indici 752 MB) | fixture_predictions 121.881 = 1,06 GB | api_call_log 2.751.992 = 515 MB
+ top_cards 205.648 = 435 MB | analytics_bets 865.781 = 344 MB | omega_minute_transitions_raw 2.049.585 = 285 MB | omega_minute_transitions 1.078.211 = 270 MB
+ injuries 176.879 = 181 MB | standings 98.349 = 111 MB
+## Q4 tabelle dei bot e dello stato vivo (righe stimate / totale)
+ scalper_activity 93.068 / 19 MB | tennis_replay_snapshots 137.171 / 257 MB | mike_activity 14.931 / 7 MB | safe_strategy_activity 4.034 / 3,5 MB
+ live_ladder 889 / 2,6 MB | live_markets 1.168 / 0,9 MB | live_follow 291 / 192 kB | mike_trades 1.127 / 1,1 MB | mike_events 271 / 9,4 MB
+ safe_strategy_trades 349 / 0,9 MB | safe_strategy_requests 445 / 0,9 MB | safe_strategy_scan 20 / 0,8 MB | omega_trades 121 / 448 kB
+ betfair_live_orders 102 (righe contate) | betfair_live_order_requests 101 | tennis_live_orders 83 | tennis_live_order_queue 28
+ betfair_live_risk_rules 14 | betfair_live_heartbeat 1 | safe_strategy_control 1 | omega_control 1
+ => le tabelle LETTE ogni secondo dai bot (control, requests, risk_rules, settings) hanno 1-445 righe e 16-900 kB.
+## Q5 pg_stat_statements (da 07:28:19 UTC; 153 statement distinti, 47.485 chiamate totali = ~150/min, tutte di lavori batch/analytics)
+ top per chiamate: set_config PostgREST 13.196 (0,03 ms); SELECT analytics_signals via PostgREST 6.927 chiamate, media 13,2 ms, max 58,8 ms;
+ COMMIT/BEGIN 4.483; RPC con p_league_id 1.244 chiamate, media 276,1 ms, max 4.820 ms (totale 343,5 s); INSERT analytics_snap_staging 1.244, media 6,3 ms;
+ SELECT matches 712 (8,0 ms) e 513 (30 ms); RPC p_from/p_to 7 chiamate media 10.847 ms max 42.696 ms; refresh_analytics_riepilogo 1 chiamata 16.920 ms.
+ Nessuna query sulle tabelle mike_/safe_strategy_/betfair_live_/omega_trades/scalper_ oltre alle 4 query di CONTEGGIO fatte da un delegato precedente.
+## Q6 ordini (timestamp del DB; processed_at - requested_at, o matched_at - placed_at)
+ betfair_live_order_requests, paper, action=place, status=done: n=38 (2026-06-30..2026-09-26) p50 492 ms p95 2.481 p99 26.636 max 36.524
+ greenup done n=13 p50 365 p95 1.227 max 1.232 | cancel done n=8 p50 406 p95 874 max 938 | cashout_all n=4 p50 910 max 1.066 | cashout_event n=4 p50 133 max 996
+ dutch done n=3 p50 560 max 1.257 | replace done n=3 p50 307 p95 643 max 681 | place_submin n=3 p50 8.464 max 8.926 (attesa voluta)
+ place error n=13 p50 486 max 1.276 | live place done n=1 (2026-07-10): -100 ms (processed_at PRIMA di requested_at: orologi diversi, DB contro PC)
+ betfair_live_orders (live): source=account 98 righe (nessuna con matched_at); source=runner 4 righe, 2 con matched_at: place->match p50 17,2 s p95 24,2 s (n=2)
+ tennis_live_order_queue: done n=17 p50 220 p95 2.325 max 6.478 ms; error n=11 p50 406 p95 1.283 max 1.326 ms
+ tennis_live_orders: 83 righe tutte paper, matched_at/placed_at non valorizzati per il calcolo.

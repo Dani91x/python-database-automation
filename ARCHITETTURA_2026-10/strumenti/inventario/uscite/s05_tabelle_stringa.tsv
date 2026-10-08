@@ -1,0 +1,52 @@
+tabella	stato	n_righe_non_commento	prime_citazioni
+analytics_prob_staging	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+analytics_riepilogo_decisioni	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+analytics_riepilogo_meta	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+analytics_riepilogo_segnali	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+betfair_live_settings	RIFERITA_PER_STRINGA	19	Betfair/omega/omega_service.py:2188; Betfair/safe_strategy/execution.py:144; Betfair/safe_strategy/execution.py:148; Betfair/safe_strategy/execution.py:204
+book_odds_cache	RIFERITA_PER_STRINGA	2	refresh_analytics_bets.py:8; refresh_analytics_bets.py:15
+book_odds_cache_fonte	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+hazard_atlas	RIFERITA_PER_STRINGA	44	.github/workflows/hazard_atlas.yml:87; .github/workflows/hazard_atlas.yml:90; Betfair/mike/dossier.py:30; Betfair/mike/dossier.py:304
+hazard_atlas_leghe	RIFERITA_PER_STRINGA	10	.github/workflows/hazard_atlas.yml:86; .github/workflows/hazard_atlas.yml:90; Betfair/stream/scalper/atlante_a_domanda.py:17; Betfair/stream/scalper/atlante_a_domanda.py:39
+live_market_snapshots	RIFERITA_PER_STRINGA	4	Betfair/stream/curator.py:1; Betfair/stream/curator.py:104; Betfair/stream/db.py:629; Betfair/stream/db.py:630
+live_score_timeline	RIFERITA_PER_STRINGA	4	Betfair/stream/db.py:634; Betfair/stream/db.py:635; Betfair/stream/scores/poller.py:5; Betfair/stream/uploader.py:56
+omega_build_jobs	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+omega_ht_ft_transitions	RIFERITA_PER_STRINGA	1	Betfair/omega/omega_empirical.py:10
+omega_ht_ft_transitions_pre_ledger	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+omega_ht_ft_transitions_raw	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+omega_minute_league_counts	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+omega_minute_league_counts_pre_ledger	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+omega_minute_transitions	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+omega_minute_transitions_pre_ledger	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+omega_minute_transitions_raw	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+omega_requests	RIFERITA_PER_STRINGA	1	Betfair/omega/certificazione.py:1603
+omega_transitions_league_counts	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+omega_transitions_ledger	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+omega_transitions_runs	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+omega_transitions_state	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+personal_cash_movements	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+personal_trade_legs	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+sicurezza_bk	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+strategies	RIFERITA_PER_STRINGA	19	Betfair/stream/backtest/banco_comune.py:1704; Betfair/stream/frammenti_mercato.py:463; Betfair/stream/frammenti_mercato.py:470; Betfair/stream/frammenti_mercato.py:496
+tennis_refresh_requests	NESSUN_RIFERIMENTO_IN_PRODUZIONE	0	
+tennis_replay_punteggio	RIFERITA_PER_STRINGA	2	Betfair/stream/tennis_replay/caricamento.py:36; Betfair/stream/tennis_replay/convertitore.py:344
+tennis_replay_snapshots	RIFERITA_PER_STRINGA	1	Betfair/stream/tennis_replay/caricamento.py:35
+
+tabella_usata_non_definita_nei_sql_tracciati	nominata_in_DOCUMENTAZIONE_DATABASE.md
+ai_model_registry	si
+api_call_log	si
+api_coverage_by_season	si
+fixture_predictions	si
+injuries	si
+leads	si
+match_events	si
+match_odds	si
+match_team_stats	si
+matches	si
+ml_post_calibration	si
+model_performance	si
+season_backfill_state	si
+standings	si
+top_assists	si
+top_cards	si
+top_scorers	si
