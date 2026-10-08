@@ -1,0 +1,4 @@
+uptime inizio:  11:21:34 up  2:56,  0 user,  load average: 15.70, 16.77, 16.63
+uptime meta:  11:38:01 up  3:12,  0 user,  load average: 12.21, 11.69, 13.38
+uptime fine:  12:09:36 up  3:44,  0 user,  load average: 14.46, 14.07, 14.05
+SUITE_FINITE

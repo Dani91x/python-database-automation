@@ -1,0 +1,5 @@
+
+real	2m28.721s
+user	1m7.101s
+sys	0m1.757s
+uscita tsc: 0

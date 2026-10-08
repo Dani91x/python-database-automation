@@ -1,0 +1,73 @@
+== misura del verificatore (stesse fixture, codice PRIMA = HEAD, DOPO = worktree), alternata
+  DOPO 35760084: mediana 82.5 ms (min 40.5, max 159.6), incoerenze 0
+  DOPO 35797769: mediana 71.9 ms (min 41.8, max 157.1), incoerenze 0
+  PRIMA 35760084: mediana 82.2 ms (min 39.5, max 159.1), incoerenze 0
+  PRIMA 35797769: mediana 66.5 ms (min 46.1, max 158.2), incoerenze 0
+  DOPO 35760084: mediana 70.8 ms (min 37.0, max 114.7), incoerenze 0
+  DOPO 35797769: mediana 69.2 ms (min 48.1, max 135.0), incoerenze 0
+  PRIMA 35760084: mediana 67.9 ms (min 44.2, max 120.6), incoerenze 0
+  PRIMA 35797769: mediana 82.0 ms (min 46.2, max 169.3), incoerenze 0
+  ripristino dopo la misura: sha identici
+== mutazioni (ogni riga: esito dei test con la mutazione, poi ripristino verificato)
+M1 risalita/aumento fuori barra NON giustifica il simbolo (difetto di partenza): 7 failed | 5 passed | 16 skipped (28)  (14 s)  ripristino sha 5ac77bc9b653fe45 == prima 5ac77bc9b653fe45
+    rosso: verificaFixture sulla fixture vera 35760084 > gol annullato prima di un gol vero: coerente (cantiere 13, classe a) anche dalla fixture 379ms
+    rosso: verificaFixture sulla fixture vera 35797769 > gol annullato prima di un gol vero: coerente (cantiere 13, classe a) anche dalla fixture 347ms
+    rosso: A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > la pagina disegna 3 gol e il tabellone segue il feed; il verificatore non segnala il gol vero 88ms
+    rosso: A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > lo stesso con la squadra di casa e due correzioni (come 35768297 Portugal - Croatia) 56ms
+    rosso: A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > sulla partita VERA del banco con un gol annullato inserito 8 minuti prima di un gol vero: 0 incoerenze 346ms
+    rosso: A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > NON nasconde un simbolo in piu': due Goal per UNA risalita -> uno resta SIMBOLO_GOL_SENZA_AUMENTO 91ms
+    rosso: A2 (classe a): il punteggio sale appena PRIMA del primo frame, il Goal arriva dentro la barra > nessun SIMBOLO_GOL_SENZA_AUMENTO quando l'aumento e' entro 3 minuti dal simbolo 17ms
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > la pagina disegna 3 gol e il tabellone segue il feed; il verificatore non segn
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > lo stesso con la squadra di casa e due correzioni (come 35768297 Portugal - Cr
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > sulla partita VERA del banco con un gol annullato inserito 8 minuti prima di u
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > NON nasconde un simbolo in piu': due Goal per UNA risalita -> uno resta SIMBOL
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > A2 (classe a): il punteggio sale appena PRIMA del primo frame, il Goal arriva dentro la barra > nessun SIMBOLO_GOL_SENZA_AUMENTO quando l'aumento e' entro 
+M2 la discesa fra DUE fonti abbassa il livello come un VAR: 1 failed | 7 passed | 12 skipped (20)  (10 s)  ripristino sha 5ac77bc9b653fe45 == prima 5ac77bc9b653fe45
+    rosso: A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > NON confonde il ritardo di un'altra fonte con un gol: risalita fra fonti diverse -> resta SIMBOLO_GOL_SENZA_AUMENTO (e TABE
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > NON confonde il ritardo di un'altra fonte con un gol: risalita fra fonti diver
+M3 la risalita di una squadra giustifica il Goal dell'altra: 1 failed | 7 passed | 12 skipped (20)  (10 s)  ripristino sha 5ac77bc9b653fe45 == prima 5ac77bc9b653fe45
+    rosso: A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > NON nasconde un simbolo dell'altra squadra: la risalita degli ospiti non giustifica un Goal della casa 26ms
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > NON nasconde un simbolo dell'altra squadra: la risalita degli ospiti non giust
+M4 una risalita giustifica piu' simboli (non uno a uno): 1 failed | 7 passed | 12 skipped (20)  (9 s)  ripristino sha 5ac77bc9b653fe45 == prima 5ac77bc9b653fe45
+    rosso: A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > NON nasconde un simbolo in piu': due Goal per UNA risalita -> uno resta SIMBOLO_GOL_SENZA_AUMENTO 115ms
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > A1 (classe a): gol vero dopo un gol annullato dal VAR della stessa squadra > NON nasconde un simbolo in piu': due Goal per UNA risalita -> uno resta SIMBOL
+M5 nessun limite di 3 minuti fra aumento e simbolo: 1 failed | 1 passed | 18 skipped (20)  (10 s)  ripristino sha 5ac77bc9b653fe45 == prima 5ac77bc9b653fe45
+    rosso: A2 (classe a): il punteggio sale appena PRIMA del primo frame, il Goal arriva dentro la barra > l'aumento prima del primo frame ma oltre 3 minuti dal simbolo: resta SIMBOLO_GOL_SENZA_AUMENTO 68ms
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > A2 (classe a): il punteggio sale appena PRIMA del primo frame, il Goal arriva dentro la barra > l'aumento prima del primo frame ma oltre 3 minuti dal simbo
+M6 l'aumento prima del primo frame non conta: 1 failed | 1 passed | 18 skipped (20)  (9 s)  ripristino sha 5ac77bc9b653fe45 == prima 5ac77bc9b653fe45
+    rosso: A2 (classe a): il punteggio sale appena PRIMA del primo frame, il Goal arriva dentro la barra > nessun SIMBOLO_GOL_SENZA_AUMENTO quando l'aumento e' entro 3 minuti dal simbolo 68ms
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > A2 (classe a): il punteggio sale appena PRIMA del primo frame, il Goal arriva dentro la barra > nessun SIMBOLO_GOL_SENZA_AUMENTO quando l'aumento e' entro 
+M7 KICKOFF_DISCORDANTE senza il motivo dei dati: 9 failed | 50 passed (59)  (69 s)  ripristino sha 5736bca21b4f4754 == prima 5736bca21b4f4754
+    rosso: C1 (classe c): KICKOFF_DISCORDANTE dichiarato per dati, con il motivo > BUCO: nessun frame fra l'inizio dichiarato e il primo frame in gioco (come le 4 partite del 16/07, buco 14:58 - 15:06:49) 288ms
+    rosso: C1 (classe c): KICKOFF_DISCORDANTE dichiarato per dati, con il motivo > FLAG: frame registrati con il mercato NON in gioco dopo l'inizio dichiarato (come 35796477 e 35794996) 247ms
+    rosso: C1 (classe c): KICKOFF_DISCORDANTE dichiarato per dati, con il motivo > FLAG al contrario: il mercato e' in gioco prima del KickOff del feed 184ms
+    rosso: verificaPartite con le funzioni VERE della pagina e il finto delle RPC > incoerenza dei DATI (KickOff del feed discorde dal flag in gioco): "INCOERENTE PER DATI" nel riepilogo, mai "OK" 671ms
+    rosso: verificaFixture sulla fixture vera 35760084 > KickOff discorde: "INCOERENTE PER DATI" e le prove (KickOff del feed, primo frame in gioco, passi attorno alla lineetta) 314ms
+    rosso: verificaFixture sulla fixture vera 35797769 > KickOff discorde: "INCOERENTE PER DATI" e le prove (KickOff del feed, primo frame in gioco, passi attorno alla lineetta) 253ms
+    rosso: script verifica_barra_fixture.ts lanciato davvero > fixture vere: esce con 0; una fixture con il KickOff discorde: esce con 1 e la dice "solo per dati"; senza file: 2 20697ms
+    rosso: AvvisoCoerenzaBarra - casi limite > incoerenza per dati (KickOff del feed 6 minuti prima del primo frame in gioco): avviso con il motivo dei dati 181ms
+    rosso: script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > KickOff del feed discorde (dato): esce con 1, "INCOERENTE PER DATI" e "SOLO PER DATI"; --dettaglio stampa le prove 696
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > C1 (classe c): KICKOFF_DISCORDANTE dichiarato per dati, con il motivo > BUCO: nessun frame fra l'inizio dichiarato e il primo frame in gioco (come le 4 par
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > C1 (classe c): KICKOFF_DISCORDANTE dichiarato per dati, con il motivo > FLAG: frame registrati con il mercato NON in gioco dopo l'inizio dichiarato (come 3
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > C1 (classe c): KICKOFF_DISCORDANTE dichiarato per dati, con il motivo > FLAG al contrario: il mercato e' in gioco prima del KickOff del feed
+M8 CARTELLINI_DIVERSI sempre per dati (anche se la pagina perde o aggiunge un cartellino): 2 failed | 3 passed | 15 skipped (20)  (8 s)  ripristino sha 5ac77bc9b653fe45 == prima 5ac77bc9b653fe45
+    rosso: C2: CARTELLINI_DIVERSI per dati SOLO se la barra disegna esattamente i cartellini della timeline > la PAGINA perde un giallo della timeline: avviso NON per dati 121ms
+    rosso: C2: CARTELLINI_DIVERSI per dati SOLO se la barra disegna esattamente i cartellini della timeline > la PAGINA disegna un giallo che la timeline non ha: avviso NON per dati 34ms
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > C2: CARTELLINI_DIVERSI per dati SOLO se la barra disegna esattamente i cartellini della timeline > la PAGINA perde un giallo della timeline: avviso NON per
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > C2: CARTELLINI_DIVERSI per dati SOLO se la barra disegna esattamente i cartellini della timeline > la PAGINA disegna un giallo che la timeline non ha: avvi
+M9 partita 'solo per dati' se UNA incoerenza e' per dati (some invece di every): 2 failed | 32 passed (34)  (15 s)  ripristino sha 5736bca21b4f4754 == prima 5736bca21b4f4754
+    rosso: C1 (classe c): KICKOFF_DISCORDANTE dichiarato per dati, con il motivo > un difetto della PAGINA insieme a un dato discorde: la partita NON e' "solo per dati" 216ms
+    rosso: verificaPartite con le funzioni VERE della pagina e il finto delle RPC > incoerenza dei DATI (KickOff del feed discorde dal flag in gioco): "INCOERENTE PER DATI" nel riepilogo, mai "OK" 544ms
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > C1 (classe c): KICKOFF_DISCORDANTE dichiarato per dati, con il motivo > un difetto della PAGINA insieme a un dato discorde: la partita NON e' "solo per dat
+    rosso: src/lib/replayVerificaBarraDb.test.ts > verificaPartite con le funzioni VERE della pagina e il finto delle RPC > incoerenza dei DATI (KickOff del feed discorde dal flag in gioco): "INCOERENTE PER DATI
+M10 il buco della registrazione descritto come flag discorde: 1 failed | 4 passed | 15 skipped (20)  (10 s)  ripristino sha 5736bca21b4f4754 == prima 5736bca21b4f4754
+    rosso: C1 (classe c): KICKOFF_DISCORDANTE dichiarato per dati, con il motivo > BUCO: nessun frame fra l'inizio dichiarato e il primo frame in gioco (come le 4 partite del 16/07, buco 14:58 - 15:06:49) 118ms
+    rosso: src/lib/replayVerificaBarra.classi.test.ts > C1 (classe c): KICKOFF_DISCORDANTE dichiarato per dati, con il motivo > BUCO: nessun frame fra l'inizio dichiarato e il primo frame in gioco (come le 4 par
+M11 il generatore ignora --registrazioni per i punteggi e la timeline: 1 failed, 16 deselected in 56.23s  (57 s)  ripristino sha 1e1439b4eb52043f == prima 1e1439b4eb52043f
+    rosso: tools/test_replay_barra_fixture.py::test_registrazioni_e_uscita_fuori_dal_repository
+M12 il generatore ignora --uscita: 1 failed, 1 passed, 15 deselected in 18.96s  (20 s)  ripristino sha 1e1439b4eb52043f == prima 1e1439b4eb52043f
+    rosso: tools/test_replay_barra_fixture.py::test_registrazioni_e_uscita_fuori_dal_repository
+M13 curator senza la regola (d) del 07/10 (la causa del rosso della fixture rimessa): 2 failed, 15 deselected in 108.72s (0:01:48)  (110 s)  ripristino sha f2c848c9f11f92f2 == prima f2c848c9f11f92f2
+    rosso: tools/test_replay_barra_fixture.py::test_fixture_riproducibile_dal_raw[35760084]
+    rosso: tools/test_replay_barra_fixture.py::test_fixture_riproducibile_dal_raw[35797769]
+== fine

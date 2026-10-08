@@ -5246,3 +5246,8 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   nello stesso istante restano due. Sezioni PRE-PARTITA / 1T / INTERVALLO / 2T (tennis: per set) dai tempi IPS, un ciclo nella fase in
   cui nasce («chiuso al X'»), riga «per fase» nel riquadro P&L, totali identici a prima. Tipo TS `CicloDichiarato` completato
   (`ordini`, `rientri`, `banca`) con contratto Python<->TS. Delegato 16 mutazioni rosse; mie 3/3. DA FARE SUL PC: 35768297 a schermo.
+- CHECKPOINT C13 - STRUMENTO DELLA BARRA (verificato e integrato): falso positivo `SIMBOLO_GOL_SENZA_AUMENTO` dopo un gol annullato dal
+  VAR corretto nel verificatore (classe a: la risalita della stessa squadra giustifica il simbolo, uno a uno, entro 3 minuti); classe c
+  («per dati») dichiarata con motivo nel referto e nell'avviso della pagina, mai silenziosa; `--dettaglio` per il PC. Fixture delle due
+  partite del banco rigenerate (erano precedenti alla regola (d) del curator: era il rosso di `test_fixture_riproducibile_dal_raw`).
+  Delegato 13 mutazioni rosse; mie 3/3. DA FARE SUL PC: 38 partite e tabella delle 13 (atteso: 0 da correggere, le altre «per dati»).

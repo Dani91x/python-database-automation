@@ -80,6 +80,25 @@ describe('script verifica_barra_replay.ts lanciato davvero (finto PostgREST su l
         for (const q of server.richieste) expect(q).toMatch(RICHIESTA_AMMESSA);
     }, TEMPO_MAX_MS);
 
+    // 08/10 (cantiere 13): incoerenza dei DATI dichiarata, e le prove con --dettaglio
+    it('KickOff del feed discorde (dato): esce con 1, "INCOERENTE PER DATI" e "SOLO PER DATI"; --dettaglio stampa le prove', async () => {
+        const discorde = new FintoDb(EVENTI, {
+            modifica: (_ev: string, replay: ReplayData): ReplayData => {
+                const k = Math.min(...replay.frames.filter(f => f.inplay).map(f => Date.parse(f.ts)));
+                const prima = new Date(k - 360_000).toISOString().replace('Z', '+00:00');
+                return { ...replay, score_timeline: replay.score_timeline.map(r => (r.event_type === 'KickOff' ? { ...r, ts: prima } : r)) };
+            },
+        });
+        server = await avviaServerFinto(discorde);
+        const r = await lancia(['--evento', EVENTI[0], '--dettaglio', '--senza-note'], { VITE_SUPABASE_URL: server.url, SUPABASE_SERVICE_ROLE_KEY: CHIAVE_FINTA });
+        expect(r.codice, `${r.out}\n${r.err}`).toBe(1);
+        expect(r.out).toContain(`INCOERENTE PER DATI ${EVENTI[0]}`);
+        expect(r.out).toContain('[PER DATI: ');
+        expect(r.out).toContain('di cui 1 SOLO PER DATI (dichiarate con il motivo, classe c) e 0 da correggere.');
+        expect(r.out).toContain('>> prove di KICKOFF_DISCORDANTE');
+        for (const q of server.richieste) expect(q).toMatch(RICHIESTA_AMMESSA);
+    }, TEMPO_MAX_MS);
+
     it('--evento filtra una sola partita; --json stampa un documento leggibile da una macchina', async () => {
         server = await avviaServerFinto(new FintoDb(EVENTI));
         const r = await lancia(['--evento', EVENTI[0], '--json'], { VITE_SUPABASE_URL: server.url, SUPABASE_SERVICE_ROLE_KEY: CHIAVE_FINTA });

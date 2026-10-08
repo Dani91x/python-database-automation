@@ -88,6 +88,12 @@ export function AvvisoCoerenzaBarra({ replay, snapshots = null, estremi = null, 
                             {r.occorrenze > 1 && <span className="text-white/50">(x{r.occorrenze})</span>}
                         </span>
                         <span>{r.spiegazione}</span>
+                        {/* 08/10 (cantiere 13): incoerenza dei DATI registrati (classe c), dichiarata con il motivo */}
+                        {r.perDati && (
+                            <span data-testid="avviso-coerenza-per-dati" className="text-white/60">
+                                <span className="font-bold text-amber-200/80">Dato registrato, non errore della pagina:</span> {r.perDati}
+                            </span>
+                        )}
                     </li>
                 ))}
             </ul>

@@ -4,7 +4,7 @@
 // codice, passo, istante, minuto e spiegazione. Lo stampano lo script
 // `frontend/scripts/verifica_barra_replay.ts` e i test (messaggio di errore).
 // ============================================================================
-import { oraUtc, type EsitoVerificaBarra, type Rilievo } from '@/lib/replayVerificaBarra';
+import { oraUtc, soloPerDati, type EsitoVerificaBarra, type Rilievo } from '@/lib/replayVerificaBarra';
 
 const ETICHETTA: Record<Rilievo['gravita'], string> = { errore: 'ERRORE', avviso: 'AVVISO', nota: 'nota  ' };
 
@@ -15,12 +15,15 @@ export function rigaRilievo(r: Rilievo): string {
         r.minuto != null ? `${r.minuto}'` : null,
     ].filter(Boolean).join(', ');
     const molte = r.occorrenze > 1 ? ` (x${r.occorrenze})` : '';
-    return `  [${ETICHETTA[r.gravita]}] ${r.codice}${dove ? ` (${dove})` : ''}${molte}: ${r.spiegazione}`;
+    // 08/10 (cantiere 13): un'incoerenza dei DATI registrati porta il suo motivo (classe c)
+    const dati = r.perDati ? ` [PER DATI: ${r.perDati}]` : '';
+    return `  [${ETICHETTA[r.gravita]}] ${r.codice}${dove ? ` (${dove})` : ''}${molte}: ${r.spiegazione}${dati}`;
 }
 
 export function esitoInUnaRiga(titolo: string, e: EsitoVerificaBarra): string {
     const sim = Object.entries(e.conteggi.simboli).map(([k, v]) => `${k} ${v}`).join(', ') || 'nessuno';
-    return `${e.ok ? 'OK    ' : 'INCOERENTE'} ${titolo}: ${e.incoerenze.length} incoerenze, ${e.note.length} note | `
+    const stato = e.ok ? 'OK    ' : soloPerDati(e) ? 'INCOERENTE PER DATI' : 'INCOERENTE';
+    return `${stato} ${titolo}: ${e.incoerenze.length} incoerenze, ${e.note.length} note | `
         + `passi ${e.conteggi.passi}, frame ${e.conteggi.frames}, simboli [${sim}], righe punteggio ${e.conteggi.righePunteggio}, righe evento ${e.conteggi.righeEvento}, buchi ${e.conteggi.buchi}`;
 }
 

@@ -75,6 +75,10 @@ export interface Rilievo {
     spiegazione: string;
     /** quante volte si e' presentato (i casi ripetuti si raggruppano) */
     occorrenze: number;
+    /** 08/10 (cantiere 13): presente SOLO se l'incoerenza e' dei DATI registrati (classe c: due
+     *  fonti registrate discordi, buco della registrazione), non della pagina ne' del verificatore.
+     *  Il testo e' il motivo, per il trader. L'incoerenza resta tale (mai silenziosa). */
+    perDati?: string;
 }
 
 export interface EsitoVerificaBarra {
@@ -168,13 +172,21 @@ export function creaRilievo(
     codice: CodiceRilievo,
     gravita: GravitaRilievo,
     spiegazione: string,
-    extra: { ambito?: AmbitoRilievo; istante?: string | null; passo?: number | null; minuto?: number | null; occorrenze?: number } = {},
+    extra: { ambito?: AmbitoRilievo; istante?: string | null; passo?: number | null; minuto?: number | null; occorrenze?: number; perDati?: string } = {},
 ): Rilievo {
-    return {
+    const r: Rilievo = {
         codice, gravita, ambito: extra.ambito ?? 'generico', spiegazione,
         istante: extra.istante ?? null, passo: extra.passo ?? null, minuto: extra.minuto ?? null,
         occorrenze: extra.occorrenze ?? 1,
     };
+    // la chiave c'e' solo quando serve: i rilievi di sempre restano identici
+    if (extra.perDati) r.perDati = extra.perDati;
+    return r;
+}
+
+/** 08/10 (cantiere 13): la partita ha incoerenze e sono TUTTE dichiarate "per dati" (classe c). */
+export function soloPerDati(e: Pick<EsitoVerificaBarra, 'incoerenze'>): boolean {
+    return e.incoerenze.length > 0 && e.incoerenze.every(r => !!r.perDati);
 }
 
 // ----------------------------------------------------------------------------
@@ -273,12 +285,12 @@ export function verificaBarraGenerica(b: BarraDaVerificare): Rilievo[] {
     const ambito = b.ambito ?? 'generico';
     const out: Rilievo[] = [];
     const R = (codice: CodiceRilievo, gravita: GravitaRilievo, spiegazione: string,
-        extra: { istante?: string | null; passo?: number | null; minuto?: number | null; occorrenze?: number } = {}) => {
+        extra: { istante?: string | null; passo?: number | null; minuto?: number | null; occorrenze?: number; perDati?: string } = {}) => {
         const passo = extra.passo ?? null;
         out.push(creaRilievo(codice, gravita, spiegazione, {
             ambito, istante: extra.istante ?? null, passo,
             minuto: extra.minuto ?? (passo != null ? b.passi[passo]?.minute ?? null : null),
-            occorrenze: extra.occorrenze,
+            occorrenze: extra.occorrenze, perDati: extra.perDati,
         }));
     };
     const passi = b.passi;
@@ -437,7 +449,7 @@ export function verificaBarraGenerica(b: BarraDaVerificare): Rilievo[] {
             && Math.abs(d - kickoffAtteso) > TOLLERANZA_KICKOFF_DICHIARATO_MS) {
             R('KICKOFF_DISCORDANTE', 'avviso',
                 `L'inizio partita dichiarato dal feed e' alle ${oraUtc(b.inizioDichiarato)} ma la lineetta del calcio d'inizio (primo frame in gioco del mercato) e' alle ${oraUtc(new Date(kickoffAtteso).toISOString())}: scarto ${durata(d - kickoffAtteso)}.`,
-                { istante: b.inizioDichiarato });
+                { istante: b.inizioDichiarato, perDati: motivoKickoffDiscordante(validi, d, kickoffAtteso) });
         }
     }
     const minutoIniziale = passi[kIdxAtteso]?.minute ?? null;
@@ -522,6 +534,31 @@ export function verificaBarraGenerica(b: BarraDaVerificare): Rilievo[] {
     }
 
     return out;
+}
+
+/** 08/10 (cantiere 13): KICKOFF_DISCORDANTE confronta DUE DATI registrati (il flag in gioco del
+ *  mercato, che la pagina usa per la lineetta, e il KickOff del feed): la pagina e' gia' controllata
+ *  da KICKOFF_FUORI_POSTO, quindi la discordanza e' SEMPRE dei dati (classe c). Il motivo dice quale:
+ *  un buco della registrazione (nessun frame fra l'inizio dichiarato e il primo frame in gioco: il
+ *  passaggio in gioco non e' nei dati caricati) oppure frame registrati con il
+ *  mercato NON in gioco dopo l'inizio dichiarato (o in gioco prima): le due fonti non concordano. */
+function motivoKickoffDiscordante(frames: ReadonlyArray<FrameBarra>, dichiaratoMs: number, kickoffMs: number): string {
+    const quando = (ms: number): string => oraUtc(new Date(ms).toISOString());
+    if (dichiaratoMs < kickoffMs) {
+        const fra = frames.filter(f => { const t = msDi(f.ts); return t >= dichiaratoMs && t < kickoffMs; });
+        if (fra.length === 0) {
+            const prima = frames.map(f => msDi(f.ts)).filter(t => t < dichiaratoMs);
+            const da = prima.length > 0 ? Math.max(...prima) : null;
+            return `buco della registrazione${da != null ? ` fra le ${quando(da)}` : ''} e le ${quando(kickoffMs)}: nessun frame registrato `
+                + `fra l'inizio dichiarato dal feed (${quando(dichiaratoMs)}) e il primo frame in gioco. Il passaggio in gioco del mercato `
+                + 'non e\' nei dati caricati: la lineetta sta sul primo passo dopo il buco (se il raw lo ha, la rigenerazione dal raw lo ripristina).';
+        }
+        return `${fra.length} frame registrati fra l'inizio dichiarato dal feed (${quando(dichiaratoMs)}) e le ${quando(kickoffMs)} hanno `
+            + 'il mercato NON in gioco: il KickOff del feed e il flag in gioco del mercato non concordano. La lineetta segue il flag '
+            + 'del mercato (fonte della pagina).';
+    }
+    return `il mercato e' in gioco dalle ${quando(kickoffMs)}, il feed dichiara l'inizio alle ${quando(dichiaratoMs)}: il KickOff del feed `
+        + 'e il flag in gioco del mercato non concordano. La lineetta segue il flag del mercato (fonte della pagina).';
 }
 
 /** Numero di buchi dichiarati (le note BUCO_REGISTRAZIONE con il loro raggruppamento). */

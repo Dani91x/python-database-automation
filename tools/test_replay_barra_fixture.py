@@ -196,3 +196,47 @@ def test_le_impronte_lf_delle_fixture_esistenti_restano_identiche(ev, tmp_path):
     assert gen.impronte_sorgente(ev) == atteso
     assert gen.impronte_sorgente(ev, copia) == atteso
     shutil.rmtree(copia)
+
+
+# ---------------------------------------------------------------------------
+# 08/10 (cantiere 13): una partita del DATABASE si riproduce dal suo raw (sul PC, `_live_raw/`)
+# fuori dal repository: --registrazioni (radice delle registrazioni) e --uscita (cartella)
+# ---------------------------------------------------------------------------
+@pytest.mark.skipif(os.environ.get("BARRA_FIXTURE_SALTA_RIGENERAZIONE") == "1", reason="rigenerazione saltata su richiesta")
+def test_registrazioni_e_uscita_fuori_dal_repository(tmp_path, capsys):
+    import json
+    import shutil
+
+    ev = "35760084" if "35760084" in EVENTI else EVENTI[0]
+    radice = tmp_path / "live_raw"
+    shutil.copytree(os.path.join(gen.CARTELLA_REGISTRAZIONI, ev), radice / ev)
+    uscita = tmp_path / "fixture"
+    assert gen.eventi_registrati(str(radice)) == [ev]
+    assert gen.main(["--registrazioni", str(radice), "--uscita", str(uscita), "--tutte"]) == 0
+    scritta = (uscita / f"replay_barra_{ev}.json").read_text(encoding="utf-8")
+    # stessa registrazione, stessi byte della fixture del repository (impronte comprese)
+    assert scritta == open(gen.nome_fixture(ev), "r", encoding="utf-8").read()
+    assert gen.main(["--registrazioni", str(radice), "--uscita", str(uscita), "--verifica", ev]) == 0
+    # la fixture del repository NON e' stata toccata e l'uscita dice dove ha scritto
+    assert f"{ev}: scritta" in capsys.readouterr().out
+    # i file letti sono davvero quelli della cartella indicata (punteggi e timeline compresi): una copia con la
+    # timeline VUOTA da' una fixture senza righe-evento e con l'impronta della timeline vuota
+    radice2 = tmp_path / "live_raw_2"
+    shutil.copytree(radice / ev, radice2 / ev)
+    (radice2 / ev / f"{ev}.timeline.jsonl").write_bytes(b"")
+    fx2 = gen.costruisci_fixture(ev, str(radice2))
+    assert [r for r in fx2["score_timeline"] if r[5]] == []
+    assert any(r[5] for r in json.loads(scritta)["score_timeline"])
+    import hashlib
+
+    assert fx2["sorgente"][f"{ev}.timeline.jsonl"] == hashlib.sha256(b"").hexdigest()
+    # una cartella senza la partita: errore chiaro, nessun file scritto
+    with pytest.raises(FileNotFoundError):
+        gen.main(["--registrazioni", str(tmp_path / "vuota"), "--uscita", str(tmp_path / "x"), ev])
+    assert not (tmp_path / "x" / f"replay_barra_{ev}.json").exists()
+
+
+def test_cartelle_di_serie_invariate():
+    # senza le opzioni nuove i percorsi sono quelli di prima (repository)
+    assert gen.nome_fixture("1") == os.path.join(gen.CARTELLA_FIXTURE, "replay_barra_1.json")
+    assert gen.eventi_registrati() == gen.eventi_registrati(gen.CARTELLA_REGISTRAZIONI)

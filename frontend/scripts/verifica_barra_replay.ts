@@ -14,6 +14,7 @@
 //   npx vite-node scripts/verifica_barra_replay.ts --env-file ../.env
 //   npx vite-node scripts/verifica_barra_replay.ts --evento 35797769 --evento 35760084
 //   npx vite-node scripts/verifica_barra_replay.ts --solo-incoerenti --senza-note
+//   npx vite-node scripts/verifica_barra_replay.ts --evento 35787218 --dettaglio   (08/10: prove di ogni incoerenza)
 //
 // CREDENZIALI: SOLO da variabili d'ambiente (mai scritte nel file), con questi nomi:
 //   URL    VITE_SUPABASE_URL      (oppure SUPABASE_URL)
@@ -28,6 +29,9 @@
 //
 // CODICE DI USCITA: 0 = tutte coerenti; 1 = almeno una partita con incoerenze o non
 // verificabile; 2 = uso errato o credenziali mancanti.
+// 08/10 (cantiere 13): un'incoerenza dei DATI registrati (classe c: buco della registrazione,
+// due fonti del feed discordi) e' DICHIARATA nel referto con "[PER DATI: motivo]", la partita
+// come "INCOERENTE PER DATI" e il riepilogo dice quante lo sono; l'uscita resta 1 (mai silenziosa).
 
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -40,11 +44,12 @@ interface Argomenti {
     soloIncoerenti: boolean;
     senzaNote: boolean;
     json: boolean;
+    dettaglio: boolean;
     aiuto: boolean;
 }
 
 function leggiArgomenti(argv: string[]): Argomenti | string {
-    const a: Argomenti = { eventi: [], limite: 500, envFile: null, soloIncoerenti: false, senzaNote: false, json: false, aiuto: false };
+    const a: Argomenti = { eventi: [], limite: 500, envFile: null, soloIncoerenti: false, senzaNote: false, json: false, dettaglio: false, aiuto: false };
     for (let i = 0; i < argv.length; i++) {
         const x = argv[i];
         const valore = (): string | null => (i + 1 < argv.length ? argv[++i] : null);
@@ -54,6 +59,7 @@ function leggiArgomenti(argv: string[]): Argomenti | string {
         else if (x === '--solo-incoerenti') a.soloIncoerenti = true;
         else if (x === '--senza-note') a.senzaNote = true;
         else if (x === '--json') a.json = true;
+        else if (x === '--dettaglio') a.dettaglio = true;
         else if (x === '--aiuto' || x === '-h' || x === '--help') a.aiuto = true;
         else return `argomento sconosciuto: ${x}`;
     }
@@ -62,7 +68,7 @@ function leggiArgomenti(argv: string[]): Argomenti | string {
 
 const USO = [
     'uso: npx vite-node scripts/verifica_barra_replay.ts [--env-file ../.env] [--evento ID]... [--limite N]',
-    '                                                    [--solo-incoerenti] [--senza-note] [--json]',
+    '                                                    [--solo-incoerenti] [--senza-note] [--json] [--dettaglio]',
     'credenziali (solo da variabili d\'ambiente): VITE_SUPABASE_URL (o SUPABASE_URL) e',
     '  SUPABASE_SERVICE_ROLE_KEY, oppure VITE_SUPABASE_ANON_KEY + VERIFICA_EMAIL + VERIFICA_PASSWORD',
 ].join('\n');
@@ -129,6 +135,7 @@ async function principale(): Promise<number> {
         risultati = await db.verificaPartite(db.fonteSupabase, {
             limite: arg.limite,
             eventi: arg.eventi,
+            dettaglio: arg.dettaglio,
             alRisultato: (r, i, tot) => {
                 if (arg.json) return;
                 const t = db.refertoPartita(r, !arg.senzaNote, arg.soloIncoerenti);
@@ -142,10 +149,13 @@ async function principale(): Promise<number> {
     const rie = db.riepilogo(risultati);
     if (arg.json) {
         console.log(JSON.stringify({
-            riepilogo: { partite: rie.partite, ok: rie.ok, incoerenti: rie.incoerenti, nonVerificate: rie.nonVerificate },
+            riepilogo: { partite: rie.partite, ok: rie.ok, incoerenti: rie.incoerenti, nonVerificate: rie.nonVerificate, perDati: rie.perDati },
             partite: risultati.map(r => ({
                 event_id: r.eventId, titolo: r.titolo, ok: r.esito?.ok ?? false, errore: r.errore,
+                // 08/10 (cantiere 13): true = incoerente SOLO per i dati registrati (ogni incoerenza ha `perDati`)
+                per_dati: r.esito ? !r.esito.ok && r.esito.incoerenze.every(x => !!x.perDati) : false,
                 incoerenze: r.esito?.incoerenze ?? [], note: arg.senzaNote ? [] : (r.esito?.note ?? []), conteggi: r.esito?.conteggi ?? null,
+                ...(arg.dettaglio ? { dettaglio: r.dettaglio ?? [] } : {}),
             })),
         }, null, 2));
     } else {

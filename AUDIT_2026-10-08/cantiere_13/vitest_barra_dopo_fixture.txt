@@ -1,0 +1,69 @@
+
+ RUN  v3.2.6 /home/user/python-database-automation/.claude/worktrees/agent-ad97311e16b40a5ca/frontend
+
+ ✓ src/lib/replayBarraSimboli.test.tsx (12 tests) 49741ms
+   ✓ barra e simboli — partita vera 35797769 > la griglia ha tanti passi quanti i bucket da 10 s con frame, e gli estremi sono primo e ultimo frame  5297ms
+   ✓ barra e simboli — partita vera 35797769 > il calcio d'inizio sta al primo passo con ts >= primo frame in-gioco; la pagina si apre li'; PRE solo prima  2752ms
+   ✓ barra e simboli — partita vera 35797769 > ogni simbolo sta alla posizione attesa e compare scorrendo proprio a quel passo  5095ms
+   ✓ barra e simboli — partita vera 35797769 > i segmenti di sospensione sono esattamente i passi in cui il Match Odds e' SOSPESO, e il pannello concorda  9453ms
+   ✓ barra e simboli — partita vera 35797769 > il ladder del Match Odds al cursore e' l'ultimo frame <= istante del passo (prima/dopo ogni gol)  8187ms
+   ✓ barra e simboli — partita vera 35797769 > dopo un gol il ladder si riprezza nel verso giusto (casa segna: il back della casa scende; ospite: sale)  2560ms
+   ✓ barra e simboli — partita vera 35760084 > la griglia ha tanti passi quanti i bucket da 10 s con frame, e gli estremi sono primo e ultimo frame  1923ms
+   ✓ barra e simboli — partita vera 35760084 > il calcio d'inizio sta al primo passo con ts >= primo frame in-gioco; la pagina si apre li'; PRE solo prima  982ms
+   ✓ barra e simboli — partita vera 35760084 > ogni simbolo sta alla posizione attesa e compare scorrendo proprio a quel passo  4081ms
+   ✓ barra e simboli — partita vera 35760084 > i segmenti di sospensione sono esattamente i passi in cui il Match Odds e' SOSPESO, e il pannello concorda  3698ms
+   ✓ barra e simboli — partita vera 35760084 > il ladder del Match Odds al cursore e' l'ultimo frame <= istante del passo (prima/dopo ogni gol)  4918ms
+   ✓ barra e simboli — partita vera 35760084 > dopo un gol il ladder si riprezza nel verso giusto (casa segna: il back della casa scende; ospite: sale)  792ms
+ ✓ src/lib/replayVerificaBarraScript.test.ts (4 tests) 61997ms
+   ✓ script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > database coerente: esce con 0, referto per partita e riepilogo; SOLO richieste di lettura alle tre RPC  15957ms
+   ✓ script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > database con un difetto sul punteggio: esce con 1 e dice quale partita e quale codice  16734ms
+   ✓ script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > --evento filtra una sola partita; --json stampa un documento leggibile da una macchina  14280ms
+   ✓ script verifica_barra_replay.ts lanciato davvero (finto PostgREST su localhost) > credenziali SOLO da ambiente: senza esce con 2 e lo dice; con la sola chiave anonima chiede anche l'utente  15024ms
+ ✓ src/lib/replayVerificaBarra.pagina.test.tsx (2 tests) 12267ms
+   ✓ pagina vera vs verificatore - partita 35760084 > stessi passi, stessa apertura, stessa lineetta del calcio d'inizio, stessi segmenti di sospensione, stessi simboli, stesso tabellone  6953ms
+   ✓ pagina vera vs verificatore - partita 35797769 > stessi passi, stessa apertura, stessa lineetta del calcio d'inizio, stessi segmenti di sospensione, stessi simboli, stesso tabellone  5299ms
+ ✓ src/lib/replayVerificaBarra.avvisoPagina.test.tsx (4 tests) 6968ms
+   ✓ Match Replay - avviso di coerenza della barra, partita 35760084 > barra coerente: nessun avviso nella pagina  2830ms
+   ✓ Match Replay - avviso di coerenza della barra, partita 35760084 > barra che non torna: la pagina mostra l'avviso con il motivo  982ms
+   ✓ Match Replay - avviso di coerenza della barra, partita 35797769 > barra coerente: nessun avviso nella pagina  1784ms
+   ✓ Match Replay - avviso di coerenza della barra, partita 35797769 > barra che non torna: la pagina mostra l'avviso con il motivo  1371ms
+ ✓ src/lib/replayVerificaBarraDb.test.ts (13 tests) 1355ms
+   ✓ verificaPartite con le funzioni VERE della pagina e il finto delle RPC > un database con un difetto (due fonti discordanti sul punteggio) viene segnalato: riepilogo rosso e codice nel referto  450ms
+ ✓ src/lib/replayVerificaBarra.partite.test.ts (17 tests) 2788ms
+   ✓ falsificazione sulla partita 35797769 > D2 stesso difetto nel motore opportunita' (buildSnapshots): rosso (MOTORE_PUNTEGGIO)  459ms
+   ✓ falsificazione sulla partita 35797769 > D3 registrazione che INIZIA a partita in corso: la funzione vera e' pulita, quella di prima del fix e' rossa (SIMBOLO_FUORI_REGISTRAZIONE)  313ms
+   ✓ falsificazione sulla partita 35797769 > D4 gol nel punteggio ma assente dalla timeline (poll perso): la funzione vera lo disegna, quella di prima del fix no (GOL_SENZA_SIMBOLO)  375ms
+ ✓ src/lib/replayVerificaBarra.test.ts (41 tests) 2499ms
+   ✓ falsificazione dei simboli spostati (funzione della pagina sostituita) > simboli un passo prima o dopo: SIMBOLO_PRIMA_DELL_ISTANTE / SIMBOLO_POSIZIONE sulla partita vera  599ms
+ ✓ src/lib/replayVerificaBarraImpronta.test.ts (10 tests) 944ms
+   ✓ registrazione 35797769: stessa impronta con LF e con CRLF, uguale alla fixture esistente > copia CRLF e copia LF in cartelle temporanee: impronteSorgente identiche e uguali a fixture.sorgente  307ms
+ ✓ src/lib/replayVerificaBarraLancio.test.ts (7 tests) 495ms
+   ✓ le virgolette tengono insieme un percorso con spazi attraverso una shell vera > node riceve il percorso con lo spazio come UN argomento quando e' quotato, in DUE quando non lo e'  488ms
+ ✓ src/components/replay/AvvisoCoerenzaBarra.test.tsx (10 tests) 2381ms
+   ✓ AvvisoCoerenzaBarra - partita vera 35760084 > barra coerente: non compare nulla  438ms
+   ✓ AvvisoCoerenzaBarra - partita vera 35797769 > barra con un difetto: compare l'avviso con il codice, l'istante e la spiegazione  333ms
+   ✓ AvvisoCoerenzaBarra - partita vera 35797769 > usa gli snapshot passati dalla pagina (non li rifa): un motore con il punteggio sbagliato compare come MOTORE_PUNTEGGIO  335ms
+   ✓ AvvisoCoerenzaBarra - casi limite > elenca al massimo `massimo` segnalazioni e dice quante altre ce ne sono (singolare e plurale)  435ms
+ ✓ src/lib/replayTimelineEvents.barra.test.ts (19 tests) 405ms
+ ✓ src/lib/tennisReplayVerificaBarra.test.ts (17 tests | 1 skipped) 247ms
+ ✓ src/lib/replayTimelineEvents.salti.test.ts (6 tests) 189ms
+ ✓ src/lib/replayTimelineEvents.test.ts (5 tests) 51ms
+ ✓ src/lib/replayBarraPunteggio.test.tsx (8 tests) 121335ms
+   ✓ punteggio al cursore — partita vera 35797769 > a OGNI passo della barra il tabellone e' il punteggio vero (intervallo e righe-evento compresi)  56352ms
+   ✓ punteggio al cursore — partita vera 35797769 > a fine replay («FT») mostra il risultato finale  1900ms
+   ✓ punteggio al cursore — partita vera 35797769 > lungo l'intervallo il tabellone resta quello del primo tempo (mai 0-0 per via della riga FirstHalfEnd)  1629ms
+   ✓ punteggio al cursore — partita vera 35797769 > ogni gol: il tabellone passa dal punteggio di prima a quello di dopo entro 2 passi dal simbolo, mai per 0-0  3665ms
+   ✓ punteggio al cursore — partita vera 35760084 > a OGNI passo della barra il tabellone e' il punteggio vero (intervallo e righe-evento compresi)  55837ms
+   ✓ punteggio al cursore — partita vera 35760084 > a fine replay («FT») mostra il risultato finale  413ms
+   ✓ punteggio al cursore — partita vera 35760084 > lungo l'intervallo il tabellone resta quello del primo tempo (mai 0-0 per via della riga FirstHalfEnd)  540ms
+   ✓ punteggio al cursore — partita vera 35760084 > ogni gol: il tabellone passa dal punteggio di prima a quello di dopo entro 2 passi dal simbolo, mai per 0-0  992ms
+
+ Test Files  15 passed (15)
+      Tests  174 passed | 1 skipped (175)
+   Start at  10:44:57
+   Duration  136.35s (transform 4.90s, setup 18.75s, collect 17.20s, tests 263.66s, environment 68.47s, prepare 8.48s)
+
+
+real	2m18.469s
+user	1m35.948s
+sys	0m7.231s

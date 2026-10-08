@@ -80,6 +80,26 @@ describe('AvvisoCoerenzaBarra - casi limite', () => {
         expect(within(tutte.container).getAllByTestId('avviso-coerenza-voce')).toHaveLength(2);
         expect(within(tutte.container).queryByTestId('avviso-coerenza-altre')).toBeNull();
     });
+
+    // 08/10 (cantiere 13): un'incoerenza dei DATI registrati (classe c) resta visibile CON il suo motivo
+    it('incoerenza per dati (KickOff del feed 6 minuti prima del primo frame in gioco): avviso con il motivo dei dati', () => {
+        const { estremi } = caricaPartita(EVENTI[0]);
+        const k = Math.min(...replay.frames.filter(f => f.inplay).map(f => Date.parse(f.ts)));
+        const prima = new Date(k - 360_000).toISOString().replace('Z', '+00:00');
+        const conKickOff = { ...replay, score_timeline: replay.score_timeline.map(r => (r.event_type === 'KickOff' ? { ...r, ts: prima } : r)) };
+        const { container } = render(<AvvisoCoerenzaBarra replay={conKickOff} estremi={estremi} />);
+        const voci = within(container).getAllByTestId('avviso-coerenza-voce');
+        expect(voci).toHaveLength(1);
+        expect(voci[0]).toHaveTextContent('KICKOFF_DISCORDANTE');
+        expect(within(voci[0]).getByTestId('avviso-coerenza-per-dati')).toHaveTextContent(/Dato registrato, non errore della pagina: \d+ frame registrati/);
+    });
+
+    it('un difetto della pagina NON ha la riga dei dati', () => {
+        const { estremi } = caricaPartita(EVENTI[0]);
+        const { container } = render(<AvvisoCoerenzaBarra replay={conFonteInRitardo(replay)} estremi={estremi} />);
+        expect(within(container).getAllByTestId('avviso-coerenza-voce').length).toBeGreaterThan(0);
+        expect(within(container).queryByTestId('avviso-coerenza-per-dati')).toBeNull();
+    });
 });
 
 describe('AvvisoCoerenzaBarra - verificatore di un altro sport (il tennis riusa il componente)', () => {

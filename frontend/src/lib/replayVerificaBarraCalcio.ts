@@ -24,7 +24,7 @@
 import type { ReplayData, ScoreEvent } from '@/lib/live';
 import { buildSnapshots } from '@/lib/opportunities/snapshot';
 import type { Snapshot } from '@/lib/opportunities/types';
-import { punteggioAlTs, timelineEventMarkers, type TimelineMarker } from '@/lib/replayTimelineEvents';
+import { kindDiTipo, punteggioAlTs, timelineEventMarkers, type TimelineMarker } from '@/lib/replayTimelineEvents';
 import {
     BUCKET_BARRA_MS, creaRilievo, esitoDaRilievi, idMercatiSospensione, kickoffIndexSuPassi, kickoffTsDaFrame,
     oraUtc, passiBarra, passoVisibile, sospesiPerPasso, verificaBarraGenerica,
@@ -140,11 +140,11 @@ function verificaCalcio(
     const n = passi.length;
     const msPassi = passi.map(p => msDi(p.ts));
     const R = (codice: CodiceRilievo, gravita: GravitaRilievo, spiegazione: string,
-        extra: { istante?: string | null; passo?: number | null; occorrenze?: number } = {}) => {
+        extra: { istante?: string | null; passo?: number | null; occorrenze?: number; perDati?: string } = {}) => {
         const passo = extra.passo ?? null;
         out.push(creaRilievo(codice, gravita, spiegazione, {
             ambito: 'calcio', istante: extra.istante ?? null, passo,
-            minuto: passo != null ? passi[passo]?.minute ?? null : null, occorrenze: extra.occorrenze,
+            minuto: passo != null ? passi[passo]?.minute ?? null : null, occorrenze: extra.occorrenze, perDati: extra.perDati,
         }));
     };
     if (n === 0) return out;
@@ -231,13 +231,38 @@ function verificaCalcio(
 
         // ---- (4) gol del punteggio <-> simboli di gol, uno a uno ----
         const attesi: { team: 'home' | 'away'; ms: number; ts: string }[] = [];
+        // 08/10 (cantiere 13): gli AUMENTI VERI del punteggio che NON sono gol attesi, per
+        // non dare SIMBOLO_GOL_SENZA_AUMENTO a un simbolo che un aumento ce l'ha:
+        //  - la RISALITA dopo una correzione del feed (VAR) della stessa fonte: 0-1, gol
+        //    annullato 0-2 -> 0-1, poi il gol vero 0-2. Contro il massimo visto il gol vero
+        //    non e' "atteso" (resta escluso: un ritardo fra due fonti non deve contare due
+        //    volte), ma il suo simbolo e' giusto (35787218, 35777617, 35768297, 35768365);
+        //  - l'aumento PRIMA del primo frame (o dopo l'ultimo) il cui Goal arriva dentro la
+        //    barra entro 3 minuti (35812264: registrazione partita al 56', Goal del 55').
+        // Servono SOLO a giustificare simboli rimasti senza abbinamento, uno a uno: non
+        // diventano gol pretesi (nessun GOL_SENZA_SIMBOLO nuovo).
+        const nonAttesi: { team: 'home' | 'away'; ms: number; preso: boolean }[] = [];
         let mh = 0, ma = 0;
-        for (const r of conPunteggio) {
+        // livello dopo le correzioni della STESSA fonte (scende solo con una correzione VAR)
+        let ch = 0, ca = 0;
+        for (let k = 0; k < conPunteggio.length; k++) {
+            const r = conPunteggio[k];
+            const prev = k > 0 ? conPunteggio[k - 1] : null;
+            if (prev && prev.source === r.source) {
+                if (r.home < prev.home) ch = Math.min(ch, r.home);
+                if (r.away < prev.away) ca = Math.min(ca, r.away);
+            }
             if (dentro(r.ms)) {
-                for (let k = mh; k < r.home; k++) attesi.push({ team: 'home', ms: r.ms, ts: r.ts });
-                for (let k = ma; k < r.away; k++) attesi.push({ team: 'away', ms: r.ms, ts: r.ts });
+                for (let k2 = mh; k2 < r.home; k2++) attesi.push({ team: 'home', ms: r.ms, ts: r.ts });
+                for (let k2 = ma; k2 < r.away; k2++) attesi.push({ team: 'away', ms: r.ms, ts: r.ts });
+                for (let k2 = ch; k2 < Math.min(r.home, mh); k2++) nonAttesi.push({ team: 'home', ms: r.ms, preso: false });
+                for (let k2 = ca; k2 < Math.min(r.away, ma); k2++) nonAttesi.push({ team: 'away', ms: r.ms, preso: false });
+            } else {
+                for (let k2 = ch; k2 < r.home; k2++) nonAttesi.push({ team: 'home', ms: r.ms, preso: false });
+                for (let k2 = ca; k2 < r.away; k2++) nonAttesi.push({ team: 'away', ms: r.ms, preso: false });
             }
             mh = Math.max(mh, r.home); ma = Math.max(ma, r.away);
+            ch = Math.max(ch, r.home); ca = Math.max(ca, r.away);
         }
         const gol = simboli
             .map(s => ({ s, ms: msDi(s.ts), preso: false }))
@@ -278,6 +303,18 @@ function verificaCalcio(
                 R('GOL_ANNULLATO', 'nota',
                     `Il simbolo "${g.s.label}" delle ${oraUtc(g.s.ts)} non ha un aumento del punteggio: il punteggio e' stato corretto subito dopo (gol annullato).`,
                     { istante: g.s.ts, passo: passoVisibile(msPassi, g.ms) });
+                continue;
+            }
+            // 08/10 (cantiere 13): un aumento vero non atteso (risalita dopo il VAR, aumento appena
+            // fuori registrazione) della STESSA squadra entro 3 minuti giustifica il simbolo, uno a uno
+            let best = -1, bestD = Infinity;
+            nonAttesi.forEach((a, j) => {
+                if (a.preso || a.team !== lato(g.s.team)) return;
+                const d = Math.abs(a.ms - g.ms);
+                if (d <= FINESTRA_ABBINAMENTO_GOL_MS && d < bestD) { best = j; bestD = d; }
+            });
+            if (best >= 0) {
+                nonAttesi[best].preso = true;
             } else {
                 R('SIMBOLO_GOL_SENZA_AUMENTO', 'errore',
                     `C'e' un simbolo di gol ("${g.s.label}", ${g.s.minute != null ? `${g.s.minute}' ` : ''}alle ${oraUtc(g.s.ts)}) ma il punteggio non aumenta per quella squadra entro 3 minuti.`,
@@ -322,8 +359,24 @@ function verificaCalcio(
             // i gialli/rossi con la timeline discreta vengono da un'ALTRA fonte (get_event_timeline):
             // una differenza e' un dato del feed da guardare; angoli e cartellini derivati sono della pagina
             const gravita: GravitaRilievo = t.kind !== 'corner' && hasDiscrete ? 'avviso' : 'errore';
+            // 08/10 (cantiere 13): se la barra disegna ESATTAMENTE i cartellini della timeline (righe-evento
+            // dentro la registrazione, uno per minuto), la pagina e' fedele e la differenza e' fra le due fonti
+            // del feed (timeline e conteggi): dichiarata "per dati" (classe c). Altrimenti NON lo e'.
+            let perDati: string | undefined;
+            if (gravita === 'avviso') {
+                const nellaTimeline = new Set(righe
+                    .filter(r => kindDiTipo(r.event_type) === t.kind && lato(campo(r.payload, 'team') as string | null) === sq)
+                    .filter(r => { const m = msDi(r.ts); return Number.isFinite(m) && dentro(m); })
+                    .map(r => (r.minute != null ? `m${r.minute}` : `t${r.ts}`))).size;
+                if (nellaTimeline === visti) {
+                    perDati = `la barra disegna i ${visti} ${t.nome} della timeline Betfair di "${nome}" dentro la registrazione; i conteggi del `
+                        + `punteggio ne dicono ${atteso}${prima[sq] > 0 ? ` (${prima[sq]} gia' prima dell'inizio della registrazione)` : ''}: `
+                        + 'le due fonti del feed non concordano.';
+                }
+            }
             R(t.codice, gravita,
-                `${t.nome[0].toUpperCase()}${t.nome.slice(1)} di "${nome}": il punteggio ne conta ${atteso}, sulla barra ci sono ${visti} simboli.`);
+                `${t.nome[0].toUpperCase()}${t.nome.slice(1)} di "${nome}": il punteggio ne conta ${atteso}, sulla barra ci sono ${visti} simboli.`,
+                { perDati });
         }
     }
 

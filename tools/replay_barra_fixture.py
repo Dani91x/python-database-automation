@@ -30,6 +30,12 @@ Uso (dalla radice del repository, Python 3.13 con betfairlightweight):
     python3 tools/replay_barra_fixture.py --tutte             # tutte le partite in registrazioni_banco/
     python3 tools/replay_barra_fixture.py --tutte --verifica  # NON scrive: esce 1 se manca o e' diversa
 
+08/10 (cantiere 13): per riprodurre una partita del DATABASE dal suo raw (sul PC, in `_live_raw/`)
+senza copiarla nel repository:
+
+    python3 tools/replay_barra_fixture.py --registrazioni _live_raw --uscita <cartella> 35787218
+    (poi, da frontend/: npx vite-node scripts/verifica_barra_fixture.ts <cartella>/replay_barra_35787218.json --dettaglio)
+
 Solo lettura dei file di registrazione; nessuna rete, nessun database. NON importa
 `config_stream` (carica il `.env` vero): la cadenza e' la costante qui sotto, la
 stessa di `UPLOAD_CADENCE_SEC`.
@@ -69,17 +75,19 @@ PRE_MATCH_MAX_MS = 4 * 3600_000
 BUCKET_BARRA_MS = 10_000  # bucket della griglia della barra (MatchReplay.tsx)
 
 
-def nome_fixture(event_id: str) -> str:
-    return os.path.join(CARTELLA_FIXTURE, f"replay_barra_{event_id}.json")
+def nome_fixture(event_id: str, cartella: Optional[str] = None) -> str:
+    """Percorso della fixture; `cartella` (08/10, cantiere 13) = dove scriverla se non nel repository."""
+    return os.path.join(cartella or CARTELLA_FIXTURE, f"replay_barra_{event_id}.json")
 
 
-def eventi_registrati() -> List[str]:
-    """Ogni sottocartella di registrazioni_banco/ con un raw dello stream."""
+def eventi_registrati(cartella: Optional[str] = None) -> List[str]:
+    """Ogni sottocartella di registrazioni_banco/ (o di `cartella`) con un raw dello stream."""
+    radice = cartella or CARTELLA_REGISTRAZIONI
     out: List[str] = []
-    if not os.path.isdir(CARTELLA_REGISTRAZIONI):
+    if not os.path.isdir(radice):
         return out
-    for nome in sorted(os.listdir(CARTELLA_REGISTRAZIONI)):
-        d = os.path.join(CARTELLA_REGISTRAZIONI, nome)
+    for nome in sorted(os.listdir(radice)):
+        d = os.path.join(radice, nome)
         if os.path.isdir(d) and (
             os.path.exists(os.path.join(d, f"{nome}.raw.jsonl.gz"))
             or os.path.exists(os.path.join(d, f"{nome}.raw.jsonl"))
@@ -162,7 +170,7 @@ def _serializza(book: Any) -> Dict[str, Any]:
     }
 
 
-def libri_dallo_stream(event_id: str, percorso_uscita: str) -> Dict[str, Dict[str, Any]]:
+def libri_dallo_stream(event_id: str, percorso_uscita: str, cartella: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
     """Scrive in `percorso_uscita` le righe dei libri (una per aggiornamento, nell'ordine
     dello stream, come le scrive il recorder) e ritorna il catalogo dei mercati
     ({market_id: {market_type, runners:[(id, sortPriority)], open_date}})."""
@@ -172,7 +180,7 @@ def libri_dallo_stream(event_id: str, percorso_uscita: str) -> Dict[str, Dict[st
     listener = StreamListener(output_queue=q, max_latency=None)
     listener.register_stream(0, "marketSubscription")
     catalogo: Dict[str, Dict[str, Any]] = {}
-    fh = _apri_testo(os.path.join(CARTELLA_REGISTRAZIONI, event_id, f"{event_id}.raw.jsonl"))
+    fh = _apri_testo(os.path.join(cartella or CARTELLA_REGISTRAZIONI, event_id, f"{event_id}.raw.jsonl"))
     if fh is None:
         raise FileNotFoundError(f"raw dello stream mancante per {event_id}")
     with fh, open(percorso_uscita, "w", encoding="utf-8") as out:
@@ -224,10 +232,10 @@ def _leggi_jsonl(path_base: str) -> List[Dict[str, Any]]:
     return out
 
 
-def righe_punteggio(event_id: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def righe_punteggio(event_id: str, cartella: Optional[str] = None) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """(righe live_score_timeline, mappa minuti per il curator): come
     `uploader.py::_read_scores` + `_read_timeline_events`."""
-    base = os.path.join(CARTELLA_REGISTRAZIONI, event_id, event_id)
+    base = os.path.join(cartella or CARTELLA_REGISTRAZIONI, event_id, event_id)
     righe: List[Dict[str, Any]] = []
     minute_map: List[Dict[str, Any]] = []
     for rec in _leggi_jsonl(base + ".scores.jsonl"):
@@ -354,11 +362,12 @@ def campiona_come_la_pagina(righe: List[Dict[str, Any]], n_mercati: int) -> Tupl
 # --------------------------------------------------------------------------------
 # 4. riduzione della fixture e scrittura
 # --------------------------------------------------------------------------------
-def costruisci_fixture(event_id: str) -> Dict[str, Any]:
-    righe_pt, minute_map = righe_punteggio(event_id)
+def costruisci_fixture(event_id: str, cartella: Optional[str] = None) -> Dict[str, Any]:
+    """`cartella` (08/10, cantiere 13) = radice delle registrazioni (di serie `registrazioni_banco/`)."""
+    righe_pt, minute_map = righe_punteggio(event_id, cartella)
     with tempfile.TemporaryDirectory() as tmp:
         percorso = os.path.join(tmp, f"{event_id}.jsonl")
-        catalogo = libri_dallo_stream(event_id, percorso)
+        catalogo = libri_dallo_stream(event_id, percorso, cartella)
         snapshots = snapshot_dal_curator(event_id, percorso, minute_map)
     if not snapshots:
         raise ValueError(f"{event_id}: il curator non ha prodotto nessuno snapshot")
@@ -432,7 +441,7 @@ def costruisci_fixture(event_id: str) -> Dict[str, Any]:
             [r["ts"], r["source"], r["minute"], r["score_home"], r["score_away"], r["event_type"], _payload_ridotto(r)]
             for r in righe_pt_ord
         ],
-        "sorgente": impronte_sorgente(event_id),
+        "sorgente": impronte_sorgente(event_id, cartella),
     }
 
 
@@ -446,25 +455,38 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("eventi", nargs="*", help="ID delle partite in registrazioni_banco/")
     ap.add_argument("--tutte", action="store_true", help="tutte le partite di registrazioni_banco/")
     ap.add_argument("--verifica", action="store_true", help="non scrive: esce 1 se la fixture manca o differisce")
+    # 08/10 (cantiere 13): partite del database riprodotte dal raw sul PC, fuori dal repository
+    ap.add_argument("--registrazioni", default=None, help="radice delle registrazioni (<radice>/<event>/<event>.raw.jsonl[.gz]); di serie registrazioni_banco/")
+    ap.add_argument("--uscita", default=None, help="cartella in cui scrivere (o verificare) le fixture; di serie frontend/src/lib/__fixtures__/")
     a = ap.parse_args(argv)
-    eventi = eventi_registrati() if a.tutte else a.eventi
+    eventi = eventi_registrati(a.registrazioni) if a.tutte else a.eventi
     if not eventi:
         print("nessuna partita (indica un ID o --tutte)", file=sys.stderr)
         return 2
     esito = 0
+
+    def mostra(percorso: str) -> str:
+        # su Windows una cartella su un altro disco non ha un percorso relativo alla radice
+        try:
+            return os.path.relpath(percorso, RADICE)
+        except ValueError:
+            return percorso
+
+    if a.uscita and not a.verifica:
+        os.makedirs(a.uscita, exist_ok=True)
     for ev in eventi:
-        testo = serializza(costruisci_fixture(ev))
-        dest = nome_fixture(ev)
+        testo = serializza(costruisci_fixture(ev, a.registrazioni))
+        dest = nome_fixture(ev, a.uscita)
         if a.verifica:
             att = open(dest, "r", encoding="utf-8").read() if os.path.exists(dest) else None
             stato = "OK" if att == testo else ("MANCA" if att is None else "DIVERSA")
-            print(f"{ev}: {stato} ({os.path.relpath(dest, RADICE)})")
+            print(f"{ev}: {stato} ({mostra(dest)})")
             if stato != "OK":
                 esito = 1
         else:
             with open(dest, "w", encoding="utf-8", newline="\n") as fh:
                 fh.write(testo)
-            print(f"{ev}: scritta {os.path.relpath(dest, RADICE)} ({len(testo) // 1024} KB)")
+            print(f"{ev}: scritta {mostra(dest)} ({len(testo) // 1024} KB)")
     return esito
 
 

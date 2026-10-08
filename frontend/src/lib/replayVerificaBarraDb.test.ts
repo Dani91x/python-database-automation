@@ -136,6 +136,44 @@ describe('verificaPartite con le funzioni VERE della pagina e il finto delle RPC
     it('nessuna partita nell\'elenco: il riepilogo NON dice "tutto OK" (non si certifica il vuoto)', () => {
         expect(riepilogo([]).tutteOk).toBe(false);
     });
+
+    // 08/10 (cantiere 13): le partite incoerenti SOLO per i dati registrati (classe c) sono dichiarate
+    it('incoerenza dei DATI (KickOff del feed discorde dal flag in gioco): "INCOERENTE PER DATI" nel riepilogo, mai "OK"', async () => {
+        const conKickOff = (replay: ReplayData): ReplayData => {
+            const k = Math.min(...replay.frames.filter(f => f.inplay).map(f => Date.parse(f.ts)));
+            const prima = new Date(k - 360_000).toISOString().replace('Z', '+00:00');
+            return { ...replay, score_timeline: replay.score_timeline.map(r => (r.event_type === 'KickOff' ? { ...r, ts: prima } : r)) };
+        };
+        stato.db = new FintoDb(EVENTI, {
+            modifica: (ev: string, replay: ReplayData): ReplayData => {
+                const r = conKickOff(replay);
+                if (ev !== EVENTI[EVENTI.length - 1] || EVENTI.length < 2) return r;
+                // l'ultima partita ha ANCHE un difetto vero (due fonti discordanti): non e' "solo per dati"
+                const g = r.score_timeline.find(x => (x.score_home ?? 0) > 0);
+                if (!g) return r;
+                const tardi = new Date(Date.parse(g.ts) + 5000).toISOString().replace('Z', '+00:00');
+                return { ...r, score_timeline: [...r.score_timeline, { ...g, ts: tardi, source: 'api_football', score_home: 0, score_away: 0 }] };
+            },
+        });
+        const risultati = await verificaPartite(fonteSupabase, {});
+        const rie = riepilogo(risultati);
+        const testo = rie.righe.join('\n');
+        expect(rie.tutteOk).toBe(false);
+        expect(rie.incoerenti).toBe(EVENTI.length);
+        const soloDati = EVENTI.length < 2 ? EVENTI.length : EVENTI.length - 1;
+        expect(rie.perDati).toBe(soloDati);
+        expect(testo).toContain(`di cui ${soloDati} SOLO PER DATI (dichiarate con il motivo, classe c) e ${EVENTI.length - soloDati} da correggere.`);
+        expect(testo).toContain(`INCOERENTE PER DATI ${EVENTI[0]}`);
+        expect(testo).toContain('KICKOFF_DISCORDANTE (per dati)');
+        const di = (ev: string) => risultati.find(r => r.eventId === ev) as (typeof risultati)[number];
+        expect(refertoPartita(di(EVENTI[0]), false, false)).toMatch(/^INCOERENTE PER DATI /);
+        expect(refertoPartita(di(EVENTI[0]), false, false)).toContain('[PER DATI: ');
+        if (EVENTI.length >= 2) {
+            const ultimo = di(EVENTI[EVENTI.length - 1]);
+            expect(refertoPartita(ultimo, false, false)).toMatch(/^INCOERENTE \d/);
+            expect(testo).toMatch(new RegExp(`\\n  INCOERENTE ${EVENTI[EVENTI.length - 1]} .*KICKOFF_DISCORDANTE \\(per dati\\).*TABELLONE_SCENDE|\\n  INCOERENTE ${EVENTI[EVENTI.length - 1]} .*TABELLONE_SCENDE.*KICKOFF_DISCORDANTE \\(per dati\\)`));
+        }
+    }, 120_000);
 });
 
 describe('SOLA LETTURA', () => {

@@ -1,0 +1,66 @@
+
+ RUN  v3.2.6 /home/user/python-database-automation/.claude/worktrees/agent-ad97311e16b40a5ca/frontend
+
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > periodo DATI MATCH in gg/mm/aaaa (Roma), mai ISO grezzo
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > periodo DATI MATCH in gg/mm/aaaa (Roma), mai ISO grezzo
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > stagioni non caricate: avviso visibile scegliendo "Stagione" (non un menu vuoto muto)
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+stderr | src/components/dashboard/RitardiPanel.fixb.test.tsx > RitardiPanel - FIX-B > stagioni non caricate: avviso visibile scegliendo "Stagione" (non un menu vuoto muto)
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+ ✓ src/components/dashboard/RitardiPanel.fixb.test.tsx (3 tests) 3491ms
+   ✓ RitardiPanel - FIX-B > periodo DATI MATCH in gg/mm/aaaa (Roma), mai ISO grezzo  1782ms
+   ✓ RitardiPanel - FIX-B > timeout della RPC: messaggio di timeout dichiarato  408ms
+   ✓ RitardiPanel - FIX-B > stagioni non caricate: avviso visibile scegliendo "Stagione" (non un menu vuoto muto)  1295ms
+ ✓ src/pages/SafeStrategy.test.tsx (28 tests) 26294ms
+   ✓ pagina Safe Strategy > mostra intestazione, stato bot e modalita PAPER  1556ms
+   ✓ pagina Safe Strategy > non promette piu che nessun ordine venga piazzato  662ms
+   ✓ pagina Safe Strategy > KPI: segnali attivi, trade aperti e P&L  994ms
+   ✓ pagina Safe Strategy > M-15: "Trade aperti" conta le posizioni vive, non le chiusure ne le hedged complete  547ms
+   ✓ pagina Safe Strategy > la tab Trade elenca il trade aperto col cash out  1373ms
+   ✓ pagina Safe Strategy > dal segnale si accoda una richiesta place con gli id risolti dal feed  1454ms
+   ✓ pagina Safe Strategy > trade MANUALE piazzato da un segnale: agganciato alla card tramite meta.idempotency_key (H1)  579ms
+   ✓ pagina Safe Strategy > la gamba di chiusura tagliata dalla liquidita e marcata parziale  1153ms
+   ✓ pagina Safe Strategy > senza id di selezione nel feed l azione resta non disponibile  485ms
+   ✓ pagina Safe Strategy > se esiste gia un trade per il segnale mostra il suo stato al posto dell azione  681ms
+   ✓ Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2) > pagina LIVE ma trade paper: nessuna doppia conferma "soldi veri"  1791ms
+   ✓ Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2) > pagina PAPER ma trade live: doppia conferma e avviso soldi veri  1472ms
+   ✓ Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2) > anche nella card del segnale il cash out usa la modalita del trade  1232ms
+   ✓ Safe Strategy — un solo cash out per trade (HIGH-1) > gamba di chiusura gia in coda: bottone spento  932ms
+   ✓ Safe Strategy — un solo cash out per trade (HIGH-1) > richiesta cashout pending sul DB: bottone spento  615ms
+   ✓ Safe Strategy — feed stantio (HIGH-2) > riga vecchia E scanner morto: cash out e Investi spenti con motivo  874ms
+   ✓ Safe Strategy — feed stantio (HIGH-2) > riga vecchia ma scanner vivo (write-on-change): badge eta, bottoni attivi  940ms
+   ✓ Safe Strategy — tennis (HIGH-3) > un trade tennis riceve il book dal feed tennis: cash out attivo e live "set/game"  803ms
+   ✓ Safe Strategy — sync parametri (HIGH-4) > payload server con chiave ignota: nessun salvataggio (niente loop)  594ms
+   ✓ Safe Strategy — sync parametri (HIGH-4) > condizione davvero diversa sul server: UN solo salvataggio normalizzato  609ms
+   ✓ Safe Strategy — LIVE ereditato dal control (MEDIUM-4) > banner LIVE ma nessun piazzamento senza conferma in questa sessione  746ms
+   ✓ Safe Strategy — l ordine a mano ha la sua modalita (24/09) > servizio LIVE e `manual` NON scritto: l ordine a mano parte in PAPER  773ms
+   ✓ Safe Strategy — l ordine a mano ha la sua modalita (24/09) > servizio PAPER e `manual` scritto live: resta PAPER (il servizio e un tetto)  633ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > chip per tipo con conteggi; il filtro tipo isola la combinazione  933ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > combinazione: "Piazza" accoda UNA richiesta per gamba, stake scalato, stesso prefisso di idempotenza e modalita  1099ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > tennis: tab Opportunità tennis con la card e piazzamento con sport tennis e kind  1473ms
+   ✓ Safe Strategy — opportunita per tipo, combinazioni e tennis > pannello Rischio nei KPI: liability vs cap e stop perdita dal control.stats  538ms
+   ✓ Safe Strategy — opportunita filtrate (MEDIUM-5) > filtri che escludono tutto: stato vuoto esplicativo  747ms
+
+ Test Files  2 passed (2)
+      Tests  31 passed (31)
+   Start at  12:09:48
+   Duration  41.98s (transform 5.59s, setup 2.62s, collect 11.50s, tests 29.78s, environment 6.61s, prepare 1.73s)
+

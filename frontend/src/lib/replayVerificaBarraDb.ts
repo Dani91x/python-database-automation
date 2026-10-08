@@ -17,8 +17,9 @@
 // ============================================================================
 import { supabase } from '@/integrations/supabase/client';
 import { fetchReplayChunked, fetchReplayList, type ReplayData, type ReplayItem, type ReplayMeta } from '@/lib/live';
-import type { EsitoVerificaBarra, EstremiRegistrazione } from '@/lib/replayVerificaBarra';
+import { soloPerDati, type EsitoVerificaBarra, type EstremiRegistrazione } from '@/lib/replayVerificaBarra';
 import { verificaBarraReplayCalcio as verificaCalcio } from '@/lib/replayVerificaBarraCalcio';
+import { dettaglioIncoerenze } from '@/lib/replayVerificaBarraDettaglio';
 import { esitoInUnaRiga, rigaRilievo } from '@/lib/replayVerificaBarraTesto';
 
 /** le sole RPC che questo strumento puo' chiamare (tutte in lettura) */
@@ -68,6 +69,8 @@ export interface RisultatoPartita {
     /** errore di caricamento o di verifica (la partita NON e' stata verificata) */
     errore: string | null;
     ms: number;
+    /** 08/10 (cantiere 13): le prove di ogni incoerenza (solo con `dettaglio: true`) */
+    dettaglio?: string[];
 }
 
 export interface OpzioniVerificaPartite {
@@ -79,6 +82,8 @@ export interface OpzioniVerificaPartite {
     alRisultato?: (r: RisultatoPartita, i: number, totale: number) => void;
     /** il verificatore dello sport (default: calcio). Il tennis passa il suo, che riusa la parte generica. */
     verifica?: (replay: ReplayData, estremi: EstremiRegistrazione) => EsitoVerificaBarra;
+    /** 08/10 (cantiere 13): per ogni partita incoerente anche le PROVE (righe del punteggio, eventi, simboli) */
+    dettaglio?: boolean;
 }
 
 const titoloDi = (it: ReplayItem): string =>
@@ -99,6 +104,7 @@ export async function verificaPartite(fonte: FontePartite, opz: OpzioniVerificaP
         try {
             const { replay, estremi } = await fonte.carica(String(it.event_id));
             r = { eventId: String(it.event_id), titolo: titoloDi(it), esito: (opz.verifica ?? ((r, e) => verificaCalcio(r, { estremi: e })))(replay, estremi), errore: null, ms: Date.now() - t0 };
+            if (opz.dettaglio && r.esito && !r.esito.ok) r.dettaglio = dettaglioIncoerenze(replay, r.esito);
         } catch (e) {
             r = { eventId: String(it.event_id), titolo: titoloDi(it), esito: null, errore: e instanceof Error ? e.message : String(e), ms: Date.now() - t0 };
         }
@@ -113,6 +119,8 @@ export interface Riepilogo {
     ok: number;
     incoerenti: number;
     nonVerificate: number;
+    /** 08/10 (cantiere 13): partite incoerenti SOLO per i dati registrati (classe c, dichiarate con il motivo) */
+    perDati: number;
     righe: string[];
     /** true = tutto verificato e coerente */
     tutteOk: boolean;
@@ -122,14 +130,19 @@ export function riepilogo(risultati: ReadonlyArray<RisultatoPartita>): Riepilogo
     const ok = risultati.filter(r => r.esito?.ok).length;
     const incoerenti = risultati.filter(r => r.esito && !r.esito.ok).length;
     const nonVerificate = risultati.filter(r => !r.esito).length;
+    const perDati = risultati.filter(r => r.esito && !r.esito.ok && soloPerDati(r.esito)).length;
     const righe = [
         `RIEPILOGO: ${risultati.length} partite verificate: ${ok} OK, ${incoerenti} con incoerenze, ${nonVerificate} non verificabili (errore di caricamento).`,
     ];
+    // 08/10 (cantiere 13): quante delle incoerenti lo sono SOLO per i dati registrati (dichiarate, classe c)
+    if (perDati > 0) righe.push(`  di cui ${perDati} SOLO PER DATI (dichiarate con il motivo, classe c) e ${incoerenti - perDati} da correggere.`);
     for (const r of risultati) {
-        if (r.esito && !r.esito.ok) righe.push(`  INCOERENTE ${r.titolo}: ${r.esito.incoerenze.map(x => x.codice).join(', ')}`);
+        if (r.esito && !r.esito.ok) {
+            righe.push(`  ${soloPerDati(r.esito) ? 'INCOERENTE PER DATI' : 'INCOERENTE'} ${r.titolo}: ${r.esito.incoerenze.map(x => (x.perDati ? `${x.codice} (per dati)` : x.codice)).join(', ')}`);
+        }
         if (!r.esito) righe.push(`  NON VERIFICATA ${r.titolo}: ${r.errore}`);
     }
-    return { partite: risultati.length, ok, incoerenti, nonVerificate, righe, tutteOk: risultati.length > 0 && ok === risultati.length };
+    return { partite: risultati.length, ok, incoerenti, nonVerificate, perDati, righe, tutteOk: risultati.length > 0 && ok === risultati.length };
 }
 
 /** Referto di UNA partita: riga di esito + (se incoerente) i rilievi; le note solo con `conNote`. */
@@ -141,6 +154,7 @@ export function refertoPartita(r: RisultatoPartita, conNote: boolean, soloErrori
         if (x.gravita === 'nota' && !conNote) continue;
         righe.push(rigaRilievo(x));
     }
+    if (r.dettaglio && r.dettaglio.length > 0) righe.push(...r.dettaglio);
     return righe.join('\n');
 }
 
