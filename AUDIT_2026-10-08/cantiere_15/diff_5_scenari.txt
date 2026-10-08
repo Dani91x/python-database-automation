@@ -1,0 +1,172 @@
+== 35797769
+7c7
+< OK  35797769 [base]  tick=665941 decisioni=121012 azioni=  18 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:FLATTENING,slot:DONE,sessione:done [COMPLETE]
+---
+> OK  35797769 [base]  tick=665941 decisioni=121012 azioni=  44 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,sessione:done [COMPLETE]
+14,15c14,15
+<       nota: book in ritardo: 589606; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 58191
+<       nota: fill per mercato che attraversa: 3 [motivo attraversato] - 17:00:06 UTC 1.259819674 sel 58805 BACK 11.32 @4.20 (scambio a 4.30); 17:00:06 UTC 1.259819674 sel 22 BACK 25.00 @1.66 (scambio a 1.67); 17:00:06 UTC 1.259819674 sel 22 LAY 25.00 @1.65 (scambio a 1.64)
+---
+>       nota: book in ritardo: 589606; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 130552
+>       nota: fill per mercato che attraversa: 2 [motivo attraversato] - 17:27:29 UTC 1.259819682 sel 47973 LAY 0.68 @1.84 (scambio a 1.83); 17:27:29 UTC 1.259819682 sel 47973 LAY 1.14 @1.84 (scambio a 1.83)
+18,25c18,25
+<       nota: stati dello slot MAI visti: QUOTING
+<       motivo x11: place
+<       motivo x1: close_presize
+<       motivo x1: scratch
+<       motivo x1: cycle
+<       motivo x1: min_bet_skip
+<       motivo x1: scavalco
+< OK  35797769 [paper]  tick=665941 decisioni=121012 azioni=  18 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:FLATTENING,slot:DONE,sessione:done [COMPLETE]
+---
+>       nota: stati dello slot MAI visti: FLATTENING, QUOTING
+>       motivo x23: place
+>       motivo x5: cycle
+>       motivo x5: submin_step
+>       motivo x4: close_presize
+>       motivo x4: scratch
+>       motivo x2: submin_start
+> OK  35797769 [paper]  tick=665941 decisioni=121012 azioni=  44 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,sessione:done [COMPLETE]
+32,33c32,33
+<       nota: book in ritardo: 589606; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 58191
+<       nota: fill per mercato che attraversa: 3 [motivo attraversato] - 17:00:06 UTC 1.259819674 sel 58805 BACK 11.32 @4.20 (scambio a 4.30); 17:00:06 UTC 1.259819674 sel 22 BACK 25.00 @1.66 (scambio a 1.67); 17:00:06 UTC 1.259819674 sel 22 LAY 25.00 @1.65 (scambio a 1.64)
+---
+>       nota: book in ritardo: 589606; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 130552
+>       nota: fill per mercato che attraversa: 2 [motivo attraversato] - 17:27:29 UTC 1.259819682 sel 47973 LAY 0.68 @1.84 (scambio a 1.83); 17:27:29 UTC 1.259819682 sel 47973 LAY 1.14 @1.84 (scambio a 1.83)
+36,43c36,43
+<       nota: stati dello slot MAI visti: QUOTING
+<       motivo x11: place
+<       motivo x1: close_presize
+<       motivo x1: scratch
+<       motivo x1: cycle
+<       motivo x1: min_bet_skip
+<       motivo x1: scavalco
+< KO  35797769 [chiusura-abbinata-in-parte]  tick=665941 decisioni=121012 azioni= 112 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:FLATTENING,slot:DONE,sessione:done [COMPLETE]
+---
+>       nota: stati dello slot MAI visti: FLATTENING, QUOTING
+>       motivo x23: place
+>       motivo x5: cycle
+>       motivo x5: submin_step
+>       motivo x4: close_presize
+>       motivo x4: scratch
+>       motivo x2: submin_start
+> KO  35797769 [chiusura-abbinata-in-parte]  tick=665941 decisioni=121012 azioni= 213 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,slot:FLATTENING,sessione:done [COMPLETE]
+49,50c49,50
+<       nota: book in ritardo: 589606; lapse al fischio: 1; lapse alla sospensione: 0; righe di specchio catturate: 180617
+<       nota: fill per mercato che attraversa: 6 [motivo attraversato] - 17:00:06 UTC 1.259819674 sel 22 BACK 25.00 @1.66 (scambio a 1.67); 17:00:06 UTC 1.259819674 sel 22 LAY 25.00 @1.65 (scambio a 1.64); 17:56:54 UTC 1.259819682 sel 47972 LAY 24.01 @2.22 (scambio a 2.20); 18:04:58 UTC 1.259819674 sel 58805 BACK 20.23 @4.10 (scambio a 4.20); 18:04:58 UTC 1.259819674 sel 58805 BACK 0.81 @4.10 (scambio a 4.20); 18:46:24 UTC 1.259819674 sel 58805 BACK 6.14 @4.10 (scambio a 4.20)
+---
+>       nota: book in ritardo: 589606; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 408290
+>       nota: fill per mercato che attraversa: 7 [motivo attraversato] - 17:45:11 UTC 1.259819674 sel 22 BACK 3.40 @1.67 (scambio a 1.68); 17:53:03 UTC 1.259819674 sel 22 BACK 25.00 @1.68 (scambio a 1.69); 17:56:54 UTC 1.259819682 sel 47972 LAY 24.01 @2.22 (scambio a 2.20); 18:04:58 UTC 1.259819674 sel 58805 BACK 20.23 @4.10 (scambio a 4.20); 18:04:58 UTC 1.259819674 sel 58805 BACK 0.81 @4.10 (scambio a 4.20); 18:08:24 UTC 1.259819674 sel 22 BACK 20.74 @1.69 (scambio a 1.70); 18:46:24 UTC 1.259819674 sel 58805 BACK 6.14 @4.10 (scambio a 4.20)
+54,60c54,60
+<       nota: scenario chiusura-abbinata-in-parte: 5 chiusura/e colpita/e, 21 chiusure viste: 58805 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 22 BACK chiesto 1.00 tetto 0.40 -> abbinato 0.40 residuo 0.00 lapsed 0.60 annullato 0.00; 47973 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 47972 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 1222345 BACK chiesto 25.00 tetto 10.00 -> abbinato 0.77 residuo 0.00 lapsed 0.00 annullato 24.23
+<       motivo x50: place
+<       motivo x25: submin_step
+<       motivo x7: submin_start
+<       motivo x6: scratch
+<       motivo x6: flatten_done
+<       motivo x5: close_presize
+---
+>       nota: scenario chiusura-abbinata-in-parte: 6 chiusura/e colpita/e, 43 chiusure viste: 58805 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 22 LAY chiesto 1.15 tetto 0.46 -> abbinato 0.00 residuo 0.00 lapsed 0.00 annullato 1.15 [SENZA EFFETTO: mai abbinata, guasto riarmato]; 47973 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 22 LAY chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 47972 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 1222345 BACK chiesto 25.00 tetto 10.00 -> abbinato 0.77 residuo 0.00 lapsed 0.00 annullato 24.23
+>       motivo x106: place
+>       motivo x35: submin_step
+>       motivo x16: scratch
+>       motivo x13: close_presize
+>       motivo x11: submin_start
+>       motivo x9: cycle
+62,65c62,63
+<            es. in gioco la selezione ('1.259819674', 22) ha un'esposizione abbinata sbilanciata di 0.91 (se vince 0.51, se perde -0.40), oltre la tolleranza 0.02 del bot
+<       CP4 x1: dopo una chiusura abbinata in parte nessun loop: mai una chiusura nuova con un'altra viva sulla stessa selezione, mai una size che chiede piu' di quanto resta da chiudere, al piu' 10 chiusure dopo, mai sovracopertura (catalogo par.7.1: 32 ordini veri in loop il 15/09)
+<            es. ('1.259819674', 22): chiusura LAY <bet> chiede di spostare il netto di 1.02 (compreso il residuo vivo) quando da chiudere ne resta 0.91: size calcolata sul CHIESTO, non sull'abbinato
+< OK  35797769 [rifiuti-betfair]  tick=665941 decisioni=121012 azioni=  30 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:FLATTENING,slot:DONE,sessione:done [COMPLETE]
+---
+>            es. in gioco la selezione ('1.259819674', 58805) ha un'esposizione abbinata sbilanciata di 0.04 (se vince -0.93, se perde -0.97), oltre la tolleranza 0.02 del bot
+> OK  35797769 [rifiuti-betfair]  tick=665941 decisioni=121012 azioni=  56 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,sessione:done [COMPLETE]
+71,72c69,70
+<       nota: book in ritardo: 589606; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 58191
+<       nota: fill per mercato che attraversa: 3 [motivo attraversato] - 17:00:06 UTC 1.259819674 sel 58805 BACK 11.32 @4.20 (scambio a 4.30); 17:00:06 UTC 1.259819674 sel 22 BACK 25.00 @1.66 (scambio a 1.67); 17:00:06 UTC 1.259819674 sel 22 LAY 25.00 @1.65 (scambio a 1.64)
+---
+>       nota: book in ritardo: 589606; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 130552
+>       nota: fill per mercato che attraversa: 2 [motivo attraversato] - 17:27:29 UTC 1.259819682 sel 47973 LAY 0.68 @1.84 (scambio a 1.83); 17:27:29 UTC 1.259819682 sel 47973 LAY 1.14 @1.84 (scambio a 1.83)
+75c73
+<       nota: stati dello slot MAI visti: QUOTING
+---
+>       nota: stati dello slot MAI visti: FLATTENING, QUOTING
+77c75
+<       motivo x11: place
+---
+>       motivo x23: place
+80,83c78,81
+<       motivo x1: close_presize
+<       motivo x1: scratch
+<       motivo x1: cycle
+< OK  35797769 [sniper-paper]  tick=1511913 decisioni=286052 azioni=  18 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:FLATTENING,slot:DONE,sessione:done [COMPLETE]
+---
+>       motivo x5: cycle
+>       motivo x5: submin_step
+>       motivo x4: close_presize
+> OK  35797769 [sniper-paper]  tick=1511913 decisioni=286052 azioni=  44 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,slot:CANCELLING,slot:LOCKING,slot:DONE,sessione:done [COMPLETE]
+90,91c88,89
+<       nota: book in ritardo: 1548843; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 131061
+<       nota: fill per mercato che attraversa: 4 [motivo attraversato] - 17:00:06 UTC 1.259819674 sel 58805 BACK 11.32 @4.20 (scambio a 4.30); 17:00:06 UTC 1.259819674 sel 22 BACK 25.00 @1.66 (scambio a 1.67); 17:00:06 UTC 1.259819674 sel 22 LAY 25.00 @1.65 (scambio a 1.64); 19:50:11 UTC 1.259819686 sel 1222344 LAY 10.09 @2.20 (scambio a 2.12)
+---
+>       nota: book in ritardo: 1548843; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 292462
+>       nota: fill per mercato che attraversa: 3 [motivo attraversato] - 17:27:29 UTC 1.259819682 sel 47973 LAY 0.68 @1.84 (scambio a 1.83); 17:27:29 UTC 1.259819682 sel 47973 LAY 1.14 @1.84 (scambio a 1.83); 19:50:11 UTC 1.259819686 sel 1222344 LAY 10.09 @2.20 (scambio a 2.12)
+95,101c93,99
+<       nota: stati dello slot MAI visti: QUOTING
+<       motivo x11: place
+<       motivo x1: close_presize
+<       motivo x1: scratch
+<       motivo x1: cycle
+<       motivo x1: min_bet_skip
+<       motivo x1: scavalco
+---
+>       nota: stati dello slot MAI visti: FLATTENING, QUOTING
+>       motivo x23: place
+>       motivo x5: cycle
+>       motivo x5: submin_step
+>       motivo x4: close_presize
+>       motivo x4: scratch
+>       motivo x2: submin_start
+104c102
+<        2 violazioni totali
+---
+>        1 violazioni totali
+107c105
+<      B1  x27869   nessun INGRESSO nuovo quando le aperture sono vietate: force-flat 
+---
+>      B1  x26189   nessun INGRESSO nuovo quando le aperture sono vietate: force-flat 
+109,110c107,108
+<      B3  x74      ogni ordine chiesto e' LEGALE su .it: prezzo nella ladder, non sot
+<      B4  x33      lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+---
+>      B3  x143     ogni ordine chiesto e' LEGALE su .it: prezzo nella ladder, non sot
+>      B4  x66      lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+112,113c110,111
+<      B6  x33      tetto transazioni/ora (`max_txn_hour`): oltre il budget nessun NUO
+<      K1  x7067    ogni ordine che il bot STA SEGUENDO in una posizione viva esiste d
+---
+>      B6  x66      tetto transazioni/ora (`max_txn_hour`): oltre il budget nessun NUO
+>      K1  x8621    ogni ordine che il bot STA SEGUENDO in una posizione viva esiste d
+116,117c114,115
+<      K4  x7067    uno slot che il bot crede VIVO ha almeno un ordine vivo o dell'abb
+<      K5  x6420    nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il
+---
+>      K4  x8621    uno slot che il bot crede VIVO ha almeno un ordine vivo o dell'abb
+>      K5  x8084    nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il
+119c117
+<      K7  x15      a ogni ciclo chiuso il `locked` che il bot contabilizza (pnl_locke
+---
+>      K7  x37      a ogni ciclo chiuso il `locked` che il bot contabilizza (pnl_locke
+130c128
+<      CP1 x20357   chiusura abbinata in parte: la riga (o la credenza) del bot porta 
+---
+>      CP1 x24729   chiusura abbinata in parte: la riga (o la credenza) del bot porta 
+132,133c130,131
+<      CP3 x20357   una posizione con esposizione residua o con il residuo della chius
+<      CP4 x16760   dopo una chiusura abbinata in parte nessun loop: mai una chiusura 
+---
+>      CP3 x20148   una posizione con esposizione residua o con il residuo della chius
+>      CP4 x12065   dopo una chiusura abbinata in parte nessun loop: mai una chiusura 
+137a136
+> LENTO: la certificazione ha impiegato 18m43.7s (1123.7 s), sopra il tetto di 600 s | scenario piu' caro: 35797769 [sniper-paper] 8m28.1s (508.1 s) | e' un AVVISO: l'esito non cambia
+== 35760084

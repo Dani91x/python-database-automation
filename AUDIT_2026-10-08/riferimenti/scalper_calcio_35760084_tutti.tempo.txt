@@ -1,0 +1,1 @@
+exit=1 parete=2433.8s cpu_user=1414.9s cpu_sys=10.4s cpu_tot=1425.4s

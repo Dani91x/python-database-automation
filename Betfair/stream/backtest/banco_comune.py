@@ -175,6 +175,22 @@ LIMITI DICHIARATI (un banco che non li dichiara e' peggio di nessun banco)
    compare nel referto e nello specchio (`varianti_bot.campi_ordine`,
    `_fill_attraversato`). `ATTRAVERSAMENTO = False` rimette il modello di sola
    coda: serve SOLO alla misura prima/dopo e alla falsificazione.
+   LA RIVALUTAZIONE DI CAMBIO NON E' UNO SCAMBIO (08/10/2026, cantiere 15). Lo
+   stream ricalcola ogni ora il `tradedVolume` cumulato di un runner al cambio
+   nuovo: in UN messaggio TUTTI i livelli scambiati crescono (o calano) dello
+   STESSO fattore (35797769, 17:00:06.704, MATCH_ODDS: sel 22 nove livelli da
+   1,64 a 1,72 tutti x1,0000852, +25,04 di tv; sel 58805 e 29578 idem; poi alle
+   18:00, 20:00, 21:00 col segno meno). Non c'e' un euro scambiato: e' lo stesso
+   volume ri-espresso. Il delta di `RunnerAnalytics.traded` lo vede come volume
+   nuovo a ogni prezzo, e la regola sopra abbinava per "attraversamento" ordini
+   che il mercato non aveva toccato (tre a 17:00:06.704 su 35797769). Il volume
+   che la regola guarda passa quindi da `scambi_veri`: se almeno
+   `RIVALUTAZIONE_MIN_LIVELLI` livelli GIA' scambiati crescono dello stesso
+   fattore (piccolo, <= `RIVALUTAZIONE_MAX_FATTORE`) entro
+   `RIVALUTAZIONE_TOLL` euro, la parte proporzionale si toglie da ogni livello e
+   resta solo cio' che eccede (uno scambio vero nello stesso messaggio resta).
+   La coda di flumine (`_process_traded`) NON e' toccata: resta il modello di
+   prima (limite dichiarato del cantiere 15).
 
 6. NESSUN ERRORE DI RETE. Gli stati di riconciliazione da esito IGNOTO non
    capitano da soli: si provocano con `MercatoFlumine.guasti["place_exception"]`.
@@ -1829,6 +1845,68 @@ RIUSA_LAPSE = True
 # flumine, come prima: serve SOLO alla misura prima/dopo e alla falsificazione.
 ATTRAVERSAMENTO = True
 
+# 08/10/2026 (cantiere 15) - LA RIVALUTAZIONE DI CAMBIO NON E' UNO SCAMBIO (testata,
+# 6-quater, in coda): quanti livelli gia' scambiati devono crescere dello STESSO
+# fattore nello stesso book per dire "rivalutazione" (con 1 o 2 livelli non si
+# distingue da uno scambio vero, e allora resta scambio); il fattore massimo
+# (misurato: |f-1| fra 6e-5 e 4e-4 sulle due registrazioni del banco; uno scambio
+# vero su piu' livelli non e' mai proporzionale al cumulato di ognuno); lo scarto
+# ammesso per livello in euro (arrotondamento al centesimo del raw in GBP e della
+# conversione a cambio fisso, sommati sul delta). `False` = la via di prima: serve
+# SOLO alla misura prima/dopo e alla falsificazione.
+RIVALUTAZIONE_IGNORATA = True
+RIVALUTAZIONE_MIN_LIVELLI = 3
+RIVALUTAZIONE_MAX_FATTORE = 0.01
+RIVALUTAZIONE_TOLL = 0.03
+
+
+def scambi_veri(traded: Dict[float, float], traded_volume: Any) -> Dict[float, float]:
+    """Il volume SCAMBIATO DAVVERO in questo book per prezzo, dal delta di flumine
+    (``RunnerAnalytics.traded``) e dal cumulato corrente (``runner.ex.traded_volume``).
+
+    Se il delta e' una RIVALUTAZIONE DI CAMBIO (testata, 6-quater in coda) la parte
+    proporzionale al cumulato di prima si toglie da ogni livello: resta solo
+    l'eccedenza oltre ``RIVALUTAZIONE_TOLL`` (uno scambio vero arrivato nello stesso
+    messaggio) e i livelli nuovi (cumulato di prima zero: tutto scambio). Altrimenti
+    il delta torna com'e'. Pura: nessuno stato, ``traded`` non viene toccato."""
+    if not RIVALUTAZIONE_IGNORATA or not traded:
+        return traded
+    cumulato: Dict[float, float] = {}
+    for liv in list(traded_volume or []):
+        try:
+            p = float(liv["price"] if isinstance(liv, dict) else liv.price)
+            s = float(liv["size"] if isinstance(liv, dict) else liv.size)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+        cumulato[p] = s
+    # (prezzo, delta, cumulato di PRIMA) dei livelli che avevano gia' volume
+    gia: List[Tuple[float, float, float]] = []
+    for p, t in traded.items():
+        prima = cumulato.get(float(p), float(t)) - float(t)
+        if prima > 0 and float(t) > 0:
+            gia.append((float(p), float(t), prima))
+    if len(gia) < RIVALUTAZIONE_MIN_LIVELLI:
+        return traded
+    rapporti = sorted(t / prima for _, t, prima in gia)
+    f0 = rapporti[len(rapporti) // 2]
+    if not (0.0 < f0 <= RIVALUTAZIONE_MAX_FATTORE):
+        return traded
+    # il fattore, pesato sul volume, sui livelli che gli stanno vicini (+-20 %):
+    # la mediana da sola sbaglia di qualche centesimo sui livelli piu' grossi
+    vicini = [(t, prima) for _, t, prima in gia if abs(t / prima - f0) <= 0.2 * f0]
+    f = sum(t for t, _ in vicini) / sum(prima for _, prima in vicini)
+    scarti = {p: t - f * prima for p, t, prima in gia}
+    if sum(1 for x in scarti.values() if abs(x) <= RIVALUTAZIONE_TOLL) < RIVALUTAZIONE_MIN_LIVELLI:
+        return traded
+    veri: Dict[float, float] = {}
+    for p, t in traded.items():
+        x = scarti.get(float(p))
+        if x is None:
+            veri[p] = t                     # livello nuovo: tutto scambio vero
+        elif x > RIVALUTAZIONE_TOLL:
+            veri[p] = round(x, 2)           # scambio vero sopra la rivalutazione
+    return veri
+
 # LATENZA DELLE CHIAMATE DI LETTURA — ASSUNTA, NON MISURATA (16/09/2026).
 # `list_current_orders`, `list_cleared_orders` e `read_book` sono REST sincrone
 # come il piazzamento, ma Betfair NON le trattiene per il bet delay: costano
@@ -2045,6 +2123,10 @@ class MotoreReplay:
         # ordine e book: {ms, market_id, selection_id, side, prezzo, size,
         # prezzo_oltre, ordine, motivo}. Il referto li conta.
         self.fill_attraversati: List[Dict[str, Any]] = []
+        # 08/10 (cantiere 15): quante volte (runner x book, con almeno un ordine
+        # vivo da giudicare) il volume "nuovo" era una rivalutazione di cambio
+        # e la regola dell'attraversamento ne ha guardato solo lo scambio vero
+        self.rivalutazioni_ignorate: int = 0
 
     def _prepara_pacchi(self, pacchi: Sequence[Any]) -> None:
         """Passa al guasto (se c'e') i pacchetti PRIMA che flumine li esegua."""
@@ -2158,6 +2240,7 @@ class MotoreReplay:
         vivi = (OrderStatus.EXECUTABLE, OrderStatus.CANCELLING,
                 OrderStatus.UPDATING, OrderStatus.REPLACING)
         abbinati = 0
+        veri_per_runner: Dict[Any, Dict[float, float]] = {}
         for ordine in list(getattr(mercato.blotter, "live_orders", []) or []):
             sim = getattr(ordine, "simulated", None)
             if sim is None or ordine.status not in vivi:
@@ -2173,7 +2256,19 @@ class MotoreReplay:
             chiave = (ordine.selection_id, ordine.handicap)
             if chiave not in attivi:
                 continue
-            scambi = getattr(analitiche.get(chiave), "traded", None) or {}
+            ra = analitiche.get(chiave)
+            scambi = getattr(ra, "traded", None) or {}
+            if not scambi:
+                continue
+            # 08/10 (cantiere 15): la rivalutazione di cambio non e' uno scambio
+            # (testata, 6-quater in coda). Una volta per runner e per book.
+            if chiave not in veri_per_runner:
+                ex = getattr(getattr(ra, "runner", None), "ex", None)
+                veri_per_runner[chiave] = scambi_veri(
+                    scambi, getattr(ex, "traded_volume", None))
+                if veri_per_runner[chiave] != scambi:
+                    self.rivalutazioni_ignorate += 1
+            scambi = veri_per_runner[chiave]
             if not scambi:
                 continue
             residuo = float(sim.size_remaining or 0.0)

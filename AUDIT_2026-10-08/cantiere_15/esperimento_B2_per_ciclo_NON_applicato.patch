@@ -1,0 +1,14 @@
+--- /tmp/claude-0/-home-user-python-database-automation/d9b4fd9d-aa86-54f8-97b7-ad733bb0c124/scratchpad/prima_b5547eb/Betfair/stream/scalper/certificazione.py	2026-10-08 08:54:29.000000000 +0000
++++ Betfair/stream/scalper/certificazione.py	2026-10-08 09:51:52.317030837 +0000
+@@ -532,8 +532,10 @@
+             quando=_q_inplay, persistente=True)
+ def _b2(o: Osservazione) -> Optional[str]:
+     toll = {c.get("chiave"): float(c.get("tolleranza") or 0.02) for c in o.credenze}
++    cicli = {c.get("chiave"): int(c.get("cicli") or 0) for c in o.credenze}
+     for chiave, (w, l) in sorted((o.esposizioni or {}).items()):
+-        tol = max(EPS, toll.get(chiave, 0.02))
++        # ESPERIMENTO (non applicato): la tolleranza per ciclo di K5
++        tol = max(EPS, toll.get(chiave, 0.02) + 0.02 * max(0, cicli.get(chiave, 0)))
+         if abs(w - l) > tol + EPS:
+             return ("in gioco la selezione %s ha un'esposizione abbinata "
+                     "sbilanciata di %.2f (se vince %.2f, se perde %.2f), oltre "

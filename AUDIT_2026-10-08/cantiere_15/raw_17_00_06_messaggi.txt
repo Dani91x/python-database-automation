@@ -1,0 +1,30 @@
+op: {'mcm': 81137}
+ct: {'SUB_IMAGE': 8, None: 81128, 'RESUB_DELTA': 1}
+chiavi di testa: ['clk', 'ct', 'mc', 'op', 'pt']
+prima riga pt 16:31:46.771 ultima 21:09:14.501
+target 1783702806704 17:00:06.704
+gap fra messaggi (ms): mediana 105 p90 309 p99 1299 max (545485, 2539)
+MATCH_ODDS: messaggi 32679 gap mediana 204 p90 884 p99 4898
+MATCH_ODDS pre-KO: gap mediana 472 p90 3080
+MATCH_ODDS pre-KO gap >= 5 s: 308 su 6230
+--- messaggi del MATCH_ODDS fra T-30s e T+10s
+1700 16:59:37.675 clk AIeuAwC3iwQApL8E con None img None sel 22 trd None ltp None tv None
+1702 16:59:42.378 clk AJmxAwD7jgQApMME con None img None sel 58805 trd None ltp None tv None
+1702 16:59:42.378 clk AJmxAwD7jgQApMME con None img None sel 22 trd None ltp None tv None
+1703 16:59:43.064 clk ANGxAwDJjwQA7MME con None img None sel 22 trd None ltp None tv None
+1704 16:59:43.155 clk ANWxAwDPjwQA9cME con None img None sel 22 trd [[1.66, 47192.01]] ltp 1.66 tv 293776.57
+1716 17:00:01.312 clk APW+AwD8nwQA9NQE con None img None sel 58805 trd [[4.2, 37989.84]] ltp None tv 71674.73
+1725 17:00:06.704 clk AMfDAwDJpQQAhNwE con None img None sel 58805 trd [[4.2, 37993.08], [4.4, 117.57], [4.1, 24464.43], [4.3, 8753.24], [4, 352.51]] ltp None tv 71680.83
+1725 17:00:06.704 clk AMfDAwDJpQQAhNwE con None img None sel 22 trd [[1.69, 36502.67], [1.71, 41150.58], [1.65, 44108.52], [1.66, 47196.03], [1.7, 63478.41], [1.68, 36971.16], [1.67, 13297.35], [1.72, 1616.28], [1.64, 9475.5]] ltp None tv 293801.61
+--- tutti i messaggi (ogni mercato) fra T-6s e T+1s: pt, clk, mercati
+1715 17:00:01.014 ANS+AwDVnwQAvtQE ['1.259819673'] [None]
+1716 17:00:01.312 APW+AwD8nwQA9NQE ['1.259819674'] [None]
+1717 17:00:01.582 AKG/AwC5oAQAsNUE ['1.259819673'] [None]
+1718 17:00:02.321 APO/AwCgoQQArtYE ['1.259819687'] [None]
+1719 17:00:02.372 AIDAAwCuoQQAttYE ['1.259819687'] [None]
+1720 17:00:02.588 AKDAAwDMoQQA2dYE ['1.259819687', '1.259819680'] [None, None]
+1721 17:00:02.800 ALrAAwDuoQQA9dYE ['1.259819687', '1.259819680'] [None, None]
+1722 17:00:02.899 AMDAAwD3oQQAhdcE ['1.259819687'] [None]
+1723 17:00:03.314 AODAAwC1ogQAvdcE ['1.259819687'] [None]
+1724 17:00:03.481 APTAAwDNogQA5NcE ['1.259819687'] [None]
+1725 17:00:06.704 AMfDAwDJpQQAhNwE ['1.259819674'] [None]

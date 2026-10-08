@@ -5218,3 +5218,11 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   Replay Tennis mostra «nome dall'IPS, troncato» nel tooltip. Delegato: 26 mutazioni rosse; mie 3/3 rosse. MIGRAZIONE DA APPLICARE
   (utente): `migrations/replay_tennis_fonte_nomi_2026-10-08.sql` DOPO `replay_tennis_mercati_elenco_2026-10-08.sql`. Sul PC:
   35790089 con il nome intero messo a mano in `_names.json` + `importa --evento 35790089 --solo-nomi` (referto sez. 4).
+- CHECKPOINT C15 - SCALPER CALCIO SOTTO IL BANCO REALISTICO (verificato e integrato, scenario KO dichiarato): il KO del PC nasceva da un
+  DIFETTO DEL BANCO, non dello scalper: il messaggio delle 17:00:06.704 e' la RIVALUTAZIONE ORARIA DEL CAMBIO del volume scambiato
+  (tutti i livelli x1,0000852, tutti i mercati, ogni ora; prova del delegato e mia indipendente sul raw) e la regola del mercato che
+  attraversa la prendeva per scambi. Correzione `banco_comune.scambi_veri` (toglie la parte proporzionale, lascia gli scambi veri e i
+  livelli nuovi). 35797769: base/paper/rifiuti/sniper tornano al percorso del 07/10 (44/44/56/44 azioni, OK); chiusura-abbinata-in-parte
+  da KO B2 0,91 + CP4 a KO SOLO B2 0,04 (sel 58805: due resti per ciclo sotto la tolleranza per ciclo del bot) = DECISIONE D1
+  DELL'UTENTE. 35760084: 5/5 OK identici; `tutti` 46/47 OK, KO `auto-live` gia' presente su b5547eb. Mie mutazioni 3/3 rosse, mio
+  replay identico. Riferimenti nuovi in `AUDIT_2026-10-08/riferimenti/`. Da rilanciare (punto 4): Mike/Omega/Safe/tennis col banco nuovo.

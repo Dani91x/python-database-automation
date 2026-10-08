@@ -1,0 +1,96 @@
+ORDINI del blotter su 1.259819674 (sel [58805]): 103
+creato 16:43:52.143 piazz 16:51:55.725 id=140107447480789060 bet=100000000003 sel=58805 BACK 25.00@4.3 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=16:51:55.725
+creato 16:43:52.143 piazz 16:51:55.000 id=140107447480792970 bet=100000000004 sel=58805 LAY 25.00@4.2 pers=LAPSE stato=Execution complete abb=25.00 media=4.2 rest=0.00 lapsed=0.00 annull=0.00 fill=[('16:51:55.000', 4.2, 25.0)] note={} compl=16:51:55.000
+creato 16:51:55.725 piazz 17:51:56.069 id=140107447498368200 bet=100000000007 sel=58805 BACK 25.00@4.2 pers=LAPSE stato=Execution complete abb=10.00 media=4.2 rest=0.00 lapsed=0.00 annull=15.00 fill=[('16:59:02.135', 4.2, 10.0)] note={} compl=17:51:56.069
+creato 17:51:56.069 piazz 17:51:56.676 id=140107447931698750 bet=100000000050 sel=58805 BACK 14.50@4.1 pers=LAPSE stato=Execution complete abb=14.50 media=4.1 rest=0.00 lapsed=0.00 annull=0.00 fill=[('17:51:56.069', 4.1, 14.5)] note={} compl=17:51:56.676
+creato 17:51:58.461 piazz 17:51:59.373 id=140107447932336860 bet=100000000052 sel=58805 BACK 1.00@1000.0 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=1.00 fill=[] note={"customer_order_ref": "sc37082236"} compl=17:51:59.373
+creato 17:51:58.971 piazz 17:51:59.373 id=140107447932522410 bet=100000000053 sel=58805 BACK 0.87@4.0 pers=LAPSE stato=Execution complete abb=0.87 media=4.1 rest=0.00 lapsed=0.00 annull=0.00 fill=[('17:51:58.461', 4.1, 0.87)] note={"customer_order_ref": "sc37082236"} compl=17:51:59.373
+creato 17:53:08.666 piazz 18:03:09.892 id=140107447949200380 bet=100000000058 sel=58805 BACK 25.00@4.2 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:03:09.892
+creato 17:53:08.666 piazz 18:03:09.892 id=140107447949203940 bet=100000000059 sel=58805 LAY 25.00@4.1 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:03:09.892
+creato 18:04:18.286 piazz 18:04:25.796 id=140107448111880070 bet=100000000072 sel=58805 BACK 25.00@4.2 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:04:25.796
+creato 18:04:18.286 piazz 18:04:25.796 id=140107448111883170 bet=100000000073 sel=58805 LAY 25.00@4.1 pers=LAPSE stato=Execution complete abb=24.81 media=4.1 rest=0.00 lapsed=0.00 annull=0.19 fill=[('18:04:25.590', 4.1, 24.81)] note={} compl=18:04:25.796
+creato 18:04:25.590 piazz 18:04:26.104 id=140107448113892690 bet=100000000075 sel=58805 BACK 23.50@4.2 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=23.50 fill=[] note={} compl=18:04:26.104
+creato 18:04:25.796 piazz 18:04:26.587 id=140107448114131660 bet=100000000076 sel=58805 BACK 1.00@1000.0 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=1.00 fill=[] note={"customer_order_ref": "sc23040482"} compl=18:04:26.587
+creato 18:04:26.587 piazz 18:04:58.133 id=140107448114614050 bet=100000000077 sel=58805 BACK 24.00@4.1 pers=LAPSE stato=Execution complete abb=24.00 media=4.1 rest=0.00 lapsed=0.00 annull=0.00 fill=[('18:04:58.133', 4.1, 3.77), ('18:04:58.133', 4.1, 20.23)] note={} compl=18:04:58.133
+creato 18:04:26.587 piazz 18:04:27.509 id=140107448114723330 bet=100000000078 sel=58805 BACK 1.00@1000.0 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=1.00 fill=[] note={"customer_order_ref": "sc01687235"} compl=18:04:27.509
+creato 18:04:27.198 piazz 18:04:58.133 id=140107448115334510 bet=100000000079 sel=58805 BACK 0.81@4.1 pers=LAPSE stato=Execution complete abb=0.81 media=4.1 rest=0.00 lapsed=0.00 annull=0.00 fill=[('18:04:58.133', 4.1, 0.81)] note={"customer_order_ref": "sc01687235"} compl=18:04:58.133
+creato 18:06:33.650 piazz 18:06:34.673 id=140107448142931220 bet=100000000080 sel=58805 BACK 25.00@4.1 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:06:34.673
+creato 18:06:33.650 piazz 18:06:34.673 id=140107448143011540 bet=100000000081 sel=58805 LAY 25.00@4.0 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:06:34.673
+creato 18:06:54.499 piazz 18:16:55.382 id=140107448149083800 bet=100000000082 sel=58805 BACK 25.00@4.1 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:16:55.382
+creato 18:06:54.499 piazz 18:16:55.382 id=140107448149087490 bet=100000000083 sel=58805 LAY 25.00@4.0 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:16:55.382
+creato 18:16:55.585 piazz 18:26:56.156 id=140107448301274590 bet=100000000092 sel=58805 BACK 25.00@4.1 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:26:56.156
+creato 18:16:55.585 piazz 18:26:56.156 id=140107448301277770 bet=100000000093 sel=58805 LAY 25.00@4.0 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:26:56.156
+creato 18:27:09.270 piazz 18:37:09.735 id=140107448492812210 bet=100000000102 sel=58805 BACK 25.00@4.1 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:37:09.735
+creato 18:27:09.270 piazz 18:37:09.735 id=140107448493218600 bet=100000000103 sel=58805 LAY 25.00@4.0 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:37:09.735
+creato 18:37:36.839 piazz 18:44:51.547 id=140107448708164960 bet=100000000108 sel=58805 BACK 25.00@4.1 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:44:51.547
+creato 18:37:36.839 piazz 18:44:51.547 id=140107448708168040 bet=100000000109 sel=58805 LAY 25.00@4.0 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:44:51.547
+creato 18:44:51.653 piazz 18:45:48.020 id=140107448858310680 bet=100000000114 sel=58805 BACK 25.00@4.1 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:45:48.020
+creato 18:44:51.653 piazz 18:45:48.020 id=140107448858313900 bet=100000000115 sel=58805 LAY 25.00@4.0 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:45:48.020
+creato 18:45:55.730 piazz 18:46:24.156 id=140107448880034560 bet=100000000118 sel=58805 BACK 25.00@4.1 pers=LAPSE stato=Execution complete abb=25.00 media=4.1 rest=0.00 lapsed=0.00 annull=0.00 fill=[('18:46:24.156', 4.1, 18.86), ('18:46:24.156', 4.1, 6.14)] note={} compl=18:46:24.156
+creato 18:45:55.730 piazz 18:46:25.355 id=140107448880037890 bet=100000000119 sel=58805 LAY 25.00@4.0 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:46:25.355
+creato 18:46:24.156 piazz 18:46:25.355 id=140107448889600770 bet=100000000120 sel=58805 LAY 1.62@4.0 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=1.62 fill=[] note={} compl=18:46:25.355
+creato 18:46:25.355 piazz 18:46:59.077 id=140107448889918990 bet=100000000121 sel=58805 LAY 25.00@4.1 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=18:46:59.077
+creato 18:46:59.077 piazz 18:46:59.905 id=140107448901154880 bet=100000000125 sel=58805 LAY 24.40@4.2 pers=LAPSE stato=Execution complete abb=24.40 media=4.2 rest=0.00 lapsed=0.00 annull=0.00 fill=[('18:46:58.697', 4.2, 24.4)] note={} compl=18:46:59.905
+
+ATTIVITA' dello scalper che cita [58805]:
+16:44:01.284 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.3, "size": 25.0}
+16:44:01.284 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.2, "size": 25.0}
+16:51:55.409 close_presize {"selection_id": 58805, "side": "BACK", "adjust": -0.58, "ideal": 24.42}
+16:52:00.907 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.2, "size": 25.0}
+16:52:00.907 scratch {"selection_id": 58805, "price": 4.2, "entry_side": "LAY"}
+17:34:01.748 flatten_done {"locked": -0.18}
+17:36:07.650 flatten_done {"locked": -0.01}
+17:50:30.913 flatten_done {"locked": -0.1688}
+17:51:55.961 stop {"selection_id": 58805, "adverse_ticks": 0, "entry_side": "LAY"}
+17:52:00.983 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.1, "size": 14.5}
+17:52:00.983 min_bet_skip {"selection_id": 58805, "side": "BACK", "size": 0.87}
+17:52:00.983 submin_start {"selection_id": 58805, "side": "BACK", "size": 0.87, "price": 4.0}
+17:52:00.983 flatten_done {"locked": -0.37}
+17:53:09.452 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.2, "size": 25.0}
+17:53:09.452 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.1, "size": 25.0}
+18:04:20.001 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.2, "size": 25.0}
+18:04:20.001 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.1, "size": 25.0}
+18:04:30.178 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.2, "size": 23.5}
+18:04:30.178 submin_start {"selection_id": 58805, "side": "BACK", "size": 0.72, "price": 4.2}
+18:04:30.178 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.1, "size": 24.0}
+18:04:30.178 submin_start {"selection_id": 58805, "side": "BACK", "size": 0.81, "price": 4.1}
+18:04:30.178 scratch {"selection_id": 58805, "price": 4.1, "entry_side": "LAY"}
+18:05:02.415 cycle {"esito": "scratch_par", "locked": 0.0, "selection_id": 58805}
+18:06:33.954 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.1, "size": 25.0}
+18:06:33.954 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.0, "size": 25.0}
+18:06:56.583 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.1, "size": 25.0}
+18:06:56.583 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.0, "size": 25.0}
+18:16:59.487 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.1, "size": 25.0}
+18:16:59.487 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.0, "size": 25.0}
+18:27:11.252 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.1, "size": 25.0}
+18:27:11.252 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.0, "size": 25.0}
+18:28:31.066 flatten_done {"locked": -0.28}
+18:37:37.257 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.1, "size": 25.0}
+18:37:37.257 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.0, "size": 25.0}
+18:44:51.444 flatten_done {"locked": -0.3}
+18:44:56.623 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.1, "size": 25.0}
+18:44:56.623 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.0, "size": 25.0}
+18:46:00.112 place {"market_id": "1.259819674", "selection_id": 58805, "side": "BACK", "price": 4.1, "size": 25.0}
+18:46:00.112 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.0, "size": 25.0}
+18:46:26.662 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.0, "size": 1.62}
+18:46:26.662 close_presize {"selection_id": 58805, "side": "LAY", "adjust": 0.62, "ideal": 25.62, "aggiunta": 1.62, "riduzione": 1.0, "placed": true}
+18:46:26.662 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.1, "size": 25.0}
+18:46:26.662 scratch {"selection_id": 58805, "price": 4.1, "entry_side": "BACK"}
+18:46:58.697 flatten_done {"locked": -0.785}
+18:47:03.806 flatten_done {"locked": 0.0}
+18:47:03.806 place {"market_id": "1.259819674", "selection_id": 58805, "side": "LAY", "price": 4.2, "size": 24.4}
+18:47:03.806 flatten_done {"locked": -0.6}
+
+REFERTO: violazioni 1
+{'codice': 'B2', 'regola': "al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha l'esposizione abbinata piatta (entro la tolleranza che il bot dichiara) e nessun ingresso vivo (`flatten_before_s`, bibbia 'mai posizioni aperte al KO')", 'dettaglio': "in gioco la selezione ('1.259819674', 58805) ha un'esposizione abbinata sbilanciata di 0.04 (se vince -0.93, se perde -0.97), oltre la tolleranza 0.02 del bot", 'quando': '2026-07-10T19:00:37.346000+00:00'}
+nota: qualita' registrazione: COMPLETE 95.4%
+nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: fine-vita)
+nota: book in ritardo: 589606; lapse al fischio: 0; lapse alla sospensione: 0; righe di specchio catturate: 408290
+nota: fill per mercato che attraversa: 7 [motivo attraversato] - 17:45:11 UTC 1.259819674 sel 22 BACK 3.40 @1.67 (scambio a 1.68); 17:53:03 UTC 1.259819674 sel 22 BACK 25.00 @1.68 (scambio a 1.69); 17:56:54 UTC 1.259819682 sel 47972 LAY 24.01 @2.22 (scambio a 2.20); 18:04:58 UTC 1.259819674 sel 58805 BACK 20.23 @4.10 (scambio a 4.20); 18:04:58 UTC 1.259819674 sel 58805 BACK 0.81 @4.10 (scambio a 4.20); 18:08:24 UTC 1.259819674 sel 22 BACK 20.74 @1.69 (scambio a 1.70); 18:46:24 UTC 1.259819674 sel 58805 BACK 6.14 @4.10 (scambio a 4.20)
+nota: fasi viste: pre-match, stop-ingressi, finestra-flatten, in-gioco, fine-sessione
+nota: uscite EFFETTIVE delle strategie a fine sessione: AUTOMATICHE
+nota: stati dello slot MAI visti: QUOTING
+nota: scenario chiusura-abbinata-in-parte: 6 chiusura/e colpita/e, 43 chiusure viste: 58805 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 22 LAY chiesto 1.15 tetto 0.46 -> abbinato 0.00 residuo 0.00 lapsed 0.00 annullato 1.15 [SENZA EFFETTO: mai abbinata, guasto riarmato]; 47973 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 22 LAY chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 47972 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 1222345 BACK chiesto 25.00 tetto 10.00 -> abbinato 0.77 residuo 0.00 lapsed 0.00 annullato 24.23

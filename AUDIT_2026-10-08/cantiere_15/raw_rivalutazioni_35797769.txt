@@ -1,0 +1,60 @@
+RIGA 1725 17:00:06.704 1.259819674 58805 fattore-1 = 8.506e-05
+   4.2    prima   37989.84 dopo   37993.08 delta    +3.24 atteso   +3.232 scarto  +0.008
+   4.4    prima     117.56 dopo     117.57 delta    +0.01 atteso   +0.010 scarto  +0.000
+   4.1    prima   24462.35 dopo   24464.43 delta    +2.08 atteso   +2.081 scarto  -0.001
+   4.3    prima    8752.50 dopo    8753.24 delta    +0.74 atteso   +0.745 scarto  -0.005
+   4      prima     352.48 dopo     352.51 delta    +0.03 atteso   +0.030 scarto  +0.000
+RIGA 1725 17:00:06.704 1.259819674 29578 fattore-1 = 8.554e-05
+   5.9    prima     810.17 dopo     810.24 delta    +0.07 atteso   +0.069 scarto  +0.001
+   6.6    prima    1921.07 dopo    1921.23 delta    +0.16 atteso   +0.164 scarto  -0.004
+   6      prima    7319.76 dopo    7320.39 delta    +0.63 atteso   +0.626 scarto  +0.004
+   6.2    prima   13677.71 dopo   13678.88 delta    +1.17 atteso   +1.170 scarto  +0.000
+   6.4    prima   11482.92 dopo   11483.90 delta    +0.98 atteso   +0.982 scarto  -0.002
+RIGA 1725 17:00:06.704 1.259819674 22 fattore-1 = 8.523e-05
+   1.69   prima   36499.56 dopo   36502.67 delta    +3.11 atteso   +3.111 scarto  -0.001
+   1.71   prima   41147.07 dopo   41150.58 delta    +3.51 atteso   +3.507 scarto  +0.003
+   1.65   prima   44104.76 dopo   44108.52 delta    +3.76 atteso   +3.759 scarto  +0.001
+   1.66   prima   47192.01 dopo   47196.03 delta    +4.02 atteso   +4.022 scarto  -0.002
+   1.7    prima   63473.00 dopo   63478.41 delta    +5.41 atteso   +5.410 scarto  +0.000
+   1.68   prima   36968.01 dopo   36971.16 delta    +3.15 atteso   +3.151 scarto  -0.001
+   1.67   prima   13296.22 dopo   13297.35 delta    +1.13 atteso   +1.133 scarto  -0.003
+   1.72   prima    1616.14 dopo    1616.28 delta    +0.14 atteso   +0.138 scarto  +0.002
+   1.64   prima    9474.69 dopo    9475.50 delta    +0.81 atteso   +0.808 scarto  +0.002
+aggiornamenti di trd: 17566 - rivalutazioni (>=3 livelli allo stesso fattore): 117
+istanti distinti: 36
+17:00:06.704 selezioni 3 fattore-1 8.51e-05 livelli fuori dal fattore (scambio vero insieme): []
+17:00:08.992 selezioni 2 fattore-1 8.60e-05 livelli fuori dal fattore (scambio vero insieme): []
+17:00:09.726 selezioni 2 fattore-1 1.09e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819679', 58805, [(2.38, -0.013)])]
+17:00:17.121 selezioni 2 fattore-1 8.16e-05 livelli fuori dal fattore (scambio vero insieme): []
+17:00:24.127 selezioni 1 fattore-1 8.75e-05 livelli fuori dal fattore (scambio vero insieme): []
+17:00:27.343 selezioni 5 fattore-1 1.81e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819681', 2, [(9.2, -0.02)])]
+17:02:09.848 selezioni 1 fattore-1 8.55e-05 livelli fuori dal fattore (scambio vero insieme): []
+18:00:06.705 selezioni 2 fattore-1 -2.58e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819685', 1221385, [(4.9, 7.941)])]
+18:00:07.009 selezioni 5 fattore-1 -2.56e-04 livelli fuori dal fattore (scambio vero insieme): []
+18:00:08.580 selezioni 1 fattore-1 -3.67e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819672', 47973, [(9, 0.022)])]
+18:00:09.614 selezioni 2 fattore-1 -2.53e-04 livelli fuori dal fattore (scambio vero insieme): []
+18:00:09.674 selezioni 2 fattore-1 -2.68e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819686', 1222345, [(3.25, 0.012)])]
+18:00:12.414 selezioni 2 fattore-1 -2.55e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819682', 47972, [(2.24, 6.814)])]
+18:00:12.480 selezioni 2 fattore-1 -2.61e-04 livelli fuori dal fattore (scambio vero insieme): []
+18:00:15.703 selezioni 14 fattore-1 -2.77e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819681', 7, [(20, 0.015), (18.5, 0.043)]), ('1.259819681', 4, [(22, 0.015), (21, 0.03)]), ('1.259819689', 6429983, [(2.82, 0.016)])]
+18:00:16.886 selezioni 2 fattore-1 -2.50e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819677', 1221386, [(3.05, -0.016), (3, 3.41)])]
+18:00:28.238 selezioni 1 fattore-1 -3.26e-04 livelli fuori dal fattore (scambio vero insieme): []
+18:00:38.023 selezioni 2 fattore-1 -2.77e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819675', 5851483, [(1.45, 5.113), (1.46, 0.013)])]
+18:01:15.867 selezioni 2 fattore-1 -2.56e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819679', 22, [(2.26, 0.016)])]
+20:00:03.229 selezioni 5 fattore-1 -8.89e-05 livelli fuori dal fattore (scambio vero insieme): [('1.259819686', 1222345, [(1.94, 17.045)]), ('1.259819686', 1222344, [(2.06, 16.052)]), ('1.259819674', 29578, [(6.2, 0.015), (6.4, 0.017)])]
+20:00:03.720 selezioni 16 fattore-1 -9.18e-05 livelli fuori dal fattore (scambio vero insieme): [('1.259819681', 9, [(50, 0.015)]), ('1.259819681', 5, [(8.8, 0.018)]), ('1.259819681', 2, [(9.2, 0.018)])]
+20:00:03.920 selezioni 2 fattore-1 -8.64e-05 livelli fuori dal fattore (scambio vero insieme): [('1.259819682', 47973, [(1.19, 0.02), (1.21, 0.013), (1.2, 2.57)]), ('1.259819682', 47972, [(2.2, 0.019), (6, 0.516)])]
+20:00:04.526 selezioni 2 fattore-1 -8.68e-05 livelli fuori dal fattore (scambio vero insieme): []
+20:00:08.119 selezioni 1 fattore-1 -8.44e-05 livelli fuori dal fattore (scambio vero insieme): []
+20:00:08.693 selezioni 2 fattore-1 -8.36e-05 livelli fuori dal fattore (scambio vero insieme): [('1.259819680', 1485567, [(1.08, 24.708)]), ('1.259819680', 1485568, [(16, 0.015)])]
+20:00:11.120 selezioni 2 fattore-1 -6.52e-05 livelli fuori dal fattore (scambio vero insieme): [('1.259819692', 6384646, [(1.05, -0.016)])]
+20:00:39.576 selezioni 1 fattore-1 -1.12e-04 livelli fuori dal fattore (scambio vero insieme): []
+21:00:17.313 selezioni 2 fattore-1 -3.45e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819686', 1222345, [(1.95, 0.012), (3.15, 0.012)])]
+21:00:23.101 selezioni 3 fattore-1 -3.45e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819674', 58805, [(4.2, 0.211), (4.1, 0.199), (1.6, 0.014), (1.8, 0.012), (4.3, 0.039), (4, 0.024)]), ('1.259819674', 22, [(1.69, 0.014)])]
+21:01:02.590 selezioni 18 fattore-1 -3.51e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819681', 1, [(10, 0.012)]), ('1.259819681', 3, [(1.7, 0.092), (13.5, 0.016)])]
+21:01:06.358 selezioni 2 fattore-1 -3.41e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819683', 1222346, [(6.6, 0.026), (3.55, 0.012), (6.2, 0.03), (6.8, 0.018), (4.3, 0.023), (6.4, 0.042)])]
+21:01:10.541 selezioni 1 fattore-1 -3.99e-04 livelli fuori dal fattore (scambio vero insieme): []
+21:01:11.266 selezioni 2 fattore-1 -3.41e-04 livelli fuori dal fattore (scambio vero insieme): []
+21:01:17.677 selezioni 2 fattore-1 -3.26e-04 livelli fuori dal fattore (scambio vero insieme): []
+21:01:20.370 selezioni 1 fattore-1 -3.91e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819689', 6429983, [(2.7, 0.014), (2.82, 0.02)])]
+21:01:21.197 selezioni 2 fattore-1 -3.67e-04 livelli fuori dal fattore (scambio vero insieme): [('1.259819687', 1340369, [(2.74, 0.027)])]

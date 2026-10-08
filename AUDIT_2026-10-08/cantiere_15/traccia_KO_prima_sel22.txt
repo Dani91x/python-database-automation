@@ -1,0 +1,63 @@
+ORDINI del blotter su 1.259819674 (sel [22]): 41
+creato 16:35:10.639 piazz 16:49:37.128 id=140107435860177630 bet=100000000001 sel=22 BACK 25.00@1.66 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=16:49:37.128
+creato 16:35:10.639 piazz 16:49:37.128 id=140107435860182110 bet=100000000002 sel=22 LAY 25.00@1.65 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=16:49:37.128
+creato 16:49:39.638 piazz 16:59:43.064 id=140107435867436860 bet=100000000005 sel=22 BACK 25.00@1.66 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=16:59:43.064
+creato 16:49:39.638 piazz 16:59:43.064 id=140107435867470650 bet=100000000006 sel=22 LAY 25.00@1.65 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=25.00 fill=[] note={} compl=16:59:43.064
+creato 16:59:43.155 piazz 17:00:06.704 id=140107435888323970 bet=100000000008 sel=22 BACK 25.00@1.66 pers=LAPSE stato=Execution complete abb=25.00 media=1.66 rest=0.00 lapsed=0.00 annull=0.00 fill=[('17:00:06.704', 1.66, 25.0)] note={} compl=17:00:06.704
+creato 16:59:43.155 piazz 17:00:06.704 id=140107435888326910 bet=100000000009 sel=22 LAY 25.00@1.65 pers=LAPSE stato=Execution complete abb=25.00 media=1.65 rest=0.00 lapsed=0.00 annull=0.00 fill=[('17:00:06.704', 1.65, 25.0)] note={} compl=17:00:06.704
+creato 17:00:06.704 piazz 19:00:34.616 id=140107435889006660 bet=100000000010 sel=22 BACK 1.00@1.65 pers=LAPSE stato=Execution complete abb=0.40 media=1.65 rest=0.00 lapsed=0.60 annull=0.00 fill=[('17:00:06.704', 1.65, 0.4)] note={} compl=19:00:34.616
+creato 19:00:34.616 piazz 19:00:45.374 id=140107436799302050 bet=100000000062 sel=22 LAY 1.00@1.02 pers=LAPSE stato=Execution complete abb=0.00 media=0.0 rest=0.00 lapsed=0.00 annull=1.00 fill=[] note={"customer_order_ref": "sc37196097"} compl=19:00:45.374
+creato 19:00:40.067 piazz 19:00:45.374 id=140107436802937390 bet=100000000063 sel=22 LAY 0.54@1.71 pers=LAPSE stato=Execution complete abb=0.54 media=1.68 rest=0.00 lapsed=0.00 annull=0.00 fill=[('19:00:44.955', 1.68, 0.54)] note={"customer_order_ref": "sc37196097"} compl=19:00:45.374
+
+ATTIVITA' dello scalper che cita [22]:
+16:35:13.765 place {"market_id": "1.259819674", "selection_id": 22, "side": "BACK", "price": 1.66, "size": 25.0}
+16:35:13.765 place {"market_id": "1.259819674", "selection_id": 22, "side": "LAY", "price": 1.65, "size": 25.0}
+16:49:40.734 place {"market_id": "1.259819674", "selection_id": 22, "side": "BACK", "price": 1.66, "size": 25.0}
+16:49:40.734 place {"market_id": "1.259819674", "selection_id": 22, "side": "LAY", "price": 1.65, "size": 25.0}
+16:59:48.389 place {"market_id": "1.259819674", "selection_id": 22, "side": "BACK", "price": 1.66, "size": 25.0}
+16:59:48.389 place {"market_id": "1.259819674", "selection_id": 22, "side": "LAY", "price": 1.65, "size": 25.0}
+17:00:17.017 min_bet_skip {"selection_id": 22, "side": "LAY", "size": 0.15}
+17:00:17.017 place {"market_id": "1.259819674", "selection_id": 22, "side": "BACK", "price": 1.65, "size": 1.0}
+17:00:17.017 scavalco {"selection_id": 22, "side": "BACK", "price": 1.65, "size": 1.0, "nw": 0.25, "nl": 0.0, "msg": "chiusura LAY sotto 0,50 non piazzabile: ordine di scavalco BACK 1.00 @1.65, poi chiusura al centesimo"}
+17:50:30.913 submin_step {"step": "trimmed", "note": "step2 VERIFICATO su osservazione: residuo 0.66 \u2264 target 0.66"}
+17:50:30.913 flatten_done {"locked": -0.1688}
+17:52:00.983 submin_step {"step": "trimmed", "note": "step2 VERIFICATO su osservazione: residuo 0.87 \u2264 target 0.87"}
+17:52:00.983 flatten_done {"locked": -0.37}
+17:55:28.416 place {"market_id": "1.259819682", "selection_id": 47972, "side": "BACK", "price": 2.22, "size": 25.0}
+17:56:11.133 place {"market_id": "1.259819682", "selection_id": 47972, "side": "LAY", "price": 2.22, "size": 25.0}
+17:56:55.281 close_presize {"selection_id": 47972, "side": "BACK", "adjust": -0.22, "ideal": 24.78}
+18:04:30.178 submin_step {"step": "trimmed", "note": "step2 VERIFICATO su osservazione: residuo 0.81 \u2264 target 0.81"}
+18:09:42.440 place {"market_id": "1.259819682", "selection_id": 47972, "side": "BACK", "price": 2.22, "size": 25.0}
+18:09:42.440 scratch {"selection_id": 47972, "price": 2.22, "entry_side": "LAY"}
+18:22:25.276 place {"market_id": "1.259819686", "selection_id": 1222345, "side": "BACK", "price": 3.25, "size": 25.0}
+18:22:25.276 place {"market_id": "1.259819686", "selection_id": 1222345, "side": "LAY", "price": 3.2, "size": 25.0}
+18:27:33.019 close_presize {"selection_id": 1222345, "side": "BACK", "adjust": -0.38, "ideal": 24.62}
+18:28:31.066 submin_step {"step": "trimmed", "note": "step2 VERIFICATO su osservazione: residuo 0.78 \u2264 target 0.78"}
+18:28:31.066 flatten_done {"locked": -0.28}
+18:29:15.400 place {"market_id": "1.259819686", "selection_id": 1222345, "side": "BACK", "price": 3.2, "size": 25.0}
+18:29:15.400 scratch {"selection_id": 1222345, "price": 3.2, "entry_side": "LAY"}
+18:46:58.697 stop {"selection_id": 1222345, "adverse_ticks": 1, "entry_side": "LAY"}
+18:46:58.697 place {"market_id": "1.259819686", "selection_id": 1222345, "side": "BACK", "price": 3.1, "size": 24.5}
+18:46:58.697 min_bet_skip {"selection_id": 1222345, "side": "BACK", "size": 0.51}
+18:46:58.697 submin_start {"selection_id": 1222345, "side": "BACK", "size": 0.51, "price": 3.05}
+18:46:58.697 submin_step {"step": "trimmed", "note": "step2 VERIFICATO su osservazione: residuo 0.51 \u2264 target 0.51"}
+18:46:58.697 flatten_done {"locked": -0.785}
+18:47:03.806 flatten_done {"locked": -0.6}
+19:00:39.652 submin_start {"selection_id": 22, "side": "LAY", "size": 0.54, "price": 1.71}
+19:00:44.654 submin_step {"step": "trimmed", "note": "step2 VERIFICATO su osservazione: residuo 0.54 \u2264 target 0.54"}
+19:00:49.668 flatten_done {"locked": 0.14}
+
+REFERTO: violazioni 2
+{'codice': 'B2', 'regola': "al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha l'esposizione abbinata piatta (entro la tolleranza che il bot dichiara) e nessun ingresso vivo (`flatten_before_s`, bibbia 'mai posizioni aperte al KO')", 'dettaglio': "in gioco la selezione ('1.259819674', 22) ha un'esposizione abbinata sbilanciata di 0.91 (se vince 0.51, se perde -0.40), oltre la tolleranza 0.02 del bot", 'quando': '2026-07-10T19:00:37.346000+00:00'}
+{'codice': 'CP4', 'regola': "dopo una chiusura abbinata in parte nessun loop: mai una chiusura nuova con un'altra viva sulla stessa selezione, mai una size che chiede piu' di quanto resta da chiudere, al piu' 10 chiusure dopo, mai sovracopertura (catalogo par.7.1: 32 ordini veri in loop il 15/09)", 'dettaglio': "('1.259819674', 22): chiusura LAY 140107436799302050 chiede di spostare il netto di 1.02 (compreso il residuo vivo) quando da chiudere ne resta 0.91: size calcolata sul CHIESTO, non sull'abbinato", 'quando': '2026-07-10T19:00:40.646000+00:00'}
+nota: qualita' registrazione: COMPLETE 95.4%
+nota: control della UI: mode=maker dry_run=False stake=25 params=[('entry_stop_before_s', 420), ('event_loss_cap', 1.5), ('event_profit_target', 1), ('flatten_before_s', 180), ('ht_mode', False), ('min_flow', 10), ('min_size', 300), ('one_green_per_phase', True), ('price_max', 4.6), ('price_min', 1.5), ('scalp_ticks', 1), ('sniper_mode', False), ('sniper_stake', 10), ('stop_ticks', 1), ('uscite_automatiche', True)]
+nota: SCENARIO DICHIARATO: uscite automatiche accese, e' la condotta certificata (params `uscite_automatiche=True`, come li scrive l'interruttore della UI su AUTOMATICHE)
+nota: limiti dichiarati: catalogo sintetizzato dai marketDefinition; scanner non usato (lo scalper legge il book); orologio di mercato per `time.time`; settlement non raggiunto (fine vita della sessione); theta fuori perimetro; sniper spento (scenari `sniper*` per lo sniper)
+nota: sessioni: {'prima': 'finita'}; stato finale 'done' (causa della fine: fine-vita)
+nota: book in ritardo: 589606; lapse al fischio: 1; lapse alla sospensione: 0; righe di specchio catturate: 180617
+nota: fill per mercato che attraversa: 6 [motivo attraversato] - 17:00:06 UTC 1.259819674 sel 22 BACK 25.00 @1.66 (scambio a 1.67); 17:00:06 UTC 1.259819674 sel 22 LAY 25.00 @1.65 (scambio a 1.64); 17:56:54 UTC 1.259819682 sel 47972 LAY 24.01 @2.22 (scambio a 2.20); 18:04:58 UTC 1.259819674 sel 58805 BACK 20.23 @4.10 (scambio a 4.20); 18:04:58 UTC 1.259819674 sel 58805 BACK 0.81 @4.10 (scambio a 4.20); 18:46:24 UTC 1.259819674 sel 58805 BACK 6.14 @4.10 (scambio a 4.20)
+nota: fasi viste: pre-match, stop-ingressi, finestra-flatten, in-gioco, fine-sessione
+nota: uscite EFFETTIVE delle strategie a fine sessione: AUTOMATICHE
+nota: stati dello slot MAI visti: QUOTING
+nota: scenario chiusura-abbinata-in-parte: 5 chiusura/e colpita/e, 21 chiusure viste: 58805 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 22 BACK chiesto 1.00 tetto 0.40 -> abbinato 0.40 residuo 0.00 lapsed 0.60 annullato 0.00; 47973 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 47972 BACK chiesto 25.00 tetto 10.00 -> abbinato 10.00 residuo 0.00 lapsed 0.00 annullato 15.00; 1222345 BACK chiesto 25.00 tetto 10.00 -> abbinato 0.77 residuo 0.00 lapsed 0.00 annullato 24.23
