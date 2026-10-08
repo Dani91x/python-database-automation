@@ -1,0 +1,8 @@
+WARNING:flumine.strategy.strategy:Strategy of same name 'scm35760084' already added
+WARNING:flumine.strategy.strategy:Strategy of same name 'mu35760084' already added
+WARNING:flumine.strategy.runnercontext:Trade '107f60bc-5c3f-482d-9c4a-69527c06d9fc' not present in RunnerContext live_trades on reset
+WARNING:flumine.strategy.runnercontext:Trade '1885134c-8183-4e60-aacf-f613cd4232f5' not present in RunnerContext live_trades on reset
+
+real	4m32.445s
+user	4m25.823s
+sys	0m1.839s

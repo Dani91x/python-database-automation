@@ -1,0 +1,18 @@
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.scalper.scalper_bot:[scalper] piazzamento RIFIUTATO sel=22 BACK @1.66 per 25.0 (1-esimo, ingressi fermi 1s): Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.scalper.scalper_bot:[scalper] piazzamento RIFIUTATO sel=22 BACK @1.66 per 25.0 (2-esimo, ingressi fermi 2s): Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.scalper.scalper_bot:[scalper] piazzamento RIFIUTATO sel=22 BACK @1.66 per 25.0 (3-esimo, ingressi fermi 4s): Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.scalper.scalper_bot:[scalper] piazzamento RIFIUTATO sel=22 BACK @1.66 per 25.0 (4-esimo, ingressi fermi 8s): Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.scalper.scalper_bot:[scalper] piazzamento RIFIUTATO sel=22 BACK @1.66 per 25.0 (5-esimo, ingressi fermi 16s): Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.controls:Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:Betfair.stream.scalper.scalper_bot:[scalper] piazzamento RIFIUTATO sel=22 BACK @1.66 per 25.0 (6-esimo, ingressi fermi 30s): Order has violated: REPLAY_RIFIUTA_PRIMI Error: rifiuto iniettato dal replay
+WARNING:flumine.strategy.strategy:Strategy of same name 'mu35797769' already added
+WARNING:flumine.strategy.runnercontext:Trade '3ad8207b-b342-4d8d-b381-6d9a7da64d09' not present in RunnerContext live_trades on reset
+
+real	20m28.614s
+user	19m16.436s
+sys	0m25.391s

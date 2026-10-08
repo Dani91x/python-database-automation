@@ -1,0 +1,5 @@
+WARNING:flumine.strategy.runnercontext:Trade 'fd428b46-63f5-43d4-9a09-986a62e0a2f1' not present in RunnerContext live_trades on reset
+
+real	23m16.064s
+user	22m5.602s
+sys	0m24.517s
