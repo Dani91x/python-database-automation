@@ -5211,3 +5211,10 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   `trading/risk_engine.py:21-23`, `desktop/main.js:756` (terzo login Betfair, web SSO); `read_book` in produzione 2
   definizioni (`mike/service.py:146`, `omega/omega_market.py:571`), non 17 come nel brief. Reperti per il piano: 10/10
   connessioni stream nel caso peggiore, scanner senza ripresa clk, orologio del PC +844 ms, 9,6 buchi >5 s per ora in-play.
+- 16:20 tappa 2 ACCETTATA: schede C (porta ordini: 7 strade verso Betfair, 9 riconciliazioni), D (runtime: firma
+  `osserva(book, stato, orologio)` del brief NON regge per scalper/tennis/Safe -> contratto a due livelli Decisore /
+  OspiteFlumine), G (dati + algoritmi del cloud: 45 funzionalita', SQLite WAL FULL per il denaro + NORMAL per lo stato,
+  outbox del postino), I (processi h24: nessun supervisore del watchdog, log del worker 1,1 GB). Verifica a campione,
+  tutte confermate: `omega_market.py:704` (`place_order_live` REST diretto), `order_exec.py:215`, `execution.py:1219`,
+  `avvio_app.py:173` (avvio conosce i bot per nome), `mike/db.py:175-181` (id dal cloud), `dossier.py:147` (cache senza
+  scadenza) vs `omega_service.py:106` (6 h), `desktop/main.js:401-410` (watchdog morto non riavviato), `:937`.
