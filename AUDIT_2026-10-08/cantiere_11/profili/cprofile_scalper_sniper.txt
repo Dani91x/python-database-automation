@@ -1,0 +1,142 @@
+Thu Oct  8 13:45:04 2026    /tmp/claude-0/c11/prof_scalper_sniper.out
+
+         449449498 function calls (446826498 primitive calls) in 288.776 seconds
+
+   Ordered by: internal time
+   List reduced from 9626 to 60 due to restriction <60>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+130157932   24.092    0.000   24.092    0.000 {method 'get' of 'dict' objects}
+   653137   17.090    0.000   29.517    0.000 Betfair/stream/scalper/scalper_bot.py:1688(_update_flow)
+ 12493885   14.562    0.000   24.379    0.000 Betfair/stream/valuta.py:69(_nuovo_livello)
+57167873/57162323   13.146    0.000   18.825    0.000 {built-in method builtins.getattr}
+  9328896   12.230    0.000   12.619    0.000 site:flumine/markets/middleware.py:265(__call__)
+  1511912   10.928    0.000  150.595    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:2853(_giro_del_book)
+ 21891705   10.404    0.000   10.404    0.000 {built-in method builtins.round}
+  1784541    9.424    0.000   91.312    0.000 Betfair/stream/backtest/banco_comune.py:2137(_a_flumine)
+   651361    8.462    0.000   23.845    0.000 Betfair/stream/scalper/sniper_bot.py:377(process_market_book)
+   286052    5.551    0.000   40.325    0.000 Betfair/stream/scalper/scalper_bot.py:817(process_market_book)
+  9328896    5.352    0.000   17.971    0.000 site:flumine/markets/middleware.py:245(_process_runner)
+ 13319842    5.344    0.000   29.724    0.000 Betfair/stream/valuta.py:97(<genexpr>)
+  1511913    4.507    0.000  291.381    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:1236(al_book)
+  1511913    4.339    0.000   23.414    0.000 site:flumine/markets/middleware.py:49(__call__)
+  1511912    3.968    0.000    6.368    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:2456(vita_ms)
+   292462    3.630    0.000   14.822    0.000 Betfair/stream/engine/live_trading_strategy.py:339(_order_row)
+  1511913    3.591    0.000  730.721    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:2832(check_market_book)
+   825957    3.316    0.000   33.203    0.000 Betfair/stream/valuta.py:94(_livelli)
+  1511913    2.986    0.000   38.900    0.000 Betfair/stream/valuta.py:254(converti_libro)
+   197208    2.703    0.000    4.887    0.000 site:betfairlightweight/resources/bettingresources.py:593(__init__)
+19531857/19531823    2.602    0.000    2.608    0.000 {built-in method builtins.isinstance}
+   651361    2.590    0.000    4.413    0.000 Betfair/stream/scalper/sniper_bot.py:342(_update_micro)
+3918168/1511935    2.568    0.000  733.917    0.000 site:flumine/utils.py:261(call_strategy_error_handling)
+ 10026412    2.496    0.000    9.096    0.000 Betfair/stream/engine/live_trading_strategy.py:65(_val)
+    11705    2.437    0.000    5.496    0.000 Betfair/stream/scalper/certificazione.py:1113(_s5)
+   272628    2.419    0.000    7.731    0.000 Betfair/stream/backtest/banco_comune.py:1671(_chiudi_mercato_senza_resoconti)
+   287599    2.180    0.000    5.858    0.000 Betfair/stream/scalper/certificazione.py:227(riga_ordine)
+  1302722    2.097    0.000    3.043    0.000 Betfair/stream/scalper/sniper_bot.py:313(_is_target)
+   292462    1.993    0.000    7.475    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:3038(_cattura_ordine)
+  3023826    1.982    0.000   65.729    0.000 site:flumine/utils.py:289(call_middleware_error_handling)
+  17425/7    1.974    0.000    0.000    0.000 {method 'acquire' of '_thread.lock' objects}
+  4535704    1.821    0.000    2.614    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:1056(_modulo)
+    81117    1.762    0.000   16.618    0.000 Betfair/stream/backtest/banco_comune.py:1986(veloce)
+    26213    1.745    0.000   33.066    0.001 Betfair/stream/engine/live_trading_strategy.py:261(_mirror_orders)
+  4696198    1.649    0.000    3.823    0.000 Betfair/stream/engine/live_trading_strategy.py:73(_f)
+  1808227    1.480    0.000    2.543    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:1188(ora_ms)
+  1784542    1.464    0.000   18.885    0.000 Betfair/stream/backtest/banco_comune.py:2412(_prossimo)
+  4111274    1.389    0.000    4.699    0.000 Betfair/stream/engine/live_trading_strategy.py:82(_f0)
+   7128/1    1.367    0.000    0.000    0.000 /usr/lib/python3.13/threading.py:327(wait)
+   292462    1.365    0.000    2.394    0.000 Betfair/stream/backtest/varianti_bot.py:249(campi_ordine)
+  1307282    1.365    0.000    1.365    0.000 Betfair/stream/uscite_proposte.py:133(annota)
+   186848    1.280    0.000    1.937    0.000 Betfair/stream/backtest/banco_comune.py:2196(_mercato_che_attraversa)
+  1784541    1.198    0.000    1.669    0.000 Betfair/stream/backtest/banco_comune.py:1599(monotono)
+   734405    1.175    0.000    1.771    0.000 Betfair/stream/scalper/sniper_bot.py:322(check_market_book)
+  5456059    1.166    0.000    1.166    0.000 {method 'append' of 'list' objects}
+   276535    1.159    0.000    2.316    0.000 site:betfairlightweight/streaming/cache.py:172(serialise)
+  1511913    1.150    0.000   40.327    0.000 Betfair/stream/valuta.py:325(__call__)
+   295263    1.148    0.000    6.687    0.000 Betfair/stream/engine/live_trading_strategy.py:326(_order_signature)
+   584924    1.146    0.000    2.824    0.000 Betfair/stream/engine/live_trading_strategy.py:121(_client_order_ref)
+   249521    1.146    0.000    1.146    0.000 /usr/lib/python3.13/json/decoder.py:351(raw_decode)
+   197208    1.142    0.000    6.675    0.000 site:betfairlightweight/streaming/cache.py:360(create_resource)
+   315098    1.118    0.000    1.125    0.000 {built-in method builtins.sorted}
+   448025    1.111    0.000    1.111    0.000 {method 'isoformat' of 'datetime.datetime' objects}
+  1511915    1.071    0.000    1.623    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:271(guasto_dello_scenario)
+   1579/1    1.066    0.001  282.572  282.572 /usr/lib/python3.13/threading.py:641(wait)
+  2609080    1.032    0.000    1.032    0.000 site:flumine/utils.py:163(get_price)
+  1511912    1.022    0.000    2.645    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:2955(_evento_scenario)
+   334721    1.010    0.000    2.644    0.000 site:betfairlightweight/streaming/cache.py:47(update)
+   186848    0.996    0.000    1.104    0.000 site:flumine/markets/middleware.py:182(_process_simulated_orders)
+   272628    0.960    0.000    2.016    0.000 site:flumine/baseflumine.py:229(_remove_market)
+
+
+
+
+Thu Oct  8 13:45:04 2026    /tmp/claude-0/c11/prof_scalper_sniper.out
+
+         449449498 function calls (446826498 primitive calls) in 288.776 seconds
+
+   Ordered by: cumulative time
+   List reduced from 9626 to 60 due to restriction <60>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+3918168/1511935    2.568    0.000  733.917    0.000 site:flumine/utils.py:261(call_strategy_error_handling)
+  1511913    3.591    0.000  730.721    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:2832(check_market_book)
+  1511913    4.507    0.000  291.381    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:1236(al_book)
+   1930/1    0.083    0.000  288.849  288.849 {built-in method builtins.exec}
+        1    0.000    0.000  288.849  288.849 <string>:1(<module>)
+        1    0.000    0.000  288.849  288.849 <frozen runpy>:206(run_module)
+        1    0.000    0.000  286.777  286.777 <frozen runpy>:65(_run_code)
+        1    0.000    0.000  286.777  286.777 Betfair/stream/backtest/certifica.py:1(<module>)
+        1    0.000    0.000  286.776  286.776 Betfair/stream/backtest/certifica.py:790(main)
+94308/1163    0.076    0.000  285.653    0.246 {built-in method builtins.next}
+        2    0.000    0.000  285.646  142.823 Betfair/stream/backtest/certifica.py:695(_esegui_compiti)
+        1    0.000    0.000  285.646  285.646 Betfair/stream/backtest/certifica.py:525(_lavora_cronometrato)
+        1    0.000    0.000  285.646  285.646 Betfair/stream/backtest/certifica.py:472(_lavora)
+        1    0.000    0.000  285.643  285.643 Betfair/stream/scalper/tools/replay_registrazioni.py:3179(certifica_scenario)
+        2    0.000    0.000  282.630  141.315 Betfair/stream/scalper/tools/replay_registrazioni.py:2225(ferma_motore)
+        2    0.000    0.000  282.630  141.315 /usr/lib/python3.13/threading.py:1059(join)
+        2    0.000    0.000  282.619  141.309 {method 'join' of '_thread._ThreadHandle' objects}
+      5/1    0.000    0.000  282.618  282.618 /usr/lib/python3.13/threading.py:1001(_bootstrap)
+      5/1    0.008    0.002  282.618  282.618 /usr/lib/python3.13/threading.py:1028(_bootstrap_inner)
+      5/1    0.000    0.000  282.618  282.618 /usr/lib/python3.13/threading.py:984(run)
+        1    0.000    0.000  282.618  282.618 Betfair/stream/scalper/tools/replay_registrazioni.py:2216(_gira)
+        1    0.000    0.000  282.618  282.618 Betfair/stream/backtest/banco_comune.py:2554(esegui)
+        1    0.000    0.000  282.577  282.577 Betfair/stream/scalper/tools/replay_registrazioni.py:3471(_una_sessione)
+        1    0.000    0.000  282.572  282.572 Betfair/stream/scalper/tools/replay_registrazioni.py:1661(run)
+   1579/1    1.066    0.001  282.572  282.572 /usr/lib/python3.13/threading.py:641(wait)
+        1    0.000    0.000  282.555  282.555 Betfair/stream/scalper/scalper_session.py:805(mantieni_sessione)
+  1511912   10.928    0.000  150.595    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:2853(_giro_del_book)
+  1784541    9.424    0.000   91.312    0.000 Betfair/stream/backtest/banco_comune.py:2137(_a_flumine)
+  3023826    1.982    0.000   65.729    0.000 site:flumine/utils.py:289(call_middleware_error_handling)
+  1511913    1.150    0.000   40.327    0.000 Betfair/stream/valuta.py:325(__call__)
+   286052    5.551    0.000   40.325    0.000 Betfair/stream/scalper/scalper_bot.py:817(process_market_book)
+  1511913    2.986    0.000   38.900    0.000 Betfair/stream/valuta.py:254(converti_libro)
+  1511880    0.733    0.000   34.517    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:2292(gira_specchio)
+    26213    0.079    0.000   33.501    0.001 Betfair/stream/engine/live_trading_strategy.py:195(process_orders)
+   825957    3.316    0.000   33.203    0.000 Betfair/stream/valuta.py:94(_livelli)
+    26213    1.745    0.000   33.066    0.001 Betfair/stream/engine/live_trading_strategy.py:261(_mirror_orders)
+ 13319842    5.344    0.000   29.724    0.000 Betfair/stream/valuta.py:97(<genexpr>)
+   653137   17.090    0.000   29.517    0.000 Betfair/stream/scalper/scalper_bot.py:1688(_update_flow)
+ 12493885   14.562    0.000   24.379    0.000 Betfair/stream/valuta.py:69(_nuovo_livello)
+130157932   24.092    0.000   24.092    0.000 {method 'get' of 'dict' objects}
+   651361    8.462    0.000   23.845    0.000 Betfair/stream/scalper/sniper_bot.py:377(process_market_book)
+  1511913    4.339    0.000   23.414    0.000 site:flumine/markets/middleware.py:49(__call__)
+    11710    0.092    0.000   22.587    0.002 Betfair/stream/scalper/tools/replay_registrazioni.py:2730(giro)
+  1784542    1.464    0.000   18.885    0.000 Betfair/stream/backtest/banco_comune.py:2412(_prossimo)
+57167873/57162323   13.146    0.000   18.825    0.000 {built-in method builtins.getattr}
+  9328896    5.352    0.000   17.971    0.000 site:flumine/markets/middleware.py:245(_process_runner)
+    81117    1.762    0.000   16.618    0.000 Betfair/stream/backtest/banco_comune.py:1986(veloce)
+   292462    0.201    0.000   15.375    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:2062(_order_row)
+   292462    0.347    0.000   15.171    0.000 Betfair/stream/scalper/scalper_session.py:1110(_order_row)
+   292462    3.630    0.000   14.822    0.000 Betfair/stream/engine/live_trading_strategy.py:339(_order_row)
+2915/2914    0.076    0.000   14.077    0.005 Betfair/stream/scalper/scalper_session.py:150(motivo_freno)
+  9328896   12.230    0.000   12.619    0.000 site:flumine/markets/middleware.py:265(__call__)
+2954/2953    0.145    0.000   11.560    0.004 <frozen genericpath>:36(isfile)
+    11709    0.745    0.000   11.299    0.001 Betfair/stream/scalper/tools/replay_registrazioni.py:2366(osservazione)
+    11709    0.585    0.000   10.873    0.001 Betfair/stream/scalper/certificazione.py:1288(verifica)
+ 21891705   10.404    0.000   10.404    0.000 {built-in method builtins.round}
+ 10026412    2.496    0.000    9.096    0.000 Betfair/stream/engine/live_trading_strategy.py:65(_val)
+   272628    0.346    0.000    8.155    0.000 Betfair/stream/backtest/banco_comune.py:1760(_process_close_market)
+   272628    2.419    0.000    7.731    0.000 Betfair/stream/backtest/banco_comune.py:1671(_chiudi_mercato_senza_resoconti)
+   292462    1.993    0.000    7.475    0.000 Betfair/stream/scalper/tools/replay_registrazioni.py:3038(_cattura_ordine)
+
+

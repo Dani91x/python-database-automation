@@ -1,0 +1,142 @@
+Thu Oct  8 13:41:15 2026    /tmp/claude-0/c11/prof_omega_base.out
+
+         263430169 function calls (261395928 primitive calls) in 145.717 seconds
+
+   Ordered by: internal time
+   List reduced from 9605 to 60 due to restriction <60>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+ 12493891   11.938    0.000   21.008    0.000 Betfair/stream/valuta.py:69(_nuovo_livello)
+  9330151    7.306    0.000    7.666    0.000 site:flumine/markets/middleware.py:265(__call__)
+ 15485314    7.220    0.000    7.220    0.000 {built-in method builtins.round}
+ 41410130    7.006    0.000    7.006    0.000 {method 'get' of 'dict' objects}
+  1785014    6.966    0.000   68.957    0.000 Betfair/stream/backtest/banco_comune.py:2137(_a_flumine)
+  9330151    4.890    0.000   12.556    0.000 site:flumine/markets/middleware.py:245(_process_runner)
+ 29721086    4.739    0.000    4.746    0.000 {built-in method builtins.getattr}
+ 13320199    4.358    0.000   25.366    0.000 Betfair/stream/valuta.py:97(<genexpr>)
+  1512010    3.684    0.000   16.240    0.000 site:flumine/markets/middleware.py:49(__call__)
+  1470869    3.592    0.000   41.848    0.000 Betfair/omega/tools/replay_registrazioni.py:1305(process_market_book)
+   589776    3.508    0.000    9.849    0.000 Betfair/stream/backtest/banco_comune.py:516(_livelli_di_produzione)
+26910600/26884864    3.301    0.000    3.343    0.000 {built-in method builtins.isinstance}
+        1    3.239    3.239  141.288  141.288 Betfair/stream/backtest/banco_comune.py:2554(esegui)
+  1512032    3.068    0.000    5.645    0.000 Betfair/stream/backtest/varianti_bot.py:380(osserva_mercato)
+   826308    2.942    0.000   28.460    0.000 Betfair/stream/valuta.py:94(_livelli)
+  1785014    2.892    0.000   80.666    0.000 Betfair/stream/backtest/varianti_bot.py:411(_a_flumine)
+  1512010    2.597    0.000   33.283    0.000 Betfair/stream/valuta.py:254(converti_libro)
+  1512010    2.507    0.000   26.864    0.000 Betfair/stream/backtest/banco_comune.py:2801(applica_book)
+  1512010    2.408    0.000    3.779    0.000 Betfair/stream/backtest/banco_comune.py:2731(registra_mercato)
+   197229    2.386    0.000    4.301    0.000 site:betfairlightweight/resources/bettingresources.py:593(__init__)
+  3037231    1.839    0.000    1.839    0.000 {method 'timestamp' of 'datetime.datetime' objects}
+  3400361    1.813    0.000    2.794    0.000 Betfair/stream/backtest/sim_strategy.py:50(_offer_price)
+   273004    1.728    0.000    5.013    0.000 Betfair/stream/backtest/banco_comune.py:1671(_chiudi_mercato_senza_resoconti)
+  3400361    1.717    0.000    2.567    0.000 Betfair/stream/backtest/sim_strategy.py:68(_offer_size)
+  3024020    1.699    0.000   52.463    0.000 site:flumine/utils.py:289(call_middleware_error_handling)
+    81138    1.590    0.000   14.158    0.000 Betfair/stream/backtest/banco_comune.py:1986(veloce)
+    97894    1.552    0.000    5.666    0.000 Betfair/safe_strategy/service.py:1598(_apply_opp_book)
+  1785022    1.278    0.000   16.140    0.000 Betfair/stream/backtest/banco_comune.py:2412(_prossimo)
+  2941739    1.239    0.000   43.277    0.000 site:flumine/utils.py:261(call_strategy_error_handling)
+  1512010    1.224    0.000    2.652    0.000 Betfair/stream/backtest/varianti_bot.py:232(ms_di)
+   116197    1.156    0.000    1.742    0.000 Betfair/safe_strategy/scanner.py:697(build_market_block)
+  6167041    1.121    0.000    1.121    0.000 {method 'append' of 'list' objects}
+3839890/2324501    1.115    0.000    1.614    0.000 {built-in method builtins.len}
+  1785014    1.019    0.000    1.428    0.000 Betfair/stream/backtest/banco_comune.py:1599(monotono)
+  1512010    1.001    0.000   34.523    0.000 Betfair/stream/valuta.py:325(__call__)
+   197229    0.978    0.000    5.813    0.000 site:betfairlightweight/streaming/cache.py:360(create_resource)
+  2123752    0.928    0.000    1.469    0.000 Betfair/safe_strategy/scanner.py:218(livello_campo)
+   276726    0.923    0.000    1.895    0.000 site:betfairlightweight/streaming/cache.py:172(serialise)
+   530938    0.858    0.000    4.126    0.000 Betfair/safe_strategy/scanner.py:265(price_pair)
+   334746    0.851    0.000    2.048    0.000 site:betfairlightweight/streaming/cache.py:47(update)
+  1512013    0.770    0.000    1.078    0.000 Betfair/stream/backtest/banco_comune.py:2702(imposta_ora)
+   197229    0.757    0.000    4.902    0.000 site:betfairlightweight/streaming/cache.py:234(update_cache)
+   276726    0.736    0.000    0.851    0.000 site:betfairlightweight/resources/bettingresources.py:505(__init__)
+   273004    0.723    0.000    1.481    0.000 site:flumine/baseflumine.py:229(_remove_market)
+  1061876    0.624    0.000    1.879    0.000 Betfair/safe_strategy/scanner.py:255(best_size)
+    19106    0.623    0.000    5.105    0.000 Betfair/safe_strategy/service.py:1562(_apply_cs_book)
+   128361    0.615    0.000   12.289    0.000 Betfair/safe_strategy/service.py:1395(_apply_market_book)
+   334746    0.572    0.000    0.645    0.000 site:betfairlightweight/streaming/cache.py:82(serialise)
+    18976    0.557    0.000    1.882    0.000 Betfair/safe_strategy/scanner.py:750(build_cs_block)
+  1512054    0.498    0.000    0.769    0.000 site:flumine/markets/blotter.py:341(__len__)
+    81137    0.490    0.000    5.499    0.000 site:flumine/streams/historicalstream.py:35(_process)
+  1785014    0.480    0.000    0.480    0.000 site:flumine/markets/market.py:43(__call__)
+   197229    0.478    0.000    0.478    0.000 site:betfairlightweight/streaming/cache.py:387(serialise)
+  1061876    0.462    0.000    1.231    0.000 Betfair/safe_strategy/scanner.py:247(best_price)
+    81138    0.455    0.000    0.455    0.000 {orjson.loads}
+  1910430    0.439    0.000    0.439    0.000 {method 'items' of 'dict' objects}
+  1785014    0.410    0.000    0.410    0.000 site:flumine/simulation/utils.py:21(__call__)
+   294888    0.407    0.000   10.995    0.000 Betfair/stream/backtest/banco_comune.py:485(__init__)
+  1785014    0.406    0.000    0.406    0.000 Betfair/stream/backtest/banco_comune.py:242(_flumine_utils_events)
+  3400361    0.402    0.000    0.402    0.000 Betfair/stream/backtest/banco_comune.py:438(__init__)
+
+
+
+
+Thu Oct  8 13:41:15 2026    /tmp/claude-0/c11/prof_omega_base.out
+
+         263430169 function calls (261395928 primitive calls) in 145.717 seconds
+
+   Ordered by: cumulative time
+   List reduced from 9605 to 60 due to restriction <60>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+   2007/1    0.098    0.000  145.745  145.745 {built-in method builtins.exec}
+        1    0.000    0.000  145.745  145.745 <string>:1(<module>)
+        1    0.000    0.000  145.745  145.745 <frozen runpy>:206(run_module)
+        1    0.000    0.000  143.475  143.475 <frozen runpy>:65(_run_code)
+        1    0.000    0.000  143.475  143.475 Betfair/stream/backtest/certifica.py:1(<module>)
+        1    0.000    0.000  143.474  143.474 Betfair/stream/backtest/certifica.py:790(main)
+89253/8088    0.067    0.000  141.391    0.017 {built-in method builtins.next}
+        2    0.000    0.000  141.364   70.682 Betfair/stream/backtest/certifica.py:695(_esegui_compiti)
+        1    0.000    0.000  141.364  141.364 Betfair/stream/backtest/certifica.py:525(_lavora_cronometrato)
+        1    0.000    0.000  141.364  141.364 Betfair/stream/backtest/certifica.py:472(_lavora)
+        1    0.000    0.000  141.362  141.362 Betfair/omega/tools/replay_registrazioni.py:2497(certifica_scenario)
+        1    0.000    0.000  141.362  141.362 Betfair/omega/tools/replay_registrazioni.py:1997(certifica_evento)
+        1    0.000    0.000  141.360  141.360 Betfair/omega/tools/replay_registrazioni.py:2004(_certifica_evento)
+        1    3.239    3.239  141.288  141.288 Betfair/stream/backtest/banco_comune.py:2554(esegui)
+  1785014    2.892    0.000   80.666    0.000 Betfair/stream/backtest/varianti_bot.py:411(_a_flumine)
+  1785014    6.966    0.000   68.957    0.000 Betfair/stream/backtest/banco_comune.py:2137(_a_flumine)
+  3024020    1.699    0.000   52.463    0.000 site:flumine/utils.py:289(call_middleware_error_handling)
+  2941739    1.239    0.000   43.277    0.000 site:flumine/utils.py:261(call_strategy_error_handling)
+  1470869    3.592    0.000   41.848    0.000 Betfair/omega/tools/replay_registrazioni.py:1305(process_market_book)
+  1512010    1.001    0.000   34.523    0.000 Betfair/stream/valuta.py:325(__call__)
+  1512010    2.597    0.000   33.283    0.000 Betfair/stream/valuta.py:254(converti_libro)
+   826308    2.942    0.000   28.460    0.000 Betfair/stream/valuta.py:94(_livelli)
+  1512010    2.507    0.000   26.864    0.000 Betfair/stream/backtest/banco_comune.py:2801(applica_book)
+ 13320199    4.358    0.000   25.366    0.000 Betfair/stream/valuta.py:97(<genexpr>)
+ 12493891   11.938    0.000   21.008    0.000 Betfair/stream/valuta.py:69(_nuovo_livello)
+  1512010    3.684    0.000   16.240    0.000 site:flumine/markets/middleware.py:49(__call__)
+  1785022    1.278    0.000   16.140    0.000 Betfair/stream/backtest/banco_comune.py:2412(_prossimo)
+    81138    1.590    0.000   14.158    0.000 Betfair/stream/backtest/banco_comune.py:1986(veloce)
+  9330151    4.890    0.000   12.556    0.000 site:flumine/markets/middleware.py:245(_process_runner)
+   128361    0.615    0.000   12.289    0.000 Betfair/safe_strategy/service.py:1395(_apply_market_book)
+   128361    0.177    0.000   11.650    0.000 Betfair/stream/backtest/banco_comune.py:2824(_vista_di)
+    57346    0.052    0.000   11.404    0.000 Betfair/stream/backtest/banco_comune.py:524(libro_di_produzione)
+    57346    0.270    0.000   11.351    0.000 Betfair/stream/backtest/banco_comune.py:505(__init__)
+   294888    0.407    0.000   10.995    0.000 Betfair/stream/backtest/banco_comune.py:485(__init__)
+   294888    0.376    0.000   10.382    0.000 Betfair/stream/backtest/banco_comune.py:451(__init__)
+   589776    3.508    0.000    9.849    0.000 Betfair/stream/backtest/banco_comune.py:516(_livelli_di_produzione)
+  9330151    7.306    0.000    7.666    0.000 site:flumine/markets/middleware.py:265(__call__)
+ 15485314    7.220    0.000    7.220    0.000 {built-in method builtins.round}
+ 41410130    7.006    0.000    7.006    0.000 {method 'get' of 'dict' objects}
+      686    0.031    0.000    6.562    0.010 Betfair/omega/tools/replay_registrazioni.py:1322(_un_giro)
+   197229    0.978    0.000    5.813    0.000 site:betfairlightweight/streaming/cache.py:360(create_resource)
+    97894    1.552    0.000    5.666    0.000 Betfair/safe_strategy/service.py:1598(_apply_opp_book)
+  1512032    3.068    0.000    5.645    0.000 Betfair/stream/backtest/varianti_bot.py:380(osserva_mercato)
+    81137    0.490    0.000    5.499    0.000 site:flumine/streams/historicalstream.py:35(_process)
+   273004    0.273    0.000    5.353    0.000 Betfair/stream/backtest/banco_comune.py:1760(_process_close_market)
+    19106    0.623    0.000    5.105    0.000 Betfair/safe_strategy/service.py:1562(_apply_cs_book)
+   273004    1.728    0.000    5.013    0.000 Betfair/stream/backtest/banco_comune.py:1671(_chiudi_mercato_senza_resoconti)
+   197229    0.757    0.000    4.902    0.000 site:betfairlightweight/streaming/cache.py:234(update_cache)
+ 29721086    4.739    0.000    4.746    0.000 {built-in method builtins.getattr}
+   197229    2.386    0.000    4.301    0.000 site:betfairlightweight/resources/bettingresources.py:593(__init__)
+   530938    0.858    0.000    4.126    0.000 Betfair/safe_strategy/scanner.py:265(price_pair)
+  1512010    2.408    0.000    3.779    0.000 Betfair/stream/backtest/banco_comune.py:2731(registra_mercato)
+     1372    0.002    0.000    3.550    0.003 Betfair/stream/backtest/banco_comune.py:1032(_costa_una_lettura)
+     1372    0.067    0.000    3.547    0.003 Betfair/stream/backtest/banco_comune.py:2502(consuma_tempo)
+26910600/26884864    3.301    0.000    3.343    0.000 {built-in method builtins.isinstance}
+  2380/22    0.011    0.000    3.210    0.146 <frozen importlib._bootstrap>:1358(_find_and_load)
+  1831/17    0.011    0.000    3.209    0.189 <frozen importlib._bootstrap>:1306(_find_and_load_unlocked)
+  1758/21    0.007    0.000    3.206    0.153 <frozen importlib._bootstrap>:911(_load_unlocked)
+  1596/21    0.004    0.000    3.206    0.153 <frozen importlib._bootstrap_external>:1021(exec_module)
+  5299/27    0.050    0.000    3.206    0.119 <frozen importlib._bootstrap>:480(_call_with_frames_removed)
+
+
