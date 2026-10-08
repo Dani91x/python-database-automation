@@ -5489,7 +5489,7 @@ Il piano e' pronto per la revisione del PC e la decisione dell'utente. Prossimi 
 - Esito: con le due correzioni (mattina + sera) la run 37743110569 avrebbe dato exit 0. CERTIFICATO. Action NON rilanciata
   (ordine dell'utente: crediti API-Football finiti); riparte da sola dal prossimo giro programmato dopo la fusione su master.
 
-### FUSIONE SU MASTER — 08/10, ore 19:45 (coordinatore PC, Fable 5.1; protocollo `AUDIT_2026-10-08/HANDOFF_VERIFICA_PC_E_FUSIONE.md`, passi A-F)
+### FUSIONE SU MASTER — 08/10, ore 19:34 (coordinatore PC, Fable 5.1; protocollo `AUDIT_2026-10-08/HANDOFF_VERIFICA_PC_E_FUSIONE.md`, passi A-F)
 - Sha prima: `origin/master` = `8226d766`. Sha dopo: `6e61f9b9` (avanzamento veloce, `git push origin fusione-master:refs/heads/master`,
   nessun rebase, nessun force). Cima cloud verificata `2eae1b0e` (= sha attesa, commit «docs: PRONTO PER LA VERIFICA SUL PC ...»).
 - A: stage pulito, master antenato del ramo cloud; il PC aveva 9 commit dopo `3c4aae6` (piano di architettura 04-08, correzione
