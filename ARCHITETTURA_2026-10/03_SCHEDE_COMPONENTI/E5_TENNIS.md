@@ -131,7 +131,7 @@ Catena letta dal codice (nessun numero di latenza e' stato misurato da me):
 1. **Fonte**: l'InPlayService (IPS) di Betfair, servizio NON ufficiale (`safe_strategy/service.py:193`, `betfairlightweight.in_play_service`), che non ha stream.
 2. **Scanner Safe** (processo `safe_strategy/service.py`): un thread dedicato `ScoreFeedWorker` fa poll batch a **`_SCORES_PERIOD_SEC = 2,0 s`**
    (`service.py:126-134`; chunk da 50, `get_scores(..., lightweight=True)` `:1731`) e riscrive la riga di scan con throttle 2,5 s (`scan_feed.py:44-51`,
-   commento). Il commento di `scan_feed.py:40-43` dice "poll IPS a 3s": il codice dice 2,0 s (`service.py:134`): vale il codice.
+   commento). Il commento di `scan_feed.py:40-43` dice "poll IPS a 3s": il codice dice 2,0 s (`service.py:132`, `_SCORES_PERIOD_SEC = 2.0` [corretto dal verificatore 08/10: 134 e' `_IPS_REQ_DELAY`]): vale il codice.
 3. **Runner tennis**: `score_and_now_worker` ogni **2,0 s** (`tennis_runner.py:111, 3355`) legge `ScanFeedScoreProvider.get_raw_state` (`:1619-1640`); la riga e'
    "fresca" se piu' giovane di **15,0 s** (`scan_feed.py:44` `DEFAULT_MAX_AGE_SEC`), con limite assoluto `HARD_MAX_AGE_SEC` (`:44-51`) e scanner "vivo" se
    l'heartbeat e' sotto 30 s (`:36-38`). Riga assente o stantia: **chiamata diretta** `trading.in_play_service.get_scores` per evento (`tennis_runner.py:1619-1650`), contata in `feed.direct_calls`.
@@ -149,7 +149,7 @@ Catena letta dal codice (nessun numero di latenza e' stato misurato da me):
 ### 1.6 `betfair_tennis_odds.py` ogni 30 minuti: cosa fa
 
 - Lanciato da `desktop/main.js:470-482`: una volta all'avvio e poi `setInterval(runTennisOdds, 30 * 60 * 1000)`; se la run precedente e' ancora viva la salta;
-  in piu' lock di singola istanza sulla porta 47316 (`betfair_tennis_odds.py:310`).
+  in piu' lock di singola istanza sulla porta 47316 (`betfair_tennis_odds.py:305` [corretto dal coordinatore 08/10: era 310]).
 - **A ogni run (processo breve)**: `BetfairClient().login_cert()` (`:311-312`: un login Betfair nuovo a ogni run = **48 login al giorno**, calcolo 24 x 2),
   `list_events(["2"], from=now-12 h, to=fine giornata)` (`:197-205`), poi per blocchi di 10 eventi `listMarketCatalogue` (`CAT_CHUNK = 10`) e per ogni evento
   `listMarketBook` in lotti da 8 mercati (`BATCH = 8`, EX_BEST_OFFERS + EX_TRADED, `:25-27`) con pause `REQ_DELAY = 0,6 s` e `EVENT_DELAY = 0,2 s`.
@@ -167,7 +167,7 @@ Catena letta dal codice (nessun numero di latenza e' stato misurato da me):
 - Il banco legge il tennis da **`~/Desktop/tennis_rec/<ultimo giorno numerico>`** (`registro_bot.py:48-56`, `_cartella_tennis`, override `TENNIS_RECORD_DIR`):
   oggi `C:\Users\Admin\Desktop\tennis_rec\20260707` (`ls`): **89 sottocartelle**, ciascuna `<id>/<id>.raw.jsonl` + `<id>.score.jsonl` (es. `35790089`: raw 841.467 byte,
   score 71.604 byte, `ls -la`), piu' 12 file `_*.log/json` di campagna (`_names.json`, `_validation*.log`, ...). Totale `du -sh` = **65 MB**. Esiste anche `setbetting_20260707`
-  (non cifre: il banco lo ignora, `registro_bot.py:55` `d.isdigit()`).
+  (non cifre: il banco lo ignora, `registro_bot.py:56` `d.isdigit()` [corretto dal verificatore 08/10: era 55]).
 - **Fatto rilevante**: tutta la certificazione tennis poggia su **UNA giornata (07/07/2026)** e su **UNA macchina fuori dal repository**. Un'altra sessione senza il PC dell'utente non
   puo' rieseguire il replay tennis (i referti del 07/10 sono stati fatti in un ambiente con copia `_live_raw_tennis/20260707`, vedi riga 1 di
   `AUDIT_2026-10-07/replay_conformita_tennis_pro/tennis_pro_tutti_dopo_COORDINATORE.txt`, non presente qui). Il Replay Tennis della UI importa le stesse registrazioni
@@ -331,7 +331,7 @@ Totale funzionalita' elencate: **74 voci `E5-`** (`grep -c "^- \*\*E5-"` = 74; l
 5. **Dossier invecchiato come "spec" del banco**: `registro_bot.py` indica `TENNIS_BOT_DOSSIER.md` come spec dei 4 bot ma il dossier dice cose false (stop 1/min_flow 10 dello scalper; Lab in `tennis_scalper/`; 5 classi). Il dossier ha 655 righe e non e' piu' la verita'.
 6. **Package di produzione con 1.164 righe di ricerca a mano** (7 file senza importatori, par. 1.1) e `tennis_serve_data.py` che serve solo la Safe: i bot tennis non ne hanno bisogno, il registro del banco non li elenca.
 7. **Attese di rete nel percorso critico**: il bot non aspetta la rete (riceve `strat.score` dal worker), ma il punteggio arriva con tre cadenze in cascata (fino a 6,5 s calcolati, par. 1.5) e il fallback `get_scores` diretto per evento e' una chiamata REST sincrona dentro il worker del runner (`tennis_runner.py:1619-1650`).
-8. **Il job quote fa un login Betfair nuovo a ogni run: 48 al giorno** (`betfair_tennis_odds.py:311-312`, `desktop/main.js:481`) e svuota la tabella del giorno prima di riscriverla (`:274, 278`).
+8. **Il job quote fa un login Betfair nuovo a ogni run: 48 al giorno** (`betfair_tennis_odds.py:308` (`c.login_cert()`, una volta per processo), `desktop/main.js:480,483` (spawn + `setInterval` 30 min) [corretto dal verificatore 08/10: 311-312 e' `today=`/`try:`, 481 e' una `};`]) e svuota la tabella del giorno prima di riscriverla (`:274, 278`).
 9. **Letture di polling del DB: 44,4 richieste/min (ponte) + 28,4 (runner)** secondo 07 (via G `:79`), in gran parte lettura di `tennis_live_follow`, `tennis_bot_control`, `tennis_bot_service_control`: sono controlli che il canale 47337 (sveglia) puo' sostituire (G `:295`).
 10. **Registrazioni tennis solo su una macchina e un giorno** (par. 1.7): non riproducibile fuori dal PC dell'utente; una sola giornata di mercato (07/07/2026), 89 partite, 65 MB.
 11. **Controlli mai sollecitati nei referti**: sul pro `B6` (FLB, ovvio non applicabile), `B10` e `CP2` ("MAI SOLLECITATI: 3 controlli su 22", `AUDIT_2026-10-08/banco_attraversa/tennis_dopo.txt`, in coda) = il referto dice "non lo so", non "sano" (catalogo §7 / §6.9: falsificazione).

@@ -577,6 +577,9 @@ class Risultato:
     rinviate_rete_consecutivi: Dict[Tuple[int, int], int] = field(default_factory=dict)
     # 08/10: lega-stagioni considerate questo giro (base della percentuale dei rinvii)
     considerate: int = 0
+    # 08/10 sera: lega-stagioni DEGRADATE per 57014 persistente su season_detail_gaps DENTRO il
+    # ciclo per lega-stagione (P1-P3 o P4) -> fase/motivo. Sono anche in degradate_timeout.
+    degradate_ciclo: Dict[Tuple[int, int], str] = field(default_factory=dict)
 
 
 def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
@@ -693,6 +696,7 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
             ris.rimaste.append(k)
             stampa(f"[CATCHUP] STOP prima di lega {k[0]} stagione {k[1]}: {motivo}")
             continue
+        fase = "pianifica"                                 # 08/10 sera: fase nel motivo della degradata
         try:
             piano = sbk.pianifica(sb, voce.row, voce.stato_prec, includi_mai_caricate=False, oggi=oggi,
                                   fisse_su_stagione_viva=False)
@@ -706,6 +710,7 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
                 ris.fermato_per = "quota"
                 ris.rimaste.append(k)
                 continue
+            fase = "lavoro"
             es = sbk.esegui(sb, client, quota, piano, voce.stato_prec, "catchup", deve_fermarsi, oggi)
             ris.chiamate += es.chiamate
             ris.fatte.append(k)
@@ -714,10 +719,13 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
                 _rinvia_per_rete(sb, ris, k, f"lavoro: {es.errore or es.fermato_per}", stati, oggi, stampa)
                 ris.fermate_per[k] = MOTIVO_GUASTO_RETE
                 es.fermato_per = MOTIVO_GUASTO_RETE
+            elif _e_57014_persistente(es):
+                _degrada_57014_ciclo(sb, ris, k, f"lavoro: {es.errore}", stati, oggi, stampa, degradate_set)
             elif es.errore:
                 ris.errori.append(f"lega {k[0]} stagione {k[1]}: {es.errore}")
             if es.fermato_per and es.fermato_per != "errori_api":
                 ris.fermato_per = es.fermato_per         # quota / tempo / action concorrente: stop della run
+            fase = "lacune dopo il lavoro"
             ris.lacune_dopo[k] = es.lacune_dopo or sg.lacune_stagione(sb, k[0], k[1])
             quota.aggiorna()                               # RICALCOLO dopo ogni lega-stagione
             prossima = coda[i + 1].chiamate if i + 1 < len(coda) else None
@@ -728,6 +736,12 @@ def esegui_catchup(sb: Any, client: Any, quota: Any, concorrenza: Any = None,
             _rinvia_per_rete(sb, ris, k, f"lavoro: {e}", stati, oggi, stampa)
             ris.fermato_per = MOTIVO_GUASTO_RETE
             ris.fermate_per[k] = MOTIVO_GUASTO_RETE
+            if k not in ris.fatte:
+                ris.rimaste.append(k)
+        except sg.Timeout57014Persistente as e:            # 08/10 sera: DEGRADATA, non errore
+            _degrada_57014_ciclo(sb, ris, k, f"{fase}: {e}", stati, oggi, stampa, degradate_set)
+            if fase != "pianifica":
+                quota.aggiorna()                           # lavoro fatto prima del 57014: nel budget
             if k not in ris.fatte:
                 ris.rimaste.append(k)
         except Exception as e:                             # DB giu' ecc.: la run prosegue, exit 1 alla fine
@@ -787,6 +801,7 @@ def esegui_p4(sb: Any, client: Any, quota: Any, ris: Risultato, coperture: List[
             ris.p4_non_partita = f"margine {quota.margine()} sotto il pavimento {pavimento}"
             stampa(f"[CATCHUP] P4 STOP prima di lega {k[0]} stagione {k[1]}: {ris.p4_non_partita}")
             return
+        fase = "P4 pianifica"
         try:
             piano = sbk.pianifica(sb, c.row, c.stato_prec, includi_mai_caricate=True, oggi=oggi,
                                   fisse_su_stagione_viva=True)
@@ -806,6 +821,7 @@ def esegui_p4(sb: Any, client: Any, quota: Any, ris: Risultato, coperture: List[
             if decisione == "non_entra":
                 ris.p4_non_entrate.append(k)            # per intero o niente: prova la successiva
                 continue
+            fase = "P4 lavoro"
             es = sbk.esegui(sb, client, q4, piano, c.stato_prec, "catchup_p4", deve_fermarsi, oggi)
             ris.chiamate += es.chiamate
             ris.p4_chiamate[k] = es.chiamate
@@ -813,6 +829,10 @@ def esegui_p4(sb: Any, client: Any, quota: Any, ris: Risultato, coperture: List[
                 _rinvia_per_rete(sb, ris, k, f"P4: {es.errore or es.fermato_per}", stati, oggi, stampa)
                 ris.p4_non_partita = f"fermata a fine partita: {MOTIVO_GUASTO_RETE}"
                 return
+            if _e_57014_persistente(es):                     # 08/10 sera: DEGRADATA, la P4 prosegue
+                _degrada_57014_ciclo(sb, ris, k, f"P4 lavoro: {es.errore}", stati, oggi, stampa)
+                quota.aggiorna()                             # le chiamate gia' fatte sono nel budget
+                continue
             if es.errore:
                 ris.errori.append(f"P4 lega {k[0]} stagione {k[1]}: {es.errore}")
             lac_dopo = es.lacune_dopo
@@ -833,6 +853,10 @@ def esegui_p4(sb: Any, client: Any, quota: Any, ris: Risultato, coperture: List[
             _rinvia_per_rete(sb, ris, k, f"P4: {e}", stati, oggi, stampa)
             ris.p4_non_partita = f"fermata: {MOTIVO_GUASTO_RETE}"
             return
+        except sg.Timeout57014Persistente as e:              # 08/10 sera: DEGRADATA, la P4 prosegue
+            _degrada_57014_ciclo(sb, ris, k, f"{fase}: {e}", stati, oggi, stampa)
+            if fase == "P4 lavoro":
+                quota.aggiorna()                             # lavoro fatto prima del 57014: nel budget
         except Exception as e:                               # la P4 non abbatte la run: exit 1 alla fine
             ris.errori.append(f"P4 lega {k[0]} stagione {k[1]}: {type(e).__name__}: {e}")
     if ris.p4_non_entrate and not ris.p4_non_partita:
@@ -845,6 +869,35 @@ def _e_guasto_rete(es: Any) -> bool:
     un GuastoRete li' (o lo stop a fine partita di per_fixture_backfill) e' un RINVIO."""
     return (str(getattr(es, "errore", None) or "").startswith(GuastoRete.__name__ + ":")
             or getattr(es, "fermato_per", None) == MOTIVO_GUASTO_RETE)
+
+
+def _e_57014_persistente(es: Any) -> bool:
+    """08/10 sera: season_backfill.esegui inghiotte le eccezioni in `es.errore` =
+    "<Classe>: <testo>": un Timeout57014Persistente li' (season_detail_gaps in 57014 dopo
+    i ritentativi) e' una DEGRADATA, non un errore."""
+    return str(getattr(es, "errore", None) or "").startswith(sg.Timeout57014Persistente.__name__ + ":")
+
+
+def _degrada_57014_ciclo(sb: Any, ris: "Risultato", k: Tuple[int, int], motivo: str,
+                         stati: Dict[Tuple[int, int], Dict[str, Any]], oggi: date,
+                         stampa: Callable[[str], None], degradate_set: Optional[Set[Tuple[int, int]]] = None) -> None:
+    """08/10 sera: lega-stagione DEGRADATA per 57014 persistente su season_detail_gaps dentro il
+    ciclo per lega-stagione. Stessa semantica di R-CATCHUP-2/3: niente decisione oggi, nessun
+    errore (nessun exit 1 da solo), contatore dei giorni consecutivi in
+    stats_json.degradato_57014 (partendo dal valore di INIZIO run, vedi segna_degradato_57014),
+    esclusa dalla P4 (degradate_set), dichiarata nel referto con il motivo."""
+    motivo = motivo[:300]
+    ris.degradate_ciclo[k] = motivo
+    if k not in ris.degradate_timeout:
+        ris.degradate_timeout.append(k)
+    if degradate_set is not None:
+        degradate_set.add(k)
+    stampa(f"[CATCHUP] lega {k[0]} stagione {k[1]}: DEGRADATA per 57014 persistente su season_detail_gaps "
+           f"({motivo}): non e' un errore, nessuna decisione oggi, si riprova al prossimo giro")
+    prec = ((((stati.get(k) or {}).get("stats_json")) or {}).get("degradato_57014")) or {}
+    consecutivi = sg.segna_degradato_57014(sb, k[0], k[1], oggi, stampa, prec=prec)
+    if consecutivi is not None:
+        ris.degradate_consecutivi[k] = consecutivi
 
 
 def _rinvia_per_rete(sb: Any, ris: "Risultato", k: Tuple[int, int], motivo: str,
@@ -993,7 +1046,9 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
                 for n in lac.agg_da_fare()))
         if giorni > max_giorni:
             fermata = ris.fermate_per.get(k)
-            if k in rimaste or (fermata and fermata != "errori_api"):
+            if k in ris.degradate_ciclo:
+                pass                                     # 08/10 sera: dichiarata sotto DEGRADATE (57014), non un guasto
+            elif k in rimaste or (fermata and fermata != "errori_api"):
                 rinviati.append(f"lega {k[0]} stagione {k[1]} aperto da {giorni} gg: rinviato "
                                 f"({ris.fermato_per or ris.fermate_per.get(k)}), ~{costo} chiamate")
             elif _solo_api_vuota(lac, flags, fermata):
@@ -1019,6 +1074,9 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
     if ris.degradate_timeout:
         stampa(f"DEGRADATE per 57014 (non verificate questo giro, NON e' un errore): "
               f"{len(ris.degradate_timeout)} lega-stagioni, si riprova al prossimo giro.")
+        for k, motivo in ris.degradate_ciclo.items():
+            stampa(f"DEGRADATA per 57014 nel ciclo: lega {k[0]} stagione {k[1]} ({motivo}); giorni consecutivi: "
+                   f"{ris.degradate_consecutivi.get(k, 'non scritti')}")
         for k in ris.degradate_timeout:
             consecutivi = ris.degradate_consecutivi.get(k)
             if consecutivi is not None and consecutivi > max_giorni:
@@ -1055,6 +1113,10 @@ def referto_buchi(voci: List[Voce], ris: Risultato, quota: Any, max_giorni: int,
                               + [f"- {a}" for a in avvisi], stampa)
     for d in degradate_persistenti:
         stampa(f"DEGRADATA PERSISTENTE (> {max_giorni} giorni consecutivi, non piu' muta): {d}")
+    st57 = sg.STATISTICHE_57014
+    if st57["ritentativi"] or st57["persistenti"]:
+        stampa(f"57014 su season_detail_gaps: {st57['ritentativi']} ritentativi, {st57['riusciti_dopo_ritentativo']} "
+               f"riusciti dopo ritentativo, {st57['persistenti']} persistenti (-> degradate)")
     rete_guasto = _referto_rete(ris, max_giorni, stampa)
     referto_p4(ris, stampa, margine_medio)
     if aperte == 0:

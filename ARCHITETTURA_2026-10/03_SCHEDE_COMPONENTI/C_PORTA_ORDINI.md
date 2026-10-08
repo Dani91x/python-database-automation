@@ -506,7 +506,7 @@ ordini piazzati (lato, prezzo, importo, persistenza, FOK), importi dopo minimi/p
 
 - **D-C1** La coda DB `betfair_live_order_requests` come strada di esecuzione: tenerla (serve al sito online, che raggiunge il PC solo via DB: `liveOrders.ts:122-125`) o ridurla a trasporto
   del solo sito, con il canale come unica strada dal PC? Valore ~650 righe + 202 letture/min.
-- **D-C2** REST di emergenza per Safe/Omega live quando il runner e' giu' (`execution.py:1382`): tenerlo (come ripiego dichiarato) o fermarsi come in paper ("paper_senza_runner")? Oggi il live
+- **D-C2** REST di emergenza per Safe/Omega live quando il runner e' giu' (`execution.py:1299-1301` percorso legacy; chiamate REST a `:1382`, `:1389`, `:1394` [corretto dal verificatore 08/10: era il solo `:1382`, che e' la variante «equivalente» del sotto-minimo]): tenerlo (come ripiego dichiarato) o fermarsi come in paper ("paper_senza_runner")? Oggi il live
   si comporta diversamente dal paper qui (condizione 2 dell'utente).
 - **D-C3** Terminale vecchio `order_exec` + coda `betfair_order_requests` (pannello "multi trade" della watchlist): ancora usato? (`07_porta_degli_ordini.schede.md` "punti non chiariti" 2.)
   Se no, eliminare 555 righe; se si, farlo passare dalla porta con attore `desktop`.

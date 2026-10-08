@@ -112,6 +112,128 @@ orari, quote, riserve, priorita'.
 File toccati: `db_client.py`, `season_gaps.py`, `per_fixture_backfill.py`, `seasons_catchup.py`,
 `.github/workflows/seasons_catchup.yml`. Nuovi: `test_catchup_rete_2026_10_08.py`, questa cartella.
 
+### 2.5 57014 dentro il ciclo per lega-stagione (sera)
+
+**Classe non coperta dalla correzione del mattino.** Rilancio della run 37743110569 (15:07 UTC,
+codice di master, log in `%TEMP%\catchup_log.txt`): alle 14:30:00 UTC
+`POST /rpc/season_detail_gaps` -> `HTTP/2 500` (riga 28501, unico 500 della run; la richiesta
+prima e' delle 14:29:49, quindi ~11 s: lo statement timeout di 8 s), la chiamata dopo alla stessa
+RPC alle 14:30:04 -> 200 (riga 28502). Nel referto: `ERRORE: lega 667 stagione 2026: APIError:
+{... '57014' ...}` (riga 61667) -> `return 1`. Nessuna riga `[CATCHUP] P.. lega 667 stagione 2026:
+costo`: l'eccezione e' nata in `season_backfill.pianifica` -> `season_gaps.lacune_stagione`.
+`db_client.classifica_guasto_rete` restituisce None per il 57014 per scelta (resta cosi'), e il
+trattamento R-CATCHUP-2/3 esisteva solo per `riepilogo_lacune`.
+
+**Correzione (minima).**
+- `season_gaps.py`
+  - `ATTESE_57014_S = (5.0, 10.0)` (:79), `STATISTICHE_57014`, eccezione dedicata
+    `Timeout57014Persistente` (:83; testo con il messaggio originale, `__cause__` = la APIError vera).
+  - `lacune_stagione` (:249): sul 57014 (`_e_statement_timeout`) si riesegue la RPC al massimo 2
+    volte (5 s, poi 10 s), log `[RETE] rpc season_detail_gaps: 57014 (tentativo i/3) lega L
+    stagione S -> ritento tra X s`; dopo il 3o -> `Timeout57014Persistente` (:279). Guasti di rete:
+    invariati (`esegui_con_retry`). 42883/PGRST202: `MigrazioneMancante` come prima. Ogni altro
+    errore: risale subito, identico, mai ritentato. Vale anche per Daily e orchestratore (stessa
+    funzione): per loro un 57014 transitorio ora si risolve; uno persistente risale come prima
+    (eccezione diversa, nessuno dei due la intercettava per tipo).
+  - `segna_degradato_57014(..., prec=None)` (:586): con `prec` il contatore parte dal valore di
+    INIZIO run. Serve perche' nel ciclo lo stato della lega-stagione e' gia' stato riscritto in
+    questa run da `scrivi_stati` (che non porta il campo): rileggendo dal DB il contatore
+    ripartirebbe da 1 ogni giorno e la degradata resterebbe muta per sempre. Senza `prec`: come prima.
+  - `leggi_stati` (lettura leggera, :688/:714): porta anche `stats_json->degradato_57014` (prima
+    non lo leggeva: trovato dal test (c), rosso con il contatore fermo a 1).
+- `seasons_catchup.py`
+  - `Risultato.degradate_ciclo` (:582, lega-stagione -> fase/motivo; sono anche in `degradate_timeout`).
+  - `_degrada_57014_ciclo` (:881): stessa semantica di R-CATCHUP-2/3 (nessuna decisione oggi, niente
+    `ris.errori`, contatore `stats_json.degradato_57014` via `segna_degradato_57014(prec=...)`,
+    aggiunta a `degradate_set` -> esclusa dal dizionario passato alla P4, riga di log).
+    `_e_57014_persistente(es)` (:874) riconosce l'eccezione inghiottita da `season_backfill.esegui`
+    in `es.errore`.
+  - Vie coperte: ciclo P1-P3 `pianifica` (except :741, fase "pianifica"), `esegui` prima del
+    lavoro (es.errore, :722), `esegui` dopo il lavoro e la chiamata diretta
+    `es.lacune_dopo or sg.lacune_stagione(...)` (except :741, fasi "lavoro" / "lacune dopo il
+    lavoro"); P4 `pianifica` (except :856) e `esegui` (es.errore, :832): la P4 prosegue con la
+    candidata successiva, la degradata non e' dichiarata "caricata". Dopo un lavoro gia' fatto
+    `quota.aggiorna()` (le chiamate restano nel budget).
+  - Referto: la degradata nel ciclo non entra in BUCO VECCHIO ne' in RINVIATO (:1049); riga
+    `DEGRADATA per 57014 nel ciclo: lega L stagione S (<fase>: <motivo>); giorni consecutivi: N`
+    (:1078); riga `57014 su season_detail_gaps: R ritentativi, K riusciti dopo ritentativo, P
+    persistenti (-> degradate)` (:1116). Exit 1 solo con la regola esistente: degradata da
+    piu' di `BACKFILL_BUCHI_MAX_GIORNI` giorni consecutivi («DEGRADATA PERSISTENTE»).
+- `db_client.py` e `season_backfill.py`: NON toccati.
+
+**Prima/dopo sulla run 37743110569 (lega 667/2026)**, dimostrato da
+`test_a_catena_run_37743110569_con_il_codice_nuovo_exit_0`:
+
+| passo | prima (master e ramo del mattino) | dopo |
+|---|---|---|
+| `pianifica` -> `season_detail_gaps` | 500 + 57014 -> APIError risale | 500 + 57014 -> log `[RETE] ... 57014 (tentativo 1/3) ... ritento tra 5 s` |
+| ritentativo | nessuno | dopo 5 s la RPC risponde 200 (nel log vero la successiva risponde 200 dopo 4 s) |
+| riga `[CATCHUP] P2 lega 667 stagione 2026: costo ~...` | assente | presente, decisione e lavoro normali |
+| `ris.errori` | `lega 667 stagione 2026: APIError ... 57014` | vuoto |
+| referto | `ERRORE: lega 667 ...` | `57014 su season_detail_gaps: 1 ritentativi, 1 riusciti dopo ritentativo, 0 persistenti` |
+| exit (per questa causa) | 1 | 0 |
+| se il 57014 fosse durato 3 tentativi | exit 1 | DEGRADATA, contatore +1, exit 0 (exit 1 solo se degradata da piu' di 3 giorni consecutivi) |
+
+L'altra causa dell'exit 1 della stessa run, `BUCO VECCHIO: lega 362 stagione 2026 ... errore API
+ripetuto su 1 partite-tabella` (ConnectionTerminated `last_stream_id:19999` sull'insert
+`match_lineups`, riga 47154, unica della run), E' coperta dal ramo: `per_fixture_backfill.insert_rows`
+(:273-275) ora rilancia i guasti di rete invece di contarli come errore di batch, e
+`_sostituisci_righe` (:950-951) ritenta l'unita' delete+insert con `con_ritentativi`, che sulla
+classe `connessione_terminata` ricrea il client (`rinnova_client`); in piu' il rinnovo
+preventivo ogni 5.000 richieste. Test gia' presente:
+`test_insert_dopo_goaway_unita_delete_insert_senza_doppioni`. Con entrambe le correzioni la run
+37743110569 avrebbe dato exit 0 (le altre righe del referto sono RINVIATO per quota e AVVISO
+BUCO API VUOTO, entrambe exit 0).
+
+**Test** (`test_catchup_57014_ciclo_2026_10_08.py`, 13 test). Finti: client supabase/postgrest/httpx
+vero con trasporto finto per la RPC (APIError costruita dal codice vero di postgrest sul corpo
+JSON vero `{'code': '57014', 'message': 'canceling statement due to statement timeout', ...}`,
+HTTP 500); catena intera sul `FintoDB` di `test_backfill_automatico` con il modello di
+`season_detail_gaps` (stessa forma di righe) e `APIError(dict(corpo))`, la stessa costruzione
+di postgrest. Casi: (a) 57014 una volta poi 200, unita' e catena -> 1 ritentativo, exit 0;
+(b) 57014 tre volte, unita' e catena -> eccezione dedicata / DEGRADATA, `ris.errori` vuoto,
+exit 0, contatore 1 -> 2, stato e `buco_aperto_dal` conservati, esclusa dalla P4, nessun BUCO
+VECCHIO ne' RINVIATO; (c) degradata da 3 giorni -> 4 > 3 -> exit 1 «DEGRADATA PERSISTENTE»;
+(d) 42501 e XX000 non ritentati e in errore (exit 1), 42883 -> `MigrazioneMancante`, 1 sola
+chiamata; vie: esegui prima del lavoro, esegui dopo il lavoro, chiamata diretta, P4 pianifica,
+P4 lavoro.
+
+Esiti: `pytest test_catchup_rete_2026_10_08.py test_catchup_57014_ciclo_2026_10_08.py` -> 37
+passed. Suite dei moduli toccati (`test_backfill_automatico`, `test_catchup_57014_2026_09_28`,
+`test_catchup_attesa_concorrenti`, `test_catchup_avviso_buchi`, `test_catchup_p4`,
+`test_catchup_rete`, `test_orchestratore_niente_refresh_mv`, `test_riserva_dinamica`, il nuovo,
+`test_actions_fail_rumoroso`, `test_daily_niente_aggregati`, `test_delete_ritentativi`,
+`Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28`, `test_net_retry`,
+`test_genera_atlante_scrittura_ritentativi_2026_09_28`) -> 246 passed. Le 8 suite catchup:
+152 passed prima della correzione, 152 + 13 dopo; nessun test esistente modificato.
+
+**Falsificazione** (12 mutazioni, script `mutazioni_57014_ciclo.py` nella scratchpad della
+sessione; ripristino dai byte originali, hash verificato):
+
+| mutazione | test rossi |
+|---|---|
+| M1 `ATTESE_57014_S = ()` (niente ritentativo) | 9: a unita', a catena, b unita', b catena, le 3 vie P1-P3, le 2 vie P4 |
+| M2 except del ciclo P1-P3 tolto (57014 di nuovo in `ris.errori`) | b catena, c, via dopo il lavoro, via diretta |
+| M3 `prec=None` (contatore riletto dal DB) | b catena, c, via prima del lavoro |
+| M4 referto senza l'esclusione della degradata | b catena (RINVIATO), via prima del lavoro (BUCO VECCHIO, exit 1) |
+| M5 ritenta qualunque errore | d unita', d catena |
+| M6 ramo `es.errore` 57014 P1-P3 tolto | via prima del lavoro |
+| M7 ramo `es.errore` 57014 P4 tolto | P4 lavoro |
+| M8 except P4 tolto | P4 pianifica |
+| M9 degradata non aggiunta a `degradate_set` | b catena (P4) |
+| M10 `leggi_stati` senza `degradato_57014` | b catena, c, via prima del lavoro |
+| M11 fase "lacune dopo il lavoro" non segnata | via diretta |
+| M12 42883 non piu' `MigrazioneMancante` | d unita', d catena 42883 |
+
+Ogni test nuovo diventa rosso con almeno una mutazione.
+
+**Non verificato.** La nuova colonna `degradato_57014:stats_json->degradato_57014` di
+`leggi_stati` non e' stata provata sul DB vero (stessa sintassi delle colonne `rinviato_rete` e
+`verifica_current` gia' in produzione; nessuna lettura fatta). Nessun rilancio dell'action.
+Il tempo aggiunto per una lega-stagione in 57014 persistente e' 15 s di attesa + 2 RPC (fino a
+~8 s ciascuna): con molte degradate in una notte la run si allunga, il tetto `CATCHUP_MAX_MINUTI`
+resta il limite.
+
 ## 3. Test
 
 `python -m pytest test_catchup_*.py -q -p no:cacheprovider` -> **90 passed** (66 dei 4 file

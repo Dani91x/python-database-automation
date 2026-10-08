@@ -32,7 +32,7 @@ Fonti gia' pronte e usate (non rifatte): `00_INVENTARIO.md` (§ canali righe 161
 | Ritardo | Costanti di codice (non misurato, vedi sez. 7): IPS 2-3 s dopo il fatto (`scan_feed.py:64-67`) + poll scanner 2 s (`service.py:132`) + freno di scrittura 2,5 s (`service.py:159`) + cache SELECT 1 s (`scan_feed.py:69`) = **fino a ~8,6 s** sul percorso Mike/Omega/Safe; **+5 s** worker runner calcio (`config_stream.py:32`) e **+15-20 s** del watcher dello scalper (`scalper_session.py:1741,1905,1925`): **fino a ~29-34 s** per lo scalper calcio. Tennis: +2 s del worker (`tennis_runner.py:111`) = fino a ~10,6 s. |
 | Regola cond. 11 (prezzo fermo vs punteggio che si aggiorna) | Implementata **UNA volta** nel nucleo `flusso_prezzi.py` (345 righe) piu' **4 involucri** + **6 regole di freschezza gemelle con soglie diverse** (sez. 3.2). Scalper e tennis non importano `flusso_prezzi` (`git grep` su `stream/scalper`, `stream/tennis_live`: 0 righe): usano lo stream flumine del proprio processo. |
 | Ogni bot ricalcola minuto/fase? | **Si'**: almeno 9 punti (sez. 3.3). `_ko_epoch_ms` ha 7 definizioni (`s04_dettaglio_copie.tsv:584-590`): **4 in produzione** (`scalper_bot.py:788`, `sniper_bot.py:295`, `media_under_bot.py:1020`, `tennis_scalper_bot.py:802`) e 3 nel laboratorio (`laboratorio/scalper_lab/...`). |
-| Chiamate di rete nel percorso critico | Si': SELECT `safe_strategy_scan` (cache 1 s), upsert Supabase `live_now`/`tennis_live_now` **nello stesso ciclo** del punteggio (`runner.py:376`, `tennis_runner.py:1688`), HTTP diretto a IPS e ad API-Football come ripiego, SELECT `live_now` dai watcher dello scalper. Dettaglio sez. 1.6. |
+| Chiamate di rete nel percorso critico | Si': SELECT `safe_strategy_scan` (cache 1 s), upsert Supabase `live_now`/`tennis_live_now` **nello stesso ciclo** del punteggio (`runner.py:376`, `tennis_runner.py:1685`), HTTP diretto a IPS e ad API-Football come ripiego, SELECT `live_now` dai watcher dello scalper. Dettaglio sez. 1.6. |
 
 ### 1.2 Catena del dato (calcio)
 
@@ -57,7 +57,7 @@ Scanner come sopra (stesso `apply_score_state`, ramo `parse_tennis_scores`, `ser
 `score_and_now_worker` ogni `TENNIS_SCORE_POLL_SEC`=2,0 s (`tennis_runner.py:111,3355`): per ogni evento legge `feed.get_raw_state` (riga
 scanner) o, se assente/stantia, **chiama `get_scores` diretto** (`:1636-1650`), parsa con `parse_tennis_scores`, **assegna `strat.score` e
 `strat.point_pressure` ai bot ospitati** (`:1656-1664`), aggiorna il deque punto-per-punto (`:1666-1671`), scrive il tee `.score.jsonl` se
-`record=true` (`:1675-1680`) e **sempre** `tennis_db.upsert_tennis_now` (`:1688`, anche canale `now` `tennis_db.py:289-291`).
+`record=true` (`:1675-1680`) e **sempre** `tennis_db.upsert_tennis_now` (`:1685` [corretto dal verificatore 08/10: era `:1688`], anche canale `now` `tennis_db.py:289-291`).
 
 ### 1.4 Tabelle del DB e frequenze
 
@@ -66,7 +66,7 @@ scanner) o, se assente/stantia, **chiama `get_scores` diretto** (`:1636-1650`), 
 | `safe_strategy_scan` | scanner `service.py` (riga per evento, tick 0,5 s, freno 2,5 s) | `scan_feed.py:412-428`, `board_worker.py:188-193`, `riserva_prezzi.py:149-150`, Mike/Omega/Safe/UI | POST scanner **65,4/min** (`07_MISURE_OGGI.md:215`); GET mike-service 10,4/min (`:214`) |
 | `safe_strategy_status` | `service.py` (battito 10 s, `:160`) | `scan_feed.py:403-410` | POST 4,7/min (`07_MISURE_OGGI.md:215`) |
 | `live_now` | `db.py:322-348` da `runner.py:376` | Omega `omega_db.py:586-602`; scalper `scalper_session.py:1756,1891,1911`; `live_order_worker.py:1105` (contesto ordine); UI Realtime | 1 upsert ogni 5 s **per evento seguito** (12/min/evento) + chiusure (`runner.py:794`) |
-| `tennis_live_now` | `tennis_db.py:266-292` da `tennis_runner.py:1688` | UI `useTennisVivo.ts`, `SchedaPartita.tsx:112-240`, ponte (`modo_ordini.py:259`) | 1 upsert ogni 2 s **per evento** (30/min/evento) |
+| `tennis_live_now` | `tennis_db.py:266-292` da `tennis_runner.py:1685` | UI `useTennisVivo.ts`, `SchedaPartita.tsx:112-240`, ponte (`modo_ordini.py:259`) | 1 upsert ogni 2 s **per evento** (30/min/evento) |
 | `live_score_timeline` | `db.py:634-635` (delete + insert) da `uploader.py:136-150` a fine partita | Replay UI | 1 volta per partita |
 | `live_market_snapshots` | `db.py:629-631` da `curator.py` via `uploader.py` | Replay UI | 1 volta per partita |
 | `api_call_log` | `api_client.py` a ogni tentativo (docstring `:30-37`) | `api_quota.py:127-186` | solo quando il ripiego API-Football scatta |
@@ -98,7 +98,7 @@ codice (5 s, 2 s) e dalla scrittura incondizionata; strumento che le misura: `st
    `ApiFootballProvider.get_score` e' una richiesta HTTP sincrona con retry/backoff (`api_client.py:33-50`) e scrittura su `api_call_log`; nessun
    controllo di quota (`api_football.py:77-86`; `api_quota` e' importato solo da `league_orchestrator.py:32` e `seasons_catchup.py:66`).
 4. `db.update_live_now` (upsert Supabase con retry, `db.py:348`) dentro il ciclo `for event_id` di `score_worker` (`runner.py:345`): N eventi = N
-   upsert **in serie** nello stesso thread; idem tennis (`tennis_runner.py:1688`, con `continue` su errore).
+   upsert **in serie** nello stesso thread; idem tennis (`tennis_runner.py:1685`, con `continue` su errore).
 5. Scalper: 3 SELECT `live_now` periodiche da thread propri (nessuna rete nel callback del book).
 
 ### 1.7 Cos'e' dentro `scores/` (responsabilita' reali)
@@ -250,7 +250,7 @@ hanno lo stesso algoritmo con cache diversa (per market_id / un solo valore). Fo
 (7 definizioni = 4 in `Betfair/stream/` + 3 in `laboratorio/scalper_lab/`). Righe duplicate in produzione: 31+31+16+13 = **91**.
 
 ### 3.4 Scrittura incondizionata e rete nel ciclo
-`update_live_now` e `upsert_tennis_now` scrivono a ogni giro anche se nulla e' cambiato (`runner.py:376`; `tennis_runner.py:1688`), mentre lo scanner
+`update_live_now` e `upsert_tennis_now` scrivono a ogni giro anche se nulla e' cambiato (`runner.py:376`; `tennis_runner.py:1685` [corretto dal verificatore 08/10: era `:1688`, il `continue` dopo l'except; la chiamata `upsert_tennis_now` e' a `:1685`]), mentre lo scanner
 a monte e' write-on-change (`service.py:2686`). Il "write-on-change" del runner calcio vale solo per il file `.scores.jsonl` (`runner.py:384-413`).
 Upsert sincroni in serie nel worker (sez. 1.6 punto 4).
 
@@ -259,7 +259,7 @@ Passa da due relay (scanner -> runner -> `live_now`) e poi da un SELECT periodic
 Il resto dei bot legge la riga scanner. Il numero e' un tetto da costanti, non misurato.
 
 ### 3.6 Documentazione e costanti stantie
-Il docstring di `scan_feed.py:5-7` dice chunk da 20 ogni 3 s; il codice ha chunk 50 ogni 2 s (`service.py:132,175`; commento `service.py:123-131`).
+Il docstring di `scan_feed.py:3-5` [corretto dal verificatore 08/10: era `:5-7`] dice chunk da 20 ogni 3 s; il codice ha chunk 50 ogni 2 s (`service.py:132,175`; commento `service.py:123-131`).
 `IPS_SCORE_LAG_SEC=3,0` e' un valore unico per "2-3 s" (`scan_feed.py:67`). `scan_feed.py:5-17` cita "~231 chiamate/min di cui l'84%
 ridondanti" (audit 09/09, non rimisurato oggi).
 

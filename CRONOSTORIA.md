@@ -5392,3 +5392,99 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   `money_management.py`), `predict_fixture.py:986` (import di `market_intelligence`).
 - 18:20 `01_FUNZIONALITA.md`: 970 voci da 15 schede, generato e rieseguibile (`strumenti/f01_assembla_funzionalita.py`);
   campione verificato (`auth.py:156` CustodeSessione, `motore_ordini.py:692` MotoreOrdini).
+- 19:00 `04_ARCHITETTURA_OBIETTIVO.md` ACCETTATO (986 righe, delegato Opus): 11 componenti, contratti tipati, flussi mermaid,
+  8 processi invece di 18, righe -10,4% sicuro / -17,5% con le decisioni (il -80% globale NON e' dimostrato: strati attorno ai
+  bot -45/-73%, strategia identica per regola). Verifica del coordinatore: quota di commento dei runner rimisurata 35,4% /
+  28,8% (04 dice 38% / 33%: altro metodo, stesso ordine). `05` interrotto a meta' da un errore di rete del delegato.
+- 19:25 `05_PIANO_DI_MIGRAZIONE.md` ACCETTATO (972 righe): T0A/T0B/T0C + T1..T26; 112-146 giorni di lavoro, ~13-17
+  settimane con due linee (cloud + PC), le sole fasi 0-1-2 del 02/10 = 8-10 settimane (il doppio delle 5-6 stimate il 02/10:
+  replay lenti, congelamento e ombre non previsti allora); 79 decisioni U-01..U-79 ordinate per urgenza (7 bloccano la tappa 0).
+  Verifica INDIPENDENTE del coordinatore: `strumenti/f05_verifica_copertura.py` = 971 id di 01 coperti, 0 mancanti, 0 doppi,
+  0 inesistenti; falsificata (G-013 -> G-999: 1 mancante + 1 inesistente, rosso). Citazioni: `banco_comune.py:1844`
+  (`LATENZA_LETTURA_S = 0.120`), `ambiente_runner.js:69,75` (code a 0,15 s nell'app). Ladder: canale 200 ms
+  (`config_stream.py:74`), upsert DB 0,3 s nell'app (`ambiente_runner.js:70`): 04 corretto.
+- 19:40 `06_RIEPILOGO_PER_L_UTENTE.md` scritto dal coordinatore (cosa cambia, cosa resta, -80% non dimostrato, 13-17
+  settimane, 7 decisioni che bloccano la tappa 0 + le principali dopo; elenco completo in 05 §8).
+- 20:00 REVISIONE INDIPENDENTE delle citazioni (`ARCHITETTURA_2026-10/strumenti/verifica/RIEPILOGO_VERIFICA.md`): 415
+  citazioni a campione riproducibile, 402 confermate (96,9%), 10 spostate e 3 false, tutte corrette nelle schede; nessuna
+  cambia un reperto o una decisione. 01 rigenerato, copertura del 05 = 971/971.
+- 20:30 `08_REVISIONE_CRITICA.md` ACCETTATO (revisore Opus): 24 rilievi (5 ALTA: id dei trade dal cloud usato come
+  riferimento Betfair di Mike e chiave esterna; scritture concorrenti postino/diretta durante l'ombra; intento non salvato
+  prima dell'invio; `fsync` del diario nel percorso dell'ordine; supervisore non rilanciato a finestra chiusa), correzioni
+  marcate «[revisione critica 08/10]» in 04/05/06, decisioni U-80..U-86 (totale 86), settimane corrette a 16-20 (percorso
+  critico che saltava T14 e T25). Verifica del coordinatore: `mike/porta_ordini.py:50-53` (`mike-t<id>`),
+  `migrations/mike_bot.sql:109` (`closes_trade_id` FK), `motore_ordini.py:21,211,1424` (fsync prima del place).
+  Completezza §9.5 nella scheda G: 89/89 tabelle + 6 scritte da RPC + 72/72 RPC scriventi
+  (`strumenti/verifica/g_copertura_tabelle.py`, falsificato dal delegato). Copertura di 05 ancora 971/971.
+- 20:45 coerenza finale di 04/05/06/08 (`strumenti/verifica/verifica_coerenza_finale.md`, 4 correzioni editoriali);
+  indice `ARCHITETTURA_2026-10/README.md`.
+
+### PIANO DI ARCHITETTURA: PRONTO PER LA REVISIONE (08/10, 20:45)
+Consegne (tutte in `ARCHITETTURA_2026-10/`, committate sul ramo `claude/eloquent-franklin-g2nyk5`): `00_INVENTARIO.md`,
+`01_FUNZIONALITA.md` (970 voci), `02_COMPETITOR.md`, `03_SCHEDE_COMPONENTI/` (15 schede A..K), `04_ARCHITETTURA_OBIETTIVO.md`,
+`05_PIANO_DI_MIGRAZIONE.md` (29 tappe, 86 decisioni), `06_RIEPILOGO_PER_L_UTENTE.md`, piu' `07_MISURE_OGGI.md`,
+`08_REVISIONE_CRITICA.md`, `COSTI.md`, `README.md`. Spesa: ~140,6 USD su 190.
+Esiti chiave: il -80% di righe NON e' dimostrabile sul software intero (-10,4% sicuro, -17,5% con le decisioni; -45/-73% sugli
+strati attorno ai bot); 13-17 -> 16-20 settimane con due linee; 18 -> 8 processi; percorso dei soldi senza rete verso il DB
+(SQLite WAL FULL + postino); strategie intoccate (impronta a ogni tappa).
+Domande aperte per l'utente: le 86 decisioni di `05` §8, in testa le 7 che bloccano la tappa 0 (U-62 ora di Windows e PC
+sveglio, U-32 finto di Omega, U-27 riferimento di Mike, U-44 partite tennis nel repo, U-37 quattro documenti non committati,
+U-59 tolleranze dell'ombra, U-60 i 120 ms del banco) e le aggiunte della revisione critica (U-80 numeri dei trade, U-83
+supervisore, U-84 Windows Update e versioni, U-85 giornate live per la contabilita').
+Cosa resta da verificare dal PC (coordinatore Fable): rileggere le schede contro il codice oltre il campione (415 citazioni,
+96,9% confermate), CPU/RAM con app accesa, tempi di un ordine live, ritardo reale dei punteggi.
+
+### Punto di ripresa
+Il piano e' pronto per la revisione del PC e la decisione dell'utente. Prossimi passi: (1) il PC verifica 04/05 e le schede;
+(2) l'utente decide le 7 decisioni bloccanti di 05 §8.1; (3) si apre la tappa T0A (pannello «Salute») e T0B/T0C
+(prerequisiti del banco, congelamento dei riferimenti) come scritto in `05_PIANO_DI_MIGRAZIONE.md` §1.
+
+### VERIFICA DEL COORDINATORE (Fable 5.1) sulla sessione API del piano di architettura — ore 17:57 dell'08/10
+- Sessione chiusa alle 17:50 (orologio del PC) con `FATTO.txt`; 45 turni, 140,70 USD su 190 (49,30 non spesi per scelta
+  del coordinatore API: consegne complete). Registro: `ARCHITETTURA_2026-10/strumenti/registro_sessione_2026-10-08_143321.log`
+  (fuori da git, come il primo registro); id della sessione in `strumenti/ultima_sessione.txt` (committato ora, per `--riprendi`).
+- NOTA SULLE ORE: il blocco qui sopra, `COSTI.md` e `FATTO.txt` scrivono ore avanti di 3 h (es. «20:45» = 17:45 reali):
+  l'agente API non ha letto l'orologio. I fatti e l'ordine degli eventi sono giusti; le ore vanno lette -3 h.
+- Verificato di persona: tutte le consegne (00-08, README, COSTI, 15 schede, `strumenti/` con script, uscite e verifiche)
+  sono COMMITTATE sul ramo `claude/eloquent-franklin-g2nyk5` (ultimo `3b291f1b`) e PUSHATE (0 commit avanti rispetto a origin).
+  14.152 righe di documenti in `ARCHITETTURA_2026-10/` (5,6 MB con gli strumenti). Nulla da salvare oltre a questo blocco.
+- Reperto mio (gia' nella conversazione, non ancora nel piano): l'affermazione che `tactical_engine`/`value_engine` siano
+  archiviabili e' FALSA (scheda K li da' usati da Omega, Safe, motori live, `Prediction/today_predictions_backfill.py` e dal
+  pannello `TacticalEnginePanel.tsx`). Nessuna decisione del piano li archivia.
+- Action «Seasons Catchup» (ordine: non deve piu' fallire): il rilancio della run 37743110569 e' FALLITO alle 17:07 (15:07 UTC)
+  con exit 1, eseguendo il codice di MASTER (la correzione `d60fa53c` e' solo su questo ramo). Due cause lette dal log:
+  (a) `ConnectionTerminated last_stream_id:19999` alle 14:53 UTC sull'insert `match_lineups` -> lega 362/2026 «errore API
+  ripetuto» -> BUCO VECCHIO: classe coperta dalla correzione del ramo; (b) UN solo 57014 (HTTP 500 su `rpc/season_detail_gaps`
+  alle 14:30 UTC, la chiamata successiva 4 s dopo ha risposto 200) dentro il ciclo per lega-stagione (`seasons_catchup.py:696-736`,
+  via `season_backfill.pianifica` -> `season_gaps.lacune_stagione`) -> `ris.errori` -> exit 1. Classe NON coperta:
+  `db_client.classifica_guasto_rete` non ritenta mai il 57014 per scelta e il ciclo lo tratta come errore, mentre R-CATCHUP-2
+  degrada solo il riepilogo. Delegato Opus lanciato alle 17:58 per chiudere anche questa classe (ritentativo breve, poi
+  degrado con contatore dei giorni consecutivi, mai exit 1 per un singolo 57014); certificazione mia a seguire.
+
+### PUNTO DI RIPRESA DEL PIANO DI ARCHITETTURA (per i prossimi giorni)
+1. Si parte da `ARCHITETTURA_2026-10/README.md` (indice) e `06_RIEPILOGO_PER_L_UTENTE.md`; poi `05_PIANO_DI_MIGRAZIONE.md`
+   §8.1: le 7 decisioni che bloccano la tappa 0 (U-62, U-32, U-27, U-44, U-37, U-59, U-60) le prende l'utente.
+2. Prima di aprire la tappa T0A: verifica a campione del PC (Fable) delle schede e di 04/05 contro il codice oltre le 415
+   citazioni gia' controllate; misure mancanti (CPU/RAM con app accesa, tempo di un ordine live, ritardo dei punteggi) che
+   T0A stessa (pannello «Salute») deve produrre.
+3. Sessione da riprendere con i crediti residui (49,30 USD, scadenza 13/10): `python ARCHITETTURA_2026-10\strumenti\sessione_sdk.py --riprendi`
+   con un prompt di sola revisione (nessun codice di produzione); se non serve, i crediti restano per T0A.
+4. Stasera (ordine dell'utente «facciamo tutto stasera»): fusione su master di questo ramo + ramo cloud
+   `claude/blissful-sagan-hri7o6` (cantieri 5-15, ultimo `9fd1474b`) + correzione della action; `git gc` per il commit orfano
+   `1f35f5c8` (log da 3 GB, MAI pushare); build finale ad app chiusa; rilancio della action da master.
+
+### VERIFICA DEL COORDINATORE (Fable 5.1) sul 57014 dentro il ciclo del catchup — ore 18:40 dell'08/10
+- Delegato Opus (brief: AUDIT_2026-10-08/action_catchup/REFERTO.md §2.5). File: `season_gaps.py` (+100/-21: ritentativi 5 s e 10 s
+  sul 57014 di `season_detail_gaps`, poi `Timeout57014Persistente`; `leggi_stati` legge anche `stats_json->degradato_57014`;
+  `segna_degradato_57014(prec=...)`), `seasons_catchup.py` (+64: le 5 vie del ciclo P1-P3 e P4 degradano invece di mettere in
+  `ris.errori`; referto con riga «DEGRADATA per 57014 nel ciclo»), test nuovo `test_catchup_57014_ciclo_2026_10_08.py` (13).
+  Difetto in piu' trovato dal delegato: senza la colonna in `leggi_stati` il contatore R-CATCHUP-3 ripartiva da 1 (degradata muta).
+- Verificato di persona: diff riletto riga per riga; CRLF conservati (739/739, 1206/1206, 338/338); `db_client.py` e
+  `season_backfill.py` intatti. Test rilanciati da me: 37/37 (catchup rete + 57014 ciclo); 269/270 sulle 16 suite che importano
+  i moduli toccati (l'unico rosso, `test_analytics_market_stats.py::test_cert_delay_shift_vs_rpc`, legge il DB vivo, passa
+  su HEAD e passa 2 volte su 2 rilanci con la correzione: dato del DB cambiato tra una lettura e l'altra, non la correzione).
+  Falsificazione MIA, in una direzione non provata dal delegato: tolta la registrazione in `ris.degradate_timeout` -> 4 test
+  rossi; ripristino byte-identico, 13/13 verdi. Sintassi della colonna nuova provata in SOLA LETTURA sul DB vero: 8.692
+  lega-stagioni lette, 0 con contatore (nessuna degradata oggi, quindi il valore letto non e' ancora esercitato dal vero).
+- Esito: con le due correzioni (mattina + sera) la run 37743110569 avrebbe dato exit 0. CERTIFICATO. Action NON rilanciata
+  (ordine dell'utente: crediti API-Football finiti); riparte da sola dal prossimo giro programmato dopo la fusione su master.

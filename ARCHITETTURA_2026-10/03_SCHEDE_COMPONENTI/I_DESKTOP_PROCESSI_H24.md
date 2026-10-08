@@ -96,7 +96,7 @@ Non esiste un processo ne' un evento «di giornata»: ogni modulo calcola la gio
   finestra `day_window_utc` (`trading/daily_pnl.py:129`, usata anche da `reconcile_worker.py:495, 696`). Cambio di giorno = automatico, senza riavvio.
 - Mike: `_DAILY_STOP_LOGGED` per giorno di Roma (`mike/service.py:54`). Omega: obiettivo giornaliero in `_DAILY_GOAL_WRITTEN` (`omega_service.py:5318`), tabella `omega_daily_goal` (`omega_db.py:1041`).
 - Finestra «oggi» di Omega per il conto: `omega_market.today_window_utc(now, lookback_hours=12)` (`omega_market.py:257`): definizione di «oggi» DIVERSA dalla precedente (finestra mobile 12 h, non il giorno di Roma). Duplicazione di definizione, non verificato l'effetto.
-- `betfair_tennis_odds.py:310` `dt.date.today()` ad ogni run (data locale del PC, non Roma); ogni run cancella e riscrive le righe di `run_date=oggi` (docstring `:285-300`).
+- `betfair_tennis_odds.py:311` `dt.date.today()` [corretto dal verificatore 08/10: era 310] ad ogni run (data locale del PC, non Roma); ogni run cancella e riscrive le righe di `run_date=oggi` (docstring `:285-300`).
 - Cosa richiede un riavvio: **niente di dichiarato**; ma due cose NON si resettano da sole: (a) i dict globali delle cache (§1.6) senza chiave di giorno; (b) i runner si ricambiano solo dopo 18 h di vita (`runner.py:1252`) e solo senza ordini vivi/regole armate (`:1267-1290`), quindi con posizioni aperte il ricambio slitta senza limite.
 - **Riavvio dell'app = bot spenti**: `avvio_app.py:9-40,54-100` (`APP_BOOT_ID` nuovo -> `status='stopped'`, `mode='paper'`, uscite a manuale). Un riavvio notturno
   dell'app (fase 2 del piano) spegnerebbe anche i bot che l'utente aveva acceso: per regola dell'utente e' voluto, ma incompatibile con «h24 senza intervento».
@@ -251,7 +251,7 @@ Totale: **48 voci** (I-001..I-024 Electron, I-030..I-048 Python). Parametri edit
 | D10 | **Nessuna difesa «h24» a livello PC**: niente blocco della sospensione, niente avvio al login, servizio Ora di Windows fermo (+844 ms), nessun gestore di crash del renderer/processo principale; orfani se Electron muore | grep `main.js` = 0; `07_MISURE_OGGI.md §0 1e`; §1.2 |
 | D11 | **6 servizi senza vita massima ne' limite di memoria**, cache svuotate in blocco (`clear()`), dict senza rimozione nel Mike | §1.6 |
 | D12 | **Stato in piu' posti**: `APP_BOOT_ID` vive in `stats` di 5 tabelle di controllo (`avvio_app.py` docstring), il battito del watchdog in una sola riga condivisa, il file `ARRESTO` su disco, i lock su socket: quattro meccanismi di coordinamento fra processi | `avvio_app.py:9-40`; `watchdog.py:122`; `arresto_ordinato.py:1-77`; `single_instance.py` |
-| D13 | **«Oggi» definito in tre modi** (giorno di Roma `daily_stop_worker.py:47`; finestra mobile 12 h `omega_market.py:257`; `date.today()` locale `betfair_tennis_odds.py:310`) | citati |
+| D13 | **«Oggi» definito in tre modi** (giorno di Roma `daily_stop_worker.py:47`; finestra mobile 12 h `omega_market.py:257`; `date.today()` locale `betfair_tennis_odds.py:311` [corretto dal verificatore 08/10: era 310]) | citati |
 | D14 | **Il job tennis-odds non e' sotto watchdog e non ha stato**: se fallisce il giro dopo 30 min e' l'unico riavvio; nessun alert | `main.js:471-484` |
 
 Conteggi: `git grep -l "Europe/Rome" -- 'Betfair/*.py'` (esclusi test/tools) = 11 file che ridefiniscono la giornata; 8 porte di lock, 8 canali WS, 9 watchdog, 9 figli, 1 job breve.

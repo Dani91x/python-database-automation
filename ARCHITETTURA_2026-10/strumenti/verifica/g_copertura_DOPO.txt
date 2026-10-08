@@ -1,0 +1,3 @@
+tabelle nell'elenco (prod/FE): 89 | coperte: 89 | mancanti: 0
+tabelle scritte da RPC fuori elenco: 6 | citate: 6 | mancanti: 0
+RPC scriventi nell'elenco: 72 | citate in G: 72 | mancanti: 0

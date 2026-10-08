@@ -165,7 +165,7 @@ Nel tennis le copie 5-8 esistono con codice gemello: `_Capture._latest` (`tennis
 ### 1.7 Riconnessione, sessione che scade, keepAlive
 
 - **Riconnessione stream**: flumine `MarketStream.run` con `@retry(wait_exponential(2..60))` ripassa `initial_clk` e `clk` del
-  listener (`flumine/streams/marketstream.py:12,36-42`; `basestream.py:14`), cioe' ripresa dalla posizione. Il calcio la
+  listener (`flumine/streams/marketstream.py:15,36-42` [corretto dal verificatore 08/10: il `@retry` e' a `:15`, non `:12`]; `basestream.py:14`), cioe' ripresa dalla posizione. Il calcio la
   replica a mano in `FrammentoMarketStream.run` (backoff `2**n` limitato a 60 s, nessuna riconnessione dopo `stop`:
   `frammenti_mercato.py:185-226`). **Lo scanner NON usa questo meccanismo**: a ogni riconnessione fa `create_stream` +
   `subscribe_to_markets` senza `initial_clk`/`clk` (`safe_strategy/stream.py:418-427`), cioe' ricostruisce l'immagine
@@ -400,7 +400,7 @@ Per ogni difetto: evidenza e conteggio con lo strumento.
 
 **D7. Quota connessioni al limite per costruzione** (§1.3): 10/10 nel caso peggiore senza scalper; la riserva e `connectionsAvailable` sono letti solo dal calcio.
 
-**D8. Parametri morti o impliciti.** `TENNIS_STREAM_CONFLATE_MS` mai usato (`tennis_runner.py:116`); `heartbeatMs` non richiesto su 3 dei 4 stack (decide Betfair, `stream_muto.py:35-45`); `STREAM_FIELDS` duplicato e diverso (`config_stream.py:90`, `tennis_runner.py:119`); `LADDER_DEPTH` letto da due env diverse (`config_stream.py:47`, `tennis_runner.py:103`).
+**D8. Parametri morti o impliciti.** `TENNIS_STREAM_CONFLATE_MS` mai usato (`tennis_runner.py:116`); `heartbeatMs` non richiesto su 3 dei 4 stack (decide Betfair, `stream_muto.py:20-31` [corretto dal verificatore 08/10: era `:35-45`, dove c'e' la soglia di stallo, non la richiesta dell'heartbeat]); `STREAM_FIELDS` duplicato e diverso (`config_stream.py:90`, `tennis_runner.py:119`); `LADDER_DEPTH` letto da due env diverse (`config_stream.py:47`, `tennis_runner.py:103`).
 
 **D9. "Lo stream e' muto?" in 4 implementazioni:** `runner.py:1513-1582` (`_sorveglia_flusso_runner`), `tennis_runner.py:2219-2280`, `stream_muto.py` (292 righe: duck typing), `frammenti_mercato.py:577-627` (battito per frammento) e, per lo scanner, `stream.py:310-361` + `flusso_prezzi.py`. Stesse soglie (3 x heartbeat, 180 s) ripetute come costanti.
 
