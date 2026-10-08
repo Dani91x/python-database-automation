@@ -5282,3 +5282,37 @@ Cosa resta da verificare dal PC (coordinatore Fable): rileggere le schede contro
 Il piano e' pronto per la revisione del PC e la decisione dell'utente. Prossimi passi: (1) il PC verifica 04/05 e le schede;
 (2) l'utente decide le 7 decisioni bloccanti di 05 §8.1; (3) si apre la tappa T0A (pannello «Salute») e T0B/T0C
 (prerequisiti del banco, congelamento dei riferimenti) come scritto in `05_PIANO_DI_MIGRAZIONE.md` §1.
+
+### VERIFICA DEL COORDINATORE (Fable 5.1) sulla sessione API del piano di architettura — ore 17:57 dell'08/10
+- Sessione chiusa alle 17:50 (orologio del PC) con `FATTO.txt`; 45 turni, 140,70 USD su 190 (49,30 non spesi per scelta
+  del coordinatore API: consegne complete). Registro: `ARCHITETTURA_2026-10/strumenti/registro_sessione_2026-10-08_143321.log`
+  (fuori da git, come il primo registro); id della sessione in `strumenti/ultima_sessione.txt` (committato ora, per `--riprendi`).
+- NOTA SULLE ORE: il blocco qui sopra, `COSTI.md` e `FATTO.txt` scrivono ore avanti di 3 h (es. «20:45» = 17:45 reali):
+  l'agente API non ha letto l'orologio. I fatti e l'ordine degli eventi sono giusti; le ore vanno lette -3 h.
+- Verificato di persona: tutte le consegne (00-08, README, COSTI, 15 schede, `strumenti/` con script, uscite e verifiche)
+  sono COMMITTATE sul ramo `claude/eloquent-franklin-g2nyk5` (ultimo `3b291f1b`) e PUSHATE (0 commit avanti rispetto a origin).
+  14.152 righe di documenti in `ARCHITETTURA_2026-10/` (5,6 MB con gli strumenti). Nulla da salvare oltre a questo blocco.
+- Reperto mio (gia' nella conversazione, non ancora nel piano): l'affermazione che `tactical_engine`/`value_engine` siano
+  archiviabili e' FALSA (scheda K li da' usati da Omega, Safe, motori live, `Prediction/today_predictions_backfill.py` e dal
+  pannello `TacticalEnginePanel.tsx`). Nessuna decisione del piano li archivia.
+- Action «Seasons Catchup» (ordine: non deve piu' fallire): il rilancio della run 37743110569 e' FALLITO alle 17:07 (15:07 UTC)
+  con exit 1, eseguendo il codice di MASTER (la correzione `d60fa53c` e' solo su questo ramo). Due cause lette dal log:
+  (a) `ConnectionTerminated last_stream_id:19999` alle 14:53 UTC sull'insert `match_lineups` -> lega 362/2026 «errore API
+  ripetuto» -> BUCO VECCHIO: classe coperta dalla correzione del ramo; (b) UN solo 57014 (HTTP 500 su `rpc/season_detail_gaps`
+  alle 14:30 UTC, la chiamata successiva 4 s dopo ha risposto 200) dentro il ciclo per lega-stagione (`seasons_catchup.py:696-736`,
+  via `season_backfill.pianifica` -> `season_gaps.lacune_stagione`) -> `ris.errori` -> exit 1. Classe NON coperta:
+  `db_client.classifica_guasto_rete` non ritenta mai il 57014 per scelta e il ciclo lo tratta come errore, mentre R-CATCHUP-2
+  degrada solo il riepilogo. Delegato Opus lanciato alle 17:58 per chiudere anche questa classe (ritentativo breve, poi
+  degrado con contatore dei giorni consecutivi, mai exit 1 per un singolo 57014); certificazione mia a seguire.
+
+### PUNTO DI RIPRESA DEL PIANO DI ARCHITETTURA (per i prossimi giorni)
+1. Si parte da `ARCHITETTURA_2026-10/README.md` (indice) e `06_RIEPILOGO_PER_L_UTENTE.md`; poi `05_PIANO_DI_MIGRAZIONE.md`
+   §8.1: le 7 decisioni che bloccano la tappa 0 (U-62, U-32, U-27, U-44, U-37, U-59, U-60) le prende l'utente.
+2. Prima di aprire la tappa T0A: verifica a campione del PC (Fable) delle schede e di 04/05 contro il codice oltre le 415
+   citazioni gia' controllate; misure mancanti (CPU/RAM con app accesa, tempo di un ordine live, ritardo dei punteggi) che
+   T0A stessa (pannello «Salute») deve produrre.
+3. Sessione da riprendere con i crediti residui (49,30 USD, scadenza 13/10): `python ARCHITETTURA_2026-10\strumenti\sessione_sdk.py --riprendi`
+   con un prompt di sola revisione (nessun codice di produzione); se non serve, i crediti restano per T0A.
+4. Stasera (ordine dell'utente «facciamo tutto stasera»): fusione su master di questo ramo + ramo cloud
+   `claude/blissful-sagan-hri7o6` (cantieri 5-15, ultimo `9fd1474b`) + correzione della action; `git gc` per il commit orfano
+   `1f35f5c8` (log da 3 GB, MAI pushare); build finale ad app chiusa; rilancio della action da master.
