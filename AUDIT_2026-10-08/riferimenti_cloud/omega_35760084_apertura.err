@@ -1,0 +1,3 @@
+CRITICAL:omega.service:[omega] il lettore degli aggregati non separa le modalita': paper e live SOMMATI nelle decisioni (catalogo 7.21)
+EXIT 0
+TEMPO_REALE_S 32.583739308
