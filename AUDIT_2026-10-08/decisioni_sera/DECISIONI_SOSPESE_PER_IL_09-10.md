@@ -79,3 +79,25 @@ Fonte dei punti: `AUDIT_2026-10-08/HANDOFF_VERIFICA_PC_E_FUSIONE.md` §6.
   `replay_tennis_fonte_nomi_2026-10-08.sql` (unica mancante, verificato in sola lettura 08/10 19:20).
 - Dal vivo al primo avvio (solo log, nessun ordine di prova): righe `[conto-ws]`, `posizione di conto dallo stream ordini del runner`,
   `[scalper-sess] ... ordini esterni dallo stream ordini del conto` (handoff §3.7).
+
+## 5. Aggiunte dai cantieri della sera (08/10, dopo le 20:00): da confermare il 09/10
+16. **D-13, riavvio della Safe nel banco**: l'azzeramento della cache del modello (`_LAMBDA_CACHE`) vale all'ingresso e all'uscita di
+    ogni scenario, NON al riavvio a meta' partita: il banco della Safe non esercita `get_event`, con cui la Safe riavviata in
+    produzione ritrova il modello. Confermare che il riavvio NON azzeri (scelta del delegato, dichiarata).
+17. **D-14d NON applicata** (memoria per identita' delle liste convertite in `valuta`): 60-72 % di riuso misurato, ma un riuso
+    sicuro al 100 % richiede un confronto completo tipi compresi (`==` non vede 2 -> 2.0) e il guadagno sul PC non e' misurabile
+    (21-49 s contro 18-52 s). Resta un'idea, non un cantiere.
+18. **D-2, limite di flumine**: un parcheggio in stato REPLACING non si puo' ritirare (flumine rifiuta il cancel). Allo scadere dei
+    15 s la sequenza si chiude e dichiara; un sostituto nato in ritardo entra comunque nei conti dei bot (agganciano i Trade a ogni
+    book). Ritirare davvero quella gamba richiederebbe un involucro nostro di `execute_replace`: decidere se farlo.
+19. **D-2, orologio del tetto**: nel banco solo lo scalper calcio sostituisce `time.time`; nei replay tennis e Mike il tetto dei 15 s
+    conterebbe tempo reale (mai sollecitato nei replay). Da uniformare se si vuole esercitarlo nel banco tennis.
+20. **W2/D-7, contratto «strada unica»** (`test_contratto_strada_unica_2026_09_25.py`): verde (controlla per file), ma il testo di
+    motivazione cita solo `place_order`; aggiungere una riga per il `cancelOrders` del worker. La doppia conferma della pagina Cash
+    Out non preannuncia l'annullo automatico: lo dice solo l'esito. Primo uso LIVE da osservare (referto W2_D7 §7).
+21. **D-4, divergenza dichiarata**: lo scalper tennis LEGGE `min_total_matched` ma resta fuori dalla scheda perche' lo scenario non ne
+    cambia il valore (gia' 0). Esporla o no: decidere. Le differenze numeriche fra i riferimenti tennis del 07/10 e master (es.
+    swing `gate-aperto` 126 -> 116 azioni) sono dei cantieri 5/6/9 del cloud, presenti PRIMA del lavoro di stasera: da attribuire
+    con la corsa unica del §3.1 dell'handoff.
+22. **D-6, eccezione**: nella sezione «Concluse» lo scalper resta fermabile (il pulsante ferma la sessione, non piazza sul mercato
+    chiuso). Confermare.
