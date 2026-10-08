@@ -1,0 +1,61 @@
+referto nuovo: controllo_finale/scalper/scalper_35760084_tutti.txt (56 scenari)
+R1: 14 scenari, R2: 51 scenari
+
+=== RIASSUNTO
+evento | scenario | rif | esito DOPO | esito PRIMA | righe diverse
+35760084 | base | R1 | OK | OK | 0
+35760084 | paper | R1 | OK | OK | 0
+35760084 | senza-missione | R2 | OK | OK | 0
+35760084 | bot-fermo | R2 | OK | OK | 0
+35760084 | kill-switch | R2 | OK | OK | 0
+35760084 | esiti-ignoti | R2 | OK | OK | 0
+35760084 | rifiuti-betfair | R1 | OK | OK | 0
+35760084 | riavvio | R2 | OK | OK | 0
+35760084 | chiusura-abbinata-in-parte | R1 | OK | OK | 0
+35760084 | ordine-esterno | R1 | OK | OK | 0
+35760084 | ordine-esterno-app | R1 | OK | OK | 0
+35760084 | ordine-esterno-di-un-bot | R1 | OK | OK | 0
+35760084 | ordine-esterno-db-giu | R1 | OK | OK | 0
+35760084 | ordine-esterno-altro-mercato | R1 | OK | OK | 0
+35760084 | sniper | R2 | OK | OK | 0
+35760084 | sniper-paper | R1 | OK | OK | 0
+35760084 | sniper-uscite-auto | R2 | OK | OK | 0
+35760084 | uscite-manuali | R2 | OK | OK | 0
+35760084 | uscite-manuali-firmate | R2 | OK | OK | 0
+35760084 | auto-live | R2 | KO | KO | 0
+35760084 | media-under | R2 | NE | NE | 0
+35760084 | media-under-paper | R2 | NE | NE | 0
+35760084 | media-under-35 | R2 | NE | NE | 0
+35760084 | media-under-obiettivo-030 | R2 | NE | NE | 0
+35760084 | media-under-rientri-1 | R2 | NE | NE | 0
+35760084 | media-under-rischio-30 | R2 | NE | NE | 0
+35760084 | media-under-tick-1 | R2 | NE | NE | 0
+35760084 | media-under-riavvio | R2 | NE | NE | 0
+35760084 | media-under-rifiuti-betfair | R2 | NE | NE | 0
+35760084 | media-under-esiti-ignoti | R2 | NE | NE | 0
+35760084 | media-under-kill-switch | R2 | NE | NE | 0
+35760084 | media-under-bot-fermo | R2 | NE | NE | 0
+35760084 | media-under-liquidita-100 | R2 | NE | NE | 0
+35760084 | media-under-35-liquidita-50 | R2 | NE | NE | 0
+35760084 | media-clic-lontano | R2 | OK | OK | 0
+35760084 | media-clic-lontano-paper | R2 | OK | OK | 0
+35760084 | media-clic-lontano-filtri | R2 | OK | OK | 0
+35760084 | media-clic-lontano-35 | R2 | OK | OK | 0
+35760084 | media-clic-finestra | R2 | OK | OK | 0
+35760084 | media-clic-gioco | R2 | OK | OK | 0
+35760084 | media-clic-gioco-35 | R2 | OK | OK | 0
+35760084 | media-clic-prima-del-gol | R2 | OK | OK | 0
+35760084 | media-clic-prima-del-gol-35 | R2 | OK | OK | 0
+35760084 | media-clic-dopo-il-gol | R2 | OK | OK | 0
+35760084 | media-clic-sospeso | R2 | OK | OK | 0
+35760084 | media-clic-prezzi-fermi | R2 | OK | OK | 0
+35760084 | media-clic-doppio | R2 | OK | OK | 0
+35760084 | media-clic-in-posizione | R2 | OK | OK | 0
+35760084 | media-clic-riavvio | R2 | OK | OK | 0
+35760084 | media-clic-tick-1 | R2 | OK | OK | 0
+35760084 | media-clic-tick-1-filtri | R2 | OK | OK | 0
+35760084 | media-clic-due-clic | R2 | OK | OK | 0
+35760084 | ingresso-abbinato-in-parte | R1 | NE | NE | 0
+35760084 | ingresso-abbinato-in-parte-paper | R1 | NE | NE | 0
+35760084 | rifiuti-betfair-codici | R1 | NE | NE | 0
+35760084 | rifiuti-betfair-codici-paper | R1 | NE | NE | 0

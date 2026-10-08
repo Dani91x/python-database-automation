@@ -1,0 +1,210 @@
+referto nuovo: controllo_finale/scalper/scalper_35760084_tutti.txt (56 scenari)
+R1: 14 scenari, R2: 51 scenari
+
+=== 35760084 [media-clic-lontano] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco2.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco2.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107607985388350 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107607985388350 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+    +      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107695912640470 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107695912640470 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+
+=== 35760084 [media-clic-lontano-paper] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco3.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco3.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107607794442170 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107607794442170 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+    +      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107696113391890 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107696113391890 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+
+=== 35760084 [media-clic-lontano-filtri] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco4.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco4.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107608124446900 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107608124446900 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+    +      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107696115310560 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107696115310560 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+
+=== 35760084 [media-clic-lontano-35] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco1.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco1.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107608156409610 @1.74 per 10.0 a pre-match, 44'06" al fischio
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107608156409610 @1.74 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+    +      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107696412815220 @1.74 per 10.0 a pre-match, 44'06" al fischio
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107696412815220 @1.74 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+
+=== 35760084 [media-clic-finestra] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco2.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco2.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782835000000 (pre-match, 3'45" al fischio): letto dalla sessione pre-match, 3'35" al fischio; per il banco ESEGUIBILE; prima punta 140107608478811110 @2.94 per 10.0 a pre-match, 3'35" al fischio
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107608478811110 @2.94 a pre-match, 3'35" al fischio, partita da CLIC (clic-1-1782835000000)
+    +      nota: ATTIVA ADESSO clic clic-1-1782835000000 (pre-match, 3'45" al fischio): letto dalla sessione pre-match, 3'35" al fischio; per il banco ESEGUIBILE; prima punta 140107696641761690 @2.94 per 10.0 a pre-match, 3'35" al fischio
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107696641761690 @2.94 a pre-match, 3'35" al fischio, partita da CLIC (clic-1-1782835000000)
+
+=== 35760084 [media-clic-gioco] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco3.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco3.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782835744357 (in gioco al 8'39"): letto dalla sessione in gioco al 8'43"; per il banco ESEGUIBILE; prima punta 140107608302501530 @5.6 per 10.0 a in gioco al 8'43"
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107608302501530 @5.6 a in gioco al 8'43", partita da CLIC (clic-1-1782835744357)
+    +      nota: ATTIVA ADESSO clic clic-1-1782835744357 (in gioco al 8'39"): letto dalla sessione in gioco al 8'43"; per il banco ESEGUIBILE; prima punta 140107696673140150 @5.6 per 10.0 a in gioco al 8'43"
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107696673140150 @5.6 a in gioco al 8'43", partita da CLIC (clic-1-1782835744357)
+
+=== 35760084 [media-clic-gioco-35] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco4.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco4.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782835744399 (in gioco al 8'39"): letto dalla sessione in gioco al 8'43"; per il banco ESEGUIBILE; prima punta 140107608644692130 @2.58 per 10.0 a in gioco al 8'43"
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107608644692130 @2.58 a in gioco al 8'43", partita da CLIC (clic-1-1782835744399)
+    +      nota: ATTIVA ADESSO clic clic-1-1782835744399 (in gioco al 8'39"): letto dalla sessione in gioco al 8'43"; per il banco ESEGUIBILE; prima punta 140107696829984810 @2.58 per 10.0 a in gioco al 8'43"
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107696829984810 @2.58 a in gioco al 8'43", partita da CLIC (clic-1-1782835744399)
+
+=== 35760084 [media-clic-prima-del-gol] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco1.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco1.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782835293201 (in gioco al 1'08"): letto dalla sessione in gioco al 1'11"; per il banco ESEGUIBILE; prima punta 140107608536798810 @2.86 per 10.0 a in gioco al 1'11"
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107608536798810 @2.86 a in gioco al 1'11", partita da CLIC (clic-1-1782835293201)
+    +      nota: ATTIVA ADESSO clic clic-1-1782835293201 (in gioco al 1'08"): letto dalla sessione in gioco al 1'11"; per il banco ESEGUIBILE; prima punta 140107696944703790 @2.86 per 10.0 a in gioco al 1'11"
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107696944703790 @2.86 a in gioco al 1'11", partita da CLIC (clic-1-1782835293201)
+
+=== 35760084 [media-clic-prima-del-gol-35] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco2.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco2.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782835293214 (in gioco al 1'08"): letto dalla sessione in gioco al 1'12"; per il banco ESEGUIBILE; prima punta 140107608798608520 @1.74 per 10.0 a in gioco al 1'12"
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107608798608520 @1.74 a in gioco al 1'12", partita da CLIC (clic-1-1782835293214)
+    +      nota: ATTIVA ADESSO clic clic-1-1782835293214 (in gioco al 1'08"): letto dalla sessione in gioco al 1'12"; per il banco ESEGUIBILE; prima punta 140107696979143920 @1.74 per 10.0 a in gioco al 1'12"
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107696979143920 @1.74 a in gioco al 1'12", partita da CLIC (clic-1-1782835293214)
+
+=== 35760084 [media-clic-dopo-il-gol] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco3.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco3.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782835323206 (in gioco al 1'38"): letto dalla sessione in gioco al 1'42"; per il banco ESEGUIBILE; prima punta 140107608555956930 @2.66 per 10.0 a in gioco al 1'42"
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107608555956930 @2.66 a in gioco al 1'42", partita da CLIC (clic-1-1782835323206)
+    +      nota: ATTIVA ADESSO clic clic-1-1782835323206 (in gioco al 1'38"): letto dalla sessione in gioco al 1'42"; per il banco ESEGUIBILE; prima punta 140107697114112000 @2.66 per 10.0 a in gioco al 1'42"
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107697114112000 @2.66 a in gioco al 1'42", partita da CLIC (clic-1-1782835323206)
+
+=== 35760084 [media-clic-doppio] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco2.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco2.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -21,2 +21,2 @@
+    -      nota: ATTIVA ADESSO clic clic-2-1782834300400 (pre-match, 15'25" al fischio): letto dalla sessione pre-match, 15'14" al fischio; per il banco ESEGUIBILE; prima punta 140107609122096710 @2.88 per 10.0 a pre-match, 15'14" al fischio
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107609122096710 @2.88 a pre-match, 15'14" al fischio, partita da CLIC (clic-2-1782834300400)
+    +      nota: ATTIVA ADESSO clic clic-2-1782834300400 (pre-match, 15'25" al fischio): letto dalla sessione pre-match, 15'14" al fischio; per il banco ESEGUIBILE; prima punta 140107697505743000 @2.88 per 10.0 a pre-match, 15'14" al fischio
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107697505743000 @2.88 a pre-match, 15'14" al fischio, partita da CLIC (clic-2-1782834300400)
+
+=== 35760084 [media-clic-in-posizione] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco3.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco3.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20 +20 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782834300000 (pre-match, 15'25" al fischio): letto dalla sessione pre-match, 15'14" al fischio; per il banco ESEGUIBILE; prima punta 140107608903317140 @2.88 per 10.0 a pre-match, 15'14" al fischio
+    +      nota: ATTIVA ADESSO clic clic-1-1782834300000 (pre-match, 15'25" al fischio): letto dalla sessione pre-match, 15'14" al fischio; per il banco ESEGUIBILE; prima punta 140107697572489340 @2.88 per 10.0 a pre-match, 15'14" al fischio
+    @@ -22 +22 @@
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107608903317140 @2.88 a pre-match, 15'14" al fischio, partita da CLIC (clic-1-1782834300000)
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107697572489340 @2.88 a pre-match, 15'14" al fischio, partita da CLIC (clic-1-1782834300000)
+
+=== 35760084 [media-clic-riavvio] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco4.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco4.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -23,2 +23,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107609103285170 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107609103285170 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+    +      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107697584211080 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107697584211080 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+
+=== 35760084 [media-clic-tick-1] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco1.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco1.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107609068835360 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107609068835360 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+    +      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107697933573140 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107697933573140 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+
+=== 35760084 [media-clic-tick-1-filtri] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco2.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco2.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -20,2 +20,2 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107609474084370 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107609474084370 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+    +      nota: ATTIVA ADESSO clic clic-1-1782832552415 (pre-match, 44'33" al fischio): letto dalla sessione pre-match, 44'06" al fischio; per il banco ESEGUIBILE; prima punta 140107698001304340 @2.68 per 10.0 a pre-match, 44'06" al fischio
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107698001304340 @2.68 a pre-match, 44'06" al fischio, partita da CLIC (clic-1-1782832552415)
+
+=== 35760084 [media-clic-due-clic] DIVERSO da R2 (riferimenti_cloud/scalper_35760084_blocco3.txt)
+    --- PRIMA riferimenti_cloud/scalper_35760084_blocco3.txt
+    +++ DOPO controllo_finale/scalper/scalper_35760084_tutti.txt
+    @@ -21,4 +21,4 @@
+    -      nota: ATTIVA ADESSO clic clic-1-1782835744399 (in gioco al 8'39"): letto dalla sessione in gioco al 8'43"; per il banco ESEGUIBILE; prima punta 140107609305279300 @2.58 per 10.0 a in gioco al 8'43"
+    -      nota: ATTIVA ADESSO clic clic-2-1782836944399 (in gioco al 28'39"): letto dalla sessione in gioco al 29'11"; per il banco ESEGUIBILE; prima punta 140107609366066460 @3.3 per 10.0 a in gioco al 29'11"
+    -      nota: ATTIVA ADESSO ciclo 1: prima punta 140107609305279300 @2.58 a in gioco al 8'43", partita da CLIC (clic-1-1782835744399)
+    -      nota: ATTIVA ADESSO ciclo 2: prima punta 140107609366066460 @3.3 a in gioco al 29'11", partita da CLIC (clic-2-1782836944399)
+    +      nota: ATTIVA ADESSO clic clic-1-1782835744399 (in gioco al 8'39"): letto dalla sessione in gioco al 8'43"; per il banco ESEGUIBILE; prima punta 140107698192907930 @2.58 per 10.0 a in gioco al 8'43"
+    +      nota: ATTIVA ADESSO clic clic-2-1782836944399 (in gioco al 28'39"): letto dalla sessione in gioco al 29'11"; per il banco ESEGUIBILE; prima punta 140107698274413020 @3.3 per 10.0 a in gioco al 29'11"
+    +      nota: ATTIVA ADESSO ciclo 1: prima punta 140107698192907930 @2.58 a in gioco al 8'43", partita da CLIC (clic-1-1782835744399)
+    +      nota: ATTIVA ADESSO ciclo 2: prima punta 140107698274413020 @3.3 a in gioco al 29'11", partita da CLIC (clic-2-1782836944399)
+
+=== RIASSUNTO
+evento | scenario | rif | esito DOPO | esito PRIMA | righe diverse
+35760084 | base | R1 | OK | OK | 0
+35760084 | paper | R1 | OK | OK | 0
+35760084 | senza-missione | R2 | OK | OK | 0
+35760084 | bot-fermo | R2 | OK | OK | 0
+35760084 | kill-switch | R2 | OK | OK | 0
+35760084 | esiti-ignoti | R2 | OK | OK | 0
+35760084 | rifiuti-betfair | R1 | OK | OK | 0
+35760084 | riavvio | R2 | OK | OK | 0
+35760084 | chiusura-abbinata-in-parte | R1 | OK | OK | 0
+35760084 | ordine-esterno | R1 | OK | OK | 0
+35760084 | ordine-esterno-app | R1 | OK | OK | 0
+35760084 | ordine-esterno-di-un-bot | R1 | OK | OK | 0
+35760084 | ordine-esterno-db-giu | R1 | OK | OK | 0
+35760084 | ordine-esterno-altro-mercato | R1 | OK | OK | 0
+35760084 | sniper | R2 | OK | OK | 0
+35760084 | sniper-paper | R1 | OK | OK | 0
+35760084 | sniper-uscite-auto | R2 | OK | OK | 0
+35760084 | uscite-manuali | R2 | OK | OK | 0
+35760084 | uscite-manuali-firmate | R2 | OK | OK | 0
+35760084 | auto-live | R2 | KO | KO | 0
+35760084 | media-under | R2 | NE | NE | 0
+35760084 | media-under-paper | R2 | NE | NE | 0
+35760084 | media-under-35 | R2 | NE | NE | 0
+35760084 | media-under-obiettivo-030 | R2 | NE | NE | 0
+35760084 | media-under-rientri-1 | R2 | NE | NE | 0
+35760084 | media-under-rischio-30 | R2 | NE | NE | 0
+35760084 | media-under-tick-1 | R2 | NE | NE | 0
+35760084 | media-under-riavvio | R2 | NE | NE | 0
+35760084 | media-under-rifiuti-betfair | R2 | NE | NE | 0
+35760084 | media-under-esiti-ignoti | R2 | NE | NE | 0
+35760084 | media-under-kill-switch | R2 | NE | NE | 0
+35760084 | media-under-bot-fermo | R2 | NE | NE | 0
+35760084 | media-under-liquidita-100 | R2 | NE | NE | 0
+35760084 | media-under-35-liquidita-50 | R2 | NE | NE | 0
+35760084 | media-clic-lontano | R2 | OK | OK | 4
+35760084 | media-clic-lontano-paper | R2 | OK | OK | 4
+35760084 | media-clic-lontano-filtri | R2 | OK | OK | 4
+35760084 | media-clic-lontano-35 | R2 | OK | OK | 4
+35760084 | media-clic-finestra | R2 | OK | OK | 4
+35760084 | media-clic-gioco | R2 | OK | OK | 4
+35760084 | media-clic-gioco-35 | R2 | OK | OK | 4
+35760084 | media-clic-prima-del-gol | R2 | OK | OK | 4
+35760084 | media-clic-prima-del-gol-35 | R2 | OK | OK | 4
+35760084 | media-clic-dopo-il-gol | R2 | OK | OK | 4
+35760084 | media-clic-sospeso | R2 | OK | OK | 0
+35760084 | media-clic-prezzi-fermi | R2 | OK | OK | 0
+35760084 | media-clic-doppio | R2 | OK | OK | 4
+35760084 | media-clic-in-posizione | R2 | OK | OK | 4
+35760084 | media-clic-riavvio | R2 | OK | OK | 4
+35760084 | media-clic-tick-1 | R2 | OK | OK | 4
+35760084 | media-clic-tick-1-filtri | R2 | OK | OK | 4
+35760084 | media-clic-due-clic | R2 | OK | OK | 8
+35760084 | ingresso-abbinato-in-parte | R1 | NE | NE | 0
+35760084 | ingresso-abbinato-in-parte-paper | R1 | NE | NE | 0
+35760084 | rifiuti-betfair-codici | R1 | NE | NE | 0
+35760084 | rifiuti-betfair-codici-paper | R1 | NE | NE | 0
