@@ -1,0 +1,2 @@
+ATTESE (coppie di righe PRIMA/DOPO): {'A-attivita': 2}
+NON ATTESE: 0

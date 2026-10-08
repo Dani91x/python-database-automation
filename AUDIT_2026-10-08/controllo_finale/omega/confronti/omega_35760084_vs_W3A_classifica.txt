@@ -1,0 +1,6 @@
+ATTESE (coppie di righe PRIMA/DOPO): {'A-nonesrc': 19, 'A-attivita': 17, 'A-mercato': 21, 'A-nonesrc-sola': 2}
+NON ATTESE: 4
+  [chiuso-fuori-app-canale] PRIMA:       nota: attivita' del servizio: skip x5, replay_chiuso_fuori_app x3, chiuso_dall_utente x2, flusso_interrotto x1, live_fok_fallback x1, place x1, diagnosi x1, replay_chiuso_fuori_app_abbinato x1, settle x1, goal_stop x1
+  [chiuso-fuori-app-canale] DOPO :       nota: attivita' del servizio: skip x5, replay_chiuso_fuori_app x3, chiuso_dall_utente x2, flusso_non_dichiarato x1, flusso_interrotto x1, live_fok_fallback x1, place x1, diagnosi x1, replay_chiuso_fuori_app_abbinato x1, settle x1
+  [ridotto-fuori-app-canale] PRIMA:       nota: attivita' del servizio: skip x5, chiuso_dall_utente x2, flusso_interrotto x1, live_fok_fallback x1, place x1, replay_chiuso_fuori_app x1, replay_chiuso_fuori_app_abbinato x1, diagnosi x1, settle x1, goal_stop x1
+  [ridotto-fuori-app-canale] DOPO :       nota: attivita' del servizio: skip x5, chiuso_dall_utente x2, flusso_non_dichiarato x1, flusso_interrotto x1, live_fok_fallback x1, place x1, replay_chiuso_fuori_app x1, replay_chiuso_fuori_app_abbinato x1, diagnosi x1, settle x1
