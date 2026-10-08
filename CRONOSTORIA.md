@@ -5251,3 +5251,9 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   («per dati») dichiarata con motivo nel referto e nell'avviso della pagina, mai silenziosa; `--dettaglio` per il PC. Fixture delle due
   partite del banco rigenerate (erano precedenti alla regola (d) del curator: era il rosso di `test_fixture_riproducibile_dal_raw`).
   Delegato 13 mutazioni rosse; mie 3/3. DA FARE SUL PC: 38 partite e tabella delle 13 (atteso: 0 da correggere, le altre «per dati»).
+- CHECKPOINT C9 - SCALPER/SNIPER CALCIO: SCAVALCO E RIFIUTI BETFAIR NEL BANCO (verificato e integrato): guasto «ingresso abbinato in
+  parte» (controlli SV1-SV5) e finto Betfair coi codici veri INVALID_BET_SIZE / INVALID_PROFIT_RATIO / BET_TAKEN_OR_LAPSED (RC1-RC4);
+  reperto del cantiere 5 chiuso (`uscite_manuali.e_parcheggio` riconosce il parcheggio LAY 1,01-1,03). 35797769: 7 scenari comuni
+  identici prima/dopo; `ingresso-abbinato-in-parte` OK (3 scavalchi, cicli piatti); `rifiuti-betfair-codici` KO RC3 = DIFETTO VERO
+  MONEY-CRITICAL (D1): dopo un `replaceOrders` rifiutato il place-and-trim passa a DONE e il bot crede chiusa per ~25 s una posizione
+  aperta (`trading/submin.py`, condiviso da tutti i bot del place-and-trim): da decidere con l'utente. Mio replay identico.

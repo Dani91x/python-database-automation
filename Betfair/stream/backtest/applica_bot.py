@@ -192,6 +192,9 @@ SCENARI_SCARTATI: Dict[str, Dict[str, str]] = {
         "media-under-riavvio": _GUASTO, "media-under-rifiuti-betfair": _GUASTO,
         "media-under-esiti-ignoti": _GUASTO, "media-under-kill-switch": _UTENTE,
         "media-under-bot-fermo": _UTENTE,
+        # 08/10 (cantiere 9): ingresso abbinato in parte e finto Betfair coi codici
+        "ingresso-abbinato-in-parte": _GUASTO, "ingresso-abbinato-in-parte-paper": _GUASTO,
+        "rifiuti-betfair-codici": _GUASTO, "rifiuti-betfair-codici-paper": _GUASTO,
     },
 }
 # 07/10 (integrazione del coordinatore): gli scenari del banco del pulsante

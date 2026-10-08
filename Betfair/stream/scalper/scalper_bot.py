@@ -3221,9 +3221,17 @@ class ScalperStrategy(BaseStrategy):
                 # saltava la sorveglianza (`if slot.submins: continue`): la
                 # posizione restava senza padrone. La sequenza finisce qui,
                 # dichiarata; la chiusura la rifanno flatten e sorveglianza.
+                # 08/10 (cantiere 9, controllo RC3 del banco): se il parcheggio e'
+                # morto perche' Betfair lo ha RIFIUTATO, la riga dice il codice
+                # (`order.responses.place_response.error_code`, la lettura di
+                # `_codice_rifiuto`); senza codice la riga e' quella di prima.
+                codice = self._codice_rifiuto(entry["order"])
                 self._emit("submin_abort",
                            note="parcheggio non piu' vivo prima del rimpiazzo: "
-                                "sequenza chiusa, la chiusura si rifa'")
+                                "sequenza chiusa, la chiusura si rifa'"
+                                + ("" if codice is None else
+                                   " (parcheggio rifiutato da Betfair: %s)" % codice),
+                           **({} if codice is None else {"codice": codice}))
                 slot.submins.remove(entry)
 
     @staticmethod

@@ -61,8 +61,18 @@ SOGLIA_RESTO_NON_PIAZZABILE = 0.05
 
 
 def e_parcheggio(ordine: Any) -> bool:
-    """Il gradino 1 del place-and-trim: l'ordine a quota NON abbinabile
-    (`trading.submin.initial_place_price`: BACK 1000, LAY 1,01)."""
+    """Il gradino 1 del place-and-trim: l'ordine a quota NON abbinabile.
+
+    BACK: `trading.submin.initial_place_price` (1000). LAY: una delle quote
+    che la fonte unica `trading.submin.quota_parcheggio_lontano` da' ai resti
+    del place-and-trim, cioe' `tennis_scalper.condotta_ordini.QUOTE_PARCHEGGIO_LAY`
+    (calcolata da quella funzione, mai scritta a mano: oggi 1,01-1,03), la
+    stessa tupla con cui il banco tennis riconosce il parcheggio (B8/B11).
+    08/10 (cantiere 9, reperto 7.2 del cantiere 5): prima LAY solo a 1,01; dal
+    07/10 (calcio) e dall'08/10 (tennis) il parcheggio LAY di un resto 0,50-0,79
+    sta a 1,02-1,03 e UF2 non agganciava i suoi rimpiazzi ne' lo escludeva
+    dall'importo d'uscita."""
+    from ..tennis_scalper.condotta_ordini import QUOTE_PARCHEGGIO_LAY
     from ..trading.submin import initial_place_price
 
     lato = _lato(getattr(ordine, "side", ""))
@@ -72,7 +82,9 @@ def e_parcheggio(ordine: Any) -> bool:
         prezzo = float(getattr(getattr(ordine, "order_type", None), "price", 0.0) or 0.0)
     except (TypeError, ValueError):
         return False
-    return abs(prezzo - initial_place_price(lato.lower())) < 1e-9
+    if lato == "BACK":
+        return abs(prezzo - initial_place_price("back")) < 1e-9
+    return any(abs(prezzo - float(q)) < 1e-9 for q in QUOTE_PARCHEGGIO_LAY)
 
 #: i motivi di TRADING che passano dal cancello (l'unione di quelli dei bot:
 #: swing target/stop/time, pro scaglione/target/stop/strutturale, flb green,
@@ -489,8 +501,9 @@ class Osservatore:
                 continue
             self._sollecita("UF2")
             # L'IMPORTO FINALE A QUOTA ABBINABILE: abbinato di tutto + residuo
-            # vivo dei soli ordini NON di parcheggio (il parcheggio a 1000/1,01
-            # non e' un importo d'uscita: e' il gradino 1 del place-and-trim).
+            # vivo dei soli ordini NON di parcheggio (il parcheggio a 1000 o a
+            # 1,01-1,03, `e_parcheggio`, non e' un importo d'uscita: e' il
+            # gradino 1 del place-and-trim).
             if pend.get("superata_da"):
                 # S3: un'uscita SUPERATA da un'altra uscita firmata sulla stessa
                 # posizione (lo scratch firmato ritira la close a target firmata:

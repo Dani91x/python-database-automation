@@ -103,6 +103,7 @@ from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ...backtest import chiusura_parziale as CP
+from ...backtest import scavalco_rifiuti as SR
 from ...backtest import uscite_manuali as UM
 from ...live_order_build import SUBMIN_IMPORTO_FINALE_MIN
 from .. import certificazione as CERT
@@ -839,6 +840,9 @@ SCENARI_DESCRITTI: Dict[str, str] = {
     # 07/10 ATTIVA ADESSO: la sessione armata dal pulsante, i clic agli istanti
     # della regola dello scenario (fatti del raw), controlli M12-M18
     **{nome: v[3] for nome, v in SCENARI_MEDIA_CLIC.items()},
+    # 08/10 (CANTIERE 9): l'ingresso abbinato in parte sotto 0,50 (scavalco) e il
+    # finto Betfair coi codici veri (`backtest/scavalco_rifiuti.py`), live e prova
+    **SR.DESCRIZIONI,
 }
 
 
@@ -931,7 +935,8 @@ def _control_della_ui(event_id: str, scenario: str) -> Dict[str, Any]:
         }
     return {
         "event_id": str(event_id), "status": "requested", "mode": "maker",
-        "dry_run": scenario in ("paper", SCENARIO_SNIPER_PAPER), "stake": 25,
+        "dry_run": scenario in ("paper", SCENARIO_SNIPER_PAPER) or scenario in SR.SCENARI_PROVA,
+        "stake": 25,
         "params": params,
         "bias": None, "bias_meta": None, "stats": None, "error": None,
         "requested_at": None, "started_at": None, "stopped_at": None,
@@ -1838,6 +1843,9 @@ class _Banco:
         self.framework_creati: List[_FrameworkSessione] = []
         # il trading control dello scenario 'rifiuti-betfair' (None altrove)
         self.rifiuti: Any = None
+        # 08/10 (CANTIERE 9): le sorveglianze degli scenari `scavalco_rifiuti`
+        # (vuoto altrove: nessun costo, nessuna riga in piu')
+        self.sorveglianze_extra: List[Any] = []
         # 28/09 - lo SNIPER della sessione (strategia COMPAGNA del maker, nello
         # stesso framework): riceve i book dei mercati della sessione, i suoi
         # controlli sono i suoi (`controlli_sniper`), quelli del maker restano
@@ -2722,6 +2730,9 @@ class _Banco:
     def giro(self, ms: int, quando: str, *, fine: bool = False) -> None:
         if self.osservatore_um is not None:
             self.osservatore_um.giro(ms, fine=fine)
+        for sv in self.sorveglianze_extra:
+            for cod, reg, det in sv.giro(ms, fine=fine):
+                self.ref.violazioni.append(CERT.Violazione(cod, reg, det, quando))
         if self.sniper_ultimo is not None:
             self.controlli_sniper(ms, quando, fine)
         if self.media is not None:
@@ -2918,6 +2929,8 @@ class _Ponte:
                 futils.call_strategy_error_handling(sn.process_market_book, market, market_book)
         if b.sessioni:
             b.gira_specchio(ms)
+        for sv in b.sorveglianze_extra:
+            sv.al_book(mid, ms, int(getattr(market_book, "publish_time_epoch", 0) or 0))
         if ms - b._ultimo_giro_ms >= b.cadenza_ms:
             b._ultimo_giro_ms = ms
             pt = getattr(market_book, "publish_time", None)
@@ -3346,6 +3359,16 @@ def certifica_scenario(event_id: str, *, data_dir: str, scenario: str = "base",
             guasto_cp = CP.GuastoChiusuraParziale(ruolo=_ruolo)
             banco.motore.guasto_chiusure = guasto_cp
             banco.sorveglianza_cp = CP.Sorveglianza(guasto_cp)
+        if scenario in SR.SCENARI:
+            # 08/10 (CANTIERE 9): il guasto dell'ingresso abbinato in parte (e il
+            # finto Betfair coi codici) sull'aggancio del motore, i controlli
+            # SV/RC a ogni book e a ogni giro
+            sv = SR.Sorveglianza(scenario, strategia=banco.strategia_corrente,
+                                 attivita=lambda: banco.attivita,
+                                 ruolo=banco.ruolo_ordine)
+            banco.motore.guasto_chiusure = sv
+            banco.sorveglianze_extra.append(sv)
+            ref.note.append("scenario '%s': %s" % (scenario, SR.DESCRIZIONI[scenario]))
         if scenario in UM.SCENARI:
             def _firma(chiave: str, istante: str) -> None:
                 # la RPC `scalper_approva_uscita`: {chiave: now()} unito alle
@@ -3799,5 +3822,11 @@ def _chiudi_referto(ref: CERT.Referto, banco: _Banco, rifiuti: Any, ritardi: Any
         if mai:
             ref.note.append("USCITE MANUALI: controlli MAI sollecitati (non lo so): %s"
                             % ", ".join(mai))
+    for sv in banco.sorveglianze_extra:
+        # 08/10 (CANTIERE 9): sollecitazioni, riepilogo e casi non esercitati
+        for cod, n in sv.sollecitati.items():
+            ref.sollecitati[cod] = ref.sollecitati.get(cod, 0) + n
+        ref.note.extend(sv.riepilogo())
+        ref.non_esercitato.extend(sv.non_esercitato)
     if not ref.decisioni:
         ref.note.append("la strategia non ha MAI deciso: il referto dice 'non lo so'")

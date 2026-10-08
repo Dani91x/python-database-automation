@@ -1,0 +1,45 @@
+FALSIFICAZIONI DEL CANTIERE 9 (08/10). Ogni mutazione: sostituzione testuale esatta, test, ripristino, sha256 verificato.
+
+== 1. uscite_manuali.e_parcheggio (test_banco_uf2_parcheggio_lay_2026_10_08.py, 56 test)
+MUTAZIONE M-UF1 (LAY di nuovo solo a 1,01): 32 failed, 24 passed in 3.92s
+  sha256 uscite_manuali.py prima d7cf2f7323400f59 dopo d7cf2f7323400f59 IDENTICO
+
+== 2. scalper_bot._drive_submins, codice del parcheggio rifiutato (test_banco_scavalco_rifiuti_2026_10_08.py)
+MUTAZIONE BM-RC3 (codice = None): 1 failed, 34 passed in 3.09s
+  sha256 scalper_bot.py prima 1f570ce9714bde2f dopo 1f570ce9714bde2f IDENTICO
+
+== 3. backtest/scavalco_rifiuti.py (test_banco_scavalco_rifiuti_2026_10_08.py, 37 test), giro finale
+MUTAZIONE G1 tetto del gruppo tolto: 2 failed, 35 passed in 1.88s
+MUTAZIONE G2 tetto per ordine, non per gruppo: 1 failed, 36 passed in 2.41s
+MUTAZIONE G3 il guasto non finisce mai: 1 failed, 36 passed in 2.35s
+MUTAZIONE G4 nessun riarmo senza effetto: 1 failed, 36 passed in 2.82s
+MUTAZIONE R1 rifiuto senza codice: 3 failed, 34 passed in 2.68s
+MUTAZIONE R2 importo del rifiutato non tolto: 1 failed, 36 passed in 2.57s
+MUTAZIONE R3 sostituto rifiutato lasciato nel Trade: 1 failed, 36 passed in 2.60s
+MUTAZIONE R4 tutti gli ordini del tipo rifiutati: 1 failed, 36 passed in 2.44s
+MUTAZIONE C1 SV2 tolleranza larga: 4 failed, 33 passed in 2.34s
+MUTAZIONE C2 SV3 un scavalco in piu': 1 failed, 36 passed in 1.98s
+MUTAZIONE C3 SV4 quota non confrontata: 1 failed, 36 passed in 2.11s
+MUTAZIONE C4 SV2 resto dichiarato scusato prima del massimo: 2 failed, 35 passed in 2.46s
+MUTAZIONE C5 RC3 codice non cercato: 1 failed, 36 passed in 2.20s
+MUTAZIONE C6 RC1 sequenza ferma non vista: 1 failed, 36 passed in 2.72s
+MUTAZIONE C7 RC2 tetto del loop alzato: 1 failed, 36 passed in 2.20s
+MUTAZIONE C8 RC4 resto non dichiarato scusato: 1 failed, 36 passed in 2.64s
+MUTAZIONE C9 SV1 nessun limite di book allo scavalco: 1 failed, 36 passed in 2.49s
+MUTAZIONE C10 SV5 loss_cap sopra il tetto non visto: 1 failed, 36 passed in 2.51s
+MUTAZIONE C11 SV1 chiusura dopo lo scavalco non attesa: 1 failed, 36 passed in 2.65s
+MUTAZIONE C13 book riemesso contato come nuovo: 1 failed, 36 passed in 2.76s
+MUTAZIONE C15 book contati con l'orologio del banco, non col mercato: 1 failed, 36 passed in 2.63s
+MUTAZIONE C16 il ciclo nuovo non chiude quello sorvegliato: 2 failed, 35 passed in 2.29s
+MUTAZIONE C14 SV5 loss_cap senza le due cifre non visto: 1 failed, 36 passed in 2.56s
+MUTAZIONE C12 scavalco non riconosciuto dal mercato: 4 failed, 33 passed in 2.38s
+sha256 Betfair/stream/backtest/scavalco_rifiuti.py prima d33df7ddb3f41c06 dopo d33df7ddb3f41c06 IDENTICO
+
+== 4. A LIVELLO DI REPLAY (35797769, difetto reintrodotto nel BOT, --worker 1)
+MUTAZIONE BF1 niente scavalco (difetto: residuo sotto 0,50 dichiarato, non chiuso) [ingresso-abbinato-in-parte]: KO  35797769  tick=665941 decisioni=121012 azioni=  37 stati | SV2 x3: a ciclo chiuso la posizione del ciclo e' PIATTA (|se vince - s
+  sha256 Betfair/stream/scalper/scalper_bot.py prima 1f570ce9714bde2f dopo 1f570ce9714bde2f IDENTICO
+MUTAZIONE BF2 scavalco senza la sua attivita' [ingresso-abbinato-in-parte]: KO  35797769  tick=665941 decisioni=121012 azioni=  49 stati | SV4 x3: ogni scavalco a mercato ha la sua attivita' `scavalco` (lato, 
+  sha256 Betfair/stream/scalper/scalper_bot.py prima 1f570ce9714bde2f dopo 1f570ce9714bde2f IDENTICO
+MUTAZIONE BF4 rifiuto di taglia ignorato (nessuna riga, nessun freno) [rifiuti-betfair-codici]: KO  35797769  tick=665941 decisioni=121012 azioni= 131 stati | RC3 x2: ogni rifiuto di Betfair e' scritto nell'attivita' del bot col 
+  sha256 Betfair/stream/scalper/scalper_bot.py prima 1f570ce9714bde2f dopo 1f570ce9714bde2f IDENTICO
+MUTAZIONE BF3 scavalco dimensionato male (punta 0,50: la chiusura resta sotto il floor) [ingresso-abbinato-in-parte]: OK  35797769  tick=665941 decisioni=121012 azioni=  49 stati | nessuna SV/RC
