@@ -1,0 +1,2 @@
+100 ordini (2 catene place-and-trim) x 200 giri: PRIMA 1.763 ms/giro, DOPO 1.773 ms/giro (+0.6 %)
+100 ordini (20 catene place-and-trim) x 200 giri: PRIMA 1.616 ms/giro, DOPO 1.935 ms/giro (+19.7 %)

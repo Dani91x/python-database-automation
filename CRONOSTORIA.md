@@ -5202,3 +5202,8 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   identico (parita' su 51 scenari col worker di b5547eb, test di parita' in suite). Delegato: 56 test, 19 mutazioni rosse, suite
   10813 verdi / 2 rossi di latenza <20 ms intermittenti anche su b5547eb (macchina carica: da rilanciare sul PC). Mie mutazioni 5/5
   rosse. Referto `AUDIT_2026-10-08/W2_CHIUSURA_ORDINI_SITO.md`. Non provato su Betfair vero.
+- CHECKPOINT C5 - PARCHEGGIO DEL PLACE-AND-TRIM NEI BOT TENNIS (verificato e integrato): quota del parcheggio dalla fonte unica
+  `trading/submin.quota_parcheggio_lontano` (LAY 0,50->1,02, 0,70->1,03, 0,80->1,01; BACK 1000) per scalper/pro/FLB/swing; flatten
+  dello scalper tennis riconosce il parcheggio fino a 1,03; banco tennis nuovo controllo B11 (22->23). Test tennis 1112 verdi; mutazioni
+  del delegato 10/10 rosse, mie 4/4 rosse. REPLAY TENNIS DA RIESEGUIRE SUL PC (`AUDIT_2026-10-08/cantiere_5/REFERTO.md` sez. 6).
+  Reperto del banco comune (`uscite_manuali.e_parcheggio` solo 1,01, anche calcio) -> cantiere 9.

@@ -72,6 +72,7 @@ from ..live_order_build import (
 )
 from ..trading.minimi_it import SUBMIN_IMPORTO_FINALE_MIN as FLOOR_PLACE_AND_TRIM
 from ..trading.submin import FlumineSubminOps
+from ..trading.submin import place_min_size, quota_parcheggio_lontano
 from ..trading.submin import porta_al_minimo_apertura as _porta_al_minimo
 
 logger = logging.getLogger(__name__)
@@ -162,6 +163,56 @@ def spezza_esatta(size: float, side: str) -> Tuple[float, float]:
         diretta = round(math.floor(s / IT_BACK_STEP + 1e-9) * IT_BACK_STEP, 2)
         return diretta, round(s - diretta, 2)
     return 0.0, s
+
+
+# ---------------------------------------------------------------------------
+# il PARCHEGGIO del place-and-trim (08/10, cantiere 5): fonte unica
+# ---------------------------------------------------------------------------
+def stato_parcheggio(side: str, price: float, target: float, note: str = "") -> Optional[Any]:
+    """08/10 (cantiere 5): lo stato INIT della sequenza place-and-trim di un'uscita
+    esatta di ``target`` (0,50-0,99) a quota ``price``, per TUTTI i bot tennis
+    (scalper, pro, FLB, swing, green-up del worker). Pura.
+
+    Stessa regola del calcio (``scalper_bot.stato_parcheggio``, cantiere L del
+    07/10), dalle STESSE funzioni di ``trading/submin`` (nessuna copia):
+      * importo del parcheggio = ``place_min_size`` (minimo .it del lato, oggi 1,00);
+      * quota del parcheggio = ``quota_parcheggio_lontano``: BACK 1000, LAY la quota
+        piu' bassa con la banca residua dentro la banda INVALID_PROFIT_RATIO
+        (0,50 -> 1,02; 0,70 -> 1,03; 0,80 -> 1,01). Prima LAY sempre 1,01: con un
+        resto fra 0,50 e 0,79 Betfair avrebbe rifiutato il taglio.
+    None = nessuna quota sicura: NESSUN ordine (lo dichiara il chiamante).
+    Sequenza, taglio, rimpiazzo e TTL restano quelli di ``trading/submin``."""
+    from ..live_order_build import round_to_tick
+    from ..trading.submin import SubminState, SubminStep
+
+    lato = str(side or "").lower()
+    park = quota_parcheggio_lontano(lato, float(target))
+    if park is None:
+        return None
+    return SubminState(step=SubminStep.INIT, bet_id=None,
+                       target_size=round(float(target), 2),
+                       target_price=round_to_tick(price),
+                       placed_size=round(float(place_min_size(JURISDICTION_IT, lato)), 2),
+                       side=lato, note=note,
+                       park_price=float(park), serve_replace=True)
+
+
+def _quote_parcheggio_lay() -> Tuple[float, ...]:
+    """Le quote LAY che ``quota_parcheggio_lontano`` da' ai resti che il tennis
+    manda al place-and-trim (dal floor di legge 0,50 al minimo LAY escluso, al
+    centesimo). Calcolate dalla fonte unica, mai scritte a mano: oggi 1,01-1,03."""
+    da = int(round(float(FLOOR_PLACE_AND_TRIM) * 100))
+    a = int(round(float(place_min_size(JURISDICTION_IT, "lay")) * 100))
+    quote = {quota_parcheggio_lontano("lay", c / 100.0) for c in range(da, a)}
+    return tuple(sorted(float(q) for q in quote if q is not None))
+
+
+#: le quote del parcheggio LAY possibili (oggi 1,01 / 1,02 / 1,03) e la piu' alta:
+#: chi riconosce un parcheggio dalla quota (flatten dello scalper, banco) usa queste
+QUOTE_PARCHEGGIO_LAY: Tuple[float, ...] = _quote_parcheggio_lay()
+QUOTA_PARCHEGGIO_LAY_ALTA: float = max(QUOTE_PARCHEGGIO_LAY)
+#: la quota del parcheggio BACK (1000, ``trading/submin``)
+QUOTA_PARCHEGGIO_BACK: float = float(quota_parcheggio_lontano("back", 1.0))
 
 
 class OrdineComposto:
@@ -350,14 +401,26 @@ class UsciteEsatte:
             except Exception:  # noqa: BLE001 - la telemetria non ferma l'uscita
                 pass
 
+    def _dichiara_resto(self, market: Any, sel: int, side: str, price: float,
+                        resto: float) -> None:
+        """Il resto NON piazzato si dichiara SUBITO (una riga CRITICAL per
+        episodio, se il bot ha la memoria dei residui): sbilancio stimato dal
+        resto alla quota dell'uscita; il bot lo riscrive coi numeri veri del
+        blotter quando la sua sorveglianza lo trova (04/10, decisione 1)."""
+        mem = getattr(self._s, "residui_ricordati", None)
+        if mem is not None:
+            p = float(price)
+            lato = str(side).upper()
+            sv, sp = ((-resto * (p - 1.0), resto) if lato == "BACK"
+                      else (resto * (p - 1.0), -resto))
+            mem.dichiara(str(getattr(market, "market_id", "") or ""), sel, lato,
+                         resto, p, sv, sp)
+
     def piazza(self, market: Any, sel: int, side: str, price: float, size: float,
                diretto: Any) -> Optional[OrdineComposto]:
         """La chiusura ESATTA: ``diretto(size)`` piazza la parte diretta col
         ``_place`` del bot (stesse guardie), il resto parte col place-and-trim.
         None = niente e' partito (il bot riprova, come per un rifiuto)."""
-        from ..live_order_build import round_to_tick
-        from ..trading.submin import SubminState, SubminStep
-
         parte, resto = spezza_esatta(size, side)
         # 04/10 (DECISIONE 1 DELL'UTENTE): un resto sotto il floor di legge del
         # place-and-trim (`minimi_it.SUBMIN_IMPORTO_FINALE_MIN`, 0,50) Betfair lo
@@ -365,21 +428,28 @@ class UsciteEsatte:
         # partita, ~200 rifiuti). Parte solo la parte diretta; il resto e' il
         # RESIDUO che il bot dichiara e ricorda (`ResiduiRicordati`).
         if 0.0 < resto < FLOOR_PLACE_AND_TRIM - 1e-9:
-            # dichiarato SUBITO (una riga CRITICAL per episodio, se il bot ha la
-            # memoria dei residui): sbilancio stimato dal resto non piazzato alla
-            # quota dell'uscita; il bot lo riscrive coi numeri veri del blotter
-            # quando la sua sorveglianza lo trova
-            mem = getattr(self._s, "residui_ricordati", None)
-            if mem is not None:
-                p = float(price)
-                lato = str(side).upper()
-                sv, sp = ((-resto * (p - 1.0), resto) if lato == "BACK"
-                          else (resto * (p - 1.0), -resto))
-                mem.dichiara(str(getattr(market, "market_id", "") or ""), sel, lato,
-                             resto, p, sv, sp)
+            self._dichiara_resto(market, sel, side, price, resto)
             resto = 0.0
             if parte <= 0:
                 return None          # niente di piazzabile: lo dichiara il bot
+        # 08/10 (cantiere 5): il parcheggio dalla fonte unica (`stato_parcheggio`).
+        # Nessuna quota di parcheggio sicura (banda INVALID_PROFIT_RATIO): NESSUN
+        # ordine, una riga CRITICAL nell'attivita' e il resto si dichiara come
+        # sopra (oggi non accade per nessun resto fra 0,50 e 0,99: e' la guardia)
+        stato = (stato_parcheggio(side, price, resto, note="uscita esatta")
+                 if resto >= 0.01 else None)
+        if resto >= 0.01 and stato is None:
+            self._e("uscita_esatta_senza_parcheggio", level="CRITICAL", sel=int(sel),
+                    market_id=str(getattr(market, "market_id", "") or ""),
+                    lato=str(side).upper(), scoperto=round(float(resto), 2),
+                    note=("%.2f EUR %s della selezione %s: nessuna quota di parcheggio "
+                          "dentro la banda INVALID_PROFIT_RATIO, nessun ordine; il "
+                          "resto resta da chiudere a mano dal Terminale"
+                          % (resto, str(side).upper(), sel)))
+            self._dichiara_resto(market, sel, side, price, resto)
+            resto = 0.0
+            if parte <= 0:
+                return None
         comp = OrdineComposto(side, price, round(parte + resto, 2), sel,
                               str(getattr(market, "market_id", "") or ""))
         chiave = (comp.market_id, int(sel))
@@ -396,11 +466,9 @@ class UsciteEsatte:
             self._avvii.setdefault(chiave, []).append(self._ora())
             ops = _OpsCattura(selection_id=int(sel), handicap=0.0,
                               jurisdiction=JURISDICTION_IT, strategy=self._s)
-            state = SubminState(step=SubminStep.INIT, bet_id=None,
-                                target_size=round(resto, 2),
-                                target_price=round_to_tick(price),
-                                placed_size=IT_BACK_MIN_STAKE,   # parcheggio legale .it
-                                side=str(side).lower(), note="uscita esatta")
+            # 08/10 (cantiere 5): parcheggio = minimo .it del lato (`place_min_size`)
+            # alla quota di `quota_parcheggio_lontano` (prima LAY sempre 1,01)
+            state = stato
             ref = ("ue%d-%d" % (int(sel) % 10 ** 9, self._n))[:32]
             comp.sequenza = {"state": state, "ops": ops, "order": None, "ref": ref,
                              "market_id": comp.market_id}

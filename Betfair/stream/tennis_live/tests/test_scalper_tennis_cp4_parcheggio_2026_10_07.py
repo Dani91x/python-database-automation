@@ -50,7 +50,7 @@ from Betfair.stream.tennis_live.tests.test_tennis_iscrizione_a_caldo_2026_09_25 
 )
 from Betfair.stream.tennis_scalper import tennis_scalper_bot as TSB
 from Betfair.stream.trading import minimi_it as MI
-from Betfair.stream.trading.submin import place_min_size
+from Betfair.stream.trading.submin import place_min_size, quota_parcheggio_lontano
 
 N_BOOK = 40
 
@@ -166,8 +166,14 @@ def test_parcheggio_non_chiede_piu_di_quanto_resta_da_chiudere(db, banchi, diffe
     assert viol == [], viol
     # il parcheggio c'e' (la condizione del test e' davvero esposta) ed e' il
     # minimo .it della fonte unica, per il lato della chiusura
-    park = [o for o in nuovi if float(o.order_type.price) <= 1.011]
+    # 08/10 (cantiere 5): il parcheggio LAY sta alla quota della banda del
+    # profit-ratio per il resto 0,60 (`quota_parcheggio_lontano`: 1,02), non piu'
+    # a 1,01 fisso (0,60 @1,01 = taglio rifiutato da Betfair, INVALID_PROFIT_RATIO)
+    park = [o for o in nuovi if float(o.order_type.price) <= 1.031]
     assert park, [(o.side, o.order_type.size, o.order_type.price) for o in nuovi]
+    assert float(park[0].order_type.price) == pytest.approx(
+        quota_parcheggio_lontano("lay", 0.6))
+    assert float(park[0].order_type.price) == pytest.approx(1.02)
     assert float(park[0].order_type.size) == pytest.approx(place_min_size("it", "lay"))
     assert float(park[0].order_type.size) == pytest.approx(MI.IT_MIN_LAY)
     # chiusura PERFETTA: se vince = se perde al centesimo, niente di vivo
@@ -179,12 +185,14 @@ def test_parcheggio_non_chiede_piu_di_quanto_resta_da_chiudere(db, banchi, diffe
     assert close.size_cancelled == pytest.approx(0.6)
 
 
-@pytest.mark.parametrize("lato,quota", [("LAY", 1.01), ("BACK", 1000.0)])
+# 08/10 (cantiere 5): LAY 0,60 -> 1,02 (banda del profit-ratio), prima 1,01 fisso
+@pytest.mark.parametrize("lato,quota", [("LAY", 1.02), ("BACK", 1000.0)])
 def test_parcheggio_della_sequenza_e_il_minimo_di_giurisdizione(lato, quota, db, banchi,
                                                                esecuzione_sincrona):
     """Lo stato della sequenza nasce col parcheggio della fonte unica
     (`place_min_size`, cioe' `minimi_it`), per i due lati; prima 2,00 scritto a
-    mano. Quota del parcheggio e importo finale invariati."""
+    mano. Importo finale invariato; quota del parcheggio dalla fonte unica
+    (`quota_parcheggio_lontano`, 08/10 cantiere 5)."""
     b, strat, market, slot, _c = _scalper_dopo_chiusura_in_parte(db, banchi)
     slot.t_last_submin = None
     slot.status = TSB.LOCKING          # una chiusura decisa fuori dall'inseguimento
@@ -197,3 +205,4 @@ def test_parcheggio_della_sequenza_e_il_minimo_di_giurisdizione(lato, quota, db,
     assert st.target_size == pytest.approx(0.6)
     assert st.size_reduction == pytest.approx(round(st.placed_size - 0.6, 2))
     assert st.prezzo_parcheggio == pytest.approx(quota)
+    assert st.prezzo_parcheggio == pytest.approx(quota_parcheggio_lontano(lato.lower(), 0.6))

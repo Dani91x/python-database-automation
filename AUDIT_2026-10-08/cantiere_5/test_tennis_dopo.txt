@@ -1,0 +1,5 @@
+1112 passed, 4 skipped, 5 xfailed in 69.10s (0:01:09)
+
+real	1m11.645s
+user	0m10.591s
+sys	0m0.449s

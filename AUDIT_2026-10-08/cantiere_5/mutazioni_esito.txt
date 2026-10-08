@@ -1,0 +1,40 @@
+M1 stato_parcheggio: quota = initial_place_price (condotta di prima, LAY 1,01 fissa)
+   esito: 25 failed, 36 passed in 26.55s
+   rossi: test_stato_parcheggio_lay_quota_della_banda[0.5-1.02], test_stato_parcheggio_lay_quota_della_banda[0.7-1.03], test_stato_parcheggio_lay_quota_della_banda[0.79-1.03], test_uscita_esatta_lay_parcheggia_alla_quota_della_banda[0.5-1.02-tennis_pro], test_uscita_esatta_lay_parcheggia_alla_quota_della_banda[0.5-1.02-tennis_flb], test_uscita_esatta_lay_parcheggia_alla_quota_della_banda[0.5-1.02-tennis_swing], test_uscita_esatta_lay_parcheggia_alla_quota_della_banda[0.7-1.03-tennis_pro], test_uscita_esatta_lay_parcheggia_alla_quota_della_banda[0.7-1.03-tennis_flb], test_uscita_esatta_lay_parcheggia_alla_quota_della_banda[0.7-1.03-tennis_swing], test_uscita_esatta_lay_parcheggia_alla_quota_della_banda[0.79-1.03-tennis_pro], test_uscita_esatta_lay_parcheggia_alla_quota_della_banda[0.79-1.03-tennis_flb], test_uscita_esatta_lay_parcheggia_alla_quota_della_banda[0.79-1.03-tennis_swing] ...
+   ripristino: sha d129e1b778a51da9 IDENTICO
+M2 stato_parcheggio: importo del parcheggio 2,00 scritto a mano
+   esito: 44 failed, 17 passed in 24.47s
+   rossi: test_stato_parcheggio_lay_quota_della_banda[0.5-1.02], test_stato_parcheggio_lay_quota_della_banda[0.7-1.03], test_stato_parcheggio_lay_quota_della_banda[0.79-1.03], test_stato_parcheggio_lay_quota_della_banda[0.8-1.01], test_stato_parcheggio_lay_quota_della_banda[0.99-1.01], test_stato_parcheggio_back_a_1000[0.5], test_stato_parcheggio_back_a_1000[0.7], test_stato_parcheggio_back_a_1000[0.79], test_stato_parcheggio_back_a_1000[0.8], test_stato_parcheggio_back_a_1000[0.99], test_uscita_esatta_lay_parcheggia_alla_quota_della_banda[0.5-1.02-tennis_pro], test_uscita_esatta_lay_parcheggia_alla_quota_della_banda[0.5-1.02-tennis_flb] ...
+   ripristino: sha d129e1b778a51da9 IDENTICO
+M3 scalper flatten: soglia del parcheggio di nuovo 1,011
+   esito: 3 failed, 58 passed in 28.30s
+   rossi: test_scalper_flatten_completa_col_parcheggio_a_1_02_e_banco_verde, test_parcheggio_non_chiede_piu_di_quanto_resta_da_chiudere[1], test_parcheggio_non_chiede_piu_di_quanto_resta_da_chiudere[4]
+   ripristino: sha 2e046fd445db7ad0 IDENTICO
+M4 scalper _place_exact: ramo 'nessuna quota sicura' tolto
+   esito: 1 failed, 60 passed in 28.69s
+   rossi: test_scalper_senza_quota_sicura_nessun_ordine
+   ripristino: sha 2e046fd445db7ad0 IDENTICO
+M5 UsciteEsatte: ramo 'nessuna quota sicura' tolto
+   esito: 2 failed, 59 passed in 29.19s
+   rossi: test_uscite_esatte_senza_quota_sicura_nessun_ordine, test_uscite_esatte_senza_quota_sicura_la_parte_diretta_parte
+   ripristino: sha d129e1b778a51da9 IDENTICO
+M6 banco B11 spento (ritorna sempre None)
+   esito: 2 failed, 59 passed in 28.25s
+   rossi: test_vecchio_parcheggio_a_1_01_e_rosso_per_b11, test_b11_senza_quota_sicura_il_parcheggio_e_rosso
+   ripristino: sha b194e91ac6853e02 IDENTICO
+M7 banco: riconoscimento del parcheggio LAY solo 1,01 (B8)
+   esito: 6 failed, 55 passed in 28.30s
+   rossi: test_sequenza_completa_e_banco_verde[tennis_pro], test_sequenza_completa_e_banco_verde[tennis_flb], test_sequenza_completa_e_banco_verde[tennis_swing], test_scalper_flatten_completa_col_parcheggio_a_1_02_e_banco_verde, test_b8_sostituto_di_un_parcheggio_lay_nella_banda[1.02-True], test_b8_sostituto_di_un_parcheggio_lay_nella_banda[1.03-True]
+   ripristino: sha b194e91ac6853e02 IDENTICO
+M8 banco parcheggio_di: resto del parcheggio vivo = size (non size - cancellato)
+   esito: 1 failed, 60 passed in 28.13s
+   rossi: test_parcheggio_tagliato_in_attesa_del_rimpiazzo_si_giudica
+   ripristino: sha b194e91ac6853e02 IDENTICO
+M9 banco B11: tolleranza larga (accetta ogni quota vicina)
+   esito: 1 failed, 60 passed in 28.45s
+   rossi: test_vecchio_parcheggio_a_1_01_e_rosso_per_b11
+   ripristino: sha b194e91ac6853e02 IDENTICO
+M10 quote LAY del parcheggio: banda calcolata sul solo resto 0,99 (1,01)
+   esito: 9 failed, 52 passed in 28.37s
+   rossi: test_quote_del_parcheggio_lay_dalla_fonte_unica, test_sequenza_completa_e_banco_verde[tennis_pro], test_sequenza_completa_e_banco_verde[tennis_flb], test_sequenza_completa_e_banco_verde[tennis_swing], test_scalper_flatten_completa_col_parcheggio_a_1_02_e_banco_verde, test_b8_sostituto_di_un_parcheggio_lay_nella_banda[1.02-True], test_b8_sostituto_di_un_parcheggio_lay_nella_banda[1.03-True], test_parcheggio_non_chiede_piu_di_quanto_resta_da_chiudere[1], test_parcheggio_non_chiede_piu_di_quanto_resta_da_chiudere[4]
+   ripristino: sha d129e1b778a51da9 IDENTICO

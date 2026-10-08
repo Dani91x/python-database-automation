@@ -41,6 +41,7 @@ ASCII-only nel codice; i commenti sono in italiano.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 # LE SOGLIE SONO QUELLE DEL CODICE DI PRODUZIONE, non copie: un controllo che si
@@ -49,6 +50,7 @@ from ..tennis_scalper import condotta_ordini as CD
 from ..tennis_scalper import tennis_flb_bot as FLB
 from ..tennis_scalper import tennis_scalper_bot as SC
 from ..trading import minimi_it as _MINIMI
+from ..trading.submin import QUOTA_PARCHEGGIO_LAY_MAX as _QUOTA_PARCHEGGIO_LAY_MAX
 
 # gli stati in cui un ciclo dello scalper e' VIVO: li' la tolleranza e' 0,02
 _VIVI_SCALPER = frozenset({SC.QUOTING, SC.QUOTING2, SC.CANCELLING, SC.LOCKING,
@@ -215,9 +217,17 @@ def stato_ordine(ordine: Any) -> Optional[str]:
     return str(n) if n is not None else str(st)
 
 
-#: quote NON abbinabili del parcheggio del place-and-trim (percorso B,
-#: `trading/submin.initial_place_price`): BACK 1000, LAY 1.01
-_QUOTA_PARCHEGGIO = {"BACK": 1000.0, "LAY": 1.01}
+#: quote NON abbinabili del parcheggio del place-and-trim (percorso B). 08/10
+#: (cantiere 5): dalla FONTE UNICA dei bot tennis (`condotta_ordini`, che le
+#: calcola da `trading/submin.quota_parcheggio_lontano`): BACK 1000, LAY la banda
+#: 1,01-1,03 (prima LAY 1,01 fissa). QUALE quota della banda spetta a un resto
+#: lo verifica B11, non questo riconoscimento.
+_QUOTA_PARCHEGGIO = {"BACK": (CD.QUOTA_PARCHEGGIO_BACK,), "LAY": CD.QUOTE_PARCHEGGIO_LAY}
+
+
+def _quota_di_parcheggio(lato: str, prezzo: float) -> bool:
+    """La quota e' una di quelle che il parcheggio del lato puo' avere."""
+    return any(abs(prezzo - q) < 1e-9 for q in _QUOTA_PARCHEGGIO.get(lato, ()))
 
 
 def sostituto_di_parcheggio(ordine: Any) -> bool:
@@ -227,7 +237,8 @@ def sostituto_di_parcheggio(ordine: Any) -> bool:
       * non e' il primo ordine del suo Trade, e l'ordine PRECEDENTE del Trade
         (quello che ha sostituito)
       * e' dello stesso lato,
-      * stava alla quota NON abbinabile del parcheggio (BACK 1000 / LAY 1.01),
+      * stava alla quota NON abbinabile del parcheggio (BACK 1000 / LAY
+        1,01-1,03, `_QUOTA_PARCHEGGIO`),
       * era piazzato ALMENO al minimo del lato ed e' stato RIDOTTO
         (`size_cancelled` > 0).
     Un ordine sotto il minimo dentro un Trade condiviso SENZA un parcheggio
@@ -248,8 +259,69 @@ def sostituto_di_parcheggio(ordine: Any) -> bool:
         ridotto = float(getattr(prima, "size_cancelled", 0.0) or 0.0)
     except (TypeError, ValueError):
         return False
-    return (abs(prezzo - _QUOTA_PARCHEGGIO[lato]) < 1e-9
+    return (_quota_di_parcheggio(lato, prezzo)
             and size + EPS >= MINIMO_IT[lato] and ridotto > 1e-9)
+
+
+@lru_cache(maxsize=512)
+def _quota_parcheggio_attesa(lato: str, residuo: float) -> Optional[float]:
+    """La quota che la fonte unica da' al parcheggio di un resto (memoizzata: il
+    banco la chiede a ogni giro per ogni parcheggio, PROCESSO par. 6.9)."""
+    from ..trading.submin import quota_parcheggio_lontano
+
+    return quota_parcheggio_lontano(lato.lower(), residuo)
+
+
+def parcheggio_di(ordine: Any) -> Optional[Dict[str, Any]]:
+    """08/10 (cantiere 5, B11): se ``ordine`` e' il PARCHEGGIO RIDOTTO di un
+    place-and-trim, la sua quota, il resto che il taglio ha lasciato e la quota
+    che la fonte unica (`trading/submin.quota_parcheggio_lontano`) da' a quel
+    resto; None altrimenti. Letto dal BLOTTER, non dalle attivita' del bot.
+
+    Parcheggio: lato BACK a quota >= 999 o LAY a quota <= `submin.
+    QUOTA_PARCHEGGIO_LAY_MAX` (tetto dichiarato del parcheggio lontano: una quota
+    sbagliata dentro il tetto la deve vedere B11), piazzato almeno al minimo del
+    lato e RIDOTTO (`size_cancelled` > 0). Il resto:
+      * c'e' il rimpiazzo (ordine seguente del Trade, stesso lato) -> la sua size;
+      * altrimenti, se e' ancora vivo (taglio fatto, rimpiazzo non ancora) ->
+        size - size_cancelled;
+      * altrimenti non si giudica (sequenza fermata dopo il taglio)."""
+    # prima la QUOTA (un confronto): quasi tutti gli ordini escono qui (PROCESSO par. 6.9)
+    ot = getattr(ordine, "order_type", None)
+    try:
+        prezzo = float(getattr(ot, "price", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if prezzo >= 999.0:
+        lato_park = "BACK"
+    elif 1.0 < prezzo <= _QUOTA_PARCHEGGIO_LAY_MAX + 1e-9:
+        lato_park = "LAY"
+    else:
+        return None
+    lato = str(getattr(ordine, "side", "") or "").upper()
+    if lato != lato_park:
+        return None
+    try:
+        size = float(getattr(ot, "size", 0.0) or 0.0)
+        ridotto = float(getattr(ordine, "size_cancelled", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if size + EPS < MINIMO_IT[lato] or ridotto <= 1e-9:
+        return None
+    ordini = list(getattr(getattr(ordine, "trade", None), "orders", None) or [])
+    idx = next((i for i, o in enumerate(ordini) if o is ordine), None)
+    dopo = ordini[idx + 1] if idx is not None and idx + 1 < len(ordini) else None
+    if dopo is not None and str(getattr(dopo, "side", "") or "").upper() == lato:
+        residuo = _f(getattr(getattr(dopo, "order_type", None), "size", None))
+    elif stato_ordine(ordine) in STATI_ORDINE_VIVI:
+        residuo = round(size - ridotto, 2)
+    else:
+        return None
+    if residuo is None or residuo < 0.01:
+        return None
+    residuo = round(float(residuo), 2)
+    return {"lato": lato, "quota": prezzo, "residuo": residuo,
+            "quota_attesa": _quota_parcheggio_attesa(lato, residuo)}
 
 
 def client_reale(client: Any) -> Optional[bool]:
@@ -277,6 +349,9 @@ def riga_ordine(ordine: Any) -> Dict[str, Any]:
     sostituto = sostituto_di_parcheggio(ordine)
     return {
         "sostituto": sostituto,
+        # 08/10 (cantiere 5, B11): il parcheggio ridotto del place-and-trim, con
+        # la quota che la fonte unica gli assegna (None = non e' un parcheggio)
+        "parcheggio": parcheggio_di(ordine),
         # 04/10 (SV1): il client dell'ordine e' quello REALE? Stessa definizione
         # del runner (`guardie_tennis.is_client_paper`)
         "client_reale": client_reale(getattr(ordine, "client", None)),
@@ -783,6 +858,38 @@ def _b10(oss: Osservazione) -> Optional[str]:
                     "INVALID_BET_SIZE e rimandato identico (%d-esimo rifiuto)"
                     % (r.get("side"), r.get("tipo"), r.get("size"),
                        r.get("selection_id"), int(r.get("volte") or 0)))
+    return None
+
+
+def _q_parcheggi(oss: Osservazione) -> bool:
+    return any(r.get("parcheggio") for r in oss.ordini)
+
+
+@_controllo("B11", "il PARCHEGGIO del place-and-trim sta alla quota della fonte "
+                   "unica per il resto che il taglio lascia (`trading/submin."
+                   "quota_parcheggio_lontano`: BACK 1000, LAY la piu' bassa con "
+                   "la banca residua dentro la banda INVALID_PROFIT_RATIO, oggi "
+                   "1,01-1,03); senza quota sicura nessun parcheggio: Betfair "
+                   "rifiuterebbe il taglio e il resto resterebbe scoperto "
+                   "(cantiere 5, 08/10)",
+            quando=_q_parcheggi)
+def _b11(oss: Osservazione) -> Optional[str]:
+    for r in oss.ordini:
+        pk = r.get("parcheggio")
+        if not pk:
+            continue
+        attesa = pk.get("quota_attesa")
+        if attesa is None:
+            return ("parcheggio %s %s @%s con resto %.2f: per quel resto non c'e' "
+                    "nessuna quota di parcheggio sicura, l'ordine non doveva partire"
+                    % (r.get("order_id"), pk.get("lato"), pk.get("quota"),
+                       float(pk.get("residuo") or 0.0)))
+        if abs(float(pk.get("quota") or 0.0) - float(attesa)) > 1e-9:
+            return ("parcheggio %s %s @%s con resto %.2f: la quota della fonte unica "
+                    "e' %s (fuori banda INVALID_PROFIT_RATIO -> taglio rifiutato, "
+                    "resto scoperto)"
+                    % (r.get("order_id"), pk.get("lato"), pk.get("quota"),
+                       float(pk.get("residuo") or 0.0), attesa))
     return None
 
 

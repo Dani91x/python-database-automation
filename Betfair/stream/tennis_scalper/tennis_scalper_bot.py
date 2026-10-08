@@ -69,6 +69,7 @@ from .condotta_ordini import (
     ESITO_NESSUNA_POSIZIONE,
     ESITO_USCITA_AVVIATA,
     FLOOR_PLACE_AND_TRIM,
+    QUOTA_PARCHEGGIO_LAY_ALTA,
     RESIDUO_ACCETTATO,
     FrenoRifiuti,
     ResiduiRicordati,
@@ -76,6 +77,7 @@ from .condotta_ordini import (
     registra_esito_manuale,
     abbinato_selezione,
     sbilancio_selezione,
+    stato_parcheggio,
 )
 
 logger = logging.getLogger(__name__)
@@ -2213,7 +2215,7 @@ class TennisScalperStrategy(BaseStrategy):
             if not self._has_live(o):
                 continue
             p = float(getattr(getattr(o, "order_type", None), "price", 0.0) or 0.0)
-            # i PARK delle sequenze exact (BACK@1000 / LAY@1.01) sono
+            # i PARK delle sequenze exact (BACK@1000 / LAY@1.01-1.03) sono
             # imabbinabili PER DESIGN: non sono flatten stantii, NON vanno
             # cancellati qui (il 03/07 questo li uccideva ogni 1.5s e la
             # sequenza park-trim-replace non completava mai → churn di txn)
@@ -2224,7 +2226,10 @@ class TennisScalperStrategy(BaseStrategy):
             # lo aspettava per sempre (`any(_has_live)` qui sotto).
             # (Un parcheggio in REPLACING ha il rimpiazzo in volo: lo governa
             # flumine, il sostituto nasce al book in cui il replace e' eseguito.)
-            if (p >= 999.0 or p <= 1.011) and (
+            # 08/10 (cantiere 5): il parcheggio LAY sta a 1,01-1,03 (quota della
+            # banda del profit-ratio, `condotta_ordini.stato_parcheggio`): la soglia
+            # e' la piu' alta delle quote possibili, dalla fonte unica (prima 1,011)
+            if (p >= 999.0 or p <= QUOTA_PARCHEGGIO_LAY_ALTA + 0.001) and (
                     id(o) in in_seq
                     or getattr(o, "status", None) == OrderStatus.REPLACING):
                 continue
@@ -2648,15 +2653,19 @@ class TennisScalperStrategy(BaseStrategy):
           * creazione rate-limited (3 s) per slot.
         Park LEGALI: il MINIMO di giurisdizione della fonte unica
         (`trading/submin.place_min_size` -> `trading/minimi_it`, oggi 1,00 per
-        i due lati) a quota non abbinabile (BACK @1000, LAY @1.01), con la
-        guardia-abort di submin. 07/10 (CP4 del banco, 35790089): prima 2,00
-        scritto a mano (il vecchio minimo della punta): dopo una close abbinata
-        in parte il parcheggio LAY 2,00 @1,01 poteva spostare il netto di 2,02
-        con 1,46 da chiudere (posizione rovesciata se si abbinasse).
+        i due lati) a quota non abbinabile, con la guardia-abort di submin.
+        07/10 (CP4 del banco, 35790089): prima 2,00 scritto a mano (il vecchio
+        minimo della punta): dopo una close abbinata in parte il parcheggio LAY
+        2,00 @1,01 poteva spostare il netto di 2,02 con 1,46 da chiudere
+        (posizione rovesciata se si abbinasse).
+        08/10 (cantiere 5): quota del parcheggio da `trading/submin.
+        quota_parcheggio_lontano` (`condotta_ordini.stato_parcheggio`, come il
+        calcio): BACK @1000, LAY alla quota piu' bassa con la banca residua dentro
+        la banda INVALID_PROFIT_RATIO (0,50 -> 1,02; 0,70 -> 1,03; 0,80 -> 1,01).
+        Prima LAY sempre @1,01: per i resti 0,50-0,79 Betfair rifiutava il taglio.
+        Nessuna quota sicura -> nessun ordine, resto dichiarato come sotto il floor.
         """
-        from ..live_order_build import round_to_tick
-        from ..trading.submin import (JURISDICTION_IT, FlumineSubminOps, SubminState,
-                                      SubminStep, place_min_size)
+        from ..trading.submin import FlumineSubminOps, quota_parcheggio_lontano
 
         smin = self._side_min(side)
         main = round(int(size / 0.5 + 1e-9) * 0.5, 2)   # floor al multiplo 0,50
@@ -2688,6 +2697,19 @@ class TennisScalperStrategy(BaseStrategy):
             if self._residuo_non_piazzabile_detto(selection_id, side, rest):
                 self._emit("min_bet_skip", selection_id=int(selection_id),
                            side=side, size=rest)
+            return main_order
+        if quota_parcheggio_lontano(side.lower(), rest) is None:
+            # 08/10 (cantiere 5): nessuna quota di parcheggio dentro la banda
+            # INVALID_PROFIT_RATIO (oggi non accade per nessun resto 0,50-0,99:
+            # e' la guardia). NESSUN ordine a rischio: il resto si ricorda e si
+            # dichiara come quello sotto il floor, col motivo nell'attivita'.
+            slot.resto_np = (side.upper(), float(rest), float(price))
+            slot.residual_ok = True
+            if self._residuo_non_piazzabile_detto(selection_id, side, rest):
+                self._emit("min_bet_skip", selection_id=int(selection_id),
+                           side=side, size=rest,
+                           motivo="nessuna quota di parcheggio dentro la banda "
+                                  "INVALID_PROFIT_RATIO: nessun ordine")
             return main_order
 
         # CANTIERE T (28/09): la pausa fra due sequenze si misura
@@ -2721,17 +2743,10 @@ class TennisScalperStrategy(BaseStrategy):
                     return main_order  # sequenza equivalente gia' in corso
             self._cancel_submins(market, slot)
         try:
-            state = SubminState(
-                step=SubminStep.INIT, bet_id=None,
-                target_size=round(rest, 2),
-                target_price=round_to_tick(price),
-                # parcheggio = minimo .it del lato (fonte unica), mai di piu':
-                # e' quanto si abbinerebbe al peggio prima del taglio
-                placed_size=round(float(place_min_size(JURISDICTION_IT,
-                                                       side.lower())), 2),
-                side=side.lower(),
-                note="exact exit",
-            )
+            # parcheggio = minimo .it del lato (fonte unica), mai di piu': e'
+            # quanto si abbinerebbe al peggio prima del taglio; quota dalla
+            # banda del profit-ratio (08/10, cantiere 5)
+            state = stato_parcheggio(side, price, rest, note="exact exit")
 
             class _CapturingOps(FlumineSubminOps):
                 last_order: Any = None
