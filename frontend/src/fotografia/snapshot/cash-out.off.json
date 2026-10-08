@@ -1,0 +1,110 @@
+{
+  "pagina": "cash-out",
+  "url": "/cash-out",
+  "titolo": "Cash Out",
+  "testi": [
+    "Cash Out",
+    "operazioni aperte adesso, una scatola per partita",
+    "⚽ Calcio",
+    "🎾 Tennis",
+    "Pre-match",
+    "Live",
+    "Live e prova",
+    "Solo live",
+    "Solo prova",
+    "LIVE",
+    "Se chiudo tutto adesso",
+    "—",
+    "0",
+    "gambe aperte",
+    "su",
+    "0",
+    "partite",
+    "·",
+    "netto commissione",
+    "PROVA",
+    "Se chiudo tutto adesso",
+    "—",
+    "0",
+    "gambe aperte",
+    "su",
+    "0",
+    "partite",
+    "·",
+    "mai sommato al live",
+    "Partite mostrate",
+    "0",
+    "in gioco ·",
+    "0",
+    "pre-match",
+    "la fase la dà il flag «inplay» di Betfair",
+    "ordini del conto fuori dai bot: non letti (",
+    "RPC non disponibile",
+    "): le scatole mostrano solo le gambe dei bot",
+    "Nessuna operazione aperta. Quando un bot, l'app o il sito vanno a mercato, la partita compare qui.",
+    "Fonti: posizioni e righe dai servizi dei bot, ordini fuori dai bot dal conto Betfair (specchio degli ordini); le cifre «se chiudo ora» le calcola la pagina ai prezzi di adesso (STIMA), LIVE e PROVA mai sommati."
+  ],
+  "testid": [
+    "page-shell",
+    "co-testata-pagina",
+    "co-filtri",
+    "co-filtro-sport",
+    "co-filtro-sport-calcio",
+    "co-filtro-sport-tennis",
+    "co-filtro-fase",
+    "co-filtro-fase-pre",
+    "co-filtro-fase-live",
+    "co-filtro-soldi",
+    "co-filtro-soldi-tutti",
+    "co-filtro-soldi-live",
+    "co-filtro-soldi-prova",
+    "co-riepilogo",
+    "co-totale-live",
+    "co-totale-live-vuoto",
+    "co-totale-live-conta",
+    "co-totale-prova",
+    "co-totale-prova-vuoto",
+    "co-totale-prova-conta",
+    "co-riepilogo-fasi",
+    "co-ordini-conto-non-letti",
+    "co-vuoto",
+    "page-footer"
+  ],
+  "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "⚽ Calcio",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "button",
+      "nome": "🎾 Tennis",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Pre-match",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Live",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Live e prova",
+      "premuto": "true"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Solo live",
+      "premuto": "false"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Solo prova",
+      "premuto": "false"
+    }
+  ]
+}

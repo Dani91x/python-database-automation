@@ -1,0 +1,14 @@
+{
+  "testi": [
+    "Prova la nuova grafica"
+  ],
+  "testid": [
+    "shell-prova-nuova-grafica"
+  ],
+  "comandi": [
+    {
+      "ruolo": "button",
+      "nome": "Prova la nuova grafica"
+    }
+  ]
+}

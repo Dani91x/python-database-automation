@@ -35,7 +35,9 @@ import { ATTESA_CONFERMA_USCITE_MS } from '@/components/controlroom/Interruttore
 export const SCADENZA_ARMATURA_MS = 10_000;
 import { feedFreshness } from '@/lib/mike';
 import { isBotTennis } from '@/lib/controlRoom';
-import { useCashOutPartita, type ArgsCashOutPartita } from '@/components/controlroom/useCashOutPartita';
+import {
+    useCashOutPartita, useRiportaSintesi, type ArgsCashOutPartita, type SintesiCashOut,
+} from '@/components/controlroom/useCashOutPartita';
 import { dueEsitiMike, dueEsitiPartita, esitoDecisoMike, valoreBotMike } from '@/lib/cashOutPartita';
 import type { MikeEvent } from '@/lib/mike';
 import { fmtMoney, fmtNum, fmtOdds } from '@/lib/format';
@@ -278,7 +280,8 @@ function ChiudiTutteLeGambe({ piano, modalita, spentoPerche, testId }: {
 }
 
 /** Pulsanti di soldi spenti con prezzi fermi/ignoti (`feedFreshness`: oltre 20 s = fermo). */
-function motivoPrezziFermi(r: CashOutModalita): string | null {
+// 08/10 (W1): esportata per il cash out della posizione col conto (pagina Cash Out)
+export function motivoPrezziFermi(r: CashOutModalita): string | null {
     if (r.etaIgnota) return 'prezzi di eta\' ignota: non si chiude alla cieca';
     if (r.etaPrezziS != null && feedFreshness(r.etaPrezziS).tone === 'stale') {
         return `prezzi fermi da ${Math.round(r.etaPrezziS)} s: non si chiude su prezzi vecchi`;
@@ -462,7 +465,7 @@ export function CashOutGlobale({ risultato, valoriBot = [], testId = 'cr-cashout
  * la cifra del servizio di Mike. Una partita senza gambe abbinate non mostra
  * niente e non apre sottoscrizioni.
  */
-export function CashOutGlobalePartita({ sport, operazioni, mike = null, moMarketId = null }: {
+export function CashOutGlobalePartita({ sport, operazioni, mike = null, moMarketId = null, onSintesi }: {
     sport: 'calcio' | 'tennis';
     /** W_C: il Match Odds della partita (`p.marketId` = `mo_market_id`); nel
      *  TENNIS e' a due esiti (P1/P2): le gambe sui due giocatori si nettano */
@@ -470,11 +473,15 @@ export function CashOutGlobalePartita({ sport, operazioni, mike = null, moMarket
     operazioni: readonly (NonNullable<ArgsCashOutPartita['operazioni']>[number] & OperazionePerChiusura)[];
     /** la partita di Mike come il servizio la pubblica (gia' in pagina) */
     mike?: MikeEvent | null;
+    /** 08/10 (W1, secondo giro) - riceve la sintesi di QUESTA cifra (pagina Cash
+     *  Out, riepilogo in testa); assente = niente, come prima */
+    onSintesi?: (s: SintesiCashOut | null) => void;
 }) {
     const sorgente = useContext(ChiusuraRigaContext)?.sorgenteLadder ?? null;
     const dueEsiti = useMemo(() => dueEsitiPartita(sport, moMarketId, dueEsitiMike(mike)), [sport, moMarketId, mike]);
     const esitoDeciso = useMemo(() => esitoDecisoMike(mike, operazioni), [mike, operazioni]);
     const r = useCashOutPartita({ operazioni, sorgente, sport, dueEsiti, esitoDeciso });
+    useRiportaSintesi(r, onSintesi);
     if (r == null) return null;
     if (r.live.nGambe === 0 && r.paper.nGambe === 0
         && r.live.mancanti.length === 0 && r.paper.mancanti.length === 0) return null;

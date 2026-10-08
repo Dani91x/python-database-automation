@@ -14,6 +14,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { MatchesList } from '@/components/dashboard/MatchesList';
 import { AnalyticsPanels } from '@/components/dashboard/AnalyticsPanels';
+import { origineRitorno } from '@/lib/ritorno';
 
 export default function Dashboard() {
     const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
@@ -36,7 +37,8 @@ export default function Dashboard() {
     const [cameFromOmega] = useState(() => searchParams.get('from') === 'omega');
     // CERT. 14/09 — la Control Room manda qui col pulsante «Statistiche» e si e'
     // segnata scheda, partita e scorrimento: il ritorno deve esistere davvero.
-    const [daControlRoom] = useState(() => searchParams.get('from') === 'control-room');
+    // 08/10 (W1): anche il Cash Out; la Control Room resta quella di prima.
+    const [origine] = useState(() => origineRitorno(searchParams.get('from')));
 
     // Fetch a specific fixture by ID
     const loadFixture = async (fixtureId: string) => {
@@ -138,17 +140,17 @@ export default function Dashboard() {
                                         Torna a Omega
                                     </Button>
                                 )}
-                                {daControlRoom && (
+                                {origine && (
                                     <Button
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => navigate('/control-room')}
-                                        data-testid="torna-control-room"
-                                        title="torna alla Control Room, alla scheda e alla partita da cui sei partito"
+                                        onClick={() => navigate(origine.rotta)}
+                                        data-testid={origine.testId}
+                                        title={origine.titolo}
                                         className="flex items-center gap-2 border-primary/30 text-primary hover:bg-primary/10"
                                     >
                                         <ChevronLeft className="w-4 h-4" />
-                                        Torna alla Control Room
+                                        {origine.torna}
                                     </Button>
                                 )}
                             </>

@@ -40,6 +40,7 @@ import type { GruppoCampionato, PartitaGiornata } from '@/lib/controlRoom';
 import { contoAdesso, rischioBotLive, scartoContoBot } from '@/components/controlroom/testata/soldiVeri';
 import { stopDelConto, stopDeiBot } from '@/components/controlroom/testata/stopPerdita';
 import { raggruppaOrdiniConto, ORDINI_CONTO_NON_LETTI } from '@/components/controlroom/ordiniConto';
+import { salvaRitorno, leggiRitorno } from '@/lib/ritorno';
 
 const mVm = vi.mocked(useControlRoom);
 
@@ -2318,5 +2319,31 @@ describe('FRONTEND MINORI B: nessuna riga del pannello bot con due comandi ugual
         const esatto = s.getByTestId('cr-bot-riga-safe-esatto');
         expect(within(esatto).getByTestId('cr-safe-esatto-params-trigger').textContent?.trim()).toBe('Parametri strategia');
         expect(within(esatto).queryByTestId('cr-safe-params-trigger')).toBeNull();
+    });
+});
+
+// ========================================================================
+// 08/10 (W1) - il punto di ritorno: la Control Room riapre la SUA scheda e
+// lascia stare quello salvato dal Cash Out (prima lo consumava e apriva una
+// scheda che non esiste).
+// ========================================================================
+describe('W1 - ritorno: solo i punti della Control Room', () => {
+    beforeEach(() => sessionStorage.clear());
+
+    it('un punto della Control Room riapre la sua scheda e si consuma', async () => {
+        salvaRitorno({ rotta: '/control-room', nome: 'Control Room', scheda: 'aperte', eventId: null, scorrimento: 0 });
+        mVm.mockReturnValue(vm());
+        const s = mostra();
+        expect(s.getByTestId('cr-tab-aperte').getAttribute('aria-selected')).toBe('true');
+        await waitFor(() => expect(leggiRitorno()).toBeNull());
+    });
+
+    it('un punto del Cash Out: scheda di serie (Live) e il punto resta al Cash Out', async () => {
+        salvaRitorno({ rotta: '/cash-out', nome: 'Cash Out', scheda: 'cash-out', eventId: 'E1', scorrimento: 0 });
+        mVm.mockReturnValue(vm());
+        const s = mostra();
+        expect(s.getByTestId('cr-tab-live').getAttribute('aria-selected')).toBe('true');
+        await new Promise((r) => setTimeout(r, 200));
+        expect(leggiRitorno()).toMatchObject({ rotta: '/cash-out', eventId: 'E1' });
     });
 });

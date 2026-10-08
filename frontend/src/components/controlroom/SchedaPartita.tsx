@@ -149,7 +149,8 @@ const LETTURA_CLS: Record<Freschezza, string> = {
  * per `sortPriority`, `tennis_runner.py:993-1005`) — resto su "P1"/"P2"
  * letterali, come richiesto: un nome sbagliato è peggio di un trattino.
  */
-function TennisVivoBar({ eventId, abilitato, giocatori }: {
+// 08/10 (W1): esportata, la monta anche la scatola della pagina Cash Out (identica)
+export function TennisVivoBar({ eventId, abilitato, giocatori }: {
     eventId: string; abilitato: boolean;
     giocatori?: { p1: string | null; p2: string | null } | null;
 }) {
@@ -573,7 +574,8 @@ export function SchedaPartita({
     );
 }
 
-function StatoPill({ p }: { p: PartitaGiornata }) {
+// 08/10 (W1): esportata, la monta anche la scatola della pagina Cash Out (identica)
+export function StatoPill({ p }: { p: PartitaGiornata }) {
     if (p.stato === 'live') {
         const testa = p.minuto != null ? `${p.minuto}′` : p.punteggio ? '' : 'in gioco';
         return (

@@ -220,6 +220,27 @@ export async function sendGreenup(args: {
     });
 }
 
+// ---------- green-up degli ordini FUORI DAI BOT (08/10, cantiere W1) ----------
+// «Ordini fatti SUL SITO (e ordini manuali dell'app dal ladder): devono comparire
+// e si devono poter CHIUDERE dall'app» (utente, 08/10). Contratto con il cantiere
+// W2 (il worker): green-up dell'esposizione ABBINATA di TUTTI gli ordini del
+// conto su quella selezione che NON sono dei bot (sito + app), letta dal conto.
+// Solo LIVE: gli ordini del sito sono sempre soldi veri. Additiva: `sendGreenup`
+// e `buildGreenupParams` non cambiano. MONEY-CRITICAL: idempotente (client_ref),
+// su timeout NON reinviare (lo dice l'eccezione di sendLiveOrderCommand).
+export async function sendGreenupFuoriBot(args: { marketId: string; selectionId: number }): Promise<LiveOrderResult> {
+    if (!args.marketId) throw new Error('greenup fuori dai bot: manca il mercato');
+    if (!Number.isFinite(args.selectionId)) throw new Error('greenup fuori dai bot: manca la selezione');
+    return sendLiveOrderCommand({
+        action: 'greenup',
+        mode: 'live',
+        market_id: args.marketId,
+        selection_id: args.selectionId,
+        handicap: 0,
+        params: { esposizione: 'fuori_bot' },
+    });
+}
+
 // ---------- dutching (equal/variable/target) — mirror sendGreenup ----------
 // Accoda un comando 'dutch': il worker calcola gli stake a PROFITTO PAREGGIATO e piazza
 // OGNI gamba. Niente side/price/size al top-level: tutto dentro params (contratto backend).

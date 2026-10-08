@@ -9,6 +9,7 @@ import { TennisMatchStats } from '@/components/tennis/TennisMatchStats';
 import { SelectionChartPanel } from '@/components/live/SelectionChartPanel';
 import { DepthPanel } from '@/components/live/DepthPanel';
 import { sorgenteLadderAlMs } from '@/lib/localTransport';
+import { origineRitorno } from '@/lib/ritorno';
 import { countdownToOff } from '@/lib/matchClock';
 import {
     followTennisEvent, fetchTennisFollows, fetchTennisNow, subscribeTennisNow,
@@ -33,8 +34,9 @@ export default function TennisTerminal() {
     // CERT. 14/09 — la Control Room manda qui col pulsante «Trading» e si e'
     // segnata scheda, partita e scorrimento. Il tasto «indietro» della barra
     // deve riportare LA, non alla lista tennis: e il punto da cui si e partiti.
-    const daControlRoom = params.get('from') === 'control-room';
-    const indietro = () => navigate(daControlRoom ? '/control-room' : '/tennis');
+    // 08/10 (W1): anche il Cash Out; la Control Room resta quella di prima.
+    const origine = origineRitorno(params.get('from'));
+    const indietro = () => navigate(origine ? origine.rotta : '/tennis');
     const navigate = useNavigate();
 
     const eventId = params.get('event') ?? '';
@@ -135,7 +137,7 @@ export default function TennisTerminal() {
             <div className="min-h-screen bg-background relative">
                 <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30 ds-v2-nascondi" />
                 <TennisNav sectionLabel="TERMINAL" onBack={indietro}
-                    backLabel={daControlRoom ? 'Torna alla Control Room' : undefined} />
+                    backLabel={origine ? origine.torna : undefined} />
                 <main className="container mx-auto px-6 py-20 relative z-10 text-center">
                     <p className="text-muted-foreground">
                         Nessun match selezionato. Torna alle{' '}
@@ -158,7 +160,7 @@ export default function TennisTerminal() {
             <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-20 ds-v2-nascondi" />
 
             <TennisNav sectionLabel="TERMINAL" onBack={indietro}
-                backLabel={daControlRoom ? 'Torna alla Control Room' : undefined} />
+                backLabel={origine ? origine.torna : undefined} />
 
             {/* Header match compatto */}
             <div className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky ds-v2-non-sticky top-16 z-40 ds-v2-tt-testa">

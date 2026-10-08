@@ -41,6 +41,8 @@ export const NAV: readonly GruppoNav[] = [
         id: 'inizio', titolo: null, sport: 'comune', voci: [
             { id: 'board', etichetta: 'Programma del giorno', rotta: '/board', icona: 'home', sport: 'comune' },
             { id: 'control-room', etichetta: 'Control Room', rotta: '/control-room', icona: 'radar', sport: 'comune' },
+            // 08/10 (W1): la pagina «Cash Out», subito sotto la Control Room
+            { id: 'cash-out', etichetta: 'Cash Out', rotta: '/cash-out', icona: 'portafoglio', sport: 'comune' },
         ],
     },
     {
@@ -99,7 +101,7 @@ export const NAV: readonly GruppoNav[] = [
 
 /** Le rotte rese DENTRO il guscio quando `ui.shell = 'v2'` (brief, punto 2). */
 export const ROTTE_NEL_GUSCIO: readonly string[] = [
-    '/board', '/control-room', '/dashboard', '/omega', '/safe-strategy', '/mike', '/segui-live',
+    '/board', '/control-room', '/cash-out', '/dashboard', '/omega', '/safe-strategy', '/mike', '/segui-live',
     '/multi-ladder', '/market-watch', '/live-pnl', '/storico/calcio', '/storico/tennis', '/tennis',
     '/tennis/terminal', '/tennis/replay', '/trade-journal', '/report-personale', '/watchlist', '/analytics',
     '/match-replay', '/select-sport',
@@ -137,6 +139,8 @@ export function titoloDi(pathname: string): { gruppo: string | null; titolo: str
 export const CANALI_DELLA_PAGINA: Readonly<Record<string, readonly LocalSport[]>> = {
     '/board': ['calcio', 'tennis'],
     '/control-room': ['calcio', 'tennis', 'mike', 'omega', 'safe', 'scanner', 'tennis_bot', 'scalper'],
+    // 08/10 (W1): la pagina Cash Out monta lo stesso useControlRoom (stessi 8 canali, verificato dalla fotografia)
+    '/cash-out': ['calcio', 'tennis', 'mike', 'omega', 'safe', 'scanner', 'tennis_bot', 'scalper'],
     '/omega': ['omega'],
     '/safe-strategy': ['safe'],
     '/mike': ['mike'],

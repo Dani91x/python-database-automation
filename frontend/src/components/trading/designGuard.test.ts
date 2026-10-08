@@ -199,6 +199,10 @@ describe('design system — una sola mappa per le etichette (§19)', () => {
 // quando le si uniforma, si aggiungono qui.
 const FILE_GLOSSARIO_LIABILITY = [
     'pages/ControlRoom.tsx',
+    // 08/10 (W1): la pagina Cash Out e i pezzi della scheda «Posizioni aperte» spostati
+    'pages/CashOut.tsx',
+    'components/controlroom/aperte/PosizioniAperte.tsx',
+    'components/controlroom/aperte/ScatolaCashOut.tsx',
     'components/controlroom/SchedaMike.tsx',
     'components/controlroom/PropostaUscitaMike.tsx',
     'components/controlroom/InterruttoreUscite.tsx',

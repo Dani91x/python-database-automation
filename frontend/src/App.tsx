@@ -27,6 +27,7 @@ import Omega from "@/pages/Omega";
 import SafeStrategy from "@/pages/SafeStrategy";
 import Mike from "@/pages/Mike";
 import ControlRoom from "@/pages/ControlRoom";
+import CashOut from "@/pages/CashOut";
 import { StoricoCalcio, StoricoTennis } from "@/pages/StoricoSport";
 import { SafeStrategyProvider } from "@/components/safestrategy/SafeStrategyProvider";
 import CheckEmail from "@/pages/CheckEmail";
@@ -60,6 +61,7 @@ function RotteGuscioV2() {
             >
                 <Route path="/board" element={<Board />} />
                 <Route path="/control-room" element={<ControlRoom />} />
+                <Route path="/cash-out" element={<CashOut />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/omega" element={<Omega />} />
                 <Route path="/safe-strategy" element={<SafeStrategy />} />
@@ -271,6 +273,15 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <ControlRoom />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            {/* 08/10 (W1): le operazioni aperte, una scatola per partita */}
+                            <Route
+                                path="/cash-out"
+                                element={
+                                    <ProtectedRoute>
+                                        <CashOut />
                                     </ProtectedRoute>
                                 }
                             />

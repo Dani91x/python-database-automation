@@ -465,6 +465,12 @@ export interface OperazionePartita {
     firma?: string | null;
     residuo?: boolean;
     notaSessione?: string | null;
+    /**
+     * 08/10 (W1, pagina Cash Out) - l'orario d'inizio che la riga del bot GIA'
+     * porta (Omega: `kickoff`), solo quando c'e': serve alla fase di una partita
+     * fuori dal programma dello scanner. Nessuna lettura nuova.
+     */
+    koAt?: string | null;
 }
 
 // ------------------------------------------------------------- posizioni
@@ -3398,6 +3404,8 @@ export function useControlRoom(): ControlRoomVM {
             selection_id?: number | null;
             // 18/09 (raccordo, R1) — presente solo su Omega/Safe (colonna vera)
             liability?: number | null;
+            // 08/10 (W1) — orario d'inizio della riga (Omega `kickoff`)
+            kickoff?: string | null;
         }, closes: readonly (Parameters<typeof ordineDi>[0] & { id: number })[] = []) => {
             if (isErrorRow(t.status)) return;           // non e' un'operazione
             const k = String(t.event_id);
@@ -3471,6 +3479,8 @@ export function useControlRoom(): ControlRoomVM {
                 chiusureGambe: closes.map((c) => { const g = c as { market_id?: string | null; selection_id?: number | null }; return { id: Number(c.id), marketId: g.market_id ?? null, selectionId: g.selection_id == null ? null : Number(g.selection_id) }; }),
                 eventId: k,
                 chiudeId: t.closes_trade_id ?? null,
+                // 08/10 (W1): l'orario d'inizio della riga, solo se il bot lo porta
+                ...(typeof t.kickoff === 'string' && t.kickoff ? { koAt: t.kickoff } : {}),
             };
             const arr = m.get(k);
             if (arr) arr.push(riga); else m.set(k, [riga]);

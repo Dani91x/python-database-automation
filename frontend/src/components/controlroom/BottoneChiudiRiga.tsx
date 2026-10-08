@@ -73,7 +73,9 @@ const CLS_BOTTONE: Record<'riga' | 'orfana', string> = {
         + 'hover:text-white hover:border-emerald-500/50 disabled:opacity-40 disabled:cursor-not-allowed',
 };
 
-export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'riga', prezzoAlClic, stimaOra }: {
+export function BottoneChiudiRiga({
+    riga, testId = 'cr-op-chiudi', variante = 'riga', prezzoAlClic, stimaOra, etichetta = 'Chiudi', ambito = null,
+}: {
     riga: RigaDaChiudere;
     testId?: string;
     variante?: 'riga' | 'orfana';
@@ -86,6 +88,11 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
     /** 30/09 - P&L stimato chiudendo ora, se la scheda lo conosce: solo per la
      *  frase della conferma live, MAI nel payload della richiesta. */
     stimaOra?: number | null;
+    /** 08/10 (W1, pagina Cash Out) - il testo del pulsante; di serie «Chiudi». */
+    etichetta?: string;
+    /** 08/10 (W1) - quanto chiude il comando del bot (es. «tutte le 3 gambe di
+     *  Mike»), scritto accanto e nella conferma; di serie nessun testo. */
+    ambito?: string | null;
 }) {
     const api = useContext(ChiusuraRigaContext);
     const [inVolo, setInVolo] = useState(false);
@@ -156,6 +163,7 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
                     >Conferma</button>
                     <span className="text-[9px] text-orange-300" data-testid={`${testId}-armato`}>
                         Live, soldi veri: confermi la chiusura?
+                        {ambito ? ` Chiude: ${ambito}.` : ''}
                         {stimaOra != null ? ` Stima chiudendo ora ${fmtMoney(stimaOra, { signed: true })}.` : ''}
                         {' '}
                         <button type="button" className="underline" onClick={() => setArmato(false)}
@@ -177,7 +185,10 @@ export function BottoneChiudiRiga({ riga, testId = 'cr-op-chiudi', variante = 'r
                     if (chiedeConferma) { setArmato(true); return; }
                     manda();
                 }}
-            >Chiudi</button>
+            >{etichetta}</button>
+            )}
+            {ambito && (
+                <span className="text-[9px] text-white/45" data-testid={`${testId}-ambito`}>{ambito}</span>
             )}
             {fase && (
                 <span className={`text-[9px] ${CLS_FASE[fase]}`} data-testid={`${testId}-esito`}

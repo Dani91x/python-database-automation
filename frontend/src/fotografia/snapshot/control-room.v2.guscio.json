@@ -8,6 +8,7 @@
     "🎾 Tennis",
     "Programma del giorno",
     "Control Room",
+    "Cash Out",
     "Calcio",
     "Cruscotto partite",
     "Omega",
@@ -65,6 +66,7 @@
     "shell-gruppo-inizio",
     "shell-voce-board",
     "shell-voce-control-room",
+    "shell-voce-cash-out",
     "shell-gruppo-calcio",
     "shell-voce-dashboard",
     "shell-voce-omega",
@@ -131,6 +133,11 @@
       "ruolo": "link",
       "nome": "Control Room",
       "href": "/control-room"
+    },
+    {
+      "ruolo": "link",
+      "nome": "Cash Out",
+      "href": "/cash-out"
     },
     {
       "ruolo": "link",

@@ -26,6 +26,7 @@
 // lettura e' difensiva e in caso di dubbio ritorna `null`: si perde il
 // ritorno preciso, non la navigazione.
 // ============================================================================
+import { useEffect, useRef } from 'react';
 
 const CHIAVE = 'ritorno.punto';
 
@@ -128,4 +129,74 @@ export function portaInVista(eventId: string, doc: Document = document): boolean
     el.classList.add('ring-2', 'ring-primary');
     window.setTimeout(() => el.classList.remove('ring-2', 'ring-primary'), 2000);
     return true;
+}
+
+// ============================================================================
+// 08/10 (cantiere W1) - DUE PAGINE DI PARTENZA: la Control Room e il Cash Out.
+// Ogni pagina consuma SOLO il punto che ha salvato lei (prima la Control Room
+// consumava qualunque punto, anche di un'altra pagina); i «Torna» delle pagine
+// di arrivo (Dashboard, Segui live, Tennis Terminal) leggono l'origine dal
+// parametro `from`. La Control Room resta quella di serie, identica a prima.
+// ============================================================================
+
+/** Da dove si parte e come si torna: rotta, nome, `from`, testo e testid del «Torna». */
+export interface OrigineRitorno {
+    rotta: string;
+    nome: string;
+    /** valore del parametro `from` nell'indirizzo della pagina di arrivo */
+    from: string;
+    /** testo del pulsante «Torna» */
+    torna: string;
+    /** data-testid del pulsante «Torna» */
+    testId: string;
+    /** spiegazione al passaggio del mouse */
+    titolo: string;
+}
+
+export const ORIGINI_RITORNO: Readonly<Record<'control-room' | 'cash-out', OrigineRitorno>> = {
+    'control-room': {
+        rotta: '/control-room', nome: 'Control Room', from: 'control-room',
+        torna: 'Torna alla Control Room', testId: 'torna-control-room',
+        titolo: 'torna alla Control Room, alla scheda e alla partita da cui sei partito',
+    },
+    'cash-out': {
+        rotta: '/cash-out', nome: 'Cash Out', from: 'cash-out',
+        torna: 'Torna al Cash Out', testId: 'torna-cash-out',
+        titolo: 'torna al Cash Out, alla partita da cui sei partito',
+    },
+};
+
+/** L'origine dal parametro `from`; `null` = nessun «Torna» (come prima per ogni altro valore). */
+export function origineRitorno(from: string | null | undefined): OrigineRitorno | null {
+    return from === 'control-room' || from === 'cash-out' ? ORIGINI_RITORNO[from] : null;
+}
+
+/** La scheda da riaprire, solo se il punto salvato e' di QUESTA rotta. */
+export function schedaDiRitorno(rotta: string): string | null {
+    const r = leggiRitorno();
+    return r && r.rotta === rotta ? r.scheda : null;
+}
+
+/**
+ * RIPORTA AL PUNTO ESATTO, una volta sola, quando la pagina e' `pronta` (le
+ * righe ci sono). Consuma SOLO un punto della sua `rotta`. Il punto si cancella
+ * quando il timer scatta, non prima: se React rimonta l'effetto (StrictMode,
+ * cambio di dipendenze) il timer cancellato si rifa' invece di perdere il
+ * ritorno.
+ */
+export function useRitornoAlPunto(rotta: string, pronta: boolean): void {
+    const fatto = useRef(false);
+    useEffect(() => {
+        if (fatto.current || !pronta) return undefined;
+        const r = leggiRitorno();
+        // nessun punto, o il punto di un'altra pagina: niente da fare qui
+        if (!r || r.rotta !== rotta) { fatto.current = true; return undefined; }
+        const t = window.setTimeout(() => {
+            fatto.current = true;
+            dimenticaRitorno();
+            if (r.eventId && portaInVista(r.eventId)) return;
+            window.scrollTo({ top: r.scorrimento, behavior: 'smooth' });
+        }, 80);
+        return () => window.clearTimeout(t);
+    }, [rotta, pronta]);
 }

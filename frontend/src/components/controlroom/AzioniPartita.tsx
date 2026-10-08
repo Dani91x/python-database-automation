@@ -25,7 +25,7 @@ import { useNavigate } from 'react-router-dom';
 import { BarChart3, CircleDot, LineChart, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
-import { salvaRitorno } from '@/lib/ritorno';
+import { salvaRitorno, ORIGINI_RITORNO, type OrigineRitorno } from '@/lib/ritorno';
 import { followMission, setFollowRecord } from '@/lib/omegaMissions';
 import { followTennisEvent, setTennisFollowRecord } from '@/lib/tennis';
 import type { PartitaGiornata } from '@/lib/controlRoom';
@@ -51,10 +51,23 @@ export interface AzioniPartitaProps {
     /** avvisa la pagina che lo stato della registrazione è cambiato */
     onRegistrazione?: (eventId: string, attiva: boolean) => void;
     compatto?: boolean;
+    /**
+     * 08/10 (W1) - la pagina da cui si parte (rotta, nome e `from` del punto di
+     * ritorno). Di serie la Control Room, esattamente come prima; il Cash Out
+     * passa la sua.
+     */
+    ritorno?: OrigineRitorno;
+    /**
+     * 08/10 (W1, secondo giro) - solo video e statistiche (Betfair e nostre),
+     * senza «Trading» e «Segui live»/REC: la scatola del Cash Out. Di serie
+     * false = tutti i pulsanti, come prima.
+     */
+    soloMediaStatistiche?: boolean;
 }
 
 export function AzioniPartita({
     p, scheda, registra = null, registratoreVivo = null, onRegistrazione, compatto = true,
+    ritorno = ORIGINI_RITORNO['control-room'], soloMediaStatistiche = false,
 }: AzioniPartitaProps) {
     const navigate = useNavigate();
     const [inCorso, setInCorso] = useState(false);
@@ -68,7 +81,7 @@ export function AzioniPartita({
     /** Prima di andarsene si segna DOVE si era. Senza questo, «torna indietro»
      *  riporta in cima a una lista di sessanta partite. */
     const segnaPunto = () => salvaRitorno({
-        rotta: '/control-room', nome: 'Control Room',
+        rotta: ritorno.rotta, nome: ritorno.nome,
         scheda, eventId: p.event_id,
         scorrimento: typeof window === 'undefined' ? 0 : window.scrollY,
     });
@@ -76,7 +89,7 @@ export function AzioniPartita({
     const apriStatistiche = () => {
         if (fixtureId == null) return;
         segnaPunto();
-        navigate(`/dashboard?fixture=${fixtureId}&from=control-room`);
+        navigate(`/dashboard?fixture=${fixtureId}&from=${ritorno.from}`);
     };
 
     /**
@@ -102,7 +115,7 @@ export function AzioniPartita({
             if (tennis && p.marketId) {
                 const q = new URLSearchParams({
                     event: p.event_id, market: p.marketId,
-                    name: 'Match Odds', from: 'control-room',
+                    name: 'Match Odds', from: ritorno.from,
                 });
                 if (g1 && g2) { q.set('p1', g1); q.set('p2', g2); }
                 segnaPunto();
@@ -117,7 +130,7 @@ export function AzioniPartita({
             }
             await followMission(p.event_id, g1 || p.nome, g2, new Date(p.koMs).toISOString());
             segnaPunto();
-            navigate(`/segui-live?event=${encodeURIComponent(p.event_id)}&from=control-room`);
+            navigate(`/segui-live?event=${encodeURIComponent(p.event_id)}&from=${ritorno.from}`);
         } catch (e) {
             setErrore(e instanceof Error ? e.message : String(e));
         } finally { setInCorso(false); }
@@ -167,6 +180,8 @@ export function AzioniPartita({
                 ><BarChart3 className="w-3 h-3 mr-1" />Statistiche</Button>
             )}
 
+            {/* 08/10 (W1): la scatola del Cash Out mostra solo video e statistiche */}
+            {!soloMediaStatistiche && (<>
             <Button
                 type="button" size="sm" variant="outline"
                 disabled={inCorso}
@@ -212,6 +227,7 @@ export function AzioniPartita({
                     <strong> non sta registrando</strong>
                 </span>
             )}
+            </>)}
 
             {errore && (
                 <span className="text-[10px] text-orange-300" data-testid="cr-azioni-errore">

@@ -56,6 +56,7 @@ import {
 } from '@/lib/live';
 import { setFollowRecord } from '@/lib/omegaMissions';
 import FlussoStreamBanner from '@/components/live/FlussoStreamBanner';
+import { origineRitorno } from '@/lib/ritorno';
 
 // ---- CANALE LOCALE (app desktop, latenza ~0) ----
 // Wrapper dei DEFAULT calcio (le stesse funzioni di LadderView): quando il canale
@@ -981,7 +982,8 @@ export default function SeguiLive() {
     // CERT. 14/09 — «ogni pulsante che mi manda da altre parti deve poi
     // permettermi di tornare indietro in quell'esatto punto». La Control Room
     // si e' segnata scheda, partita e scorrimento prima di mandarci qui.
-    const [daControlRoom] = useState(() => searchParams.get('from') === 'control-room');
+    // 08/10 (W1): anche il Cash Out; la Control Room resta quella di prima.
+    const [origine] = useState(() => origineRitorno(searchParams.get('from')));
     useEffect(() => {
         const pending = pendingEventRef.current;
         if (!pending) return;
@@ -1227,12 +1229,12 @@ export default function SeguiLive() {
                                 <ChevronLeft className="w-4 h-4 mr-1" /> Torna a Omega
                             </Button>
                         )}
-                        {daControlRoom && (
-                            <Button variant="outline" size="sm" onClick={() => navigate('/control-room')}
-                                data-testid="torna-control-room"
-                                title="torna alla Control Room, alla scheda e alla partita da cui sei partito"
+                        {origine && (
+                            <Button variant="outline" size="sm" onClick={() => navigate(origine.rotta)}
+                                data-testid={origine.testId}
+                                title={origine.titolo}
                                 className="border-primary/30 text-primary hover:bg-primary/10">
-                                <ChevronLeft className="w-4 h-4 mr-1" /> Torna alla Control Room
+                                <ChevronLeft className="w-4 h-4 mr-1" /> {origine.torna}
                             </Button>
                         )}
                         {selected && (

@@ -67,7 +67,8 @@ describe('sidebar: solo rotte esistenti', () => {
     it("ogni voce porta a una rotta gia' presente in App.tsx", () => {
         const voci = NAV.flatMap((g) => g.voci).filter((v) => v.rotta !== null);
         // 07/10: +1 «Replay tennis» (/tennis/replay) nella sezione Tennis
-        expect(voci.length).toBe(24);
+        // 08/10 (W1): +1 «Cash Out» (/cash-out) subito sotto la Control Room
+        expect(voci.length).toBe(25);
         for (const v of voci) {
             expect(APP, `${v.id}: la rotta ${v.rotta} non esiste in App.tsx`).toContain(`path="${v.rotta}"`);
         }
@@ -78,7 +79,8 @@ describe('sidebar: solo rotte esistenti', () => {
         const ramoOggi = APP.slice(APP.indexOf('function App()'));
         const oggi = [...ramoOggi.matchAll(/path="([^"]+)"\s*\n\s*element=\{\s*\n\s*<ProtectedRoute>/g)].map((m) => m[1]);
         // 07/10: +1 /tennis/replay (Replay Tennis)
-        expect(oggi.length).toBe(22);
+        // 08/10 (W1): +1 /cash-out (Cash Out)
+        expect(oggi.length).toBe(23);
         expect([...oggi].filter((r) => r !== '/ladder-popout').sort()).toEqual([...ROTTE_NEL_GUSCIO].sort());
         // ramo del guscio: ogni rotta e' una figlia della layout route
         const guscio = APP.slice(APP.indexOf('function RotteGuscioV2'), APP.indexOf('function App()'));

@@ -57,6 +57,8 @@ interface Pagina {
 export const PAGINE: Pagina[] = [
     { nome: 'board', url: '/board', sessione: true },
     { nome: 'control-room', url: '/control-room', sessione: true },
+    // 08/10 (W1): la pagina Cash Out, subito sotto la Control Room
+    { nome: 'cash-out', url: '/cash-out', sessione: true },
     { nome: 'dashboard', url: '/dashboard', sessione: true },
     { nome: 'omega', url: '/omega', sessione: true },
     { nome: 'safe-strategy', url: '/safe-strategy', sessione: true },
@@ -101,7 +103,7 @@ export const LISTA_BIANCA_GUSCIO: readonly string[] = [
     'shell-sidebar', 'shell-filtro-sport', 'shell-filtro-tutti', 'shell-filtro-calcio', 'shell-filtro-tennis',
     'shell-gruppo-inizio', 'shell-gruppo-calcio', 'shell-gruppo-tennis', 'shell-gruppo-trading',
     'shell-gruppo-analisi', 'shell-gruppo-account',
-    'shell-voce-board', 'shell-voce-control-room',
+    'shell-voce-board', 'shell-voce-control-room', 'shell-voce-cash-out',
     'shell-voce-dashboard', 'shell-voce-omega', 'shell-voce-safe-strategy', 'shell-voce-mike',
     'shell-voce-segui-live', 'shell-voce-storico-calcio',
     'shell-voce-tennis', 'shell-voce-tennis-terminal', 'shell-voce-tennis-replay', 'shell-voce-bot-tennis',

@@ -5231,3 +5231,13 @@ dal percorso nuovo, o artefatto del messaggio aggregato delle 17:00:06): referti
   nuovi del pro (fade dopo il break, transizione di set, break point) con controlli SP1-SP3 o NE con causa; test di contratto su
   `gate-aperto` (le chiavi fuori dalla UI sono dichiarate, decisione per l'utente). Delegato 15/15 mutazioni rosse, mie 3/3. Reperto
   di strategia per l'utente: il pro entra in break point anche nel tie-break. REPLAY TENNIS DA RIESEGUIRE SUL PC.
+- CHECKPOINT W1 - PAGINA «CASH OUT» (verificata e integrata): rotta `/cash-out`, voce subito sotto la Control Room. Una scatola per
+  partita con TUTTE le gambe (bot + ordini del conto fuori dai bot: «Sito»/«App»), cash out per gamba (Omega/Safe la riga; Mike, bot
+  tennis e Scalper «tutte le N gambe» col comando di oggi, scritto sul pulsante; ordini del sito/app `sendGreenupFuoriBot` -> W2), cash
+  out globale della posizione, riepilogo LIVE e PROVA mai sommati (fail-closed), filtri sport / Pre-match-Live / soldi in testata,
+  sezioni «In gioco» e «Pre-match» dal flag inplay dello scanner (fischio passato = Pre-match con la scritta; fuori programma: orario
+  del bot o «orario non dichiarato», mai sparita). Riuso: `useControlRoom` (una sola istanza), pezzi della scheda «Aperte» spostati in
+  `aperte/PosizioniAperte.tsx` identici, `CashOutGlobalePartita`, `BottoneChiudiRiga`, `AzioniPartita`, `BetfairMediaButtons`,
+  ladder pop-out (`lib/ladderPopout.ts`). Corretto in passando: il ritorno al punto della Control Room non scorreva mai (timer
+  cancellato da se'). Fotografie: Control Room e ogni `*.off`/`*.v2` IDENTICHE; i 22 `*.v2.guscio` cambiano solo per la voce nuova.
+  Delegato: 28 mutazioni rosse; mie 5/5 rosse (piu' 1 equivalente scartata). DA FARE SUL PC: prova a schermo e `npm run build`.
