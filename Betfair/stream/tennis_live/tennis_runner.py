@@ -91,6 +91,7 @@ from . import esecutore_tennis as _ET
 from . import guardie_tennis as _gt
 from . import iscrizione_a_caldo as _IAC
 from . import mercati_registrati as _MR
+from . import ordini_esterni_tennis as _OET  # 08/10 (W3b): ordini esterni ai bot
 from . import tennis_db
 from .paper_execution import install_fresh_delay_execution
 from .tennis_recorder import RAW_TEE, TennisRecMarketStream, sync_record_flags
@@ -603,6 +604,16 @@ class TennisLiveSession:
         # 07/10 (REC su TUTTI i mercati, ``mercati_registrati``): ultimo catalogo
         # fallito per evento (monotonic): si riprova dopo _MR_RIPROVA_S
         self.mercati_rec_ko: Dict[str, float] = {}
+        # 08/10 (W3b, ``ordini_esterni_tennis``): il registro degli ordini esterni
+        # del framework vivo (None = interruttore spento o nessuna build) e gli
+        # interventi dell'utente gia' visti nel thread di flumine, da scrivere
+        # nel DB dal ``bot_control_worker``
+        self.ordini_esterni: Any = None
+        self.interventi_esterni: List[tuple] = []
+        # secondo giro: le attivita' della verifica (in verifica, di un bot, non
+        # verificabile) e la memoria degli ordini piazzati dal runner
+        self.attivita_esterni: List[tuple] = []
+        self.memoria_ordini_runner: Any = None
 
     def reset_streams(self) -> None:
         self.capture.clear()
@@ -1752,6 +1763,13 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
                    disabilita=_disable_strategy, db=tennis_db)
     except Exception as e:  # noqa: BLE001 - il chiudi non ferma il worker
         logger.warning("[tennis-runner] chiudi ora: avanzamento KO: %s", e)
+    # 08/10 (W3b): i bot fermati da un ordine ESTERNO dell'utente (gia' inerti nel
+    # thread di flumine): riga 'stopped' col marcatore e attivita', PRIMA che
+    # l'heartbeat di questo giro li riscriva 'running'
+    try:
+        _OET.concludi_interventi(session, flumine, e_flat=_strategy_is_flat)
+    except Exception as e:  # noqa: BLE001 - non ferma il worker
+        logger.warning("[tennis-runner] ordini esterni: conclusione KO: %s", e)
     # T2 (24/09): a guardia d'avvio armata un bot nuovo NON provoca il restart
     # che lo armerebbe (si riprova la ripresa; disarmi e protezioni girano).
     guardia_armata = _gt.guardia_blocca()
@@ -2722,6 +2740,7 @@ def _arma_a_caldo(flumine: Any, session: TennisLiveSession, caldo: ContestoCaldo
                 esiti.append((ev, bot_key, bot, e))
                 continue
             session.hosted[(ev, bot_key)] = bot
+            _OET.proteggi_bot(session, fw, ev, bot_key, bot, disabilita=_disable_strategy)
             esiti.append((ev, bot_key, bot, None))
         return esiti
 
@@ -3280,6 +3299,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             # evento, ordini simulati ignorati, SOLO in LIVE.
             if str(mode).strip().upper() == "LIVE":
                 _attiva_saldo_su_evento(framework, trading)
+            # 08/10 (W3b): gli ordini ESTERNI (sito, ladder) ai bot ospitati. LIVE:
+            # lo stesso osservatore del runner calcio sullo stream ordini del conto
+            # di QUESTO flumine; PAPER: gli ordini manuali simulati del ladder
+            session.ordini_esterni = _OET.registro_per_framework(framework, mode, session)
 
             # UNA capture per TUTTI gli eventi (stream unico cross-evento, vedi
             # _make_capture): mappata sotto ogni event_id per i consumer esistenti
@@ -3335,6 +3358,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                             event_id, bot_key, list(bot.stream_ids), list(cap.stream_ids),
                         )
                     session.hosted[(event_id, bot_key)] = bot
+                    _OET.proteggi_bot(session, framework, event_id, bot_key, bot,
+                                      disabilita=_disable_strategy)
                     tennis_db.set_tennis_bot_status(event_id, bot_key, "running", started=True)
                     _scrivi_attivita_modalita(event_id, bot_key, bot, mode)
                     _scrivi_superficie(event_id, bot_key, bot, ctrl)

@@ -5294,3 +5294,9 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   in `test_stream_heartbeat_stall_2026_07_17.py`, rossi anche da soli: il test presumeva la macchina accesa da piu' di 900 s
   (`_RAW_STALL_LAST_RESTART = 0.0` contro l'orologio monotonico). CORRETTO SOLO IL TEST (ora «molto prima di adesso»); prova:
   con l'intervallo portato a 30000 s (piu' dell'uptime) il test vecchio fa 4 rossi, il nuovo 16 verdi.
+- CHECKPOINT W3b - SCALPER CALCIO E 4 BOT TENNIS SANNO DEGLI ORDINI ESTERNI (verificato e integrato): la sessione dello scalper e il
+  runner tennis montano l'osservatore dello stream ordini del conto (gia' esistente, nessuna chiamata Betfair in piu'); un ordine abbinato
+  di un ALTRO autore sul mercato del bot sospende subito la selezione (nessun ordine del bot) e la classificazione di W2 decide: di un
+  altro bot -> riprende; fuori bot (sito/app) -> stop, annullo dei vivi, nessuna copertura, mai riarmato; DB illeggibile -> resta sospeso.
+  Latenza nel banco: sospensione 0 ms, decisione ~1 s (stima del banco). Replay DOPO su macchina cloud identici agli attesi; mie mutazioni
+  4/4 rosse. Decisioni per l'utente D1, D3, D4, D6, D7; limite D5 (prova dello scalper). Registrazioni tennis: sul PC.

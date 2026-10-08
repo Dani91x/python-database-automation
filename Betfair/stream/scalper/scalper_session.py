@@ -21,7 +21,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # 26/09: la chiave del marcatore "fermata dal freno" vive in auto_mode (chi la legge)
 from .auto_mode import CHIAVE_FERMATA_FRENO
@@ -563,7 +563,12 @@ ARRESTO_ANNULLO_TIMEOUT_S = 10.0
 #: abbinata con un CRITICAL. R3 (02/10): anche la FINE VITA (regola
 #: dell'utente: mai una gamba a mercato senza avviso). NON la partita finita:
 #: col mercato CLOSED (regolato) Betfair non tiene nessun ordine vivo.
-CAUSE_ARRESTO = frozenset({"stop_app", "freno", "segnale", "errore_fatale", "fine_vita"})
+#: W3b (08/10): anche l'INTERVENTO DELL'UTENTE (ordine esterno abbinato sul
+#: mercato della sessione, ``installa_ordini_esterni``): annullo dei vivi e la
+#: posizione che resta al bot si DICHIARA, mai chiusa da qui.
+CAUSA_INTERVENTO = "intervento_utente"
+CAUSE_ARRESTO = frozenset({"stop_app", "freno", "segnale", "errore_fatale", "fine_vita",
+                           CAUSA_INTERVENTO})
 #: R2 (02/10): attesa del flat per ciascuna strategia (``_all_flat``)
 FLAT_ATTESA_S = 30.0
 #: strategie che ``_all_flat`` aspetta una dopo l'altra: maker, sniper, theta
@@ -715,6 +720,141 @@ def chiudi_all_arresto(db: Any, event_id: str, framework: Any, trading: Any,
         except Exception:  # noqa: BLE001 - alert best-effort
             pass
     return esito
+
+
+# ------------------------------------------- ORDINI ESTERNI (W3b, 08/10/2026)
+# Ordine dell'utente: "quando intervengo io dal sito o dall'app su un'operazione
+# dei bot, i bot lo sanno e non fanno altro", "nel minor tempo possibile". La
+# sessione e' un processo con il SUO flumine, iscritto allo stream ordini del
+# conto senza filtro di strategia (``_order_client_kwargs``: order_stream=True):
+# in LIVE riceve gia' al millisecondo ogni ordine del conto, anche quelli fatti
+# dal sito o dal terminale manuale dell'app, e flumine li scarta. Qui si monta
+# lo STESSO osservatore del runner calcio (``esiti_ordini_canale``) con una
+# ``pubblica`` in memoria (``tennis_scalper.ordini_esterni.Registro``): al primo
+# ordine dell'UTENTE abbinato su un mercato della sessione (catalogo, o dove ha
+# ordini), nel thread di flumine e senza aspettare il battito, le strategie si
+# fermano (piu' nessuna decisione: niente ordini nuovi, niente coperture, niente
+# rientri) e gli ordini vivi della sessione si annullano. Il battito poi chiude la sessione
+# 'stopped' con il marcatore (mai riarmata dall'auto-mode: "chiusa a mano").
+# In PROVA la fonte sarebbe il ladder del runner calcio, che e' un ALTRO processo:
+# nessuna fonte in-process, la sessione resta identica a prima (referto W3b).
+
+def _ordini_della_sessione(framework: Any, strategie: List[Any]) -> List[Tuple[Any, Any]]:
+    """[(market, order)] degli ordini delle strategie della SESSIONE (per
+    strategia, dai blotter): nel banco il quadro e' condiviso con l'ordine
+    dell'utente, in produzione il blotter ha solo la sessione."""
+    out: List[Tuple[Any, Any]] = []
+    for m in list(getattr(framework, "markets", None) or []):
+        blotter = getattr(m, "blotter", None)
+        if blotter is None:
+            continue
+        for s in strategie:
+            try:
+                out.extend((m, o) for o in list(blotter.strategy_orders(s) or []))
+            except Exception:  # noqa: BLE001 - blotter mutato: si salta il giro
+                continue
+    return out
+
+
+def conferma_dei_bot(db: Any, framework: Any, registro: Any) -> Any:
+    """SECONDO GIRO (08/10): la classificazione "del bot / fuori bot" di W2 sul DB
+    (``live_order_worker._proprietari_bot``: tabelle dei bot, specchio, riga
+    della coda del runner con ``motivo_bot_da_coda``) per i bet_id che i soli
+    riferimenti danno all'utente. Thread suo, una lettura per bet_id nuovo; a
+    lettura fatta un evento nella coda di flumine fa decidere SUBITO (nel thread
+    di flumine) invece che al book dopo. Il banco la sostituisce."""
+    from ..tennis_scalper import ordini_esterni as OE
+
+    def _leggi(bet_ids: List[str]) -> Dict[str, str]:
+        from .. import live_order_worker as _LOW
+
+        return _LOW._proprietari_bot(db.sb, list(bet_ids))
+
+    def _sveglia() -> None:
+        from flumine.events.events import CustomEvent
+
+        framework.handler_queue.put(CustomEvent(None, lambda _fw, _ev: registro.rivedi()))
+
+    return OE.ConfermaBot(_leggi, sveglia=_sveglia)
+
+
+def installa_ordini_esterni(framework: Any, strategie: List[Any], *, session_paper: bool,
+                            event_id: str, sink: Any, adesso_ms: Any,
+                            mercati_sessione: Any = (), db: Any = None,
+                            conferma: Any = None) -> Optional[Any]:
+    """Monta la sorveglianza degli ordini esterni sulla sessione. Torna la
+    ``Sorveglianza`` (``.intervento`` e' l'evento, quando scatta) o ``None``
+    (interruttore spento, prova): in quel caso la sessione e' IDENTICA a prima.
+    I mercati della sessione sono quelli del suo catalogo (``mercati_sessione``)
+    piu' quelli dove ha ordini. Non solleva mai: senza sorveglianza il bot
+    lavora come prima."""
+    try:
+        from ..tennis_scalper import ordini_esterni as OE
+
+        if not OE.acceso() or session_paper:
+            return None
+        attive = [s for s in strategie if s is not None]
+        if not attive:
+            return None
+
+        def _propri() -> set:
+            return {str(o.bet_id) for _m, o in _ordini_della_sessione(framework, attive)
+                    if getattr(o, "bet_id", None)}
+
+        catalogo = {str(m) for m in (mercati_sessione or ())}
+
+        def _mercati() -> set:
+            return catalogo | {str(getattr(o, "market_id", None) or getattr(m, "market_id", ""))
+                               for m, o in _ordini_della_sessione(framework, attive)}
+
+        def _al_intervento(evento: Dict[str, Any]) -> None:
+            # 1) nessuna decisione piu' (thread di flumine: il prossimo book non
+            #    arriva alle strategie), 2) annullo dei vivi della sessione
+            for s in attive:
+                OE.ferma_strategia(s)
+            evento["annullo"] = OE.annulla_vivi(_ordini_della_sessione(framework, attive))
+            # nessun I/O nel thread di flumine: il diario e' il buffer della
+            # sessione (scritto al battito)
+            try:
+                sink(OE.KIND, dict(evento))
+            except Exception:  # noqa: BLE001 - il diario non ferma niente
+                pass
+            logger.critical("[scalper-sess] %s: ordine dell'UTENTE (%s) abbinato sul "
+                            "mercato %s: la sessione si ferma (annullo dei vivi, "
+                            "nessuna copertura)", event_id, evento.get("dove"),
+                            evento.get("market_id"))
+
+        registro = OE.Registro()
+        if conferma is None and db is not None:
+            conferma = conferma_dei_bot(db, framework, registro)
+
+        def _evento(kind: str, payload: Dict[str, Any]) -> None:
+            # thread di flumine: solo il buffer del diario (scritto al battito)
+            sink(kind, payload)
+
+        sorv = OE.Sorveglianza(
+            nome="scalper:%s" % event_id, modo="live",
+            rif_manuali=(OE.RIF_MANUALE_CALCIO,), prefissi=OE.prefissi_bot(),
+            identita=OE.Identita(attive), bet_ids_propri=_propri,
+            mercati_del_bot=_mercati, al_intervento=_al_intervento,
+            adesso_ms=adesso_ms, inizio_ms=int(adesso_ms()),
+            conferma=conferma, su_evento=_evento)
+        registro.aggiungi(sorv)
+        for s in attive:
+            OE.proteggi_strategia(s, sorv)
+        # SECONDO GIRO: nessun ordine nuovo su una selezione sospesa (in verifica)
+        OE.monta_controllo(framework)
+        sorv.registro = registro
+        sorv.conferma = conferma
+        sorv.montato = OE.monta_su_flumine(framework, registro)
+        logger.info("[scalper-sess] %s: ordini esterni dallo stream ordini del conto "
+                    "(osservatore %s)", event_id,
+                    "montato" if sorv.montato else "NON montato")
+        return sorv
+    except Exception as ex:  # noqa: BLE001 - senza sorveglianza: come prima
+        logger.warning("[scalper-sess] %s: sorveglianza ordini esterni NON montata: %s",
+                       event_id, str(ex)[:160])
+        return None
 
 
 def _sniper_profit_target(cp: Dict[str, Any]) -> float:
@@ -1820,6 +1960,13 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             framework.add_strategy(theta)
         if media is not None:
             framework.add_strategy(media)
+        # W3b (08/10): ordini esterni dallo stream ordini del conto (solo LIVE;
+        # interruttore BOT_ORDINI_ESTERNI acceso di serie). None = come prima.
+        esterni = installa_ordini_esterni(
+            framework,
+            [strategy if (not theta_only and media is None) else None, sniper, theta, media],
+            session_paper=session_paper, event_id=ev, sink=sink,
+            adesso_ms=lambda: int(time.time() * 1000), mercati_sessione=market_ids, db=db)
 
         def _stats() -> Dict[str, Any]:
             s = dict(strategy.stats)
@@ -2038,6 +2185,17 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         while runner.is_alive():
             time.sleep(HEARTBEAT_S)
             flush()
+            # W3b (08/10): l'utente e' intervenuto (sito o app) su un mercato
+            # della sessione. Le strategie sono GIA' ferme e i vivi annullati
+            # (thread di flumine, al messaggio dello stream ordini): qui la
+            # sessione si chiude 'stopped' col marcatore, SENZA force-flat
+            # (nessuna copertura: la posizione l'ha presa l'utente).
+            # (l'attivita' ``intervento_utente`` e' gia' nel diario: flush sopra)
+            if esterni is not None and esterni.intervento is not None:
+                stopped_by_ui = True
+                causa_arresto = CAUSA_INTERVENTO
+                clean_break = True
+                break
             # 28/09 (cantiere J2): stream di mercato muto = nessun book = nessuna
             # gestione della posizione. Lo si DICE (alert + attivita', una volta
             # per episodio) e la riga lo dichiara finche' dura (stats.flusso).
@@ -2222,6 +2380,13 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # 26/09 (reperto e2e): il NON flat dopo 30 s e la fermata dal freno
         # finiscono NELLA RIGA (error + stats), non solo nell'attivita'
         _final_stats = dichiara_stato_finale(_final_stats, non_flat_30s, fermata_freno)
+        # W3b (08/10): il marcatore dell'intervento dell'utente nella riga
+        if esterni is not None and esterni.intervento is not None \
+                and isinstance(_final_stats, dict):
+            _final_stats = {**_final_stats, CAUSA_INTERVENTO: {
+                k: esterni.intervento.get(k) for k in (
+                    "dove", "modo", "fonte", "market_id", "selection_id", "side",
+                    "bet_id", "abbinato_nuovo", "latenza_ms")}}
         _errori = (["thread flumine morto: sweep cancel eseguito"] if crashed else []) + (
             [non_flat_30s] if non_flat_30s else [])
         db.set_control(

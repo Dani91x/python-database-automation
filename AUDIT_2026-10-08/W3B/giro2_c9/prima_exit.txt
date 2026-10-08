@@ -1,0 +1,2 @@
+exit 35797769 1 parete_s 734
+exit 35760084 0 parete_s 73

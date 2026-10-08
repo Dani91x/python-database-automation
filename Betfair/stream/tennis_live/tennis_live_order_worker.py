@@ -717,7 +717,8 @@ def _do_place(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) ->
     ok = market.place_order(order, customer_strategy_ref=_strategy_ref(), **client_kw)
     if ok is False:
         raise ValueError(f"place RIFIUTATO — {_val(order, 'violation_msg') or 'violation'}")
-    _track_manual(session, cust_ref, order, cmd["mode"], _event_id_of(session, cmd.get("market_id")))
+    _track_manual(session, cust_ref, order, cmd["mode"], _event_id_of(session, cmd.get("market_id")),
+                  coda=cmd)
     res = _result(ok=True, action="place", mode=cmd["mode"], cmd=cmd,
                   cust_ref=cust_ref, order=order,
                   detail=f"place {side} @{price}" + _nota_050(punta_050))
@@ -810,7 +811,7 @@ def _do_replace(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
         raise ValueError(f"replace RIFIUTATO — {_val(order, 'violation_msg') or 'violation'}")
     _track_manual(session, cust_ref, order, cmd["mode"],
                   _event_id_of(session, _val(order, "market_id") or cmd.get("market_id")),
-                  trade=trade)
+                  trade=trade, coda=cmd)
     return _result(ok=True, action="replace", mode=cmd["mode"], cmd=cmd,
                    cust_ref=cust_ref, order=order, detail=f"replace → {new_price}")
 
@@ -1046,7 +1047,7 @@ def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
                 raise ValueError("greenup: place-and-trim non avviato (anti-cascata o "
                                  "parcheggio rifiutato) - ritentare")
             _track_manual(session, cust_ref, parti[0], cmd["mode"],
-                          _event_id_of(session, cmd.get("market_id")))
+                          _event_id_of(session, cmd.get("market_id")), coda=cmd)
             res = _result(ok=True, action="greenup", mode=cmd["mode"], cmd=cmd,
                           cust_ref=cust_ref, order=parti[0],
                           detail=(f"{plan.note}; hedge {plan.side} {regola.chiesto:.2f} "
@@ -1081,7 +1082,7 @@ def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
     if ok is False:
         raise ValueError(f"greenup RIFIUTATO — {_val(order, 'violation_msg') or 'violation'}")
     _track_manual(session, cust_ref, order, cmd["mode"],
-                  _event_id_of(session, cmd.get("market_id")))
+                  _event_id_of(session, cmd.get("market_id")), coda=cmd)
     if cancel_failed:
         # hedge PIAZZATO ma resting non annullati: esito INCOMPLETO esplicito
         # (mai un done bugiardo: il resting vivo può riaprire la posizione).
@@ -1128,7 +1129,8 @@ def _dispatch(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) ->
 # Tracking + reconcile (specchio write-on-change, prune terminali) — fix #5/#6/#8/#10
 # ---------------------------------------------------------------------------
 def _track_manual(session: Any, cust_ref: str, order: Any, mode: str,
-                  event_id: Optional[str], trade: Any = None) -> None:
+                  event_id: Optional[str], trade: Any = None,
+                  coda: Optional[Dict[str, Any]] = None) -> None:
     """Registra un ordine manuale per il reconcile. Memorizza la MODE per-ordine (fix #5):
     lo specchio del fill asincrono usa la mode con cui l'ordine è stato piazzato, non un
     'live' hardcoded (altrimenti un fill PAPER finirebbe sotto 'live')."""
@@ -1150,6 +1152,11 @@ def _track_manual(session: Any, cust_ref: str, order: Any, mode: str,
         # l'Order appartiene a un framework smontato e va chiuso/scartato, non
         # ri-specchiato per sempre come EXECUTABLE fantasma.
         "gen": getattr(session, "framework_gen", 0),
+        # 08/10 (W3b, secondo giro): la riga di coda che l'ha chiesto (client_ref,
+        # params), per riconoscere in-process gli ordini dei BOT passati dalla
+        # coda DB con la regola di W2 (``motivo_bot_da_coda``)
+        "coda": ({"client_ref": coda.get("client_ref"), "params": coda.get("params")}
+                 if isinstance(coda, dict) else None),
     }
 
 

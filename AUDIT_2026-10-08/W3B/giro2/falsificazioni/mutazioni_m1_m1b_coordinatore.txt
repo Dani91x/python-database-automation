@@ -1,0 +1,16 @@
+M1 -> ROSSO | 6 failed, 52 passed in 0.76s | sha 14f893ed26a8 ripristinato
+    FAILED Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py::test_ordine_di_omega_dalla_coda_sulla_stessa_selezione_nessuno_stop
+    FAILED Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py::test_ordine_di_omega_registrato_nella_sua_tabella_nessuno_stop
+    FAILED Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py::test_omega_rivisto_dallo_stream_dopo_la_classificazione_in_cache_nessuno_stop
+    FAILED Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py::test_omega_dalla_coda_classificato_dopo_decide_rivedi_nessuno_stop
+    FAILED Betfair/stream/tennis_live/tests/test_w3b_ordini_esterni_tennis_2026_10_08.py::test_live_safe_tennis_dalla_coda_del_runner_nessuno_stop
+    FAILED Betfair/stream/tennis_live/tests/test_w3b_ordini_esterni_tennis_2026_10_08.py::test_live_ordine_di_un_bot_noto_al_db_nessuno_stop
+M1b -> ROSSO | 1 failed, 57 passed in 0.71s | sha 14f893ed26a8 ripristinato
+    FAILED Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py::test_omega_rivisto_dallo_stream_dopo_la_classificazione_in_cache_nessuno_stop
+M1+M1b -> ROSSO | 6 failed, 52 passed in 0.74s | sha 14f893ed26a8 ripristinato
+    FAILED Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py::test_ordine_di_omega_dalla_coda_sulla_stessa_selezione_nessuno_stop
+    FAILED Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py::test_ordine_di_omega_registrato_nella_sua_tabella_nessuno_stop
+    FAILED Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py::test_omega_rivisto_dallo_stream_dopo_la_classificazione_in_cache_nessuno_stop
+    FAILED Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py::test_omega_dalla_coda_classificato_dopo_decide_rivedi_nessuno_stop
+    FAILED Betfair/stream/tennis_live/tests/test_w3b_ordini_esterni_tennis_2026_10_08.py::test_live_safe_tennis_dalla_coda_del_runner_nessuno_stop
+    FAILED Betfair/stream/tennis_live/tests/test_w3b_ordini_esterni_tennis_2026_10_08.py::test_live_ordine_di_un_bot_noto_al_db_nessuno_stop

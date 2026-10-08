@@ -1,0 +1,102 @@
+=== 35797769
+  base                           IDENTICO (18 righe)
+  paper                          IDENTICO (18 righe)
+  chiusura-abbinata-in-parte     IDENTICO (20 righe)
+  rifiuti-betfair                IDENTICO (18 righe)
+  sniper-paper                   DIVERSO
+     --- 
+     +++ 
+     @@ -20 +19,0 @@
+     -
+  ordine-esterno                 NUOVO: OK  35797769 [ordine-esterno]  tick=  7760 decisioni= 1357 azioni=   2 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,sessione:stopped
+  ordine-esterno-altro-mercato   NUOVO: OK  35797769 [ordine-esterno-altro-mercato]  tick=665941 decisioni=121012 azioni=  44 stati=slot:IDLE,sessione:arming,sessione:running,slot:QUOTING2,s
+   coda --- 
+   coda +++ 
+   coda @@ -1 +1 @@
+   coda -ESITO: 4 partite senza violazioni, 1 con violazioni, 0 senza decisioni
+   coda +ESITO: 6 partite senza violazioni, 1 con violazioni, 0 senza decisioni
+   coda @@ -5,7 +5,7 @@
+   coda -     B1  x26189   nessun INGRESSO nuovo quando le aperture sono vietate: force-flat 
+   coda -     B2  x8471    al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha 
+   coda -     B3  x143     ogni ordine chiesto e' LEGALE su .it: prezzo nella ladder, non sot
+   coda -     B4  x66      lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+   coda -     B5  x34221   l'esposizione abbinata per selezione non supera il tetto che la se
+   coda -     B6  x66      tetto transazioni/ora (`max_txn_hour`): oltre il budget nessun NUO
+   coda -     K1  x8621    ogni ordine che il bot STA SEGUENDO in una posizione viva esiste d
+   coda +     B1  x30949   nessun INGRESSO nuovo quando le aperture sono vietate: force-flat 
+   coda +     B2  x8978    al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha 
+   coda +     B3  x160     ogni ordine chiesto e' LEGALE su .it: prezzo nella ladder, non sot
+   coda +     B4  x75      lo stake d'ingresso e' quello del control (mai piu' di quanto l'ut
+   coda +     B5  x39891   l'esposizione abbinata per selezione non supera il tetto che la se
+   coda +     B6  x75      tetto transazioni/ora (`max_txn_hour`): oltre il budget nessun NUO
+   coda +     K1  x9675    ogni ordine che il bot STA SEGUENDO in una posizione viva esiste d
+   coda @@ -13,10 +13,10 @@
+   coda -     K3  x34266   lo stato di ogni ordine si legge come Enum `OrderStatus` (`.value`
+   coda -     K4  x8621    uno slot che il bot crede VIVO ha almeno un ordine vivo o dell'abb
+   coda -     K5  x8084    nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il
+   coda -     K6  x34266   quando il bot dichiara uno slot CHIUSO (IDLE/DONE) non resta nessu
+   coda -     K7  x37      a ogni ciclo chiuso il `locked` che il bot contabilizza (pnl_locke
+   coda -     S1  x8668    ogni scrittura del servizio su `scalper_control` rispetta i CHECK 
+   coda -     S2  x20      uno STOP (UI 'stopping', kill-switch, fine vita, cap globale) arma
+   coda -     S3  x5       a sessione CHUSA nessun ordine della sessione resta vivo a mercato
+   coda -     S4  x5       lo stato finale della sessione dice PERCHE' e' finita: 'stopped' s
+   coda -     S5  x34781   mentre la sessione e' 'running' il servizio scrive heartbeat_at e 
+   coda +     K3  x39936   lo stato di ogni ordine si legge come Enum `OrderStatus` (`.value`
+   coda +     K4  x9675    uno slot che il bot crede VIVO ha almeno un ordine vivo o dell'abb
+   coda +     K5  x8748    nessuna ESPOSIZIONE abbinata resta sbilanciata su una selezione il
+   coda +     K6  x39933   quando il bot dichiara uno slot CHIUSO (IDLE/DONE) non resta nessu
+   coda +     K7  x42      a ogni ciclo chiuso il `locked` che il bot contabilizza (pnl_locke
+   coda +     S1  x10178   ogni scrittura del servizio su `scalper_control` rispetta i CHECK 
+   coda +     S2  x25      uno STOP (UI 'stopping', kill-switch, fine vita, cap globale) arma
+   coda +     S3  x7       a sessione CHUSA nessun ordine della sessione resta vivo a mercato
+   coda +     S4  x7       lo stato finale della sessione dice PERCHE' e' finita: 'stopped' s
+   coda +     S5  x40657   mentre la sessione e' 'running' il servizio scrive heartbeat_at e 
+   coda @@ -25,2 +25,2 @@
+   coda -     P1  x33511   ogni ordine del bot arriva allo specchio `betfair_live_orders` (ri
+   coda -     P2  x33511   lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+   coda +     P1  x39029   ogni ordine del bot arriva allo specchio `betfair_live_orders` (ri
+   coda +     P2  x39029   lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+=== 35760084
+  base                           IDENTICO (12 righe)
+  paper                          IDENTICO (12 righe)
+  chiusura-abbinata-in-parte     IDENTICO (12 righe)
+  rifiuti-betfair                IDENTICO (12 righe)
+  sniper-paper                   DIVERSO
+     --- 
+     +++ 
+     @@ -14 +13,0 @@
+     -
+  ordine-esterno                 NUOVO: OK  35760084 [ordine-esterno]  tick= 29538 decisioni= 5596 azioni=   0 stati=sessione:arming,sessione:running,slot:IDLE,sessione:stopped [COMPLETE]
+  ordine-esterno-altro-mercato   NUOVO: OK  35760084 [ordine-esterno-altro-mercato]  tick=124672 decisioni=23599 azioni=   0 stati=sessione:arming,sessione:running,slot:IDLE,sessione:done [C
+   coda --- 
+   coda +++ 
+   coda @@ -1 +1 @@
+   coda -ESITO: 5 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+   coda +ESITO: 7 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+   coda @@ -5,2 +5,2 @@
+   coda -     B1  x7640    nessun INGRESSO nuovo quando le aperture sono vietate: force-flat 
+   coda -     B2  x6765    al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha 
+   coda +     B1  x8255    nessun INGRESSO nuovo quando le aperture sono vietate: force-flat 
+   coda +     B2  x7205    al FISCHIO nessuna posizione aperta: dopo il KO ogni selezione ha 
+   coda @@ -18,5 +18,5 @@
+   coda -     S1  x3692    ogni scrittura del servizio su `scalper_control` rispetta i CHECK 
+   coda -     S2  x20      uno STOP (UI 'stopping', kill-switch, fine vita, cap globale) arma
+   coda -     S3  x5       a sessione CHUSA nessun ordine della sessione resta vivo a mercato
+   coda -     S4  x5       lo stato finale della sessione dice PERCHE' e' finita: 'stopped' s
+   coda -     S5  x12120   mentre la sessione e' 'running' il servizio scrive heartbeat_at e 
+   coda +     S1  x4421    ogni scrittura del servizio su `scalper_control` rispetta i CHECK 
+   coda +     S2  x25      uno STOP (UI 'stopping', kill-switch, fine vita, cap globale) arma
+   coda +     S3  x7       a sessione CHUSA nessun ordine della sessione resta vivo a mercato
+   coda +     S4  x7       lo stato finale della sessione dice PERCHE' e' finita: 'stopped' s
+   coda +     S5  x14178   mentre la sessione e' 'running' il servizio scrive heartbeat_at e 
+   coda @@ -25,2 +25,2 @@
+   coda -  ?? P1  x0       ogni ordine del bot arriva allo specchio `betfair_live_orders` (ri
+   coda -  ?? P2  x0       lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+   coda +     P1  x3       ogni ordine del bot arriva allo specchio `betfair_live_orders` (ri
+   coda +     P2  x3       lo specchio non dichiara MAI un ordine abbinato piu' di quanto il 
+   coda @@ -33 +33 @@
+   coda -?? MAI SOLLECITATI: 18 controlli su 22. Su questi il referto NON dice «sano», dice «non lo so»:
+   coda +?? MAI SOLLECITATI: 16 controlli su 22. Su questi il referto NON dice «sano», dice «non lo so»:
+   coda @@ -46,2 +45,0 @@
+   coda -     P1: ogni ordine del bot arriva allo specchio `betfair_live_orders` (riga costruita dallo specchio VERO della sessione) con chiesto, abbinato, residuo, prezzo medio, stato, ref e modalita': sono 
+   coda -     P2: lo specchio non dichiara MAI un ordine abbinato piu' di quanto il mercato dica (nessun fill dedotto: par.7 punto 8)
