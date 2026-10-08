@@ -14,3 +14,4 @@ Cumulativo = spesa totale (coordinatore + delegati).
 | 16:20 | 3. Ondata 2 (C porta ordini, D runtime e contratto, G dati e algoritmi del cloud, I processi h24) + verifica a campione | 79,20 | ~2,4 USD per delegato col tetto di chiamate |
 | 17:05 | 4. Ondata 3 (E1 Mike, E2 Omega, E3 Safe, E4 Scalper calcio) + verifica; E1 respinta su D6 (falso) e corretta | 92,70 | |
 | 17:30 | 5. Ondata 4 (E5 Tennis, B punteggi, F money management) + verifica | 100,20 | |
+| 18:05 | 6. Ondata 5 (H banco, J frontend, K cartelle e codice morto) + verifica | 108,70 | |

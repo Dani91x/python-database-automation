@@ -5229,3 +5229,8 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   su Google Sheets (non usato dai bot; riscritto dal workflow settimanale), `trading/daily_pnl.py:49` (stop su profit
   lordi), `reconcile_worker.py:747`, `omega_service.py:62-66` (assente = fresco), `poller.py:79-82`,
   `registro_bot.py:53` (registrazioni tennis fuori dal repo, `~/Desktop/tennis_rec`).
+- 18:05 tappa 5 ACCETTATA: H banco (congelamento con sha256 di 17 registrazioni e 11 referti; modalita' ombra),
+  J frontend (101 voci per rotta), K codice morto (3.440 righe con prova piena, 9 decisioni). Verifica:
+  `applica_bot.py:365,375` (genera `replayBotCatalogo.ts`), `banco_comune.py:1642` (impronta flumine 2.13.11),
+  `App.tsx:39,100` (QueryClient montato, 0 `useQuery(`), `weekly_poisson_calibration.yml:43,60` (CI riscrive
+  `money_management.py`), `predict_fixture.py:986` (import di `market_intelligence`).

@@ -1,0 +1,394 @@
+file	riga	testid	bottoni	campi	setInterval	realtime	rpc	tabelle	canali	descrizione
+components/BetfairMediaButtons.tsx	98	0	2	0	0	0				BetfairMediaButtons.tsx — pulsante UNICO diviso in due metà, stile Betfair:
+components/ProtectedRoute.tsx	28	0	0	0	0	0				AUTENTICAZIONE ATTIVA — early access: accede SOLO l'owner.
+components/controlroom/AzioniPartita.tsx	235	6	3	0	0	0				AzioniPartita.tsx — I PULSANTI CHE STANNO SU OGNI SCHEDA.
+components/controlroom/BottoneChiudiRiga.tsx	198	7	3	0	0	0				BottoneChiudiRiga.tsx — il «Chiudi» di UNA riga, cablato per singolo bot
+components/controlroom/CashOutGlobale.tsx	490	25	3	0	0	0				CashOutGlobale.tsx - 30/09 (P12a): il riquadro «CASH OUT DELLA PARTITA (se
+components/controlroom/CashOutPartita.tsx	220	9	4	0	0	0				CashOutPartita.tsx — «CASH OUT SAFE» (della partita) e «RIPRENDI».
+components/controlroom/DettaglioRigaView.tsx	480	23	0	0	0	0				DettaglioRigaView.tsx — COME SI MOSTRA il dettaglio di una riga.
+components/controlroom/EsitoAbbinamentoStriscia.tsx	143	9	0	0	0	0				EsitoAbbinamentoStriscia.tsx - B17 (25/09): IL MESSAGGIO DOPO IL CLIC.
+components/controlroom/EsitoChiusuraMike.tsx	69	6	0	0	0	0				EsitoChiusuraMike.tsx - L'ESITO DELLA CHIUSURA NELLA SCHEDA DI MIKE (29/09, M7.2).
+components/controlroom/FlussoBadge.tsx	72	3	0	0	0	0				Cantiere J (28/09/2026): la partita col FLUSSO PREZZI interrotto si vede
+components/controlroom/InterruttoreUscite.tsx	134	6	4	0	0	0				InterruttoreUscite.tsx - IL PULSANTE DELLE USCITE, UGUALE PER OGNI BOT.
+components/controlroom/MarchioSoldi.tsx	45	2	0	0	0	0				MarchioSoldi.tsx - 30/09, P1_MARCHIO_FONTE. Etichetta in linea che dice DA
+components/controlroom/NomiPartita.tsx	74	3	0	0	0	0				NomiPartita.tsx — I NOMI DELLA PARTITA, uguali in ogni scheda (B1, 30/09).
+components/controlroom/ObiettivoEditor.tsx	132	7	3	1	0	0				ObiettivoEditor.tsx — modifica IN LINEA dell'obiettivo di giornata (Task 2).
+components/controlroom/ObiettivoHero.tsx	262	14	0	0	0	0				ObiettivoHero.tsx — ZONA 1 «L'OBIETTIVO» (Task 1/2, 18/09).
+components/controlroom/ObiettivoVoci.tsx	70	8	0	0	0	0				ObiettivoVoci.tsx - 30/09 (W_G/P6): le due voci di soldi del riquadro
+components/controlroom/OpportunitaColonna.tsx	143	7	0	0	0	0				OpportunitaColonna.tsx — «Opportunità di modello», STACCATA dalle uscite
+components/controlroom/OrdiniContoPartita.tsx	78	5	0	0	0	0				OrdiniContoPartita.tsx - P14 (30/09): gli ordini del CONTO fuori dai bot su
+components/controlroom/PannelloBot.tsx	1054	45	9	1	1	0				PannelloBot.tsx — LA PLANCIA DI COMANDO: UN INTERRUTTORE PER OGNI BOT.
+components/controlroom/PosizioniChiuse.tsx	918	52	5	1	0	0				PosizioniChiuse.tsx - LA SCHEDA DELLE POSIZIONI CHIUSE.
+components/controlroom/PropostaUscitaMike.tsx	331	17	1	0	0	0				PropostaUscitaMike.tsx — 25/09: L'USCITA CHE MIKE VORREBBE FARE, DA APPROVARE.
+components/controlroom/ProposteUsciteFlusso.tsx	89	7	1	0	0	0				ProposteUsciteFlusso.tsx - LE USCITE DA APPROVARE dei bot di flusso (28/09).
+components/controlroom/QuoteMercato.tsx	271	13	0	0	0	0				QuoteMercato.tsx — LE QUOTE «DA TRADER», uguali in ogni scheda (B1, 30/09).
+components/controlroom/RigaCapacitaMercati.tsx	101	8	0	0	1	0			calcio	RigaCapacitaMercati.tsx - 28/09 (cantiere B): quante partite calcio segue il
+components/controlroom/RigaFreno.tsx	282	12	5	0	2	0			calcio	RigaFreno.tsx - R3 (25/09): IL FRENO UNICO in Control Room.
+components/controlroom/RigaOrdiniReali.tsx	318	14	4	0	2	0			calcio	RigaOrdiniReali.tsx - L'INTERRUTTORE "ORDINI REALI: OFF / PAPER / LIVE".
+components/controlroom/SchedaChiusura.tsx	360	9	3	0	1	0				SchedaChiusura.tsx — LA SCHEDA CHE DECIDE UN'USCITA.
+components/controlroom/SchedaChiusuraOmega.tsx	327	11	3	0	1	0				SchedaChiusuraOmega.tsx — LA SCHEDA CHE DECIDE UN'USCITA DI OMEGA.
+components/controlroom/SchedaMike.tsx	278	9	0	0	0	0				SchedaMike.tsx — I DATI DI MODELLO DI MIKE nella Control Room (17/09).
+components/controlroom/SchedaPartita.tsx	608	22	1	0	0	0				SchedaPartita.tsx — LA RIGA DI UNA PARTITA nel banco operativo.
+components/controlroom/SchedaPreMatch.tsx	171	6	0	0	0	0				SchedaPreMatch.tsx — LE PARTITE CHE NON SONO ANCORA COMINCIATE.
+components/controlroom/SchedaPropostaOpportunita.tsx	658	28	3	0	1	0				SchedaPropostaOpportunita.tsx — LA SCHEDA CHE DECIDE UN'APERTURA.
+components/controlroom/SplitSport.tsx	372	19	1	0	0	0				SplitSport.tsx — CALCIO E TENNIS, SEPARATI E LEGGIBILI.
+components/controlroom/StrisciaEsitoChiusura.tsx	138	8	0	0	0	0				StrisciaEsitoChiusura.tsx — LA STRISCIA DI ESITO dopo un'approvazione.
+components/controlroom/UsciteColonna.tsx	138	5	0	1	0	0				UsciteColonna.tsx — «Uscite — decidi tu», STACCATA dalle opportunità
+components/controlroom/aperte/statoPartitaAperta.ts	81	0	0	0	0	0				statoPartitaAperta.ts - P15 (30/09): lo STATO di una partita con posizione
+components/controlroom/chiudiRiga.ts	408	0	0	0	0	0				chiudiRiga.ts — IL «CHIUDI» DI UNA RIGA, CABLATO PER SINGOLO BOT (B16, 24/09).
+components/controlroom/comandiBot.ts	159	0	0	0	0	0				comandiBot.ts — I COMANDI DELLA CONTROL ROOM.
+components/controlroom/dettaglioRiga.ts	269	0	0	0	0	0				dettaglioRiga.ts — IL DETTAGLIO CHE LA SCHEDA ORIGINALE MOSTRA GIÀ,
+components/controlroom/ordiniConto.ts	62	0	0	0	0	0				ordiniConto.ts - P14 (30/09): gli ordini del CONTO fuori dai bot, per partita.
+components/controlroom/righeBot.ts	182	0	0	0	0	0				righeBot.ts — DA QUELLO CHE DICONO I SERVIZI ALLE RIGHE DELLA PLANCIA.
+components/controlroom/soloTennis.ts	191	0	0	0	0	0				soloTennis.ts — «NELLA SCHEDA TENNIS PARTE SOLO IL TENNIS, A 3 EURO».
+components/controlroom/tennisAuto.ts	128	0	0	0	0	0				tennisAuto.ts — AUTO-MODE DEI 4 BOT TENNIS, IN PAROLE (25/09).
+components/controlroom/testata/FasciaSoldiVeri.tsx	219	16	2	0	0	0				FasciaSoldiVeri.tsx - P3 (30/09): "SOLDI VERI ADESSO" nella testata.
+components/controlroom/testata/FasciaStop.tsx	419	31	7	1	0	0				FasciaStop.tsx - gli STOP DI PERDITA nella testata (contenitore `cr-freni`).
+components/controlroom/testata/TesseraRunner.tsx	151	7	0	0	0	0				TesseraRunner.tsx - 01/10: i due runner in testata, una TESSERA ciascuno.
+components/controlroom/testata/paroleImpianto.ts	135	0	0	0	0	0				paroleImpianto.ts - P5 (30/09): chip dei bot e impianto in parole da trader.
+components/controlroom/testata/salvaStop.ts	226	0	0	0	0	0				salvaStop.ts - 01/10: lo stop di perdita si modifica DALLA TESTATA.
+components/controlroom/testata/soldiVeri.ts	286	0	0	0	0	0				soldiVeri.ts - P3 (30/09): la fascia "SOLDI VERI ADESSO" della testata.
+components/controlroom/testata/stopPerdita.ts	171	0	0	0	0	0				stopPerdita.ts - P4 (30/09): gli STOP DI PERDITA in testata, ciascuno col
+components/controlroom/trovaEsitoUscita.ts	97	0	0	0	0	0				trovaEsitoUscita.ts — IL PONTE fra una proposta di uscita e la STRISCIA DI
+components/controlroom/useCashOutPartita.ts	84	0	0	0	0	0				useCashOutPartita.ts - 30/09 (P12a): il cash out della partita con i prezzi
+components/controlroom/useChiusuraAlMs.ts	100	0	0	0	0	0				useChiusuraAlMs.ts - 25/09 (residui B17): il "se chiudo ora" di UNA riga AL
+components/controlroom/useControlRoom.ts	4323	0	0	0	5	0			bot,calcio,s,scalper,scanner,sport,tennis_bot	useControlRoom.ts — IL COLLEGAMENTO della Control Room ai tre bot.
+components/controlroom/usePrezzoAlMs.ts	124	0	0	0	0	0				usePrezzoAlMs.ts - il prezzo di UNA selezione al ms, per la scheda di una
+components/controlroom/useSeguiOrdini.ts	146	0	0	0	1	0				useSeguiOrdini.ts - B17 (25/09): la scheda SEGUE il suo ordine dopo il clic
+components/controlroom/useTennisVivo.ts	261	0	0	0	1	0			tennis	useTennisVivo.ts — IL TENNIS VIVO nella scheda partita della Control Room
+components/dashboard/AnalyticsPanels.tsx	42	0	0	0	0	0				Affianca i pulsanti di analisi sotto il blocco Fixture/League:
+components/dashboard/BacktestAutomatico.tsx	427	0	4	14	0	0				Backtest Automatico — backtest UFFICIALE via FlumineSimulation (worker locale).
+components/dashboard/BetfairOddsPanel.tsx	149	0	1	0	0	0				Quote Betfair — pannello per-partita che riporta TUTTE le quote di TUTTI i
+components/dashboard/BiggestStreakCard.tsx	109	0	0	0	0	0				
+components/dashboard/CardsByMinute.tsx	99	0	2	0	0	0				
+components/dashboard/CleanSheetCard.tsx	59	0	0	0	0	0				
+components/dashboard/ComparisonSection.tsx	150	0	0	0	0	0				
+components/dashboard/CreateStrategy.tsx	287	0	2	23	0	0				Crea Strategia — imposta i filtri, esegui il BACKTEST (backtest_strategy) e
+components/dashboard/DecisionsTab.tsx	188	0	2	2	0	0				Tab DECISIONI — selettore della LOGICA DECISIONALE monitorata:
+components/dashboard/DecisionsView.tsx	213	3	2	6	0	0				Vista DECISIONI — analisi del layer decisionale (analytics_decisions).
+components/dashboard/DirezioneDashboard.tsx	456	7	2	0	0	0				Cruscotto DIREZIONE — pannello per-partita a fianco di "Modelli ML".
+components/dashboard/DirezioniReport.tsx	641	0	5	7	0	0				DirezioniReport — report "Direzioni" della sezione Reportistiche (/analytics).
+components/dashboard/EtaDato.tsx	31	1	0	0	0	0				Etichetta unica "aggiornato al ... (eta')" per tutte le tab della Dashboard
+components/dashboard/FixtureSelector.tsx	136	0	2	0	0	0		fixture_predictions		
+components/dashboard/FixturesSummary.tsx	106	0	0	0	0	0				
+components/dashboard/FormString.tsx	54	0	0	0	0	0				
+components/dashboard/GoalsTabs.tsx	193	1	2	0	0	0				Transform minute data for chart. FIX-B 26/09: un minuto NULL e' un dato assente
+components/dashboard/H2HSection.tsx	43	0	0	0	0	0				
+components/dashboard/HeroMatch.tsx	86	0	0	0	0	0				
+components/dashboard/Last5Card.tsx	72	0	0	0	0	0				FIX-B 26/09: played=0 dava "NaN per match" -> "—"
+components/dashboard/LineupsCard.tsx	93	0	1	0	0	0				Sort by matches played descending
+components/dashboard/MLPanel.tsx	293	2	2	0	0	0				Pannello ML — previsioni per-partita dell'ensemble (model_predictions_json).
+components/dashboard/MarketFrequencyPanel.tsx	551	2	12	1	0	0				Frequenze Mercati — pannello di analisi "frequenza storica + media mobile"
+components/dashboard/MatchesList.tsx	512	0	8	1	0	0		fixture_predictions		
+components/dashboard/PenaltyCard.tsx	40	0	0	0	0	0				
+components/dashboard/PoissonPanel.tsx	241	0	2	0	0	0				Pannello POISSON — probabilita per-partita del motore Dixon-Coles
+components/dashboard/PredictionsCard.tsx	113	0	0	0	0	0				
+components/dashboard/ProbBarChart.tsx	50	0	0	0	0	0				Grafico a barre orizzontali di probabilita (0..1) per le selezioni di un mercato.
+components/dashboard/ReportisticheTab.tsx	37	0	1	0	0	0				ReportisticheTab — sezione "Reportistiche" di /analytics.
+components/dashboard/RitardiPanel.tsx	599	5	10	1	0	0				Pannello STUDIO RITARDI — riproduzione 1:1 del file Excel
+components/dashboard/TacticalEnginePanel.tsx	273	0	2	0	0	0				Pannello TACTICAL ENGINE (GSG) — terzo motore INDIPENDENTE ispirato a TacticAI.
+components/dashboard/TeamPanel.tsx	88	0	0	0	0	0				
+components/landing/AuthSection.tsx	399	0	4	10	0	0		leads		SCHEMAS (INVARIATI)
+components/landing/DashboardPreview.tsx	89	0	0	0	0	0				
+components/landing/FeaturesGrid.tsx	75	0	0	0	0	0				
+components/landing/HeroSection.tsx	89	0	4	0	0	0				
+components/landing/LandingFooter.tsx	17	0	0	0	0	0				
+components/landing/PricingCard.tsx	54	0	1	0	0	0				
+components/landing/StatsBar.tsx	36	0	0	0	0	0				
+components/landing/SystemWorkflow.tsx	114	0	0	0	0	0				
+components/live/DepthPanel.tsx	241	0	1	0	1	0				DepthPanel — D31: pannello "profondità totale" (WOM esteso) + delta flusso.
+components/live/DutchingPanel.tsx	618	0	2	11	1	0				DutchingPanel — calcolatore + piazzamento DUTCHING (stile Bet Angel / Fairbot).
+components/live/FlussoStreamBanner.tsx	77	2	0	0	1	0			sport	Cantiere J2 (28/09/2026): il ladder e Segui Live dicono in modo EVIDENTE che
+components/live/GridView.tsx	654	0	4	1	1	0				GridView — "Grid one-click" (roadmap D28): vista ALTERNATIVA al ladder in
+components/live/HabitatCard.tsx	115	0	0	0	1	0				HabitatCard — "Partite adatte oggi" per lo SCALPER.
+components/live/LadderView.tsx	2985	6	36	20	2	0				LadderView — ladder LIVE per-mercato fedele ai software pro (Betting Toolkit,
+components/live/LiveAlertBanner.tsx	80	0	1	0	0	0				LiveAlertBanner — banner in-app per gli avvisi limiti Betfair / sistema (#5).
+components/live/LiveControlsPanel.tsx	464	0	3	7	1	0				LiveControlsPanel — controlli GLOBALI del runner LIVE TRADING (Fase 6).
+components/live/LiveMarketBoard.tsx	188	0	2	0	0	0				LiveMarketBoard — griglia dei mercati live letti da live_now.state.markets.
+components/live/LiveMatchCard.tsx	88	1	0	0	0	0				LiveMatchCard — riga (card) di una partita seguita dallo stream Betfair.
+components/live/LiveSignalPanel.tsx	214	0	0	0	1	0				LiveSignalPanel — segnali del Motore Live (#2) per una partita seguita.
+components/live/LiveTradingPanel.tsx	613	1	5	13	1	0				LiveTradingPanel — pannello operativo LIVE TRADING (Fase 1).
+components/live/MiniPriceChart.tsx	109	0	0	0	0	0				MiniPriceChart — candele OHLC del prezzo (LTP) della selezione, laterali al
+components/live/PlaceConfirmDialog.tsx	144	0	2	1	0	0				PlaceConfirmDialog — popup di conferma di un PLACE dal ladder (stile Bet
+components/live/PriceAxisBar.tsx	105	0	0	0	0	0				PriceAxisBar — barra prezzo NAVIGABILE stile Geeks Toy (B18): l'intera scala
+components/live/RiskRulesPanel.tsx	765	0	4	17	1	0				RiskRulesPanel — automazione del rischio in stile Bet Angel (Fase 3).
+components/live/ScalperPanel.tsx	976	0	9	18	1	0				ScalperPanel — pannello SCALPER BOT (per EVENTO, montato una volta come
+components/live/SelectionChartPanel.tsx	358	0	1	1	0	0				SelectionChartPanel (roadmap D29) — charting per SELEZIONE: candele prezzo
+components/live/StandaloneLadder.tsx	103	0	0	0	0	0				StandaloneLadder — un ladder AUTOSUFFICIENTE per popout e multi-ladder (B19):
+components/live/TerminalPositionsRail.tsx	275	1	1	0	1	0				TerminalPositionsRail — colonna SINISTRA del trading terminal (stile Bet Angel /
+components/live/XHedgePanel.tsx	680	1	3	4	2	0			calcio	XHedgePanel — analisi CROSS-MARKET dell'evento (x-hedge / correct-score cover).
+components/mike/MikeCashOutButton.tsx	246	10	3	0	0	0				MikeCashOutButton — CASH OUT di una PARTITA di Mike.
+components/mike/MikeEventPnlTable.tsx	140	1	0	0	0	0				MikeEventPnlTable — UNA RIGA PER PARTITA, col netto davanti e il dettaglio
+components/mike/MikeMatchCard.tsx	1175	63	6	0	0	0				MikeMatchCard — scheda di UNA partita seguita da Mike.
+components/mike/MikeParamsSheet.tsx	83	0	0	0	0	0				MikeParamsSheet — TUTTI i parametri del bot Mike, sul pannello CONDIVISO
+components/mike/useMike.ts	394	0	0	0	1	0			mike	useMike — stato del BOT MIKE per la pagina /mike.
+components/mike/useMikeClock.ts	46	0	0	0	1	0				useMikeClock — UN SOLO orologio da 1 secondo per tutta la sezione Mike.
+components/mike/useMikeEventoAlMs.ts	71	0	0	0	0	0			mike	useMikeEventoAlMs - LA SCHEDA DI UNA PARTITA DI MIKE, AL MILLISECONDO (29/09, M7.1).
+components/omega/ManualPanel.tsx	645	14	14	5	2	0				ManualPanel — modalità MANUALE di Omega: scegli evento → mercato → selezione
+components/omega/MatchTradesTable.tsx	710	31	1	0	0	0				MatchTradesTable.tsx — TABELLA DELLE PARTITE di Omega (§14, 11/09/2026).
+components/omega/MissionCard.tsx	724	14	7	2	1	0				MissionCard — scheda operativa di UNA missione (partita): 4 righe.
+components/omega/MissionPanel.tsx	947	9	11	3	3	0				MissionPanel — tab MISSIONE di /omega: centro di controllo PER PARTITA.
+components/omega/OmegaParamsSheet.tsx	117	1	0	0	0	0				OmegaParamsSheet.tsx — il foglio parametri di Omega, MONTATO ANCHE FUORI
+components/omega/PartiteChiuseDallUtente.tsx	125	4	1	0	0	0				PartiteChiuseDallUtente.tsx — LE PARTITE CHE HAI CHIUSO TU (Omega, R8).
+components/replay/ApplicaBotPanel.tsx	296	16	4	3	0	0				ApplicaBotPanel — il riquadro «Applica bot» del replay (06/10; TUTTI i bot
+components/replay/AvvisoCoerenzaBarra.tsx	98	3	0	0	0	0				AvvisoCoerenzaBarra - avviso DISCRETO di Match Replay: se il verificatore trova
+components/replay/BotOrdersPanel.tsx	66	2	0	1	0	0				BotOrdersPanel — gli ordini del bot applicato COME ERANO all'istante del
+components/replay/EsitoBotPanel.tsx	114	8	1	0	0	0				EsitoBotPanel — il RISULTATO di «Applica bot» (07/10; strumento professionale
+components/replay/LadderBacktestPanel.tsx	200	0	1	11	0	0				LadderBacktestPanel — F42: backtest del ladder-trading sul replay caricato.
+components/replay/MarketPanel.tsx	148	0	3	2	0	0				MarketPanel — pannello di UN mercato del replay (data-driven: funziona con 2,
+components/replay/OpportunitaPanel.tsx	276	0	1	0	0	0				OpportunitaPanel — mostra, per la snapshot CORRENTE del replay, le opportunità
+components/replay/ParametriBotPanel.tsx	185	7	5	1	0	0				ParametriBotPanel — i PARAMETRI del bot applicato al replay (07/10).
+components/replay/PlaybackControls.tsx	57	0	7	0	0	0				PlaybackControls — barra di 7 pulsanti per il replay (icone lucide):
+components/replay/RegistroOperazioniBot.tsx	239	12	4	2	0	0				RegistroOperazioniBot — il REGISTRO DELLE OPERAZIONI del bot applicato al
+components/replay/RiepilogoPnlBot.tsx	77	8	0	0	0	0				RiepilogoPnlBot — il P&L del bot applicato (07/10 sera), uguale per tutti i
+components/replay/TimelineSlider.tsx	197	4	0	1	0	0				TimelineSlider — slider del replay con fill dorato e knob circolare che mostra
+components/replay/TradesPanel.tsx	140	0	1	0	0	0				TradesPanel — elenco di tutti gli ordini simulati (aperti + chiusi).
+components/replay/TrainingTradesPanel.tsx	85	2	1	0	0	0				TrainingTradesPanel — i TRADE del LADDER TRAINING di Match Replay (06/10).
+components/replay/ValidationCard.tsx	105	0	1	0	0	0				ValidationCard — card "Validazione" (collassabile) che mostra il Report
+components/report/DateRangeFilter.tsx	147	0	6	0	0	0				DateRangeFilter — filtro data a CALENDARIO (range Dal→Al) self-contained.
+components/report/ManualTradeForm.tsx	343	0	2	17	0	0				ManualTradeForm — Inserimento MANUALE di un'operazione PASSATA nel Report
+components/safestrategy/BotParamsSheet.tsx	933	8	0	0	0	0				BotParamsSheet.tsx — parametri del BOT Safe Strategy (fonte unica: il DB).
+components/safestrategy/InvestAction.tsx	376	8	1	1	0	0				InvestAction.tsx — azione "Investi" riusabile (segnali e opportunità).
+components/safestrategy/MonitorCard.tsx	130	1	1	0	0	0				MonitorCard.tsx — riga di UNA partita monitorata da SAFE STRATEGY.
+components/safestrategy/OpportunityGroup.tsx	638	20	0	0	0	0				OpportunityGroup.tsx — card delle OPPORTUNITÀ di una partita (calcio/tennis).
+components/safestrategy/ParamsSheet.tsx	348	0	3	4	0	0				ParamsSheet.tsx — pannello parametri SAFE STRATEGY (tutti modificabili).
+components/safestrategy/RiskPanel.tsx	189	11	0	0	0	0				RiskPanel.tsx — pannello RISCHIO nella riga KPI della Safe Strategy.
+components/safestrategy/SafeStrategyProvider.tsx	390	0	0	0	2	0				SafeStrategyProvider.tsx — plumbing dati della sezione SAFE STRATEGY.
+components/safestrategy/SafeTradesTable.tsx	874	30	1	0	0	0				SafeTradesTable.tsx — tabella realtime delle POSIZIONI Safe Strategy.
+components/safestrategy/SignalCard.tsx	269	9	0	0	0	0				SignalCard.tsx — card di UN segnale SAFE STRATEGY (attivo o scaduto).
+components/safestrategy/safeActivity.ts	502	0	0	0	0	0				safeActivity.ts — ATTIVITÀ DEL SERVIZIO Safe Strategy, in italiano.
+components/safestrategy/useSafeBot.ts	429	0	0	0	1	0			safe	useSafeBot — stato del BOT Safe Strategy per la pagina /safe-strategy.
+components/safestrategy/variantStyles.ts	59	0	0	0	0	0				variantStyles.ts — stile visivo delle 4 strategie SAFE STRATEGY.
+components/shell/AppShell.tsx	39	0	0	0	0	0				AppShell — la cornice del redesign «guscio v2» (layout route di App.tsx).
+components/shell/ProvaNuovaGrafica.tsx	35	1	1	0	0	0				«Prova la nuova grafica» — l'unico elemento che l'app ATTUALE (ui.shell='off')
+components/shell/Sidebar.tsx	160	8	3	0	0	0				Sidebar del guscio v2: gruppi e voci del prototipo, comprimibile, filtro
+components/shell/TestataGlobale.tsx	86	4	1	0	0	0				Testata globale del guscio v2 — SOLA LETTURA, nessun comando operativo.
+components/shell/navigazione.ts	158	0	0	0	0	0				navigazione — le voci della sidebar del guscio v2 e cosa mostra la testata.
+components/tennis-replay/TennisReplayList.tsx	105	5	0	0	0	0				TennisReplayList — elenco delle partite di tennis registrate e caricate nel
+components/tennis-replay/TennisTimelineSymbols.tsx	66	1	0	0	0	0				TennisTimelineSymbols — i SIMBOLI DEL TENNIS della barra del Replay Tennis.
+components/tennis/TennisBotEquityChart.tsx	167	0	0	0	0	0				TennisBotEquityChart — grafico equity/PnL aggregato dei bot tennis ARMATI.
+components/tennis/TennisBotPanel.tsx	686	1	2	4	2	1				TennisBotPanel — COLONNA SINISTRA del Terminal Tennis (Screen 3).
+components/tennis/TennisBotServiceParamsSheet.tsx	138	0	0	0	0	0				TennisBotServiceParamsSheet.tsx — il foglio parametri dei 4 bot tennis
+components/tennis/TennisLadderColumn.tsx	242	0	1	0	0	1				TennisLadderColumn.tsx — Colonna CENTRALE del Tennis Trading Terminal (Screen 3).
+components/tennis/TennisMatchStats.tsx	634	0	0	0	1	0				TennisMatchStats.tsx — Colonna DESTRA del Tennis Trading Terminal (Screen 3).
+components/tennis/TennisMatchesList.tsx	536	0	3	0	0	0				TennisMatchesList — "Partite del Giorno" del Tennis (Screen 2).
+components/tennis/TennisNav.tsx	153	0	7	0	0	0				Barra di navigazione condivisa per la sezione Tennis.
+components/trading/ActivityFeed.tsx	244	8	5	0	0	0				ActivityFeed.tsx — lista UNICA delle attività del servizio.
+components/trading/BarreGiornaliere.tsx	136	3	0	0	0	0				BarreGiornaliere.tsx — il P&L GIORNO PER GIORNO, a barre.
+components/trading/BotHeader.tsx	196	5	2	0	0	0				BotHeader.tsx — HEADER STICKY unico delle tre sezioni di trading.
+components/trading/CashOutButton.tsx	472	10	4	1	0	0				CashOutButton.tsx — controllo CASH OUT professionale, riusabile.
+components/trading/DailyCalendar.tsx	279	7	4	0	0	0				DailyCalendar.tsx — CALENDARIO MENSILE delle giornate operative.
+components/trading/DayBar.tsx	294	19	0	0	0	0				DayBar.tsx — barra "GIORNATA OPERATIVA" unica per i tre bot.
+components/trading/DayDetail.tsx	362	17	1	0	0	0				DayDetail.tsx — i trade di UNA giornata operativa: aperture con le gambe di
+components/trading/EmptyState.tsx	63	3	0	0	0	0				EmptyState.tsx / LoadingState.tsx / SectionCard.tsx — primitive di layout
+components/trading/EquityCard.tsx	56	2	0	0	0	0				EquityCard.tsx — card UNICA della curva di equity.
+components/trading/EquityCurve.tsx	86	0	0	0	0	0				EquityCurve.tsx — curva del P&L cumulato regolato (SVG puro, nessuna libreria).
+components/trading/EventPnlTable.tsx	480	11	2	0	0	0				EventPnlTable.tsx — LA TABELLA DELLE OPERAZIONI, una sola per i tre bot.
+components/trading/ExitBadge.tsx	45	1	0	0	0	0				ExitBadge.tsx — badge dell'USCITA AUTOMATICA di una posizione.
+components/trading/LiveConfirmDialog.tsx	92	4	2	0	0	0				LiveConfirmDialog.tsx — dialog UNICO di passaggio a LIVE (soldi veri).
+components/trading/ModeBadge.tsx	54	1	0	0	0	0				ModeBadge.tsx — badge PAPER / LIVE di UNA riga (trade, attività, richiesta).
+components/trading/ModeBanner.tsx	53	3	0	0	0	0				ModeBanner.tsx — banner della MODALITÀ, identico nelle tre sezioni.
+components/trading/ModeToggle.tsx	39	1	2	0	0	0				ModeToggle.tsx — interruttore PAPER/LIVE unico. Accessibile: due bottoni con
+components/trading/PageShell.tsx	35	2	0	0	0	0				PageShell.tsx — GUSCIO unico delle pagine di trading (Omega/Safe/Mike).
+components/trading/ParamsSheetBase.tsx	366	9	4	4	0	0				ParamsSheetBase.tsx — pannello parametri SPEC-DRIVEN condiviso.
+components/trading/PerformancePanel.tsx	236	5	1	0	0	0				PerformancePanel.tsx — KPI di periodo sulle giornate operative + equity per
+components/trading/SectionFilter.tsx	123	2	1	0	0	0				SectionFilter — mostra/nascondi le sezioni di una lista di partite.
+components/trading/ServiceHealthChip.tsx	171	5	0	0	0	0				ServiceHealthChip.tsx — UN chip di salute per le tre sezioni.
+components/trading/StatTile.tsx	79	3	0	0	0	0				StatTile.tsx / KpiRow.tsx — KPI unici del design system.
+components/trading/StatoOrdine.tsx	132	10	0	0	0	0				StatoOrdine.tsx — LA RIGA «stato dell'ordine», uguale in tutte le sezioni.
+components/trading/StoricoLink.tsx	64	2	0	0	0	0				StoricoLink.tsx — IL PULSANTE «STORICO», uno solo per tutta la piattaforma.
+components/trading/TradingHistory.tsx	214	7	2	0	0	0				TradingHistory.tsx — sezione "STORICO" (per giornata operativa) condivisa da
+components/ui/accordion.tsx	58	0	0	0	0	0				
+components/ui/badge.tsx	37	0	0	0	0	0				
+components/ui/button.tsx	58	0	0	0	0	0				
+components/ui/card.tsx	77	0	0	0	0	0				
+components/ui/checkbox.tsx	29	0	0	0	0	0				
+components/ui/dialog.tsx	123	0	0	0	0	0				
+components/ui/form.tsx	177	0	0	0	0	0				
+components/ui/input.tsx	23	0	0	1	0	0				
+components/ui/label.tsx	27	0	0	0	0	0				
+components/ui/progress.tsx	33	0	0	0	0	0				
+components/ui/sheet.tsx	139	0	0	0	0	0				
+components/ui/skeleton.tsx	16	0	0	0	0	0				
+components/ui/sonner.tsx	34	0	0	0	0	0				
+components/ui/tabs.tsx	54	0	0	0	0	0				
+components/ui/tooltip.tsx	33	0	0	0	0	0				
+components/watchlist/MultiTradeForm.tsx	715	0	7	16	0	0				MultiTradeForm — Scheda Trade MULTIPLA che PIAZZA ORDINI REALI su Betfair.
+components/watchlist/PlacedOrdersPanel.tsx	171	0	0	0	0	0				PlacedOrdersPanel — "Ordini piazzati" di UNA fixture: cosa e' stato inviato a
+components/watchlist/TradeForm.tsx	415	0	5	20	0	0				TradeForm — Dialog "scheda trade" pre-compilata dallo snapshot watchlist.
+components/watchlist/WatchlistPanel.tsx	683	0	14	2	1	0				WatchlistPanel — lista di card snapshot pre-match (1 per partita in watchlist).
+hooks/useAuth.ts	32	0	0	0	0	0				Listener per i cambiamenti di stato auth
+lib/__fixtures__/replayBarra.ts	107	0	0	0	0	0				Fixture della barra di avanzamento di Match Replay (07/10): DUE registrazioni
+lib/__fixtures__/replayBarraConversione.ts	50	0	0	0	0	0				Conversione della fixture di una registrazione (`replay_barra_<event>.json`) nel
+lib/__fixtures__/replayBarraDbFinto.ts	199	0	0	0	0	0				FINTO delle RPC di Match Replay (`migrations/live_stream_rpc.sql` e
+lib/__fixtures__/replayBarraMutanti.ts	51	0	0	0	0	0				MUTANTI per falsificare il verificatore della barra (07/10/2026): versioni
+lib/__fixtures__/replayBarraPagina.tsx	104	0	0	0	0	0				Pilota di test per la pagina VERA Match Replay (07/10): la monta con un replay
+lib/__fixtures__/replayBarraTutte.ts	83	0	0	0	0	0				Scoperta di TUTTE le registrazioni del repository per il verificatore della barra
+lib/__fixtures__/replayTimelineEventsLegacy.ts	195	0	0	0	0	0				!!! COPIA DIFETTOSA, SOLO PER FALSIFICARE IL VERIFICATORE DELLA BARRA !!!
+lib/__fixtures__/scalperFinti.ts	41	0	0	0	0	0				scalperFinti.ts - i FINTI dello scalper calcio per i test (24/09).
+lib/analytics.ts	552	0	0	0	0	1	backtest_strategy,delete_strategy,get_analytics,get_analytics_filters,get_analytics_rows,get_decisions,get_decisions_filters,list_backtest_results,lis			Analytics — data layer per la pagina /analytics (centro di controllo).
+lib/apertoAdesso.ts	101	0	0	0	0	0				apertoAdesso.ts - «APERTO ADESSO (se chiudo tutto)» per il riquadro Obiettivo.
+lib/applicaBot.ts	181	0	0	0	0	0				applicaBot — le regole PURE del riquadro «Applica bot» (07/10).
+lib/auth-config.ts	24	0	0	0	0	0				Configurazione accesso in fase di "early access".
+lib/avvisiBanco.ts	82	0	0	0	0	0				avvisiBanco — l'ONESTA' del clic e dei parametri (07/10 sera, punto 5).
+lib/betfair.ts	242	0	0	0	0	0	get_betfair_direction_odds,get_betfair_fixtures,get_betfair_full_odds,get_betfair_odds,get_betfair_order_request,get_betfair_orders,get_betfair_refres			Match Betfair — accesso alle partite Betfair del giorno e alle loro quote.
+lib/betfairMedia.ts	59	0	0	0	0	0				betfairMedia.ts — pop-out live ufficiale dell'Exchange Betfair.
+lib/canaleRunner.ts	226	0	0	0	0	0				canaleRunner.ts - 23/09: i topic `now` e `position` dei RUNNER (calcio 47331,
+lib/capacitaMercati.ts	102	0	0	0	0	0				capacitaMercati.ts - 28/09 (cantiere B): la CAPACITA' dei mercati del runner
+lib/cashOutPartita.ts	707	0	0	0	0	0				cashOutPartita.ts - 30/09 (P12a, blocco B12 del monitor veritiero).
+lib/certezzaChiusura.ts	365	0	0	0	0	0				certezzaChiusura.ts — IL GIUDIZIO «EFFETTIVAMENTE CHIUSA», PURO.
+lib/chiuseGiornata.ts	248	0	0	0	0	0				chiuseGiornata.ts - LE CHIUSE DI UNA GIORNATA, lette A RICHIESTA (24/09).
+lib/chiusuraAlMs.ts	203	0	0	0	0	0				chiusuraAlMs.ts - 25/09 (residui B17): IL «CHIUDI» DI RIGA E LE GAMBE DELLE
+lib/chiusuraUtente.ts	214	0	0	0	0	0				chiusuraUtente.ts — «SE CHIUDO IO, IL BOT DEVE SAPERLO».
+lib/comboPrezzoVivo.ts	78	0	0	0	0	0				comboPrezzoVivo.ts — PREZZO VIVO PER GAMBA di una proposta COMBO.
+lib/composizioneConto.ts	259	0	0	0	0	0				composizioneConto.ts - LA COMPOSIZIONE LIVE PER BOT DAL CONTO BETFAIR.
+lib/composizioneObiettivo.ts	572	0	0	0	0	0				composizioneObiettivo.ts — SCOMPOSIZIONE di ciò che erode l'obiettivo di
+lib/controlRoom.ts	1221	0	0	0	0	0				controlRoom.ts — LA MATEMATICA DELLA CONTROL ROOM. Pura: niente React,
+lib/controlRoomCatena.ts	222	0	0	0	0	0				controlRoomCatena.ts — LA CATENA DEI TEMPI, da Betfair al pixel.
+lib/controlRoomProposte.ts	423	0	0	0	0	1	safe_request_approve,safe_request_ignore	safe_strategy_requests		controlRoomProposte.ts — LE PROPOSTE DI CHIUSURA che aspettano il sì.
+lib/dailyHistory.ts	1286	0	0	0	0	0	get_mike_daily,get_mike_day_trades,get_omega_daily,get_omega_day_trades,get_safe_daily,get_safe_day_trades,get_storico_stake			dailyHistory.ts — STORICO PER GIORNATA OPERATIVA (Omega + Safe Strategy).
+lib/depthFlow.ts	81	0	0	0	0	0				depthFlow.ts — profondità totale del book e flusso di denaro (roadmap D31).
+lib/direzione.ts	150	0	0	0	0	0	get_direction,get_direction_eta			Cruscotto DIREZIONE — per-partita. Unisce i motori e dice, mercato per mercato,
+lib/erroreRpc.ts	45	0	0	0	0	0				erroreRpc.ts - un errore di una RPC NON e' "nessun dato" (FIX-B, 26/09/2026).
+lib/esitoAbbinamento.ts	708	0	0	0	0	0				esitoAbbinamento.ts - B17 (25/09): «A CHE PREZZO SONO ENTRATO, E SONO
+lib/etaDato.ts	56	0	0	0	0	0				ETA' DEL DATO MATERIALIZZATO (reperto R5, 25/09/2026).
+lib/eventGroups.ts	388	0	0	0	0	0				eventGroups.ts — RAGGRUPPAMENTO COMUNE delle operazioni: gamba → ciclo →
+lib/eventPnl.ts	96	0	0	0	0	0				eventPnl.ts — matematica PURA di MTM ed esposizione per EVENTO (D30/D33).
+lib/fairOverlay.ts	110	0	0	0	0	0				fairOverlay.ts — F38: fair price del MOTORE nel ladder + EV per livello — PURO.
+lib/faseIps.ts	77	0	0	0	0	0				FASE della partita (1o/2o tempo) dallo stato IPS grezzo.
+lib/fixtureModels.ts	208	0	0	0	0	0	get_poisson_calibration_eta	fixture_predictions		Dati per-partita dei due motori, letti da fixture_predictions:
+lib/flussoPrezzi.ts	198	0	0	0	0	0				Cantiere J (28/09/2026) — i PREZZI di una partita sono VIVI?
+lib/flussoStreamRunner.ts	97	0	0	0	0	0				Cantiere J2 (28/09/2026) — lo STREAM DI MERCATO del runner e' vivo?
+lib/fontePnl.ts	107	0	0	0	0	0				30/09 — OGNI CIFRA DICE COS'E' (ordine dell'utente: «IL TRADER DEVE SAPERE
+lib/fonteSoldi.ts	50	0	0	0	0	0				fonteSoldi.ts - 30/09, P1_MARCHIO_FONTE. Ogni cifra in euro a schermo porta
+lib/format.ts	193	0	0	0	0	0				format.ts — FORMATTER UNICI del design system di trading (Omega/Safe/Mike).
+lib/giornataCorsie.ts	138	0	0	0	0	0				giornataCorsie.ts - LE DUE CORSIE DI OGNI SPORT: LIVE (soldi veri) e PROVA.
+lib/interruttori.ts	1534	0	0	0	0	0				interruttori.ts — UN INTERRUTTORE PER OGNI BOT E PER OGNI STRATEGIA.
+lib/journalStats.ts	71	0	0	0	0	0				journalStats.ts — statistica PURA sul Trade Journal (E37, review post-sessione).
+lib/kellySuggest.ts	75	0	0	0	0	0				kellySuggest.ts — E36: position sizing assistito (Kelly frazionato) — PURO.
+lib/ladderBacktest.ts	254	0	0	0	0	0				ladderBacktest.ts — F42: backtest del LADDER-TRADING sullo storico full-depth
+lib/ladderChart.ts	168	0	0	0	0	0				ladderChart.ts — serie prezzo del ladder → CANDELE per il mini-chart laterale
+lib/ladderConfig.ts	249	0	0	0	0	0				ladderConfig.ts — configurazione PURA delle COLONNE del ladder + PROFILI
+lib/ladderMath.ts	105	0	0	0	0	0				ladderMath.ts — matematica PURA del ladder (display), testabile a unità.
+lib/live.ts	703	0	0	0	0	5	ack_alert,get_live_alerts,get_live_follows,get_replay,get_replay_meta,list_replays,segui_live_apri_partita	live_ladder,live_now,live_signals		live.ts — data layer per le sezioni "Segui Live" e "Match Replay".
+lib/liveOrders.ts	1058	0	0	0	0	7	cancel_live_risk_rule,get_betfair_live_order,get_live_audit,get_live_journal,get_live_orders,get_live_orders_account_open,get_live_positions,get_live_	betfair_live_account,betfair_live_heartbeat,betfair_live_risk_state		liveOrders.ts — data layer LIVE TRADING (Fase 1) per il pannello operativo.
+lib/localChannel.ts	351	0	0	0	0	0			canale,sport	localChannel.ts — client WebSocket del CANALE LOCALE UI(desktop) ↔ runner.
+lib/localTransport.ts	580	0	0	0	1	0			sport	localTransport.ts — adatta il CANALE LOCALE (localChannel.ts) alle interfacce
+lib/manualeSitoBetfair.ts	110	0	0	0	0	0				manualeSitoBetfair.ts — LE SCOMMESSE PIAZZATE FUORI DAI BOT: sul SITO
+lib/market-categories.ts	58	0	0	0	0	0				market-categories.ts — categorizzazione dei mercati Betfair in tab, CONDIVISA
+lib/marketDelays.ts	145	0	0	0	0	0	get_market_delays			Studio Ritardi — tipi, catalogo mercati (1:1 col file Excel) e accesso RPC.
+lib/marketFrequency.ts	172	0	0	0	0	0	get_league_seasons,get_market_frequency			Frequenze Mercati — tipi, catalogo mercati e accesso RPC
+lib/matchClock.ts	85	0	0	0	0	0				matchClock.ts — countdown all'off, minuto di gioco e score (roadmap D32).
+lib/matching.ts	404	0	0	0	0	0				matching.ts — modello FEDELE del motore di matching di Betfair Exchange.
+lib/mediaUnder.ts	466	0	0	0	0	0				mediaUnder.ts — la modalità «MEDIA UNDER» dello Scalper calcio (05/10/2026).
+lib/mediaUnderAttiva.ts	23	0	0	0	0	0	scalper_media_attiva_adesso			mediaUnderAttiva.ts — il pulsante «ATTIVA ADESSO» della Media Under (07/10/2026).
+lib/mike.ts	2455	0	0	0	0	1	get_mike_state,get_mike_trades,mike_activate,mike_request,mike_stop,mike_update_params	mike_requests		mike.ts — data-layer della sezione MIKE (bot Under 3.5 / Over 4.5).
+lib/mikeEsitoChiusura.ts	275	0	0	0	0	0				mikeEsitoChiusura.ts - L'ESITO DELLA CHIUSURA DI UNA PARTITA DI MIKE
+lib/mockData.ts	264	0	0	0	0	0				Mock data di fallback per development.
+lib/multiLadder.ts	99	0	0	0	0	0				multiLadder.ts — layout PURO del MULTI-LADDER (B19): N ladder affiancati anche
+lib/normalize.ts	3	0	0	0	0	0				Re-export everything from normalizePrediction for cleaner import paths
+lib/normalizePrediction.ts	249	0	0	0	0	0				
+lib/obiettivoEditor.ts	57	0	0	0	0	0				obiettivoEditor.ts — validazione PURA della modifica dell'obiettivo di
+lib/omega.ts	1656	0	0	0	0	3	get_omega_events,get_omega_manual_requests,get_omega_market,get_omega_state,get_omega_trades,omega_activate,omega_eventi_chiusi_dall_utente,omega_even			omega.ts — client della sezione OMEGA (Correct Score LAY, set-and-forget).
+lib/omegaMatches.ts	351	0	0	0	0	0				omegaMatches.ts — UNA RIGA PER PARTITA (Omega §14, 11/09/2026).
+lib/omegaMissions.ts	320	0	0	0	0	2	get_omega_missions,omega_mission_activate,omega_mission_follow,omega_mission_stop,set_follow_record			omegaMissions.ts — client del tab MISSIONE di /omega (centro di controllo
+lib/omegaProposte.ts	370	0	0	0	0	1	get_omega_proposte,omega_request_approve,omega_request_ignore			omegaProposte.ts — LE USCITE DI OMEGA DIVENTANO PROPOSTE.
+lib/opportunitaOrdine.ts	95	0	0	0	0	0				opportunitaOrdine.ts — ordinamento e raggruppamento PURI della colonna
+lib/opportunities/arb_exec.ts	52	0	0	0	0	0				arb_exec.ts — validazione dell'ESEGUIBILITÀ REALE di un arbitraggio sotto il
+lib/opportunities/engine.ts	85	0	0	0	0	0				engine.ts — orchestratore dei detector.
+lib/opportunities/fill.ts	90	0	0	0	0	0				fill.ts — modello di RIEMPIMENTO REALISTICO + netting commissioni + delay.
+lib/opportunities/helpers.ts	89	0	0	0	0	0				helpers.ts — parsing delle SELEZIONI identico a replay-pnl.ts (decideWinner).
+lib/opportunities/index.ts	19	0	0	0	0	0				index.ts — punto di ingresso unico del motore di opportunità Betfair.
+lib/opportunities/snapshot.ts	170	0	0	0	0	0				snapshot.ts — costruisce le fotografie (Snapshot) a bucket temporali fissi a
+lib/opportunities/tier0_arb.ts	680	0	0	0	0	0				tier0_arb.ts — DETECTOR di ARBITRAGGIO PURO (Tier 0, risk-free).
+lib/opportunities/tier1_quasi.ts	657	0	0	0	0	0				tier1_quasi.ts — DETECTOR TIER 1: QUASI-ARB / RISCHIO RIDOTTO.
+lib/opportunities/tier2_micro.ts	581	0	0	0	0	0				tier2_micro.ts — DETECTOR TIER 2: DIREZIONALI / MICROSTRUTTURA.
+lib/opportunities/tradeable.ts	116	0	0	0	0	0				tradeable.ts — "SPECCHIO DELLA REALTÀ": un'opportunità esiste SOLO se è
+lib/opportunities/types.ts	97	0	0	0	0	0				types.ts — contratto condiviso del motore di opportunità Betfair.
+lib/opportunities/validate.ts	337	0	0	0	0	0				validate.ts — HARNESS DI VALIDAZIONE su dati reali (replay).
+lib/orderFlow.ts	210	0	0	0	0	0				orderFlow.ts — F44: order-flow analytics (muri finti / shift WOM / picchi di
+lib/ordiniCanale.ts	125	0	0	0	0	0				ordiniCanale.ts - 25/09 (voce 13 dell'audit tempo reale): il topic `order`
+lib/personalReport.ts	421	0	0	0	0	0	add_personal_trade,add_trade_leg,get_cash_movements,get_personal_report,get_personal_trades,reset_personal_report,set_trade_time_operative,settle_pers			Report Personale — data layer per l'operatività reale dell'utente (trade
+lib/posizioniChiuse.ts	1052	0	0	0	0	0				posizioniChiuse.ts - LE POSIZIONI GIA' CHIUSE, vinte e perse.
+lib/preGoal.ts	62	0	0	0	0	0				preGoal.ts — F40: pre-goal warning dal modello in-play — PURO.
+lib/priceAxis.ts	111	0	0	0	0	0				priceAxis.ts — scala TICK Betfair completa (1.01 → 1000) come ASSE NAVIGABILE
+lib/proposteUscite.ts	96	0	0	0	0	0	scalper_approva_uscita,tennis_bot_approva_uscita			proposteUscite.ts - LE PROPOSTE D'USCITA DEI BOT DI FLUSSO (28/09, CANTIERE N).
+lib/provaGiornata.ts	380	0	0	0	0	0				provaGiornata.ts - LA CORSIA PROVA: «OGGI» CONTRO «ARRETRATI REGOLATI OGGI».
+lib/replay-pnl.ts	242	0	0	0	0	0				replay-pnl.ts — funzioni PURE (unit-testabili) per la simulazione di trading
+lib/replayBot.ts	300	0	0	0	0	0	get_replay_bot_esito,request_backtest			replayBot — "APPLICA BOT" del Match Replay (06/10; TUTTI i bot dal 07/10).
+lib/replayBotCatalogo.ts	11100	0	0	0	0	0				FILE GENERATO - NON MODIFICARE A MANO.
+lib/replayOperazioni.ts	979	0	0	0	0	0				replayOperazioni — L'OPERATIVITA' DEL BOT nel replay, ricostruita dalla
+lib/replayTimelineEvents.ts	283	0	0	0	0	0				replayTimelineEvents — i SIMBOLI della barra di avanzamento di Match Replay
+lib/replayVerificaBarra.ts	557	0	0	0	0	0				replayVerificaBarra - VERIFICATORE della barra di avanzamento di Match Replay
+lib/replayVerificaBarraCalcio.ts	353	0	0	0	0	0				replayVerificaBarraCalcio - VERIFICATORE della barra di Match Replay, PARTE
+lib/replayVerificaBarraDb.ts	155	0	0	0	0	0	get_replay_meta			replayVerificaBarraDb - la verifica della barra su TUTTE le partite del database,
+lib/replayVerificaBarraTesto.ts	36	0	0	0	0	0				replayVerificaBarraTesto - il REFERTO in testo di una verifica della barra
+lib/reportistiche.ts	208	0	0	0	0	0	get_direction_report,get_direction_report_fixture,get_direction_report_matches			Reportistiche — data layer per la sezione /analytics → "Reportistiche".
+lib/rese.ts	157	0	0	0	0	0				rese.ts - resa a video dei casi limite della Dashboard (FIX-B, 26/09/2026, KO11).
+lib/righeCanale.ts	289	0	0	0	0	0				righeCanale.ts - C6 b (23/09): LA MAPPA PER RIGA di Omega, Safe e Mike.
+lib/rilettureMirate.ts	105	0	0	0	0	0				rilettureMirate.ts - 24/09: "righe nuove dei bot in Control Room subito, non
+lib/riskMath.ts	121	0	0	0	0	0				riskMath.ts — matematica PURA per le ANTEPRIME UI del risk engine (offset /
+lib/ritorno.ts	132	0	0	0	0	0				ritorno.ts — TORNARE ESATTAMENTE DOVE SI ERA.
+lib/runnerCanale.ts	277	0	0	0	0	0				runnerCanale.ts - 25/09 (voce 6 dell'audit tempo reale): lo stato dei RUNNER
+lib/runnerHealth.ts	34	0	0	0	0	0				runnerHealth.ts — A5: stato dell'heartbeat del runner (PURO, testato).
+lib/safeBot.ts	2257	0	0	0	0	5	get_safe_activity,get_safe_aggregates,get_safe_state,get_safe_trades,safe_activate,safe_request,safe_request_approve,safe_stop,safe_update_params	betfair_live_heartbeat,live_follow,safe_strategy_activity,safe_strategy_opportunities,safe_strategy_requests		safeBot.ts — client del BOT della sezione SAFE STRATEGY.
+lib/safeExitStatus.ts	197	0	0	0	0	0				safeExitStatus.ts — LO STATO DI USCITA di una posizione Safe, in italiano.
+lib/safeStrategy.ts	1732	0	0	0	0	0				safeStrategy.ts — MOTORE PURO della sezione "SAFE STRATEGY".
+lib/safeStrategyScan.ts	407	0	0	0	0	2		safe_strategy_scan,safe_strategy_status		safeStrategyScan.ts — data layer dello SCANNER Safe Strategy.
+lib/saldoBetfair.ts	218	0	0	0	0	0				saldoBetfair.ts — regola PURA per lo stato di freschezza del saldo del
+lib/scalper.ts	176	0	0	0	0	0	get_scalper_state,scalper_activate,scalper_stop			scalper.ts — client del pannello SCALPER BOT (Segui Live).
+lib/scalperCanale.ts	132	0	0	0	0	0				scalperCanale.ts - 25/09: LO SCALPER CALCIO DAL SUO CANALE (47338).
+lib/scalperControlRoom.ts	663	0	0	0	0	0	get_scalper_control_room,scalper_auto_activate,scalper_auto_stop,scalper_auto_update,scalper_stop_sessione,scalper_uscite_automatiche			scalperControlRoom.ts - LO SCALPER CALCIO NELLA CONTROL ROOM (24/09).
+lib/scanEventBuffer.ts	40	0	0	0	0	0				scanEventBuffer.ts — riduzione PURA di una RAFFICA di eventi realtime dello
+lib/schedaAlMs.ts	208	0	0	0	0	0				schedaAlMs.ts - LA SCHEDA DELLE PROPOSTE AL MS (24/09/2026), parte PURA.
+lib/servants.ts	153	0	0	0	0	0				servants.ts — MACRO registrabili ("servants" di Bet Angel, roadmap C27).
+lib/signalContext.ts	143	0	0	0	0	0				Contesto del segnale (cruscotto Direzione) - FREQUENZA e RITARDO allo STATO
+lib/sportsLogos.ts	16	0	0	0	0	0				sportsLogos — URL deterministici dei loghi API-Football (media.api-sports.io)
+lib/statoBotCanale.ts	181	0	0	0	0	0				statoBotCanale.ts - 25/09 (voce 4 dell'audit tempo reale): IL CONTENUTO del
+lib/statoIpsVero.testkit.ts	70	0	0	0	0	0				Stati IPS VERI per i test (chiavi e tipi identici alla registrazione).
+lib/statoOrdine.ts	349	0	0	0	0	0				statoOrdine.ts — LO STATO DI UN ORDINE, uguale per TUTTI i bot (C.12b).
+lib/storicoSport.ts	595	0	0	0	0	0				storicoSport.ts — LO STORICO DI UNO SPORT, bot per bot.
+lib/tacticalEngine.ts	108	0	0	0	0	0		fixture_predictions		Tactical Engine (GSG) — terzo motore INDIPENDENTE ispirato a TacticAI.
+lib/tennis.ts	1130	0	0	1	0	9	get_tennis_bot_daily,get_tennis_bot_orders_today,get_tennis_bot_services,get_tennis_bots_state,get_tennis_fixtures,get_tennis_follows,get_tennis_full_	tennis_live_ladder,tennis_live_now		tennis.ts — DATA LAYER DEDICATO ALLA SEZIONE TENNIS.
+lib/tennisReplay.ts	505	0	0	0	0	0	get_replay_tennis_meta,list_replays_tennis			tennisReplay.ts — dati e logica PURA del «Replay Tennis» (07/10/2026).
+lib/tennisReplayVerificaBarra.ts	199	0	0	0	0	0				tennisReplayVerificaBarra - VERIFICATORE della barra del REPLAY TENNIS
+lib/toasts.ts	50	0	0	0	0	0				toasts.ts — NOTIFICHE con un formato UNICO per le tre sezioni di trading.
+lib/tradeStatus.ts	895	0	0	0	0	0				tradeStatus.ts — MAPPE ETICHETTE UNICHE del design system di trading.
+lib/trainingLadder.ts	373	0	0	0	0	0				trainingLadder.ts — F41: REPLAY-TRAINING sul ladder — logica PURA + orderApi
+lib/uiShell.ts	76	0	0	0	0	0				uiShell — l'INTERRUTTORE del redesign «guscio v2» (01/10/2026).
+lib/useApplicaBot.ts	83	0	0	0	1	0				useApplicaBot — la richiesta «Applica bot» e il suo esito (07/10).
+lib/useOperativitaBot.ts	52	0	0	0	0	0				useOperativitaBot — l'analisi dell'esito «Applica bot» (07/10 sera), una
+lib/useOrdiniCanale.ts	34	0	0	0	0	0			sport	useOrdiniCanale.ts - 25/09 (voce 13): l'aggancio React di `lib/ordiniCanale.ts`,
+lib/usePosizioniCanale.ts	40	0	0	0	0	0			sport	usePosizioniCanale.ts - 23/09: l'aggancio React di lib/canaleRunner.ts per le
+lib/useScanLiveFeed.ts	127	0	0	0	0	0				useScanLiveFeed — feed LIVE dello scanner Safe Strategy per un insieme di
+lib/utils.ts	7	0	0	0	0	0				
+lib/valutaProposta.ts	247	0	0	0	0	0				valutaProposta.ts - LA PROPOSTA AL PREZZO DI ADESSO (24/09/2026).
+lib/vetoCampionati.ts	170	0	0	0	0	0				VETO DEI CAMPIONATI del corso per le tre varianti calcio (BASE, RISULTATO
+lib/watchlist.ts	156	0	0	0	0	0	add_to_watchlist,delete_from_watchlist,get_watchlist,set_watchlist_decision,set_watchlist_follow_live			Watchlist personale — data layer per il flusso "spunta partita → snapshot
+lib/workspace.ts	257	0	0	0	0	0				workspace.ts — salvataggio/ripristino PURO del LAYOUT dell'area di lavoro
+lib/xhedgeCanale.ts	109	0	0	0	0	0				xhedgeCanale.ts - 25/09 (voce 12 dell'audit tempo reale): l'analisi
+pages/Analytics.tsx	507	3	8	13	0	0				/analytics — Centro di controllo: pagella per-motore per-mercato.
+pages/Board.tsx	305	0	5	0	1	0			sport	/board — "Programma di oggi" (app desktop). Due tab (⚽ calcio / 🎾 tennis)
+pages/CheckEmail.tsx	92	0	2	0	0	0				
+pages/ControlRoom.tsx	1741	58	1	0	0	0				ControlRoom.tsx — IL BANCO DELLA GIORNATA.
+pages/Dashboard.tsx	314	2	14	0	0	0		fixture_predictions		league_id/season_year letti esplicitamente dalla riga DB (non da raw_json: fragile)
+pages/LadderPopout.tsx	52	0	0	0	0	0				LadderPopout — finestra POPOUT dedicata a UN ladder (B19, multi-monitor):
+pages/LandingPage.tsx	48	0	0	0	0	0				
+pages/LivePnl.tsx	538	3	0	2	3	0				/live-pnl — D33: Dashboard P&L di giornata. Fonti TRACCIABILI (specchio DB):
+pages/MarketWatch.tsx	505	8	1	0	4	0			calcio,tennis	/market-watch — D30: Market Watch multi-evento stile Fairbot. Una riga per
+pages/MatchReplay.tsx	1281	2	9	1	1	0				/match-replay — "Match Replay" / Football Trading Simulator.
+pages/Mike.tsx	800	21	0	0	2	0				/mike — sezione MIKE: bot di trading Under 3.5 / Over 4.5 (paper-first).
+pages/MultiLadder.tsx	198	0	4	0	0	0				MultiLadder — workspace MULTI-LADDER libero (B19): N ladder affiancati anche di
+pages/NotFound.tsx	21	0	1	0	0	0				
+pages/Omega.tsx	913	9	3	0	3	0			omega	/omega — Dashboard OMEGA: bot Correct Score LAY, set-and-forget.
+pages/ReportPersonale.tsx	906	0	11	8	0	0				/report-personale — Report Personale: KPI + equity curve + underwater/drawdown
+pages/ResetPassword.tsx	178	0	2	2	0	0				Pagina di destinazione del link "reset password" inviato via email.
+pages/SafeStrategy.tsx	1706	21	8	0	3	0				SafeStrategy.tsx — sezione SAFE STRATEGY: radar + BOT operativo.
+pages/SeguiLive.tsx	1373	2	16	0	5	0				/segui-live — "Segui Live". Elenco delle partite attualmente sottoscritte allo
+pages/SelectSport.tsx	212	1	2	0	0	0				SCREEN 1 — Sport Selector.
+pages/StoricoSport.tsx	726	31	4	0	1	0				StoricoSport.tsx — LA DASHBOARD DELLO STORICO di uno sport (/storico/calcio,
+pages/TennisDashboard.tsx	34	0	0	0	0	0				SCREEN 2 — Tennis: Partite del Giorno.
+pages/TennisReplay.tsx	812	9	7	1	1	0				/tennis/replay — «REPLAY TENNIS» / Tennis Trading Simulator (07/10/2026).
+pages/TennisTerminal.tsx	321	0	4	0	1	0				SCREEN 3 — Tennis Trading Terminal (fullscreen, 3 colonne, stile trading pro).
+pages/TradeJournal.tsx	329	0	1	7	0	0				/trade-journal — E37: review post-sessione del Trade Journal automatico.
+pages/Watchlist.tsx	155	0	2	0	0	0				/watchlist — Watchlist personale. Tre tab (Da valutare / Giocate / Scartate)
