@@ -537,7 +537,37 @@ def _lavora_cronometrato(compito: tuple) -> Tuple[Any, float, float]:
     con ``r, _mem = _lavora(...)``)."""
     t0 = time.perf_counter()
     r, mem = _lavora(compito)
+    _per_il_padre(r)                # 08/10 sera (D-15): niente righe dello specchio
     return r, mem, time.perf_counter() - t0
+
+
+#: 08/10 sera (DECISIONE DELL'UTENTE D-15) - I CAMPI DEL REFERTO CHE SERVONO
+#: SOLO AL FIGLIO. `ordini_specchio` (le righe `betfair_live_orders` catturate
+#: dal banco, decine o centinaia di migliaia per scenario) le leggono i
+#: controlli DENTRO il replay e `applica_bot` (che non passa di qui); `main`
+#: non le stampa ne' le legge. Misurato (scalper 35797769, 9 scenari,
+#: `--worker 3`): 12-132 MB serializzati per referto, il padre cresceva di
+#: ~200 MB per referto e teneva tutto fino alla fine (2,7 GB su 9 scenari,
+#: ~10 GB e OOM su 56). Si tolgono nel processo che fa il replay, prima del
+#: viaggio verso il padre: il referto stampato non cambia.
+CAMPI_SOLO_DEL_FIGLIO = ("ordini_specchio",)
+
+
+def _per_il_padre(r: Any) -> Any:
+    """Toglie dal referto i campi di `CAMPI_SOLO_DEL_FIGLIO`. Non li azzera:
+    l'attributo sparisce e `<campo>_tolte` dice quante righe c'erano (un dato
+    tolto non e' un dato zero)."""
+    attributi = getattr(r, "__dict__", None)
+    if not isinstance(attributi, dict):
+        return r
+    for nome in CAMPI_SOLO_DEL_FIGLIO:
+        if nome in attributi:
+            valore = attributi.pop(nome)
+            try:
+                attributi[nome + "_tolte"] = len(valore)
+            except TypeError:
+                attributi[nome + "_tolte"] = None
+    return r
 
 
 # ---------------------------------------------------------------------------
@@ -691,6 +721,44 @@ def quanti_processi(richiesti: int, compiti: int) -> int:
     return max(1, min(WORKER_DEFAULT, tetto, compiti))
 
 
+def psutil_presente() -> bool:
+    """`psutil` c'e' a runtime? Senza, `core_fisici` stima dai thread."""
+    try:
+        import psutil  # noqa: F401
+    except Exception:  # noqa: BLE001 - assente o rotto: per il banco e' uguale
+        return False
+    return True
+
+
+def riga_worker(processi: int, richiesti: int, compiti: int) -> Optional[str]:
+    """La riga `worker:` del referto, o None se non c'e' niente da dire.
+
+    08/10 sera (DECISIONE DELL'UTENTE D-14b): senza `psutil` il tetto dei
+    worker si stima dai thread (`nproc//2`) e su una macchina da 4 thread
+    `--worker 3` diventava `--worker 1` IN SILENZIO (nessuna riga). Ora, quando
+    i processi usati sono MENO di quelli voluti (chiesti, o il default fuori
+    dalla suite) e non per mancanza di compiti, la riga dice perche':
+    ``worker: 1 (psutil assente: richiesti 3)``. Senza taglio la riga e' quella
+    di sempre (con piu' processi) o nessuna (con uno solo)."""
+    richiesti = int(richiesti or 0)
+    if richiesti > 0:
+        voluti = richiesti
+    else:
+        voluti = 1 if "pytest" in sys.modules else WORKER_DEFAULT
+    taglio = ""
+    if processi < min(voluti, compiti):
+        causa = ("psutil assente" if not psutil_presente()
+                 else "tetto core fisici - 1 = %d" % max(1, core_fisici() - 1))
+        taglio = " (%s: richiesti %d)" % (causa, voluti)
+    if processi > 1:
+        return (f"worker: {processi} su {core_fisici()} core fisici (un processo "
+                f"per coppia evento x scenario, {compiti} coppie; il referto "
+                f"resta nello stesso ordine)" + taglio)
+    if taglio:
+        return "worker: %d%s" % (processi, taglio)
+    return None
+
+
 #: CANTIERE V2 (29/09): i secondi di ogni replay, nell'ordine dei referti che
 #: `_esegui_compiti` restituisce. Vive a livello di modulo (non come argomento)
 #: perche' la firma di `_esegui_compiti` e' quella che i test sostituiscono
@@ -726,8 +794,12 @@ def _esegui_compiti(compiti: List[tuple], processi: int, picchi: List[float],
     with ProcessPoolExecutor(max_workers=processi,
                              initializer=_prepara_figlio) as pool:
         futuri = [pool.submit(_lavora_cronometrato, c) for c in compiti]
-        for f in futuri:
+        for i in range(len(futuri)):
+            # 08/10 sera (D-15): il futuro letto si lascia andare, cosi' il
+            # padre non trattiene fino alla fine i risultati gia' consegnati
+            f, futuri[i] = futuri[i], None
             referto, memoria, secondi = f.result()
+            del f
             if memoria:
                 picchi.append(memoria)
             if tempi is not None:
@@ -983,10 +1055,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             print()
     per_coppia: Dict[Tuple[str, str], Dict[str, Any]] = {}
     processi = quanti_processi(int(a.worker or 0), len(compiti))
-    if processi > 1:
-        print(f"worker: {processi} su {core_fisici()} core fisici (un processo "
-              f"per coppia evento x scenario, {len(compiti)} coppie; il referto "
-              f"resta nello stesso ordine)")
+    # 08/10 sera (D-14b): la riga dice anche quando i worker sono stati tagliati
+    riga_w = riga_worker(processi, int(a.worker or 0), len(compiti))
+    if riga_w:
+        print(riga_w)
         print()
     picchi: List[float] = []
     esplosi: List[str] = []

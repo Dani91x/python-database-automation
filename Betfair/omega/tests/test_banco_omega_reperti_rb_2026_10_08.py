@@ -198,11 +198,12 @@ def test_rb5_il_riavvio_a_meta_partita_le_perde_come_un_riavvio_vero():
 
 def test_rb5_l_elenco_e_esplicito_e_nomina_cache_vere_di_omega_service():
     assert R.CACHE_TABELLE_STORICHE == ("_EMPIRICAL_CACHE", "_MINUTE_CACHE")
-    assert R.CACHE_DI_PROCESSO_DEL_BANCO == (
-        "_LEG_RETRY", "_SKIP_SEEN", "_BLIND_CYCLES", "_MARKET_FIT_CACHE",
-        "_LAMBDA_CACHE", "_IDLE_STATS_AT", "_CATENA_OMEGA",
-        "_EMPIRICAL_CACHE", "_MINUTE_CACHE")
-    for nome in R.CACHE_DI_PROCESSO_DEL_BANCO:
+    # 08/10 sera (D-14c): UN SOLO elenco, quello di `_processo_nuovo`; le cache
+    # di RB-5 ci sono tutte (`_CATENA_OMEGA` la svuota `svuota_le_cache`)
+    assert not hasattr(R, "CACHE_DI_PROCESSO_DEL_BANCO")
+    for nome in ("_LEG_RETRY", "_SKIP_SEEN", "_BLIND_CYCLES", "_MARKET_FIT_CACHE",
+                 "_LAMBDA_CACHE", "_IDLE_STATS_AT") + R.CACHE_TABELLE_STORICHE:
+        assert nome in R.STATO_DI_PROCESSO_FRA_SCENARI, nome
         assert isinstance(getattr(S, nome), dict)
 
 
