@@ -55,7 +55,7 @@ senza tappa). **Nessuna funzionalita' si perde.**
 
 ## 5. Una verita' sui numeri: l'80% di righe in meno
 
-**Non e' dimostrabile per il software intero**, e il piano non lo promette. Con le stime delle schede: **-10%** delle righe
+**Non e' dimostrabile per il software intero**, e il piano non lo promette. Con le stime delle schede: **-10,4%** delle righe [coerenza 08/10: era «-10%», allineato a 04 §10]
 senza nessuna tua decisione, **-17,5%** accogliendo tutte le proposte. Il motivo e' misurato: la strategia, che non si tocca,
 e' una parte grande; un terzo dei programmi principali e' commento che spiega incidenti passati; le copie identiche parola per
 parola sono poche (lo stesso lavoro e' scritto in modi diversi). Dove il taglio e' grande e reale: il guscio attorno ai bot

@@ -21,3 +21,4 @@ Cumulativo = spesa totale (coordinatore + delegati).
 | 19:40 | 10. `06_RIEPILOGO_PER_L_UTENTE.md` scritto dal coordinatore | 126,85 | |
 | 20:00 | 11. Revisione indipendente: 415 citazioni di 15 schede + 04 + 05 (4 verificatori Sonnet); 13 correzioni; 01 rigenerato | 133,40 | |
 | 20:30 | 12. Revisione critica Opus (`08_REVISIONE_CRITICA.md`, 24 rilievi, 5 ALTA, correzioni in 04/05/06, U-80..U-86) + completezza §9.5 nella scheda G (89 tabelle + 6 da RPC + 72 RPC scriventi) | 139,60 | |
+| 20:45 | 13. Coerenza finale (4 correzioni editoriali), indice `README.md`, chiusura | 140,60 | ~49 USD non spesi: consegne complete e verificate, ulteriore spesa senza resa |

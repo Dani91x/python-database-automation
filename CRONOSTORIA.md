@@ -5260,3 +5260,25 @@ Brief: `ARCHITETTURA_2026-10/BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 val
   `migrations/mike_bot.sql:109` (`closes_trade_id` FK), `motore_ordini.py:21,211,1424` (fsync prima del place).
   Completezza §9.5 nella scheda G: 89/89 tabelle + 6 scritte da RPC + 72/72 RPC scriventi
   (`strumenti/verifica/g_copertura_tabelle.py`, falsificato dal delegato). Copertura di 05 ancora 971/971.
+- 20:45 coerenza finale di 04/05/06/08 (`strumenti/verifica/verifica_coerenza_finale.md`, 4 correzioni editoriali);
+  indice `ARCHITETTURA_2026-10/README.md`.
+
+### PIANO DI ARCHITETTURA: PRONTO PER LA REVISIONE (08/10, 20:45)
+Consegne (tutte in `ARCHITETTURA_2026-10/`, committate sul ramo `claude/eloquent-franklin-g2nyk5`): `00_INVENTARIO.md`,
+`01_FUNZIONALITA.md` (970 voci), `02_COMPETITOR.md`, `03_SCHEDE_COMPONENTI/` (15 schede A..K), `04_ARCHITETTURA_OBIETTIVO.md`,
+`05_PIANO_DI_MIGRAZIONE.md` (29 tappe, 86 decisioni), `06_RIEPILOGO_PER_L_UTENTE.md`, piu' `07_MISURE_OGGI.md`,
+`08_REVISIONE_CRITICA.md`, `COSTI.md`, `README.md`. Spesa: ~140,6 USD su 190.
+Esiti chiave: il -80% di righe NON e' dimostrabile sul software intero (-10,4% sicuro, -17,5% con le decisioni; -45/-73% sugli
+strati attorno ai bot); 13-17 -> 16-20 settimane con due linee; 18 -> 8 processi; percorso dei soldi senza rete verso il DB
+(SQLite WAL FULL + postino); strategie intoccate (impronta a ogni tappa).
+Domande aperte per l'utente: le 86 decisioni di `05` §8, in testa le 7 che bloccano la tappa 0 (U-62 ora di Windows e PC
+sveglio, U-32 finto di Omega, U-27 riferimento di Mike, U-44 partite tennis nel repo, U-37 quattro documenti non committati,
+U-59 tolleranze dell'ombra, U-60 i 120 ms del banco) e le aggiunte della revisione critica (U-80 numeri dei trade, U-83
+supervisore, U-84 Windows Update e versioni, U-85 giornate live per la contabilita').
+Cosa resta da verificare dal PC (coordinatore Fable): rileggere le schede contro il codice oltre il campione (415 citazioni,
+96,9% confermate), CPU/RAM con app accesa, tempi di un ordine live, ritardo reale dei punteggi.
+
+### Punto di ripresa
+Il piano e' pronto per la revisione del PC e la decisione dell'utente. Prossimi passi: (1) il PC verifica 04/05 e le schede;
+(2) l'utente decide le 7 decisioni bloccanti di 05 §8.1; (3) si apre la tappa T0A (pannello «Salute») e T0B/T0C
+(prerequisiti del banco, congelamento dei riferimenti) come scritto in `05_PIANO_DI_MIGRAZIONE.md` §1.

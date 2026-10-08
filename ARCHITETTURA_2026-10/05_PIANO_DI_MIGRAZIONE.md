@@ -842,9 +842,9 @@ un blocco in 3-4 giorni e la fase 0 in 1 giorno. Le righe toccate sono quelle de
 **In settimane.** Lavorando su una linea sola: 22-29 settimane da 5 giorni. Con due linee (cloud costruisce e certifica sul calcio; PC misura,
 fa le ombre, il tennis e firma) e le tappe parallele della sezione 3, conta il percorso critico (T0 -> T5 -> T10 -> T11 -> T12 -> T15 -> T17 ->
 T19 -> T20 -> T21 -> T23 -> T24 -> T26): 61-80 giorni di lavoro, piu' le ombre di calendario che non si sovrappongono (T11 N giornate, T12 2-3
-giorni, T15 1 giornata) = **circa 13-17 settimane**. Senza le parti che il 02/10 non comprendeva (T18 UI, T19-T21 flussi e tennis/scalper,
+giorni, T15 1 giornata) = **circa 13-17 settimane** [coerenza 08/10: SUPERATO dalla rettifica qui sotto, ora 16-20]. Senza le parti che il 02/10 non comprendeva (T18 UI, T19-T21 flussi e tennis/scalper,
 T23 banco unico, T25-T26) il sottoinsieme equivalente alle fasi 0-1-2 di P0210 (T0, T2-T4, T7, T8, T10-T15, T17, T22, T24) e' di 62-81 giorni
-di lavoro, cioe' **8-10 settimane con due linee**.
+di lavoro, cioe' **8-10 settimane con due linee** [coerenza 08/10: SUPERATO dalla rettifica qui sotto, ora 10-12].
 
 **[revisione critica 08/10] Rettifica delle settimane** (R19 di 08): il percorso critico scritto sopra salta T14 (5-6 giorni + 5 notti di ombra) e T25 (2-3),
 e la somma delle sole tappe elencate da' 65-84 giorni, non 61-80. Con le stime della tabella: T0 (max(T0A, T0B) 2-3 + T0C 3-4 = 5-7) +
@@ -903,7 +903,7 @@ due blocchi sullo stesso file» e la verifica di persona del PC su ogni tappa se
 
 ## 8. DECISIONI PER L'UTENTE (elenco consolidato e deduplicato; servira' a `06_RIEPILOGO_PER_L_UTENTE.md`)
 
-79 decisioni raccolte dalle 15 schede, da 02 e da 04, fuse dove due schede chiedevano la stessa cosa (origini elencate). L'identificativo
+79 decisioni (U-01..U-79, sezioni 8.1-8.5; [coerenza 08/10] con le 7 di 8.6, U-80..U-86, il totale e' 86) raccolte dalle 15 schede, da 02 e da 04, fuse dove due schede chiedevano la stessa cosa (origini elencate). L'identificativo
 `U-nn` e' stabile (04 e le tappe lo citano); l'ORDINE della tabella e' per urgenza: prima quelle che bloccano la tappa 0. «Se non decide» =
 cosa fa il piano in assenza di risposta (mai un cambio di strategia per difetto).
 
