@@ -57,8 +57,10 @@ Se l'ultima riga NON e' vuota: il PC ha pushato altro dopo `3c4aae6`; segui §5.
    ATTESO: SOLO l'aggiunta di `v3_include_aggregate` (decisione dell'utente del 07/10, commit `bae79eb6`, gia' sul ramo del
    PC). La sessione cloud non ha toccato nessun file di parametri (verificato: `git diff b5547eb8 <SHA_FINALE>` sui file
    di configurazione = vuoto). Qualunque altra riga cambiata in un file di parametri = STOP.
-4. Fine riga delle fixture (cantiere 12): `git ls-files --eol frontend/src/**/__fixtures__/*.timeline.jsonl` (se il glob non
-   va, `git ls-files --eol | findstr timeline`): ATTESO `i/lf` per tutte.
+4. Fine riga delle registrazioni (cantiere 12): `git ls-files --eol | findstr timeline.jsonl` (Git Bash: `| grep timeline.jsonl`).
+   ATTESO: 2 righe, `registrazioni_banco/35760084/35760084.timeline.jsonl` e `registrazioni_banco/35797769/35797769.timeline.jsonl`,
+   entrambe con `i/lf` (nell'indice LF; nella copia di lavoro su Windows puo' essere `w/crlf`: va bene, e' il caso che il
+   cantiere 12 rende innocuo). `i/crlf` = STOP.
 
 ### C. Suite sul PC, su una COPIA di lavoro del ramo (non nel checkout dell'app viva)
 Lavora in un worktree separato, cosi' l'app (che gira sul checkout principale) non si accorge di nulla:
