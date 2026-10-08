@@ -187,7 +187,7 @@ tempo decisione → `placeOrders` → risposta): numeri, non aggettivi.
 - Controllare `/cost` a ogni tappa e scriverlo in `ARCHITETTURA_2026-10/COSTI.md` (tappa → USD).
   Ordine di spesa: inventario con strumenti (poco), schede con delegati **Sonnet** in parallelo per componente
   (modello economico, compiti circoscritti, file da leggere indicati), ricerca competitor con Sonnet; sintesi
-  (`04`, `05`) con **Opus**. Se il budget si avvicina a 150 USD: fermarsi, committare, scrivere il punto di
+  (`04`, `05`) con **Opus**. Se il budget arriva a 190 USD (ordine dell'utente: sfruttarli tutti): fermarsi, committare, scrivere il punto di
   ripresa in `CRONOSTORIA.md` e avvisare l'utente.
 - Delegati: brief con obiettivo, file da leggere, perimetro, formato della scheda, «cita file:riga», «niente
   codice», «riporta cio' che non hai potuto verificare». Il coordinatore della sessione rilegge ogni scheda
