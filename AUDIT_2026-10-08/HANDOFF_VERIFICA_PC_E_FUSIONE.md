@@ -18,7 +18,7 @@ CERTIFICAZIONE.)» e «VOGLIO CHE MASTER SIA PERFETTO [...] SENZA REGRESSIONI DI
 ## 0. In una pagina
 
 - Ramo da fondere: `claude/blissful-sagan-hri7o6`. Contiene TUTTO `claude/eloquent-franklin-g2nyk5` (lavoro del
-  07/10 e del PC dell'08/10 fino a `b5845bc`, merge `d0cf8b94`) piu' i cantieri della sessione cloud, UN COMMIT
+  07/10 e del PC dell'08/10 fino a `3c4aae6`, merge `d0cf8b94` e `66fee09`) piu' i cantieri della sessione cloud, UN COMMIT
   PER CANTIERE, ciascuno con referto e blocco in `CRONOSTORIA.md`.
 - `origin/master` e' a `8226d76` (06/10) ed e' ANTENATO del ramo: la fusione e' un avanzamento senza conflitti
   (fast-forward possibile; vedi §5 per come farla).
@@ -42,11 +42,14 @@ CERTIFICAZIONE.)» e «VOGLIO CHE MASTER SIA PERFETTO [...] SENZA REGRESSIONI DI
 | `6f04054` | 13 | strumento della barra: falso positivo dopo il VAR, incoerenze «per dati», fixture rigenerate | 160 vitest barra, 17 pytest tools, mutazioni 13+3 | le 38 partite del DB (§3.6) |
 | `1ac69d0` | 9 | banco scalper: scavalco e rifiuti Betfair coi codici veri; UF2 riconosce il parcheggio 1,01-1,03 | 93 test, replay identici, mutazioni 24+1 | replay tennis `uscite-manuali*` (§3.1) |
 | `d0cf8b94` | merge | piano di architettura del PC (`eloquent-franklin` fino a `b5845bc`) | solo documenti/strumenti, nessun file > 1 MB | — |
-| [IN ATTESA] | 7 | banco di Omega RB-1..RB-5 | | |
-| [IN ATTESA] | W3a | Mike/Omega/Safe sanno SUBITO degli ordini esterni (canale del conto), anche in prova | | |
-| [IN ATTESA] | W3b | Scalper calcio e 4 bot tennis sanno degli ordini esterni | | |
+| `328de86` | 7 | banco di Omega RB-1..RB-5: CLOSED allo scanner, finestre di sottoscrizione di produzione, paper con la porta del runner, cache azzerate fra scenari | 23 test, mutazioni 15+2, mio replay `apertura`/`paper` 467/2 identico | comandi §3.7 (Omega e controllo Mike/Safe identici) |
+| `56ceb13` | test | heartbeat-stall: il test presumeva la macchina accesa da >900 s (4 rossi nel cloud) | vecchio test 4 rossi con intervallo > uptime, nuovo 16 verdi | nessuna |
+| `597ea3a` | W3b | Scalper calcio e 4 bot tennis sanno degli ordini esterni (sito/app) e non fanno altro; ordini di altri bot riconosciuti (classificazione W2) | 82 test, mutazioni 4 mie (15 rossi), replay DOPO su macchina separata 14 scenari x 2 = attesi, controllo sulla cima 28/28 identici | replay tennis (§3.1, stessa corsa), log dal vivo (§3.7) |
+| `5beb289` | riferimenti | Mike/Omega/Safe/Scalper `--scenari tutti` col banco realistico (punto 4 del cantiere 15), suite cloud | 3 macchine parallele: Mike 26/26 OK x2, Safe 22/22 OK x3 varianti x2, Omega 0 violazioni, Scalper KO tutti attesi tranne `riavvio` B1 PREESISTENTE (§6 D-9) | nessuna (sono il riferimento del PC) |
+| `b4d91ed` | W3a | Mike/Omega/Safe sanno SUBITO (canale del conto, anche in prova) degli ordini esterni; ordini di altri bot riconosciuti; verdetto in esposizione; W2 riallineato | [IN ATTESA del replay DOPO cloud] | log dal vivo (§3.7) |
+| `71e56de` | fix | frammenti di mercato: un id() riciclato non eredita il tempo di un altro frammento (test rosso a caso nel cloud, 20/20 rosso da solo) | test nuovo deterministico, mutazione rossa, 10/10 verdi ripetuti | nessuna |
+| `66fee09` | merge | `eloquent-franklin` fino a `3c4aae6`: action Seasons Catchup resiliente alla rete + architettura tappe 2-5 | `test_catchup_*.py` 90/90, nessun file nuovo > 500 KB, CRONOSTORIA senza righe perse | nessuna |
 | [IN ATTESA] | 11 | velocita' del banco | | |
-| [IN ATTESA] | riferimenti | Mike/Omega/Safe/Scalper `--scenari tutti` col banco nuovo | | |
 
 ## 2. Il metodo rapido (perche' non servono replay di settimane)
 
@@ -109,7 +112,36 @@ Dopo `npm run build` ad APP CHIUSA (regola del PC), l'utente riavvia l'app.
 `cantiere_13/REFERTO.md` §3-§4: `npx vite-node scripts/verifica_barra_replay.ts --env-file ../.env --senza-note` sulle 38
 partite (atteso: 28 OK, 10 «solo per dati», 0 da correggere) e la tabella delle 13.
 
-### 3.7 [IN ATTESA] cantieri 7, W3a, W3b, 11
+### 3.7 Cantieri 7, W3a, W3b (calcio: gia' rigiocati nel cloud; qui solo il controllo di coerenza della macchina)
+Le registrazioni calcio 35760084 e 35797769 sono nel repo compresse (`registrazioni_banco/`, script in `LEGGIMI.md` per
+`_live_raw/`). Sul PC basta UNO scenario per bot (metodo §2.1), lanciati IN PARALLELO, un processo per riga:
+```
+python -m Betfair.stream.backtest.certifica omega 35760084 --scenari apertura,paper --worker 1      # 467/2 entrambi (cantiere 7)
+python -m Betfair.stream.backtest.certifica omega 35797769 --scenari chiuso-fuori-app --worker 1    # 1T '3 - 3' @80 al 1' (RB-5)
+python -m Betfair.stream.backtest.certifica mike 35760084 --scenari base,cap-stretto --worker 1
+python -m Betfair.stream.backtest.certifica safe_base 35760084 --scenari base,riavvio --worker 1
+python -m Betfair.stream.backtest.certifica scalper_calcio 35797769 --scenari base,ordine-esterno,ordine-esterno-di-un-bot --worker 1   # OK 44 azioni / OK 2 azioni (stop) / OK 44 azioni
+```
+ATTESO: righe IDENTICHE (esclusi `tempo:`, `TEMPO TOTALE`) ai file del cloud indicati nel riepilogo di W3a
+(`AUDIT_2026-10-08/W3A_DOPO_CLOUD/`) e di W3b (`AUDIT_2026-10-08/W3B/dopo_cloud/`); fonte
+delle righe scalper: `AUDIT_2026-10-08/controllo_scalper_597ea3a/35797769_blocco{1,3,4}.txt`.
+Test mirati (un minuto):
+```
+python -m pytest Betfair/stream/tests/test_banco_scanner_reperti_rb_2026_10_08.py Betfair/omega/tests/test_banco_omega_reperti_rb_2026_10_08.py Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py Betfair/stream/tennis_live/tests/test_w3b_ordini_esterni_tennis_2026_10_08.py Betfair/mike/tests/test_mike_w3a_consapevolezza_2026_10_08.py Betfair/omega/tests/test_omega_w3a_conto_canale_2026_10_08.py Betfair/safe_strategy/tests/test_safe_w3a_conto_canale_2026_10_08.py Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py Betfair/stream/tests/test_frammenti_id_riciclato_2026_10_08.py -q -p no:cacheprovider
+```
+Tennis W3b: nella STESSA corsa del §3.1 (i referti tennis devono essere identici a quelli del cantiere 5 salvo la riga
+`codice bot`: `W3B_CONSAPEVOLEZZA_FLUMINE.md` §9).
+
+DAL VIVO, al primo avvio dopo la build (solo osservare i log; nessun ordine vero per prova, vedi CLAUDE.md):
+- runner calcio: `[conto-ws] ... (topic conto)` in live; in prova messaggi `conto_paper` (`local_channel.statistiche`).
+- Mike/Omega/Safe all'avvio: `posizione di conto dallo stream ordini del runner: ws://127.0.0.1:47331/lettore/conto,conto_paper`
+  (Safe anche 47332).
+- scalper LIVE: `[scalper-sess] <ev>: ordini esterni dallo stream ordini del conto (osservatore montato)`; runner tennis LIVE
+  `[conto-ws] ...` una volta per build.
+- PROVA A SCHERMO IN PAPER (la sola permessa senza l'utente): con Omega o Safe in prova su una partita, un ordine manuale
+  dall'app sulla stessa selezione -> attivita' `chiuso_dall_utente` con `dove = "dall'app (ordine manuale sul runner paper)"` e
+  latenza ~1-2 s; il bot non piazza piu' nulla su quella selezione. Un green-up dell'utente di un SUO ordine sulla selezione di
+  un bot NON produce `chiuso_dall_utente`. Chiusura dalla pagina Cash Out (§3.4) -> stesso esito.
 
 ## 4. Migrazioni (le applica l'utente, nell'ordine)
 Verificare in sola lettura quali sono gia' applicate, poi applicare le mancanti in quest'ordine:
@@ -117,10 +149,83 @@ Verificare in sola lettura quali sono gia' applicate, poi applicare le mancanti 
 2. `replay_tennis_2026-10-07.sql`, `media_under_attiva_adesso_2026-10-07.sql` (07/10)
 3. `replay_tennis_mercati_elenco_2026-10-08.sql` POI `replay_tennis_fonte_nomi_2026-10-08.sql` (08/10; la seconda
    contiene anche `market_types`: riapplicare la prima dopo toglie `nomi_fonte`)
-4. [IN ATTESA: eventuali migrazioni di W3a/W3b]
+4. W3a, W3b, cantiere 7: NESSUNA migrazione (leggono tabelle esistenti).
 
 ## 5. Fusione su master — procedura esatta
-[IN ATTESA: si completa a lavori chiusi]
+Chi fonde: l'agente sul PC, SOLO dopo il via dell'utente e SOLO a §3 completato senza reperti aperti (o con i reperti
+accettati per iscritto dall'utente). Mai riscrivere la storia: niente rebase, niente `--force`, niente squash.
+
+**5.0 Prima di tutto (5 minuti, sola lettura)**
+```
+git status                         # pulito; il log da 3 GB NON va mai aggiunto (mai `git add -A`)
+git fetch origin
+git log --oneline -1 origin/master                                   # atteso 8226d76 (se e' cambiato: §5.5)
+git log --oneline -1 origin/claude/blissful-sagan-hri7o6             # la cima CERTIFICATA scritta in testa a questo file
+git merge-base --is-ancestor origin/master origin/claude/blissful-sagan-hri7o6 && echo MASTER_ANTENATO
+git log --oneline origin/claude/blissful-sagan-hri7o6..origin/claude/eloquent-franklin-g2nyk5   # lavoro del PC non ancora nel ramo
+```
+- Se l'ultima riga e' VUOTA: il ramo cloud contiene gia' tutto il lavoro del PC -> §5.2.
+- Se NON e' vuota (il PC ha pushato dopo `3c4aae6`): §5.1.
+
+**5.1 Portare nel ramo cloud il lavoro del PC arrivato dopo** (merge, mai rebase)
+```
+git checkout -B fusione-master origin/claude/blissful-sagan-hri7o6
+git merge --no-ff origin/claude/eloquent-franklin-g2nyk5
+```
+- Conflitto atteso SOLO in `CRONOSTORIA.md` (blocchi diversi): tenere ENTRAMBE le parti, ognuna nel proprio blocco; controllo
+  che nessuna riga sia persa (lo script usato dal cloud per `66fee09`):
+  ```
+  python - <<'EOF'
+  import subprocess
+  r=set(open('CRONOSTORIA.md',encoding='utf-8').read().splitlines())
+  for ref in ['HEAD','MERGE_HEAD']:
+      t=subprocess.run(['git','show',ref+':CRONOSTORIA.md'],capture_output=True,text=True,encoding='utf-8').stdout.splitlines()
+      print(ref,'righe mancanti:',sum(1 for l in t if l not in r))
+  EOF
+  ```
+  Atteso: 0 e 0. Un conflitto in un file di CODICE e' un reperto: fermarsi e portarlo all'utente con le due versioni.
+- File nuovi > 1 MB portati dal merge: `git diff --name-only --diff-filter=A HEAD~1 HEAD` e controllare le dimensioni; nessun
+  `_live_raw/`, `*.log`, registrazioni decompresse (`.gitignore` li esclude: verificare con `git status --ignored` che restino fuori).
+- Poi le suite di §5.2 e i replay di §5.3 su `fusione-master`.
+
+**5.2 Suite sulla cima da fondere** (in parallelo; tempi del PC)
+```
+python -m pytest Betfair/ -q -p no:cacheprovider                    # atteso: 0 failed (riferimento cloud: §1, suite finale)
+python -m pytest tools/ -q -p no:cacheprovider
+python -m pytest test_catchup_*.py -q -p no:cacheprovider            # 90 passed
+cd frontend && npx tsc -p tsconfig.app.json --noEmit                 # 0 errori
+cd frontend && npx vitest run                                        # 0 failed
+cd frontend && npm run build                                         # SOLO ad app chiusa (regola del PC) o in una copia
+```
+Un rosso: rilanciarlo DA SOLO 3 volte. Rosso anche da solo = reperto (mai «flaky» senza causa: due casi di oggi, §1 righe
+`56ceb13` e `71e56de`, erano un test sbagliato e un difetto vero). Un rosso SOLO di tempo (es.
+`test_latenza_logica_comando_place_sotto_20_ms`, p95 20 ms) si rilancia a macchina scarica e si annota.
+
+**5.3 Replay di controllo** = §3.1 e §3.7 (gia' fatti per la verifica: NON rifarli se la cima e' la stessa sha verificata; se
+§5.1 ha aggiunto commit del PC che toccano `Betfair/stream/` o i bot, rifare SOLO le righe di §3.7, un processo per riga).
+
+**5.4 La fusione**
+```
+git checkout master
+git pull --ff-only origin master
+git merge --ff-only origin/claude/blissful-sagan-hri7o6     # oppure: fusione-master se si e' passati da §5.1
+git log --oneline -3                                         # la cima di master = la cima verificata
+git fetch origin && git push origin master                   # MAI --force
+```
+Se `--ff-only` rifiuta (master e' andato avanti, §5.5) NON forzare.
+
+**5.5 Se `origin/master` non e' piu' `8226d76`**
+`git log --oneline 8226d76..origin/master`: per ogni commit nuovo capire da quale ramo viene. Poi
+`git merge --no-ff origin/master` DENTRO `fusione-master` (non il contrario), risolvere come §5.1, rifare §5.2 e §5.3, e
+infine `git checkout master && git merge --ff-only fusione-master`.
+
+**5.6 Dopo la fusione**
+- `git diff origin/claude/blissful-sagan-hri7o6 master --stat` deve essere VUOTO (o solo i commit del PC di §5.1).
+- `CRONOSTORIA.md`: blocco «FUSIONE SU MASTER» con sha prima/dopo, suite (numeri), replay (file), reperti.
+- Rami: NON cancellare nessun ramo. Elencare quelli non fusi con `git branch -r --no-merged origin/master` e portarli
+  all'utente (vedi §6 D-8); NON fonderli di iniziativa.
+- Migrazioni: §4, le applica l'utente (non chi fonde).
+- App: build ad app chiusa, poi riavvio dell'utente; all'avvio nessun bot opera (`avvio_app.py`): i bot li accende l'utente.
 
 ## 6. Decisioni aperte per l'utente
 - D-1 (cantiere 15) `chiusura-abbinata-in-parte` KO solo B2 0,04 (due resti per ciclo sotto la tolleranza per ciclo):
@@ -135,4 +240,20 @@ Verificare in sola lettura quali sono gia' applicate, poi applicare le mancanti 
   rifiuto con motivo; alternativa: annullarlo in automatico).
 - D-8 rami non fusi: `audit-ml` (doc), `schema-architettura` (doc), `feature/scalper-media-under` (ladder con partita
   sintetica, «solo se l'utente lo vuole»).
-- [IN ATTESA: decisioni di W3a, W3b (D1, D3, D4, D5, D6 del referto), 7, 11]
+- D-9 (riferimenti) scalper calcio `riavvio` B1 x21 su 35797769: dopo il riarmo la sessione apre ingressi col divieto
+  `missione_prematch` attivo. PREESISTENTE (gia' sulla `b5547eb` del PC), riproducibile da solo; non toccato (strategia).
+- D-10 (cantiere 7) P1 Correct Score oltre 3 gol per lato non seguito dallo scanner (Omega cieco sul 2T); P2 blocco uscito dalla
+  sottoscrizione = flusso fermo = bot fermo su quella riga; P3 1T V4 su REST prima del 30'. Comportamenti di produzione mostrati
+  ora dal banco, nessuna strategia toccata.
+- D-11 (W3a) 1. riduzione parziale dell'utente = STOP del bot (ordine dell'08/10; sostituisce R10 del 16/09, tre test riscritti):
+  confermare. 2. DB illeggibile: il fermo vale per l'intera partita del bot (le chiusure protettive aspettano fino a 30 s per
+  ritentativo). 3. una copertura del WORKER che fa dire «ridotta» a un bot ora lo ferma: va rifiutata anche quella? 4. verita'
+  del paper = blotter del runner paper; runner paper riavviato -> nessuna decisione (conservativo). 5. annullo esterno di un
+  ordine in attesa in Omega/Safe: oggi puo' essere ri-piazzato (Mike invece si ferma). 6. Safe paper sul canale (K7
+  preesistente): cantiere a parte.
+- D-12 (W3b) D1 «mercato del bot» = tutti i mercati su cui e' ARMATO (non solo dove ha ordini); D3 dopo l'intervento NON parte la
+  chiusura forzata di fine finestra (posizione lasciata a mercato con CRITICAL); D4 media under: all'intervento si annulla anche la
+  banca PERSIST; D5 scalper in PROVA non sa degli ordini manuali del ladder in prova (processo separato, paper non specchio su
+  questo punto); D6 nessuna soglia minima (anche 2 EUR fermano); D7 durante la sospensione (verifica o DB giu') si rifiutano
+  anche le chiusure del bot su quella selezione (alternativa: lasciar passare le sole chiusure).
+- [IN ATTESA: decisioni del cantiere 11]
