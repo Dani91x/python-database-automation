@@ -1,0 +1,7 @@
+AUDIT_2026-10-08/W3A_DOPO_CLOUD/safe_base_35760084_tutti.txt: 2357 righe | AUDIT_2026-10-08/controllo_finale/omega/safe_base_35760084_tutti.txt: 2357 righe | righe diverse: 4
+@@ -203 +203 @@
+-      nota: attivita' del servizio: replay_richiesta_manuale x2, place x1, diagnosi x1, place_parziale x1, cashout x1
++      nota: attivita' del servizio: replay_richiesta_manuale x2, flusso_non_dichiarato x1, place x1, diagnosi x1, place_parziale x1, cashout x1
+@@ -488 +488 @@
+-      nota: attivita' del servizio: diagnosi x25, replay_richiesta_manuale x2, place x1, replay_riavvio x1, place_parziale x1, cashout x1
++      nota: attivita' del servizio: diagnosi x25, replay_richiesta_manuale x2, flusso_non_dichiarato x1, place x1, replay_riavvio x1, place_parziale x1, cashout x1

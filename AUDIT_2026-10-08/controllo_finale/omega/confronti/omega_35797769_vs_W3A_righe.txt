@@ -1,0 +1,189 @@
+AUDIT_2026-10-08/W3A_DOPO_CLOUD/omega_35797769_tutti.txt: 740 righe | AUDIT_2026-10-08/controllo_finale/omega/omega_35797769_tutti.txt: 742 righe | righe diverse: 134
+@@ -33,3 +33,3 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x3, flusso_interrotto x1
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x3, flusso_non_dichiarato x1, flusso_interrotto x1
+@@ -45 +45 @@
+-      nota: chiamate al mercato: list_today_football_events x686
++      nota: chiamate al mercato: list_today_football_events x696
+@@ -54,3 +54,3 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x3, flusso_interrotto x1
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x3, flusso_non_dichiarato x1, flusso_interrotto x1
+@@ -66 +66 @@
+-      nota: chiamate al mercato: list_today_football_events x686
++      nota: chiamate al mercato: list_today_football_events x696
+@@ -76,3 +76,3 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x3, flusso_interrotto x1
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x3, flusso_non_dichiarato x1, flusso_interrotto x1
+@@ -88 +88 @@
+-      nota: chiamate al mercato: list_today_football_events x686
++      nota: chiamate al mercato: list_today_football_events x696
+@@ -99,3 +99,3 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x3, flusso_interrotto x1
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x3, flusso_non_dichiarato x1, flusso_interrotto x1
+@@ -111 +111 @@
+-      nota: chiamate al mercato: list_today_football_events x686
++      nota: chiamate al mercato: list_today_football_events x696
+@@ -121,3 +121,3 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x3, flusso_interrotto x1
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x3, flusso_non_dichiarato x1, flusso_interrotto x1
+@@ -133 +133 @@
+-      nota: chiamate al mercato: list_today_football_events x686
++      nota: chiamate al mercato: list_today_football_events x696
+@@ -143 +143 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -145 +145 @@
+-      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2
++      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2, flusso_non_dichiarato x1
+@@ -157 +157 @@
+-      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
++      nota: chiamate al mercato: list_today_football_events x746, read_market x357, get_event_market_by_type x1
+@@ -178 +178 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -180 +180 @@
+-      nota: attivita' del servizio: skip x5, live_fok_fallback x1, place x1, replay_stop_utente x1, settle x1
++      nota: attivita' del servizio: skip x5, flusso_non_dichiarato x1, live_fok_fallback x1, place x1, replay_stop_utente x1, settle x1
+@@ -191 +191 @@
+-      nota: chiamate al mercato: list_today_football_events x374, read_market x357, get_event_market_by_type x1
++      nota: chiamate al mercato: list_today_football_events x384, read_market x357, get_event_market_by_type x1
+@@ -208,0 +209 @@
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione
+@@ -220 +221 @@
+-      nota: chiamate al mercato: list_today_football_events x686
++      nota: chiamate al mercato: list_today_football_events x696
+@@ -227,3 +228,3 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x3, live_fok_fallback x2, place_reconciling x2, error x2, reconciled_free x2
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x3, live_fok_fallback x2, place_reconciling x2, error x2, reconciled_free x2, flusso_non_dichiarato x1
+@@ -239 +240 @@
+-      nota: chiamate al mercato: list_today_football_events x690, get_event_market_by_type x1, read_market x1
++      nota: chiamate al mercato: list_today_football_events x700, get_event_market_by_type x1, read_market x1
+@@ -257 +258 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -259 +260 @@
+-      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2, replay_riavvio x1
++      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2, flusso_non_dichiarato x1, replay_riavvio x1
+@@ -271 +272 @@
+-      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
++      nota: chiamate al mercato: list_today_football_events x746, read_market x357, get_event_market_by_type x1
+@@ -292,0 +294 @@
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione
+@@ -305 +307 @@
+-      nota: chiamate al mercato: list_today_football_events x736, read_market x729, read_book x2
++      nota: chiamate al mercato: list_today_football_events x746, read_market x729, read_book x2
+@@ -313 +315 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -315 +317 @@
+-      nota: attivita' del servizio: skip x3, diagnosi x2, settle x2, live_fok_fallback x1, place x1, replay_cashout_globale x1, place_parziale x1, cashout x1, cashout_manual x1, settle_position x1
++      nota: attivita' del servizio: skip x3, diagnosi x2, settle x2, flusso_non_dichiarato x1, live_fok_fallback x1, place x1, replay_cashout_globale x1, place_parziale x1, cashout x1, cashout_manual x1
+@@ -327 +329 @@
+-      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
++      nota: chiamate al mercato: list_today_football_events x746, read_market x357, get_event_market_by_type x1
+@@ -343 +345 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -345 +347 @@
+-      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2
++      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2, flusso_non_dichiarato x1
+@@ -357 +359 @@
+-      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
++      nota: chiamate al mercato: list_today_football_events x746, read_market x357, get_event_market_by_type x1
+@@ -379 +381 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -381 +383 @@
+-      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2
++      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2, flusso_non_dichiarato x1
+@@ -393 +395 @@
+-      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
++      nota: chiamate al mercato: list_today_football_events x746, read_market x357, get_event_market_by_type x1
+@@ -415 +417 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -417 +419 @@
+-      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2
++      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2, flusso_non_dichiarato x1
+@@ -429 +431 @@
+-      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
++      nota: chiamate al mercato: list_today_football_events x746, read_market x357, get_event_market_by_type x1
+@@ -450 +452 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -452 +454 @@
+-      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2, replay_riavvio x1
++      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2, flusso_non_dichiarato x1, replay_riavvio x1
+@@ -464 +466 @@
+-      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
++      nota: chiamate al mercato: list_today_football_events x746, read_market x357, get_event_market_by_type x1
+@@ -486 +488 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -488 +490 @@
+-      nota: attivita' del servizio: skip x5, live_fok_fallback x1, place x1, replay_stop_utente x1, settle x1
++      nota: attivita' del servizio: skip x5, flusso_non_dichiarato x1, live_fok_fallback x1, place x1, replay_stop_utente x1, settle x1
+@@ -499 +501 @@
+-      nota: chiamate al mercato: list_today_football_events x374, read_market x357, get_event_market_by_type x1
++      nota: chiamate al mercato: list_today_football_events x384, read_market x357, get_event_market_by_type x1
+@@ -517,3 +519,3 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
+@@ -529 +531 @@
+-      nota: chiamate al mercato: list_today_football_events x686, get_event_market_by_type x15, read_market x15
++      nota: chiamate al mercato: list_today_football_events x696, get_event_market_by_type x15, read_market x15
+@@ -546 +548 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -549 +551 @@
+-      nota: attivita' del servizio: skip x13, live_fok_fallback x4, place_rifiutato x2, place x2, settle x2
++      nota: attivita' del servizio: skip x13, live_fok_fallback x4, place_rifiutato x2, place x2, settle x2, flusso_non_dichiarato x1
+@@ -561 +563 @@
+-      nota: chiamate al mercato: list_today_football_events x736, read_market x355, get_event_market_by_type x70
++      nota: chiamate al mercato: list_today_football_events x746, read_market x355, get_event_market_by_type x70
+@@ -582 +584 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella | proprietari_bot_conto: tabelle degli altri bot e coda del runner (proprietari degli ordini altrui sul conto): non sono nel replay, un ordine non del bot si decide dai riferimenti (nessun altro bot)
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella | proprietari_bot_conto: tabelle degli altri bot e coda del runner (proprietari degli ordini altrui sul conto): non sono nel replay, un ordine non del bot si decide dai riferimenti (nessun altro bot)
+@@ -584 +586 @@
+-      nota: attivita' del servizio: skip x3, chiuso_dall_utente x2, live_fok_fallback x1, place x1, replay_chiuso_fuori_app x1, replay_chiuso_fuori_app_abbinato x1, settle x1
++      nota: attivita' del servizio: skip x3, chiuso_dall_utente x2, flusso_non_dichiarato x1, live_fok_fallback x1, place x1, replay_chiuso_fuori_app x1, replay_chiuso_fuori_app_abbinato x1, settle x1
+@@ -595 +597 @@
+-      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1, read_book x1
++      nota: chiamate al mercato: list_today_football_events x746, read_market x357, get_event_market_by_type x1, read_book x1
+@@ -610 +612 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -612 +614 @@
+-      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2, replay_cashout_globale x1, diagnosi x1, place_rifiutato x1, cashout_error x1, cashout_manual x1
++      nota: attivita' del servizio: skip x10, live_fok_fallback x2, place x2, settle x2, flusso_non_dichiarato x1, replay_cashout_globale x1, diagnosi x1, place_rifiutato x1, cashout_error x1, cashout_manual x1
+@@ -625 +627 @@
+-      nota: chiamate al mercato: list_today_football_events x736, read_market x357, get_event_market_by_type x1
++      nota: chiamate al mercato: list_today_football_events x746, read_market x357, get_event_market_by_type x1

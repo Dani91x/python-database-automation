@@ -1,0 +1,4 @@
+ATTESE (coppie di righe PRIMA/DOPO): {'A-nonesrc': 19, 'A-attivita': 18, 'A-mercato': 21, 'A-nonesrc-sola': 2}
+NON ATTESE: 2
+  [cashout-globale] PRIMA:       nota: attivita' del servizio: skip x3, diagnosi x2, settle x2, live_fok_fallback x1, place x1, replay_cashout_globale x1, place_parziale x1, cashout x1, cashout_manual x1, settle_position x1
+  [cashout-globale] DOPO :       nota: attivita' del servizio: skip x3, diagnosi x2, settle x2, flusso_non_dichiarato x1, live_fok_fallback x1, place x1, replay_cashout_globale x1, place_parziale x1, cashout x1, cashout_manual x1

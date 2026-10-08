@@ -1,0 +1,418 @@
+AUDIT_2026-10-08/W3A_DOPO_CLOUD/omega_35760084_tutti.txt: 699 righe | AUDIT_2026-10-08/controllo_finale/omega/omega_35760084_tutti.txt: 701 righe | righe diverse: 384
+@@ -33,3 +33,3 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x3, flusso_interrotto x1
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x3, flusso_non_dichiarato x1, flusso_interrotto x1
+@@ -45 +45 @@
+-      nota: chiamate al mercato: list_today_football_events x438
++      nota: chiamate al mercato: list_today_football_events x444
+@@ -54 +54 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -56 +56 @@
+-      nota: attivita' del servizio: skip x3, flusso_interrotto x1, live_fok_fallback x1, place x1, settle x1, goal_stop x1
++      nota: attivita' del servizio: skip x3, flusso_non_dichiarato x1, flusso_interrotto x1, live_fok_fallback x1, place x1, settle x1, goal_stop x1
+@@ -67 +67 @@
+-      nota: chiamate al mercato: list_today_football_events x467, read_market x108
++      nota: chiamate al mercato: list_today_football_events x473, read_market x108
+@@ -77 +77 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella | proprietari_bot_conto: tabelle degli altri bot e coda del runner (proprietari degli ordini altrui sul conto): non sono nel replay, un ordine non del bot si decide dai riferimenti (nessun altro bot)
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella | proprietari_bot_conto: tabelle degli altri bot e coda del runner (proprietari degli ordini altrui sul conto): non sono nel replay, un ordine non del bot si decide dai riferimenti (nessun altro bot)
+@@ -79 +79 @@
+-      nota: attivita' del servizio: skip x5, replay_chiuso_fuori_app x3, chiuso_dall_utente x2, flusso_interrotto x1, live_fok_fallback x1, place x1, diagnosi x1, replay_chiuso_fuori_app_abbinato x1, settle x1, goal_stop x1
++      nota: attivita' del servizio: skip x5, replay_chiuso_fuori_app x3, chiuso_dall_utente x2, flusso_non_dichiarato x1, flusso_interrotto x1, live_fok_fallback x1, place x1, diagnosi x1, replay_chiuso_fuori_app_abbinato x1, settle x1
+@@ -90 +90 @@
+-      nota: chiamate al mercato: list_today_football_events x467, read_market x108, read_book x3
++      nota: chiamate al mercato: list_today_football_events x473, read_market x108, read_book x3
+@@ -102 +102 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella | proprietari_bot_conto: tabelle degli altri bot e coda del runner (proprietari degli ordini altrui sul conto): non sono nel replay, un ordine non del bot si decide dai riferimenti (nessun altro bot)
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella | proprietari_bot_conto: tabelle degli altri bot e coda del runner (proprietari degli ordini altrui sul conto): non sono nel replay, un ordine non del bot si decide dai riferimenti (nessun altro bot)
+@@ -104 +104 @@
+-      nota: attivita' del servizio: skip x5, chiuso_dall_utente x2, flusso_interrotto x1, live_fok_fallback x1, place x1, replay_chiuso_fuori_app x1, replay_chiuso_fuori_app_abbinato x1, diagnosi x1, settle x1, goal_stop x1
++      nota: attivita' del servizio: skip x5, chiuso_dall_utente x2, flusso_non_dichiarato x1, flusso_interrotto x1, live_fok_fallback x1, place x1, replay_chiuso_fuori_app x1, replay_chiuso_fuori_app_abbinato x1, diagnosi x1, settle x1
+@@ -115 +115 @@
+-      nota: chiamate al mercato: list_today_football_events x467, read_market x108, read_book x1
++      nota: chiamate al mercato: list_today_football_events x473, read_market x108, read_book x1
+@@ -126 +126 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+@@ -128 +128 @@
+-      nota: attivita' del servizio: skip x3, flusso_interrotto x1, canale_inviato x1, flumine_fill x1, settle x1, goal_stop x1
++      nota: attivita' del servizio: skip x3, flusso_non_dichiarato x1, flusso_interrotto x1, canale_inviato x1, flumine_fill x1, settle x1, goal_stop x1
+@@ -139 +139 @@
+-      nota: chiamate al mercato: list_today_football_events x467, read_market x108
++      nota: chiamate al mercato: list_today_football_events x473, read_market x108
+@@ -149,13 +149,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -178,13 +178,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -207,0 +208 @@
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione
+@@ -219 +220 @@
+-      nota: chiamate al mercato: list_today_football_events x438
++      nota: chiamate al mercato: list_today_football_events x444
+@@ -226,13 +227,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -255,13 +256,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -284,0 +286 @@
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione
+@@ -297 +299 @@
+-      nota: chiamate al mercato: list_today_football_events x467, read_market x464, read_book x2
++      nota: chiamate al mercato: list_today_football_events x473, read_market x464, read_book x2
+@@ -305,13 +307,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -335,13 +337,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -365,13 +367,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -395,13 +397,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -424,13 +426,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -454,13 +456,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -484,3 +486,3 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x3
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x3, flusso_non_dichiarato x1
+@@ -496 +498 @@
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x13, read_market x13
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x13, read_market x13
+@@ -511,13 +513,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -540,13 +542,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
+@@ -569,13 +571,13 @@
+-      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
+-      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
+-      nota: attivita' del servizio: skip x4
+-      nota: righe per stato: {}
+-      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
+-      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+-      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+-      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
+-      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
+-      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
+-      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
+-      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
+-      nota: chiamate al mercato: list_today_football_events x438, get_event_market_by_type x83, read_market x83
++      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: fixtures_for_window: fixture_predictions (lambda pre-match del motore Poisson): tabella storica, assente dalla registrazione | minute_transitions: tabella per MINUTO (RPC get_omega_minute_ft): storica, assente dalla registrazione | ht_ft_transitions: storico HT->FT (RPC get_omega_ht_ft, migliaia di partite): non e' nella registrazione di UNA partita, quindi il veto empirico resta senza tabella
++      nota: ordini reali piazzati su flumine: 0 | righe omega_trades scritte: 0
++      nota: attivita' del servizio: skip x4, flusso_non_dichiarato x1
++      nota: righe per stato: {}
++      nota: motivi dichiarati: nessun_candidato x2 | no_live_state x1 | market_suspended x1
++      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
++      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
++      nota: bet delay: 0 book passati mentre i piazzamenti aspettavano Betfair | book in ritardo (orologio fermo): 560388 | LAPSE al passaggio in gioco: 0
++      nota: righe di scan scritte dallo SCANNER VERO: 345 | letture del feed di Omega: 353 | giri senza riga nel feed: 4
++      nota: finestre di sottoscrizione di produzione (Scanner.relevant_market_ids): book non consegnati allo scanner 143079 (BOTH_TEAMS_TO_SCORE x3599, CORRECT_SCORE x18398, HALF_TIME x15829, HALF_TIME_SCORE x20342, MATCH_ODDS x1655, OVER_UNDER_05 x28724, OVER_UNDER_15 x21573, OVER_UNDER_25 x15612, OVER_UNDER_35 x5822, OVER_UNDER_45 x747, OVER_UNDER_55 x3593, OVER_UNDER_65 x3593, OVER_UNDER_75 x3592)
++      nota: chiusure di Betfair consegnate allo scanner: OVER_UNDER_65 17:54:11, OVER_UNDER_55 17:54:11, OVER_UNDER_75 17:54:12, MATCH_ODDS 17:54:13, OVER_UNDER_45 17:54:13
++      nota: catalogo ricostruito dalla registrazione: 21 mercati, scoreline nominate su 2 mercati (29 selezioni)
++      nota: chiamate al mercato: list_today_football_events x444, get_event_market_by_type x83, read_market x83
