@@ -125,14 +125,23 @@ python -m Betfair.stream.backtest.certifica mike 35760084 --scenari base,cap-str
 python -m Betfair.stream.backtest.certifica safe_base 35760084 --scenari base,riavvio --worker 1
 python -m Betfair.stream.backtest.certifica scalper_calcio 35797769 --scenari base,ordine-esterno,ordine-esterno-di-un-bot --worker 1   # OK 44 azioni / OK 2 azioni (stop) / OK 44 azioni
 ```
-ATTESO: righe IDENTICHE (esclusi `tempo:`, `TEMPO TOTALE`, e per la Safe la nota «metodi ASSENTI dal banco» /
-«NON ESERCITABILE get_event», che dipende dalla velocita' della macchina: §6 D-13) ai file del cloud indicati nel riepilogo di W3a
-(`AUDIT_2026-10-08/W3A_DOPO_CLOUD/`) e di W3b (`AUDIT_2026-10-08/W3B/dopo_cloud/`); fonte
-delle righe scalper: `AUDIT_2026-10-08/controllo_scalper_597ea3a/35797769_blocco{1,3,4}.txt`.
+ATTESO: righe IDENTICHE (esclusi `tempo:`, `TEMPO TOTALE`, `worker:`, `MEMORIA:`, log, impronta) ai referti del CONTROLLO
+FINALE sulla cima `d01de76` in `AUDIT_2026-10-08/controllo_finale/<bot>/` (stesso codice: deve uscire uguale). Unica eccezione
+ammessa: per la Safe la nota «metodi ASSENTI dal banco» / «NON ESERCITABILE get_event» puo' cambiare scenario (dipende dalla
+velocita' della macchina, §6 D-13). Strumento: `python -m Betfair.stream.backtest.tools.confronta_referti CLOUD.txt PC.txt`
+quando gli scenari sono gli stessi; per un sottoinsieme di scenari si confronta il blocco di ciascuno.
 Test mirati (un minuto):
 ```
-python -m pytest Betfair/stream/tests/test_banco_scanner_reperti_rb_2026_10_08.py Betfair/omega/tests/test_banco_omega_reperti_rb_2026_10_08.py Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py Betfair/stream/tennis_live/tests/test_w3b_ordini_esterni_tennis_2026_10_08.py Betfair/mike/tests/test_mike_w3a_consapevolezza_2026_10_08.py Betfair/omega/tests/test_omega_w3a_conto_canale_2026_10_08.py Betfair/safe_strategy/tests/test_safe_w3a_conto_canale_2026_10_08.py Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py Betfair/stream/tests/test_frammenti_id_riciclato_2026_10_08.py -q -p no:cacheprovider
+python -m pytest Betfair/stream/tests/test_banco_scanner_reperti_rb_2026_10_08.py Betfair/omega/tests/test_banco_omega_reperti_rb_2026_10_08.py Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py Betfair/stream/tennis_live/tests/test_w3b_ordini_esterni_tennis_2026_10_08.py Betfair/mike/tests/test_mike_w3a_consapevolezza_2026_10_08.py Betfair/omega/tests/test_omega_w3a_conto_canale_2026_10_08.py Betfair/safe_strategy/tests/test_safe_w3a_conto_canale_2026_10_08.py Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py Betfair/stream/tests/test_frammenti_id_riciclato_2026_10_08.py Betfair/omega/test_omega_banco_isolamento_2026_10_08.py Betfair/mike/test_mike_banco_isolamento_2026_10_08.py Betfair/stream/tests/test_banco_velocita_2026_10_08.py -q -p no:cacheprovider
 ```
+Cantiere 11 sul PC (la prova che `--worker 3` e' affidabile SU QUELLA MACCHINA, 2 x ~2-4 minuti):
+```
+python -m Betfair.stream.backtest.certifica omega 35760084 --scenari tutti --worker 1 > o_w1.txt 2>&1
+python -m Betfair.stream.backtest.certifica omega 35760084 --scenari tutti --worker 3 > o_w3.txt 2>&1   # deve stampare «worker: 3 su ...»
+python -m Betfair.stream.backtest.tools.confronta_referti o_w1.txt o_w3.txt                              # atteso: righe diverse 0
+python -m Betfair.stream.backtest.tools.confronta_referti AUDIT_2026-10-08/controllo_finale/omega/omega_35760084_tutti.txt o_w3.txt   # atteso: 0
+```
+Poi, a piacere, Safe e tennis `--worker 1` contro `--worker 3` (non verificati nel cloud: cantiere 11 §9.3).
 Tennis W3b: nella STESSA corsa del §3.1 (i referti tennis devono essere identici a quelli del cantiere 5 salvo la riga
 `codice bot`: `W3B_CONSAPEVOLEZZA_FLUMINE.md` §9).
 
