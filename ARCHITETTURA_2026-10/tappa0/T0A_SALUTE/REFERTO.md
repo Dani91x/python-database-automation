@@ -191,7 +191,7 @@ generale); `monitor_metrics_pulizia(1)` rifiutata (minimo 2 giorni). Server ferm
 2. Migrazione (la applica l'utente): SQL Editor di Supabase, ruolo postgres, incollare per intero
    `migrations/monitor_metrics_2026-10-09.sql`. Verifica: `SELECT count(*) FROM public.monitor_metrics;` = 0;
    `SELECT public.monitor_vitalita_raccoglitori();` restituisce le 15 tabelle.
-3. `.env` del checkout principale: aggiungere la riga `MONITOR_SALUTE=1` (togliere la riga o metterla a 0 = ritorno).
+3. `.env` del checkout principale: aggiungere la riga `MONITOR_SALUTE=1` (togliere la riga o metterla a 0 = ritorno). Poi `npm run build` in `frontend/` ad app spenta: la voce di menu «Salute» compare solo nella build fatta con la riga a 1 (R-5).
 4. L'utente riavvia l'app (mai con posizioni aperte). Entro 1 minuto: pagina "Salute" (menu' Analisi nel guscio v2, o
    `/salute`): tutti i servizi VIVI; nel log di ogni servizio una riga `[monitor] Salute ACCESO per <servizio>`; in
    `_logs/monitor/<giorno>/` un file per servizio.
@@ -204,7 +204,7 @@ generale); `monitor_metrics_pulizia(1)` rifiutata (minimo 2 giorni). Server ferm
    -> `AUDIT_MONITOR/REFERTO_SALUTE_2026-10-10.md` e `.json`. Riproduzione senza DB:
    `python -m Betfair.monitor.referto --giorno 2026-10-10 --righe AUDIT_MONITOR/righe_2026-10-10.json --log-dir _logs --raw-dir _live_raw`
    (stesse righe = stessi byte). Senza DB, dalle sole copie locali: `python -m Betfair.monitor.referto --giorno 2026-10-10`.
-8. Conservazione (quando l'utente vuole): `SELECT public.monitor_metrics_pulizia(14);`.
+8. Conservazione (quando l'utente vuole): `SELECT public.monitor_metrics_pulizia(7);` (7 giorni: correzione R-4 della verifica del PC).
 9. Ritorno: `MONITOR_SALUTE=0` (o riga tolta) e riavvio: nessun campo, nessuna scrittura (provato dai test e dal banco).
 
 ## 6. Divergenze dal piano e decisioni aperte (da portare all'utente)

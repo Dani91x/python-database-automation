@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { NAV, ROTTE_NEL_GUSCIO, titoloDi, CANALI_DELLA_PAGINA } from './navigazione';
+import { NAV, ROTTE_NEL_GUSCIO, titoloDi, CANALI_DELLA_PAGINA, gruppiVisibili } from './navigazione';
 
 const APP = readFileSync(join(__dirname, '..', '..', 'App.tsx'), 'utf-8');
 
@@ -32,5 +32,30 @@ describe('voce Salute', () => {
 
     it('la pagina non apre canali locali (nessuna voce in CANALI_DELLA_PAGINA)', () => {
         expect(CANALI_DELLA_PAGINA['/salute']).toBeUndefined();
+    });
+});
+
+// 09/10 (R-5 della verifica del PC): a monitor spento la voce non si vede
+describe('voce Salute solo a monitor acceso', () => {
+    const idsAnalisi = (attivo?: boolean) =>
+        (attivo === undefined ? gruppiVisibili('tutti') : gruppiVisibili('tutti', attivo))
+            .find((g) => g.id === 'analisi')?.voci.map((v) => v.id) ?? [];
+
+    it('spento (anche di serie): niente «Salute», le altre voci identiche', () => {
+        expect(idsAnalisi()).toEqual(['match-replay', 'analytics', 'report-personale', 'trade-journal']);
+        expect(idsAnalisi(false)).toEqual(['match-replay', 'analytics', 'report-personale', 'trade-journal']);
+    });
+
+    it('acceso: la voce torna in fondo al gruppo', () => {
+        expect(idsAnalisi(true)).toEqual(['match-replay', 'analytics', 'report-personale', 'trade-journal', 'salute']);
+    });
+
+    it('nessun\'altra voce dipende dal monitor', () => {
+        const tutte = (a: boolean) => gruppiVisibili('tutti', a).flatMap((g) => g.voci.map((v) => v.id));
+        expect(tutte(true).filter((id) => !tutte(false).includes(id))).toEqual(['salute']);
+        for (const f of ['calcio', 'tennis'] as const) {
+            const conta = (a: boolean) => gruppiVisibili(f, a).flatMap((g) => g.voci).length;
+            expect(conta(true) - conta(false)).toBe(1);
+        }
     });
 });

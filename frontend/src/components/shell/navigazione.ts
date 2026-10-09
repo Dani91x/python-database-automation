@@ -27,6 +27,9 @@ export interface VoceNav {
     finestra?: true;
     /** spiegazione al passaggio del mouse */
     nota?: string;
+    /** 09/10 (R-5): la voce si vede SOLO con il monitor «Salute» acceso
+     *  (MONITOR_SALUTE=1 nel .env alla build, `lib/monitorSalute.ts`); spento = voce assente */
+    soloConMonitor?: true;
 }
 
 export interface GruppoNav {
@@ -93,6 +96,7 @@ export const NAV: readonly GruppoNav[] = [
             {
                 id: 'salute', etichetta: 'Salute', rotta: '/salute', icona: 'impulso', sport: 'comune',
                 nota: 'CPU, memoria, richieste e tempi dei servizi (MONITOR_SALUTE=1)',
+                soloConMonitor: true,
             },
         ],
     },
@@ -115,12 +119,16 @@ export const ROTTE_NEL_GUSCIO: readonly string[] = [
 export type FiltroSport = 'tutti' | 'calcio' | 'tennis';
 
 /** Il filtro della sidebar nasconde SOLO voci di menu: nessun dato cambia. */
-export function gruppiVisibili(filtro: FiltroSport): GruppoNav[] {
+export function gruppiVisibili(filtro: FiltroSport, monitorAttivo = false): GruppoNav[] {
     return NAV.filter((g) => {
         if (filtro === 'calcio') return g.sport !== 'tennis';
         if (filtro === 'tennis') return g.sport !== 'calcio';
         return true;
-    });
+    }).map((g) => ({
+        ...g,
+        // 09/10 (R-5): a monitor spento la voce «Salute» non c'e' (la rotta resta)
+        voci: g.voci.filter((v) => !v.soloConMonitor || monitorAttivo),
+    }));
 }
 
 /** Titolo e gruppo della pagina per la testata (prima voce che porta alla rotta). */

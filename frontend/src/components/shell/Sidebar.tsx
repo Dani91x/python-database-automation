@@ -18,6 +18,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { gruppiVisibili, type FiltroSport, type IconaVoce, type VoceNav } from './navigazione';
+import { monitorSaluteAcceso } from '@/lib/monitorSalute';
 
 const ICONE: Record<IconaVoce, LucideIcon> = {
     home: Home, radar: Radar, cruscotto: Gauge, omega: Omega, scudo: Shield, bersaglio: Target,
@@ -98,6 +99,8 @@ function Voce({ v, compressa }: { v: VoceNav; compressa: boolean }) {
 
 export function Sidebar({ compressa, onComprimi }: SidebarProps) {
     const [filtro, setFiltro] = useState<FiltroSport>('tutti');
+    // 09/10 (R-5): «Salute» solo con il monitor acceso (MONITOR_SALUTE=1 alla build)
+    const monitorAttivo = monitorSaluteAcceso();
     return (
         <aside className="ds-sidebar" aria-label="Navigazione principale" data-testid="shell-sidebar">
             <div className="ds-sb-brand">
@@ -124,7 +127,7 @@ export function Sidebar({ compressa, onComprimi }: SidebarProps) {
                 </div>
             )}
             <nav className="flex-1 px-2 pb-4 pt-1.5" aria-label="Sezioni">
-                {gruppiVisibili(filtro).map((g) => (
+                {gruppiVisibili(filtro, monitorAttivo).map((g) => (
                     <div key={g.id} data-testid={`shell-gruppo-${g.id}`}>
                         {g.titolo && (
                             <div className={`ds-sb-gruppo ${compressa ? 'justify-center' : ''}`}>

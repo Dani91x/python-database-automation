@@ -180,13 +180,14 @@ def test_canale_acceso_ricevuto_e_coda(monitor_acceso):
 # ---------------------------------------------------------------------------
 class _DbBot:
     """Finto del db dei bot con i metodi e le firme usati dall'enqueue
-    (``omega_db``/``safe_strategy.bot_db``: update_trade(id, meta=...),
+    (``omega_db``/``safe_strategy.bot_db``: update_trade(id, **fields) - stessa
+    firma del vero, R-6 della verifica del PC -,
     enqueue_live_order(payload) -> id, log(kind, payload), get_live_order_request_by_ref)."""
 
     def __init__(self) -> None:
         self.payload: List[Dict[str, Any]] = []
 
-    def update_trade(self, trade_id: int, meta: Dict[str, Any]) -> None:
+    def update_trade(self, trade_id: int, **fields: Any) -> None:
         pass
 
     def enqueue_live_order(self, payload: Dict[str, Any]) -> int:
