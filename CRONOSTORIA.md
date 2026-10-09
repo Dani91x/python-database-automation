@@ -5574,3 +5574,22 @@ riletto, test rilanciati, mutazioni PROPRIE, replay) e committata sul suo ramo; 
   di crash iniziato alle 09:28 (5 ripartenze di Postgres senza errore nei log = memoria esaurita; istanza ~1 GB) per 4-5 action
   GitHub partite insieme a catena dal Daily delle 09:19; app ferma al login (522 su ogni richiesta). Cancellate alle 09:52 Seasons
   Catchup e Hazard Atlas in corso; DB stabile dalle 09:43, richieste 200 dalle 09:52. Dettagli e decisioni: sospesi 24-25.
+
+### 09/10 — OROLOGIO NOTTURNO DELLE ACTION + CATENA IN FILA (delegato Opus; coordinatore PC, Fable 5.1) — ore 09:00-11:15
+Ordine dell'utente: «gran parte delle action di notte (app spenta, DB libero), NESSUNA sovrapposizione con i cron, le action NON
+devono partire 2 volte». Misurato prima: tutti i cron GitHub del repo partono con ritardo mediano 300-370 min (scheduler GitHub
+degradato dal 08/2026; la run e' creata 5-6 h dopo l'orario) -> Daily alle 07:00-07:30 UTC + ventaglio di 4-5 action = crash del DB.
+- Commit `3e3844c0` su master (ff dal ramo `cantiere-orologio-notturno`): TUTTI gli `schedule:` rimossi (9 workflow); catena in fila
+  1 Daily -> 2 Retrain -> 3 Post-Cal -> 4 Today Predictions -> 5 Hazard Atlas -> 6 Leagues Mapping -> 7 Catchup -> 8 Predictions
+  Results -> 9 Weekly Poisson (lunedi'); staffetta `.github/scripts/passa_testimone.sh` (workflow_dispatch + GITHUB_TOKEN: GitHub
+  non supera 3 livelli di workflow_run, VERIFICATO sulla documentazione; un lancio a mano parte con catena=false e non trascina);
+  migrazione `migrations/orologio_action_notturne_2026-10-09.sql` (pg_cron 00:12 UTC lancia il Daily via pg_net col token dal Vault;
+  guardia `lanci_action` per giorno+workflow; verifiche 00:15 e 07:30/07:33 UTC in `live_alerts`); Catchup con riserva da
+  `CATCHUP_RISERVA_PER` (catena: 1300 invece di 3000); Post-Cal FULL il lunedi'. Test 246 (22 catena, 103 catchup, 25 riserva);
+  33 mutazioni del delegato + 2 mie rosse; actionlint 0.
+- APPLICATO DALL'UTENTE: token fine-grained (Actions: Read and write, solo questo repo) nel Vault come `github_actions_dispatch`
+  (09:05 UTC); migrazione applicata (4 job pg_cron attivi, 09:0x UTC).
+- PROVE DAL VIVO del coordinatore: GET /actions/workflows dal DB col token -> 200 (10 workflow); `lancia_action('leagues_mapper.yml',
+  catena=false)` -> 204, run 37909480534 creata alle 09:09:42Z, success, job `passa-testimone` skipped, nessun'altra run; secondo
+  lancio -> «gia' chiesto oggi: nessuna chiamata», coda pg_net vuota.
+- PRIMA NOTTE VERA: 10/10 00:12 UTC. Lettura della mattina: sospesi §7. Nessun workflow lanciato a mano da adesso in poi.

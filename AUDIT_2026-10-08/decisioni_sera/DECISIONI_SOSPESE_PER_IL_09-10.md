@@ -120,3 +120,16 @@ Fonte dei punti: `AUDIT_2026-10-08/HANDOFF_VERIFICA_PC_E_FUSIONE.md` §6.
     massimo ne' un messaggio. Ordine dell'utente: «l'app deve essere una scheggia». Proposta: avvio e login con tempo massimo
     (2-3 s) e messaggio chiaro «database non raggiungibile: riprova», pagina di login mai bloccata dal DB; rientra nel piano di
     architettura (T0A pannello Salute, strato locale SQLite) ma il tempo massimo e il messaggio si possono fare subito.
+
+## 7. Chiuso il 09/10 (orologio notturno) e cosa leggere domattina
+- Sospeso 24 CHIUSO: nessun cron GitHub; orologio pg_cron 00:12 UTC lancia il Daily; catena in fila a staffetta (9 anelli, Today
+  Predictions al 4o posto); nessuna finestra di giorno per il Catchup (D2); Post-Cal FULL il lunedi' (D3); riserva del Catchup nella
+  catena solo per Predictions Results (D1). Referto: `AUDIT_2026-10-09/orologio_action/REFERTO.md`. Prove dal vivo del 09/10
+  (09:07-09:12 UTC): GET con token dal Vault -> 200; `lancia_action('leagues_mapper.yml', catena=false)` -> 204, run creata 1 s dopo,
+  conclusa success, staffetta `skipped`, nessun'altra run partita; secondo lancio nello stesso giorno -> «gia' chiesto: nessuna chiamata».
+- DA LEGGERE LA MATTINA DEL 10/10 (prima notte vera): `select * from public.lanci_action order by giorno desc, chiesto_at desc;`
+  (riga del Daily con esito_http 204) e `select level, code, message, created_at from public.live_alerts where code in
+  ('ACTION_NON_PARTITA','CATENA_NOTTURNA_INCOMPLETA') order by created_at desc;` (atteso: nessuna riga); su GitHub le 9 run in fila
+  dalle 00:12 UTC; nel log del Catchup la riga `[CATCHUP] riserva ... predictions_results_backfill.yml=1000 + residua 300 = 1300`.
+- Resta da confermare: le 1000 chiamate riservate a Predictions Results sono derivate (3000/3), non misurate; se Results finisce la
+  quota, alzare N in `seasons_catchup.yml` (`predictions_results_backfill.yml=N`), senza toccare codice.
