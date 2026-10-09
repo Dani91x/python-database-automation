@@ -1647,6 +1647,74 @@
     flex: none;
 }
 
+/* 09/10 — Programma del giorno rifatto (ordine dell'utente): barra della scheda
+   (menu' del mercato e modalita' ordini), caselle di quota con l'importo
+   disponibile sotto, liquidita' con la barra relativa, punteggio, box d'ordine */
+[data-shell="v2"] .ds-v2-board-barra {
+    margin-bottom: 0;
+    padding: 8px 12px;
+    border: 1px solid hsl(var(--border));
+    border-top-width: 0;
+    background-color: hsl(var(--card));
+}
+
+[data-shell="v2"] .ds-v2-board-prezzo {
+    min-width: 56px;
+    height: 38px;
+    gap: 2px;
+}
+
+[data-shell="v2"] .ds-v2-board-disp {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+[data-shell="v2"] .ds-v2-board-liquidita {
+    width: 124px;
+}
+
+[data-shell="v2"] .ds-v2-board-etichetta {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: hsl(var(--muted-foreground));
+}
+
+[data-shell="v2"] .ds-v2-board-abbinati {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 800;
+    color: hsl(var(--foreground));
+}
+
+[data-shell="v2"] .ds-v2-board-barretta {
+    height: 5px;
+    background-color: hsl(var(--muted));
+}
+
+[data-shell="v2"] .ds-v2-board-punteggio {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 12px;
+}
+
+[data-shell="v2"] .ds-v2-board-minuto {
+    color: #34d399;
+}
+
+[data-shell="v2"] .ds-v2-board-linea + .ds-v2-board-linea {
+    border-top: 1px dashed hsl(var(--border) / 0.6);
+    padding-top: 6px;
+}
+
+[data-shell="v2"] .ds-v2-board-nome-linea {
+    font-size: 10.5px;
+}
+
+[data-shell="v2"] .ds-v2-box-ordine {
+    padding-top: 8px;
+    padding-bottom: 2px;
+}
+
 /* ---------- PAGINA 13a — SCELTA SPORT (prototipo s_account.js) ---------- */
 [data-shell="v2"] .ds-v2-ss-main {
     max-width: none;

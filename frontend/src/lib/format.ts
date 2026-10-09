@@ -28,6 +28,13 @@ function itFixed(n: number, digits: number): string {
     return n.toFixed(digits).replace('.', ',');
 }
 
+/** `1843210,50` -> `1.843.210,50` (punto delle migliaia sulla parte intera). */
+function conMigliaia(fisso: string): string {
+    const [intera, dec] = fisso.split(',');
+    const gruppi = intera.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return dec === undefined ? gruppi : `${gruppi},${dec}`;
+}
+
 export interface MoneyOpts {
     /** true = mostra sempre il segno ("+12,50 €"); false = solo il meno */
     signed?: boolean;
@@ -35,6 +42,12 @@ export interface MoneyOpts {
     decimals?: number;
     /** simbolo valuta (default '€'); '' per il numero nudo */
     currency?: string;
+    /**
+     * 09/10 (Programma del giorno): separatore delle migliaia col punto
+     * (`1.843.210 €`), per i volumi scambiati che hanno sette cifre. Di serie
+     * false: chi non lo passa non cambia di una virgola.
+     */
+    migliaia?: boolean;
 }
 
 /**
@@ -49,7 +62,8 @@ export function fmtMoney(v: number | null | undefined, opts: MoneyOpts = {}): st
     // -0 va mostrato come 0: il segno meno su zero è rumore
     const neg = n < 0 && Number(Math.abs(n).toFixed(decimals)) !== 0;
     const sign = neg ? MINUS : opts.signed ? '+' : '';
-    const body = itFixed(Math.abs(n), decimals);
+    const fisso = itFixed(Math.abs(n), decimals);
+    const body = opts.migliaia ? conMigliaia(fisso) : fisso;
     return currency ? `${sign}${body} ${currency}` : `${sign}${body}`;
 }
 

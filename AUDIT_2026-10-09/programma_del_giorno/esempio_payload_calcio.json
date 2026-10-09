@@ -1,0 +1,186 @@
+{
+ "board": {
+  "rows": [
+   {
+    "event_id": "35000001",
+    "event_name": "Casa v Ospite",
+    "open_date": "2026-10-09T18:00:00+00:00",
+    "market_id": "1.101",
+    "status": "OPEN",
+    "inplay": true,
+    "total_matched": 15234.5,
+    "selections": [
+     {
+      "selection_id": 11,
+      "name": "Casa",
+      "back": 1.5,
+      "lay": 1.52,
+      "ltp": 1.5,
+      "back_size": 100.0,
+      "lay_size": 50.0
+     },
+     {
+      "selection_id": 22,
+      "name": "Ospite",
+      "back": 7.0,
+      "lay": 7.4,
+      "ltp": 7.0,
+      "back_size": 9.0,
+      "lay_size": 3.0
+     },
+     {
+      "selection_id": 58805,
+      "name": "The Draw",
+      "back": 4.0,
+      "lay": 4.2,
+      "ltp": 4.0,
+      "back_size": 20.0,
+      "lay_size": 10.0
+     }
+    ],
+    "bet_delay": 5,
+    "score": {
+     "sport": "calcio",
+     "minute": 67,
+     "home": 2,
+     "away": 1,
+     "red_home": 0,
+     "red_away": 1,
+     "ht": false
+    },
+    "fixture_id": 1234567,
+    "updated_ms": 1791545942143
+   },
+   {
+    "event_id": "35000002",
+    "event_name": "Nord v Sud",
+    "open_date": "2026-10-09T18:00:00+00:00",
+    "market_id": "1.102",
+    "status": "OPEN",
+    "inplay": false,
+    "total_matched": 288.8,
+    "selections": [
+     {
+      "selection_id": 33,
+      "name": "Nord",
+      "back": 3.05,
+      "lay": 3.2,
+      "ltp": 3.05,
+      "back_size": 96.59,
+      "lay_size": 15.0
+     },
+     {
+      "selection_id": 44,
+      "name": "Sud",
+      "back": 2.46,
+      "lay": 2.56,
+      "ltp": 2.46,
+      "back_size": 5.0,
+      "lay_size": 17.0
+     },
+     {
+      "selection_id": 58805,
+      "name": "The Draw",
+      "back": 3.4,
+      "lay": 3.6,
+      "ltp": 3.4,
+      "back_size": 56.76,
+      "lay_size": 3.0
+     }
+    ],
+    "bet_delay": 0,
+    "score": null,
+    "fixture_id": null,
+    "updated_ms": 1791545942143
+   }
+  ],
+  "market_types": [
+   {
+    "market_type": "MATCH_ODDS",
+    "name": "Esito finale (1X2)",
+    "count": 2
+   },
+   {
+    "market_type": "BOTH_TEAMS_TO_SCORE",
+    "name": "Goal / No goal",
+    "count": 5
+   },
+   {
+    "market_type": "OVER_UNDER_25",
+    "name": "Under/Over 2.5 gol",
+    "count": 2
+   },
+   {
+    "market_type": "ASIAN_HANDICAP",
+    "name": "Handicap asiatico",
+    "count": 1
+   }
+  ]
+ },
+ "board_mercato": {
+  "market_type": "OVER_UNDER_25",
+  "rows": [
+   {
+    "event_id": "35000001",
+    "market_id": "1.201",
+    "market_name": "Over/Under 2.5 Goals",
+    "status": "OPEN",
+    "inplay": true,
+    "total_matched": 5000.0,
+    "selections": [
+     {
+      "selection_id": 47972,
+      "name": "Under 2.5 Goals",
+      "handicap": 0.0,
+      "back": 1.91,
+      "lay": 1.93,
+      "ltp": null,
+      "back_size": 250.0,
+      "lay_size": 120.0
+     },
+     {
+      "selection_id": 47973,
+      "name": "Over 2.5 Goals",
+      "handicap": 0.0,
+      "back": 2.08,
+      "lay": 2.12,
+      "ltp": null,
+      "back_size": 80.0,
+      "lay_size": 60.0
+     }
+    ]
+   },
+   {
+    "event_id": "35000002",
+    "market_id": "1.202",
+    "market_name": "Over/Under 2.5 Goals",
+    "status": "OPEN",
+    "inplay": false,
+    "total_matched": 77.0,
+    "selections": [
+     {
+      "selection_id": 47972,
+      "name": "Under 2.5 Goals",
+      "handicap": 0.0,
+      "back": 2.2,
+      "lay": 2.3,
+      "ltp": 2.2,
+      "back_size": 30.0,
+      "lay_size": 12.0
+     },
+     {
+      "selection_id": 47973,
+      "name": "Over 2.5 Goals",
+      "handicap": 0.0,
+      "back": 1.7,
+      "lay": 1.8,
+      "ltp": 1.7,
+      "back_size": 8.0,
+      "lay_size": 4.0
+     }
+    ]
+   }
+  ],
+  "updated_ms": 1791545942144
+ }
+}

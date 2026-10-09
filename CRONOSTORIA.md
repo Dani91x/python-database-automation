@@ -5634,3 +5634,22 @@ degradato dal 08/2026; la run e' creata 5-6 h dopo l'orario) -> Daily alle 07:00
   `da3b17c9` fuso in `e8139617` (0 conflitti, 63 test sulla cima fusa); migrazione `hazard_atlas_globale_leggero_2026-10-09.sql`
   APPLICATA dall'utente alle 13:04: le 7 versioni in `hazard_atlas` passano da 4,5-6,7 MB a 12-17 kB l'una (chiavi solo global,meta;
   verificato in sola lettura); `hazard_atlas_leghe` intatta. Da stanotte la action scrive ~125 KB invece di 24 MB.
+
+### 09/10 — Sessione cloud: Control Room (interruttori) + Programma del giorno (/board) — ramo `claude/sweet-hypatia-t4bmna`
+Dominio: `frontend/src/pages/{ControlRoom,Board}.tsx` e componenti collegati, `Betfair/stream/board_worker.py`, cicli d'attesa
+dei due runner, `/order` del desktop (motore ordini calcio, worker ordini tennis), `local_channel.py` (metodo `board_mercato`).
+- CHECKPOINT Control Room (ordine dell'utente): interruttori «Nascondi» della sezione AI Terminal e della composizione sotto
+  l'obiettivo (preferenza per viewer, default visibile). Test falsificati; fotografie control-room aggiornate (solo i 2 pulsanti).
+- CHECKPOINT Programma del giorno (contratto `AUDIT_2026-10-09/programma_del_giorno/CONTRATTO.md`, referti BACKEND/FRONTEND):
+  board anche da runner parcheggiato (tennis non partiva), punteggio/minuto, liquidita' (abbinato + importi al miglior prezzo),
+  menu' mercato (calcio senza correct score; `board_mercato` su richiesta, TTL 75 s, tetto 3 tipi), box quote che piazzano col
+  percorso d'ordine esistente (modo dal runner), aggancio al volo del `/order` del desktop su partita non seguita (attesa max 7 s),
+  Statistiche/Trading con ritorno «Torna al Programma». Nessuna connessione nuova. Correzione in revisione: modo ordini e settings
+  riletti anche da parcheggiato (prima: «NON NOTA» e, sul tennis, freno della UI non letto da parcheggiato).
+- Verifica del coordinatore: pytest Betfair 11.453 verdi / 87 skipped / 6 xfailed / 0 rossi; vitest 5533 verdi / 0 rossi;
+  tsc 0 errori; build ok; falsificazioni rifatte di persona (board tennis parcheggiato, aggancio /order, settings da parcheggiato,
+  filtro correct score, modo nel comando d'ordine): tutte rosse.
+- Utente: `MOTORE_ORDINI_CANALE_TENNIS=1` nel suo .env (aggancio al volo tennis attivo).
+- PUNTO DI RIPRESA: sul PC `npm run build` e riavvio dell'app da parte dell'utente; prova a schermo del Programma (prima in PROVA);
+  limiti aperti nei referti (tetto OFF = «NON NOTA»; primo clic da parcheggiato puo' dire «riprova»; ripiego DB senza aggancio).
+  Prossimi passi: le altre pagine che l'utente manda una per una.

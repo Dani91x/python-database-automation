@@ -153,7 +153,10 @@ export interface OrigineRitorno {
     titolo: string;
 }
 
-export const ORIGINI_RITORNO: Readonly<Record<'control-room' | 'cash-out', OrigineRitorno>> = {
+/** 09/10: le pagine di partenza note (la terza e' il Programma del giorno). */
+export type ChiaveOrigine = 'control-room' | 'cash-out' | 'board';
+
+export const ORIGINI_RITORNO: Readonly<Record<ChiaveOrigine, OrigineRitorno>> = {
     'control-room': {
         rotta: '/control-room', nome: 'Control Room', from: 'control-room',
         torna: 'Torna alla Control Room', testId: 'torna-control-room',
@@ -164,11 +167,18 @@ export const ORIGINI_RITORNO: Readonly<Record<'control-room' | 'cash-out', Origi
         torna: 'Torna al Cash Out', testId: 'torna-cash-out',
         titolo: 'torna al Cash Out, alla partita da cui sei partito',
     },
+    // 09/10 (Programma del giorno, ordine dell'utente): Statistiche e Trading
+    // del tabellone tornano alla scheda sport e alla partita da cui si e' partiti
+    board: {
+        rotta: '/board', nome: 'Programma', from: 'board',
+        torna: 'Torna al Programma', testId: 'torna-board',
+        titolo: 'torna al Programma del giorno, alla scheda sport e alla partita da cui sei partito',
+    },
 };
 
 /** L'origine dal parametro `from`; `null` = nessun «Torna» (come prima per ogni altro valore). */
 export function origineRitorno(from: string | null | undefined): OrigineRitorno | null {
-    return from === 'control-room' || from === 'cash-out' ? ORIGINI_RITORNO[from] : null;
+    return from === 'control-room' || from === 'cash-out' || from === 'board' ? ORIGINI_RITORNO[from] : null;
 }
 
 /** La scheda da riaprire, solo se il punto salvato e' di QUESTA rotta. */

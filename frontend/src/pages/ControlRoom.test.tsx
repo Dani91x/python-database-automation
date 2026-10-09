@@ -2347,3 +2347,27 @@ describe('W1 - ritorno: solo i punti della Control Room', () => {
         expect(leggiRitorno()).toMatchObject({ rotta: '/cash-out', eventId: 'E1' });
     });
 });
+// 09/10 (ordine dell'utente): un interruttore nasconde tutta la sezione «AI
+// Terminal» della testata; resta la riga del titolo con l'interruttore.
+describe('testata - interruttore della sezione AI Terminal', () => {
+    it('visibile di default; il clic nasconde soldi, runner, stop, bot e fonti; la scelta resta', () => {
+        window.localStorage.removeItem('vista.cr.testata');
+        mVm.mockReturnValue(vm());
+        const s = mostra();
+        const testata = s.getByTestId('cr-testata');
+        for (const id of ['cr-impianto-stop', 'cr-bots', 'cr-feed', 'cr-ricarica']) {
+            expect(within(testata).getByTestId(id)).toBeTruthy();
+        }
+        fireEvent.click(within(testata).getByTestId('cr-testata-interruttore'));
+        for (const id of ['cr-impianto-stop', 'cr-bots', 'cr-feed', 'cr-ricarica']) {
+            expect(within(testata).queryByTestId(id)).toBeNull();
+        }
+        expect(testata.textContent).toMatch(/CONTROL ROOM/);
+        cleanup();
+        const s2 = mostra();
+        expect(s2.queryByTestId('cr-bots')).toBeNull();
+        fireEvent.click(s2.getByTestId('cr-testata-interruttore'));
+        expect(s2.getByTestId('cr-bots')).toBeTruthy();
+        window.localStorage.removeItem('vista.cr.testata');
+    });
+});

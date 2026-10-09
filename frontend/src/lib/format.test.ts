@@ -5,6 +5,16 @@ import {
 } from './format';
 
 describe('fmtMoney', () => {
+    it('09/10: migliaia col punto solo se chieste (volumi del Programma)', () => {
+        expect(fmtMoney(1843210, { decimals: 0, migliaia: true })).toBe('1.843.210 €');
+        expect(fmtMoney(1843210.5, { migliaia: true })).toBe('1.843.210,50 €');
+        expect(fmtMoney(999, { decimals: 0, migliaia: true })).toBe('999 €');
+        expect(fmtMoney(-12345, { decimals: 0, migliaia: true })).toBe(`${MINUS}12.345 €`);
+        // di serie nessun separatore: chi non lo chiede non cambia
+        expect(fmtMoney(1843210, { decimals: 0 })).toBe('1843210 €');
+        // assente resta assente, mai 0
+        expect(fmtMoney(null, { decimals: 0, migliaia: true })).toBe(DASH);
+    });
     it('formato italiano: virgola decimale, simbolo dopo', () => {
         expect(fmtMoney(12.5)).toBe('12,50 €');
         expect(fmtMoney(1)).toBe('1,00 €');

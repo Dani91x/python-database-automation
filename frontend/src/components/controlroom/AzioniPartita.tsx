@@ -28,10 +28,20 @@ import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 import { salvaRitorno, ORIGINI_RITORNO, type OrigineRitorno } from '@/lib/ritorno';
 import { followMission, setFollowRecord } from '@/lib/omegaMissions';
 import { followTennisEvent, setTennisFollowRecord } from '@/lib/tennis';
-import type { PartitaGiornata } from '@/lib/controlRoom';
+import type { ArricchimentoPartita, PartitaGiornata } from '@/lib/controlRoom';
+
+/**
+ * 09/10 (Programma del giorno) - i SOLI campi della partita che i pulsanti
+ * leggono. Una `PartitaGiornata` intera li ha tutti (la Control Room e il
+ * Cash Out non cambiano); il tabellone passa questi e basta, senza
+ * inventare i campi della plancia che non conosce.
+ */
+export type PartitaAzioni = Pick<PartitaGiornata, 'event_id' | 'sport' | 'nome' | 'koMs' | 'marketId' | 'media'> & {
+    extra: Pick<ArricchimentoPartita, 'fixtureId'> | null;
+};
 
 export interface AzioniPartitaProps {
-    p: PartitaGiornata;
+    p: PartitaAzioni;
     /** la scheda aperta adesso: serve a tornare ESATTAMENTE qui */
     scheda: string;
     /** questa partita sta già registrando? `null` = non lo sappiamo */
@@ -63,11 +73,21 @@ export interface AzioniPartitaProps {
      * false = tutti i pulsanti, come prima.
      */
     soloMediaStatistiche?: boolean;
+    /**
+     * 09/10 (Programma del giorno) - sul TENNIS non esiste una scheda
+     * statistiche per partita: le statistiche (`TennisMatchStats`) stanno nel
+     * Tennis Terminal, colonna destra, aperta di serie. Con questa prop il
+     * pulsante «Statistiche» compare anche sul tennis e apre il terminal sulla
+     * partita. Di serie false: la Control Room resta identica (sul tennis il
+     * pulsante non si mostra).
+     */
+    statisticheTennis?: boolean;
 }
 
 export function AzioniPartita({
     p, scheda, registra = null, registratoreVivo = null, onRegistrazione, compatto = true,
     ritorno = ORIGINI_RITORNO['control-room'], soloMediaStatistiche = false,
+    statisticheTennis = false,
 }: AzioniPartitaProps) {
     const navigate = useNavigate();
     const [inCorso, setInCorso] = useState(false);
@@ -92,6 +112,26 @@ export function AzioniPartita({
         navigate(`/dashboard?fixture=${fixtureId}&from=${ritorno.from}`);
     };
 
+    /** Il Tennis Terminal sulla partita (stesso indirizzo di «Trading»): le
+     *  statistiche del tennis vivono li'. `null` = manca il mercato. */
+    const indirizzoTerminalTennis = (): string | null => {
+        if (!p.marketId) return null;
+        const [g1, g2] = dividiNomi(p.nome);
+        const q = new URLSearchParams({
+            event: p.event_id, market: p.marketId,
+            name: 'Match Odds', from: ritorno.from,
+        });
+        if (g1 && g2) { q.set('p1', g1); q.set('p2', g2); }
+        return `/tennis/terminal?${q.toString()}`;
+    };
+
+    const apriStatisticheTennis = () => {
+        const dove = indirizzoTerminalTennis();
+        if (dove == null) return;
+        segnaPunto();
+        navigate(dove);
+    };
+
     /**
      * TRADING — porta al terminale di quella partita.
      *
@@ -112,14 +152,14 @@ export function AzioniPartita({
         setInCorso(true); setErrore(null);
         try {
             const [g1, g2] = dividiNomi(p.nome);
-            if (tennis && p.marketId) {
-                const q = new URLSearchParams({
-                    event: p.event_id, market: p.marketId,
-                    name: 'Match Odds', from: ritorno.from,
-                });
-                if (g1 && g2) { q.set('p1', g1); q.set('p2', g2); }
+            if (tennis) {
+                // 09/10: un tennis SENZA mercato finiva nel ramo del calcio
+                // (`followMission` scrive un seguito CALCIO): calcio e tennis
+                // non si mischiano, si dice che manca il mercato e ci si ferma.
+                const dove = indirizzoTerminalTennis();
+                if (dove == null) throw new Error('manca il mercato Match Odds di questa partita');
                 segnaPunto();
-                navigate(`/tennis/terminal?${q.toString()}`);
+                navigate(dove);
                 return;
             }
             // calcio: prima il seguito, poi si naviga. Se fallisce si resta qui
@@ -165,6 +205,20 @@ export function AzioniPartita({
     return (
         <div className="flex items-center gap-1.5 flex-wrap" data-testid="cr-azioni">
             <BetfairMediaButtons eventId={p.event_id} media={p.media} compact={compatto} />
+
+            {/* STATISTICHE tennis (solo se chieste): il terminal sulla partita */}
+            {tennis && statisticheTennis && (
+                <Button
+                    type="button" size="sm" variant="outline"
+                    disabled={!p.marketId}
+                    onClick={apriStatisticheTennis}
+                    data-testid="cr-statistiche"
+                    title={!p.marketId
+                        ? 'manca il mercato Match Odds: il terminal non si può aprire su questa partita'
+                        : 'apri le statistiche della partita nel Tennis Terminal'}
+                    className={`${dim} uppercase tracking-wider`}
+                ><BarChart3 className="w-3 h-3 mr-1" />Statistiche</Button>
+            )}
 
             {/* STATISTICHE — solo calcio, e solo se la partita è agganciata */}
             {!tennis && (
