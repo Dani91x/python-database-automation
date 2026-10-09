@@ -284,3 +284,147 @@ def test_somma_per_autore_contro_totale():
             peggio = max(peggio, abs(sum(v[s] for v in p.se_vince_per_autore.values())
                                      - p.se_vince[s]))
     assert peggio <= 0.015                                 # 3 autori x mezzo centesimo
+
+
+# ------------------------------------------- verifica del coordinatore (09/10)
+# Ogni ramo delle correzioni G1-G3/M1-M5 ha un test proprio (e una mutazione in
+# ARCHITETTURA_2026-10/ondata1/W1-C2/mutazioni.py).
+def test_m1_abbinato_che_cala_fra_due_eseguibili_si_rifiuta():
+    lib = L.LibroConto()
+    lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 6.0, 2.0, residuo=4.0, csr="omega",
+                                          cor="omega-t1"), 1))
+    lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 4.0, 2.0, residuo=6.0, csr="omega",
+                                          cor="omega-t1"), 2))
+    o = lib.ordine("1", "live")
+    assert (o.abbinato, o.residuo) == (6.0, 4.0)
+    assert lib.stato()["conti"]["regressioni"] == 1
+
+
+def test_m1_abbinato_che_cala_fra_due_completi_senza_void_si_rifiuta():
+    lib = L.LibroConto()
+    lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 10.0, 2.0, csr="omega", cor="omega-t1"), 1))
+    lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 8.0, 2.0, annullato=2.0, csr="omega",
+                                          cor="omega-t1"), 2))
+    assert lib.ordine("1", "live").abbinato == 10.0
+    assert lib.stato()["conti"]["regressioni"] == 1
+
+
+def test_m1_completo_che_torna_eseguibile_a_parita_di_abbinato_si_rifiuta():
+    lib = L.LibroConto()
+    # annullato dopo un parziale: completo, abbinato 5
+    lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 5.0, 2.0, annullato=5.0, csr="omega",
+                                          cor="omega-t1"), 1))
+    # un seme REST piu' vecchio: ancora eseguibile, stesso abbinato
+    lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 5.0, 2.0, residuo=5.0, csr="omega",
+                                          cor="omega-t1"), 2))
+    o = lib.ordine("1", "live")
+    assert (o.stato, o.residuo) == ("annullato", 0.0)
+    assert lib.stato()["conti"]["regressioni"] == 1
+
+
+def test_g1_specchio_bot_tennis_non_toglie_il_provvisorio():
+    """La riga ``bot:tennis`` che R1 scrive per il terminale tennis non dice di
+    piu' del ref: l'ordine resta provvisorio."""
+    o = dal_conto(ordine_json("1", "BACK", 1.0, 2.0, csr="tennis", cor="h-1"))
+    a = A.attribuisci(o, [A.Indizio("specchio", "bot:tennis")])
+    assert (a.autore, a.provvisoria, a.fonte) == ("sconosciuto", True, "riferimenti")
+
+
+def test_g1_riga_utente_di_mike_conferma_il_terminale():
+    o = dal_conto(ordine_json("1", "BACK", 1.0, 2.0, csr="live", cor="h-1"))
+    a = A.attribuisci(o, [A.indizio_da_riga_bot("mike_trades", {"role": "utente"})])
+    assert (a.autore, a.provvisoria) == ("desktop", False)
+
+
+def test_g1_ack_del_desktop_e_un_indizio_dell_utente():
+    ind = A.indizio_ack_desktop(" 77 ")
+    assert ind == A.Indizio("utente", "ack_desktop:77")
+    o = dal_conto(ordine_json("77", "BACK", 1.0, 2.0, csr="tennis", cor="h-1"))
+    assert A.attribuisci(o, [ind]).autore == "desktop"
+
+
+def test_g1_riga_di_coda_del_risk_non_e_dell_utente():
+    assert A.indizi_da_riga_coda({"client_ref": "risk3cp1", "params": {}}) == (
+        A.Indizio("coda", "rischio:risk3cp1"),)
+
+
+class _Rotto:
+    """Un oggetto che non e' un CurrentOrder (lettura REST corrotta)."""
+
+    bet_id = "rotto"
+
+
+class _ContoMisto:
+    def ordini_correnti(self, market_ids=None):
+        return [_Rotto()] + correnti(ordine_json("2", "BACK", 10.0, 3.0, csr="mike", cor="mike-t2"))
+
+
+def test_g3_seme_con_un_ordine_illeggibile_tiene_gli_altri():
+    lib = L.LibroConto()
+    assert lib.semina(_ContoMisto()) == 2
+    assert lib.seme_fatto() and lib.ordine("2", "live").abbinato == 10.0
+    assert lib.stato()["conti"]["scartati"] == 1
+
+
+def test_g3_riconnessione_senza_ripresa_toglie_il_seme_anche_senza_sorgente():
+    lib = L.LibroConto()
+    lib.semina(ContoRest())
+    assert lib.seme_fatto()
+    lib.riconnesso(con_ripresa=False)
+    assert not lib.seme_fatto()
+    assert "seme_non_fatto" in lib.calcolo_posizione(MKT, "live").motivi
+
+
+def test_g3_mancanza_su_altra_selezione_o_lato_lay():
+    lib = L.LibroConto()
+    _odds(lib)
+    lib.ricevi_live(dal_conto(ordine_json("1", "LAY", 2.0, 3.0, sel=AWAY, csr="mike", cor="mike-t1")))
+    assert lib.verifica_abbinato(MKT, AWAY, 0.0, mb=None, ml=[[3.0, 2.0]]) is None
+    assert lib.verifica_abbinato(MKT, AWAY, 0.0, mb=None, ml=[[3.0, 2.0], [4.0, 1.5]]) == {"lay": 1.5}
+    assert lib.verifica_abbinato(MKT, HOME, 0.0, mb=[[2.0, 1.0]], ml=None) == {"back": 1.0}
+
+
+def test_m2_ordine_terminale_senza_abbinato_su_mercato_aperto():
+    """Un annullato senza abbinato dimenticato dal tetto non entra nel riassunto
+    (niente divisione per zero, P&L invariato)."""
+    lib = L.LibroConto(max_ordini=1)
+    _odds(lib)
+    lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 0.0, 2.0, annullato=2.0, csr="mike",
+                                          cor="mike-t1"), 1))
+    lib.ricevi_live(dal_conto(ordine_json("2", "BACK", 4.0, 2.0, csr="mike", cor="mike-t2"), 2))
+    c = lib.calcolo_posizione(MKT, "live")
+    assert c.posizione.se_vince[HOME] == 4.0 and "ordini_riassunti" not in c.motivi
+
+
+def test_dimentica_mercato_toglie_riassunti_mancanze_e_info():
+    lib = L.LibroConto(max_ordini=1)
+    _odds(lib)
+    lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 4.0, 2.0, csr="mike", cor="mike-t1"), 1))
+    lib.ricevi_live(dal_conto(ordine_json("2", "BACK", 4.0, 2.0, csr="mike", cor="mike-t2"), 2))
+    lib.verifica_abbinato(MKT, HOME, 0.0, mb=[[2.0, 50.0]], ml=None)
+    assert {"ordini_riassunti", "abbinato_mancante"} <= set(lib.calcolo_posizione(MKT, "live").motivi)
+    lib.dimentica_mercato(MKT)
+    c = lib.calcolo_posizione(MKT, "live")
+    assert c.posizione.abbinato_back == {} and not {"ordini_riassunti", "abbinato_mancante"} & set(c.motivi)
+    assert "tipo_ignoto" in c.motivi                        # anche runner/tipo dimenticati
+
+
+def test_imposta_mercato_vincitori_e_tipo_dal_book():
+    lib = L.LibroConto()
+    lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 4.0, 2.0, csr="mike", cor="mike-t1")))
+    lib.imposta_mercato(MKT, runner=[HOME, AWAY], tipo_scommessa="ODDS", vincitori=2)
+    assert "vincitori:2" in lib.calcolo_posizione(MKT, "live").motivi
+    lib.imposta_mercato(MKT, vincitori=1)
+    assert lib.posizione(MKT, "live").se_vince == {HOME: 4.0, AWAY: -4.0}
+    lib.imposta_mercato(MKT, tipo_scommessa="LINE")
+    assert lib.posizione(MKT, "live").se_vince == {}
+
+
+def test_g2_tipo_non_odds_dichiarato():
+    from Betfair.nucleo.ordini import pnl_mercato as P
+    from Betfair.nucleo.ordini.contratto import OrdineConto
+
+    o = OrdineConto("1", MKT, HOME, 0.0, "back", 2.0, 4.0, 4.0, 0.0, 2.0, "abbinato", "mike",
+                    None, "live", 1)  # type: ignore[arg-type]
+    c = P.calcola(MKT, "live", [o], runner=[HOME, AWAY], tipo_scommessa="LINE")
+    assert not c.supportato and "tipo_non_supportato:LINE" in c.motivi

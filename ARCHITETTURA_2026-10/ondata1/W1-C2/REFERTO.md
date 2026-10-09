@@ -274,6 +274,28 @@ committati: `attribuzione.py` 92e306c569961b70198029d299ec8ee5e42e62c18a745198d8
 
 Test W1-C2 dopo la revisione: **197 verdi**. Suite intera (una volta, alla fine, cima `99e75fbe`): **11.768 verdi, 0 rossi, 87 saltati, 6 xfailed** (391 s).
 
+**Verifica del coordinatore su `83f376e0` (09/10): una mutazione sua SOPRAVVISSUTA.** In `libro_conto.py` `_regressione`
+il ramo `if float(nuovo.abbinato) < float(vecchio.abbinato) - annullati - 1e-9:` sostituito con `if False:` lasciava i
+197 test verdi: l'unico test di M1 passava gia' dal primo ramo (completo -> eseguibile). Il mio «63/63» non provava
+ogni ramo delle correzioni. Corretto cosi':
+- test nuovi (in `test_c2_revisione.py`): abbinato che cala fra due EXECUTABLE (6 poi 4, residuo coerente) e fra due
+  EXECUTION_COMPLETE senza `sizeVoided` (10 poi 8); in piu' il completo che torna eseguibile A PARITA' di abbinato
+  (cosi' ognuno dei due rami ha un test che passa solo da lui); poi un test per ogni ramo delle correzioni G1-G3/M1-M5
+  che nessuna mutazione toccava (riga `bot:tennis` dello specchio, riga «utente» di Mike come conferma, ack del
+  desktop, riga di coda del risk, seme con un ordine illeggibile, riconnessione senza ripresa senza sorgente, mancanza
+  sul lato lay e su un'altra selezione, annullato senza abbinato dimenticato dal tetto, `dimentica_mercato` che toglie
+  riassunti/mancanze/info, `imposta_mercato` con vincitori e tipo, tipo `LINE`): **14 test nuovi, 211 verdi**;
+- la mutazione del coordinatore (M64) e' ROSSA (`1 failed`) e col ripristino tutto torna verde, sha256 di
+  `libro_conto.py` uguale (`c49e540b8005...`);
+- script delle mutazioni NEL REPO: `ARCHITETTURA_2026-10/ondata1/W1-C2/mutazioni.py`, eseguibile dalla radice con
+  `python ARCHITETTURA_2026-10/ondata1/W1-C2/mutazioni.py .` (anche `... . M64 M65` per alcune); ogni mutazione lancia
+  TUTTI i test W1-C2 con `-x`, ripristina i byte, ricontrolla lo sha256, codice d'uscita 1 se qualcosa sopravvive o non
+  si trova. 93 mutazioni: M01-M43 della consegna, M44-M63 della revisione, **M64-M93 nuove, una per ramo** (M1 x2,
+  G1 x6, G3 x7, M2 x7, M3 x1, `imposta_mercato` x4, G2 x2, M4 x1);
+- giro completo nel repo: **TOTALE rosse 93/93 (guasti 0)**, uscita committata in
+  `ARCHITETTURA_2026-10/ondata1/W1-C2/mutazioni_esito.txt`; sha256 dopo ogni ripristino = file committati (quelli
+  sopra: i moduli non sono cambiati, solo test, script e referto). Suite intera non rilanciata (nessun modulo toccato).
+
 **Divergenza nuova per l'utente — D9**: un ordine col ref del terminale manuale (`live`/`tennis`) e il
 customerOrderRef di flumine, senza riga di coda ne' ack, oggi e' «dell'utente» per W2 e per R1; qui e' `sconosciuto`
 PROVVISORIO (nessun comando sul ladder) perche' gli ordini dei bot e del risk dalla coda sono indistinguibili dai

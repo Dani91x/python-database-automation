@@ -1,0 +1,94 @@
+ROSSO  M01 G1 ref manuale torna desktop senza evidenza  [1 failed, 3 passed in 2.95s]  sha256 uguale 92e306c56996
+ROSSO  M02 ref storico condiviso ignorato  [1 failed, 33 passed in 2.94s]  sha256 uguale 92e306c56996
+ROSSO  M03 Safe tennis REST letto come Safe  [1 failed, 32 passed in 2.65s]  sha256 uguale 92e306c56996
+ROSSO  M04 scalper senza event_id numerico  [1 failed, 109 passed in 7.87s]  sha256 uguale 92e306c56996
+ROSSO  M05 precedenza degli indizi rovesciata  [1 failed, 106 passed in 9.92s]  sha256 uguale 92e306c56996
+ROSSO  M06 riga utente di Mike letta come Mike  [1 failed, 106 passed in 7.29s]  sha256 uguale 92e306c56996
+ROSSO  M07 sito letto come sconosciuto  [1 failed, 2 passed in 3.24s]  sha256 uguale 92e306c56996
+ROSSO  M08 prefisso del risk sbagliato  [1 failed, 100 passed in 3.02s]  sha256 uguale 92e306c56996
+ROSSO  M09 ref confrontato con le maiuscole  [1 failed, 40 passed in 2.16s]  sha256 uguale 92e306c56996
+ROSSO  M10 classi tennis tagliate a 14  [1 failed, 40 passed in 2.06s]  sha256 uguale 92e306c56996
+ROSSO  M11 ref manuale con customerOrderRef di un bot  [1 failed, 109 passed in 9.33s]  sha256 uguale 92e306c56996
+ROSSO  M12 messaggio vecchio sovrascrive  [1 failed, 118 passed in 8.02s]  sha256 uguale c49e540b8005
+ROSSO  M13 paper e live sulla stessa chiave  [1 failed, 116 passed in 7.79s]  sha256 uguale c49e540b8005
+ROSSO  M14 modo sempre live  [1 failed, 116 passed in 10.31s]  sha256 uguale c49e540b8005
+ROSSO  M15 tetto dimentica ordini vivi  [1 failed, 122 passed in 8.84s]  sha256 uguale c49e540b8005
+ROSSO  M16 consumatore rotto propaga  [1 failed, 119 passed in 10.18s]  sha256 uguale c49e540b8005
+ROSSO  M17 lucchetto del libro tolto  [1 failed, 124 passed in 6.86s]  sha256 uguale c49e540b8005
+ROSSO  M18 indizi ignorati dal libro  [1 failed, 102 passed in 7.90s]  sha256 uguale c49e540b8005
+ROSSO  M19 prezzo medio 0 al posto di assente  [1 failed, 112 passed in 7.65s]  sha256 uguale c49e540b8005
+ROSSO  M20 lato rovesciato  [1 failed in 1.98s]  sha256 uguale c49e540b8005
+ROSSO  M21 comandi su ordini non dell'utente  [1 failed, 102 passed in 7.67s]  sha256 uguale c49e540b8005
+ROSSO  M22 formula del lay sbagliata  [1 failed, 116 passed in 8.61s]  sha256 uguale 6c609783f489
+ROSSO  M23 paper e live sommati nel P&L  [1 failed, 152 passed in 11.06s]  sha256 uguale 6c609783f489
+ROSSO  M24 commissione applicata  [1 failed, 116 passed in 7.05s]  sha256 uguale 6c609783f489
+ROSSO  M25 prezzo medio non pesato  [1 failed, 150 passed in 9.12s]  sha256 uguale 6c609783f489
+ROSSO  M26 G2 esito fittizio 'vince un altro'  [1 failed, 158 passed in 10.17s]  sha256 uguale 6c609783f489
+ROSSO  M27 handicap ignorato  [1 failed, 154 passed in 14.50s]  sha256 uguale 6c609783f489
+ROSSO  M28 esposizione sul prezzo chiesto  [1 failed, 141 passed in 14.33s]  sha256 uguale 6c609783f489
+ROSSO  M29 lockedPnlAt sbagliato  [1 failed, 149 passed in 15.90s]  sha256 uguale 6c609783f489
+ROSSO  M30 prezzo medio <= 1 accettato  [1 failed, 153 passed in 13.75s]  sha256 uguale 6c609783f489
+ROSSO  M31 esposizione massima positiva  [1 failed, 151 passed in 13.15s]  sha256 uguale 6c609783f489
+ROSSO  M32 tolleranza R1 tolta  [1 failed, 174 passed in 17.25s]  sha256 uguale c65da0decef5
+ROSSO  M33 stato diverso ignorato  [1 failed, 195 passed in 19.79s]  sha256 uguale c65da0decef5
+ROSSO  M34 bot con tabella non saltato  [1 failed, 194 passed in 16.71s]  sha256 uguale c65da0decef5
+ROSSO  M35 righe account contate mancanti  [1 failed, 198 passed in 18.80s]  sha256 uguale c65da0decef5
+ROSSO  M36 avviso al primo giro  [1 failed, 198 passed in 23.15s]  sha256 uguale c65da0decef5
+ROSSO  M37 contatore dei mancanti mai azzerato  [1 failed, 199 passed in 19.45s]  sha256 uguale c65da0decef5
+ROSSO  M38 righe ripresa del diario ignorate  [1 failed, 200 passed in 23.97s]  sha256 uguale c65da0decef5
+ROSSO  M39 R2 ritrovato mai  [1 failed, 200 passed in 22.20s]  sha256 uguale c65da0decef5
+ROSSO  M40 specchio di tutti i modi  [1 failed, 198 passed in 22.78s]  sha256 uguale c65da0decef5
+ROSSO  M41 app scambiata per il sito  [1 failed, 203 passed in 20.33s]  sha256 uguale c65da0decef5
+ROSSO  M42 fase parziale come abbinato  [1 failed, 201 passed in 25.22s]  sha256 uguale c65da0decef5
+ROSSO  M43 blotter diverso ignorato  [1 failed, 207 passed in 25.46s]  sha256 uguale c65da0decef5
+ROSSO  M44 G1 evidenza positiva ignorata  [1 failed, 101 passed in 11.76s]  sha256 uguale 92e306c56996
+ROSSO  M45 M5 classi scalper standalone tolte  [1 failed, 44 passed in 3.32s]  sha256 uguale 92e306c56996
+ROSSO  M46 G1 riga di coda dell'app non e' utente  [1 failed, 101 passed in 11.74s]  sha256 uguale 92e306c56996
+ROSSO  M47 M1 guardia delle regressioni tolta  [1 failed, 167 passed in 14.53s]  sha256 uguale c49e540b8005
+ROSSO  M48 M1 sizeVoided non ammesso  [1 failed, 168 passed in 15.21s]  sha256 uguale c49e540b8005
+ROSSO  M49 G3 seme mai fatto  [1 failed, 162 passed in 17.83s]  sha256 uguale c49e540b8005
+ROSSO  M50 G3 riconnessione con ripresa rifa' il seme  [1 failed, 163 passed in 13.06s]  sha256 uguale c49e540b8005
+ROSSO  M51 G3 motivo seme_non_fatto tolto  [1 failed, 162 passed in 10.68s]  sha256 uguale c49e540b8005
+ROSSO  M52 G3 mb/ml ignorati  [1 failed, 165 passed in 11.82s]  sha256 uguale c49e540b8005
+ROSSO  M53 M2 chiusi non prima degli aperti  [1 failed, 171 passed in 14.27s]  sha256 uguale c49e540b8005
+ROSSO  M54 M2 aperti dimenticati senza riassunto  [1 failed, 170 passed in 15.18s]  sha256 uguale c49e540b8005
+ROSSO  M55 M3 indizi duplicati  [1 failed, 172 passed in 13.75s]  sha256 uguale c49e540b8005
+ROSSO  M56 M3 potatura non chiamata  [1 failed, 172 passed in 14.16s]  sha256 uguale c49e540b8005
+ROSSO  M57 M3 indizi non tolti con l'ordine  [1 failed, 172 passed in 17.30s]  sha256 uguale c49e540b8005
+ROSSO  M58 consegna ai consumatori non serializzata  [1 failed, 173 passed in 21.16s]  sha256 uguale c49e540b8005
+ROSSO  M59 M4 tipo ignoto accettato  [1 failed, 160 passed in 14.23s]  sha256 uguale 6c609783f489
+ROSSO  M60 M4 piu' vincitori accettati  [1 failed, 160 passed in 15.31s]  sha256 uguale 6c609783f489
+ROSSO  M61 tolleranza R1 0,5  [1 failed, 174 passed in 16.39s]  sha256 uguale c65da0decef5
+ROSSO  M62 G3 ombra senza seme confronta lo specchio  [1 failed, 166 passed in 20.71s]  sha256 uguale c65da0decef5
+ROSSO  M63 G3 R2 non trovato senza seme  [1 failed, 166 passed in 16.25s]  sha256 uguale c65da0decef5
+ROSSO  M64 M1 abbinato che cala fra stati uguali  [1 failed, 177 passed in 12.26s]  sha256 uguale c49e540b8005
+ROSSO  M65 M1 completo che torna eseguibile  [1 failed, 179 passed in 12.52s]  sha256 uguale c49e540b8005
+ROSSO  M66 G1 riga di coda del risk  [1 failed, 101 passed in 7.56s]  sha256 uguale 92e306c56996
+ROSSO  M67 G1 ack del desktop non e' utente  [1 failed, 101 passed in 9.49s]  sha256 uguale 92e306c56996
+ROSSO  M68 G1 indizio utente letto come bot  [1 failed, 101 passed in 9.12s]  sha256 uguale 92e306c56996
+ROSSO  M69 G1 specchio bot:tennis toglie il provvisorio  [1 failed, 180 passed in 14.11s]  sha256 uguale 92e306c56996
+ROSSO  M70 G1 riga utente di Mike non conferma  [1 failed, 181 passed in 13.16s]  sha256 uguale 92e306c56996
+ROSSO  M71 G1 motivo di bot della coda ignorato  [1 failed, 101 passed in 9.16s]  sha256 uguale 92e306c56996
+ROSSO  M72 G3 seme KO creduto fatto  [1 failed, 164 passed in 12.73s]  sha256 uguale c49e540b8005
+ROSSO  M73 G3 un ordine illeggibile ferma il seme  [1 failed, 184 passed in 15.18s]  sha256 uguale c49e540b8005
+ROSSO  M74 G3 riconnessione senza ripresa tiene il seme  [1 failed, 163 passed in 15.49s]  sha256 uguale c49e540b8005
+ROSSO  M75 G3 il live nasce col seme fatto  [1 failed, 162 passed in 14.63s]  sha256 uguale c49e540b8005
+ROSSO  M76 G3 mancanza mai tolta  [1 failed, 165 passed in 14.04s]  sha256 uguale c49e540b8005
+ROSSO  M77 G3 motivo abbinato_mancante tolto  [1 failed, 165 passed in 14.73s]  sha256 uguale c49e540b8005
+ROSSO  M78 G3 ombra senza la divergenza seme_non_fatto  [1 failed, 166 passed in 14.99s]  sha256 uguale c65da0decef5
+ROSSO  M79 M2 avviso dei mercati aperti tolto  [1 failed, 170 passed in 15.66s]  sha256 uguale c49e540b8005
+ROSSO  M80 M2 riassunto anche senza abbinato  [1 failed, 187 passed in 15.09s]  sha256 uguale c49e540b8005
+ROSSO  M81 M2 riassunti fuori dal P&L  [1 failed, 170 passed in 14.08s]  sha256 uguale c49e540b8005
+ROSSO  M82 M2 motivo ordini_riassunti tolto  [1 failed, 170 passed in 18.14s]  sha256 uguale c49e540b8005
+ROSSO  M83 dimentica_mercato tiene i riassunti  [1 failed, 188 passed in 20.05s]  sha256 uguale c49e540b8005
+ROSSO  M84 dimentica_mercato tiene le mancanze  [1 failed, 188 passed in 14.95s]  sha256 uguale c49e540b8005
+ROSSO  M85 dimentica_mercato tiene runner e tipo  [1 failed, 188 passed in 15.30s]  sha256 uguale c49e540b8005
+ROSSO  M86 M3 potatura degli indizi orfani vuota  [1 failed, 172 passed in 13.78s]  sha256 uguale c49e540b8005
+ROSSO  M87 G2 imposta_mercato ignora i runner  [1 failed, 162 passed in 12.44s]  sha256 uguale c49e540b8005
+ROSSO  M88 M4 imposta_mercato ignora il tipo  [1 failed, 116 passed in 9.90s]  sha256 uguale c49e540b8005
+ROSSO  M89 M4 imposta_mercato ignora i vincitori  [1 failed, 189 passed in 14.66s]  sha256 uguale c49e540b8005
+ROSSO  M90 M2 imposta_mercato ignora il chiuso  [1 failed, 171 passed in 11.52s]  sha256 uguale c49e540b8005
+ROSSO  M91 G2 motivo runner_ignoti tolto  [1 failed, 151 passed in 13.09s]  sha256 uguale 6c609783f489
+ROSSO  M92 G2 zero al posto di NaN  [1 failed, 151 passed in 9.51s]  sha256 uguale 6c609783f489
+ROSSO  M93 M4 tipo non ODDS accettato  [1 failed, 160 passed in 12.44s]  sha256 uguale 6c609783f489
+TOTALE rosse 93/93 (guasti 0)
