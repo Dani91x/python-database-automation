@@ -8,6 +8,18 @@ dalla prima riga «da fare» della tabella delle tappe, e a fine lavoro si aggio
 si rimette in discussione: le tappe, le regole (§0) e le decisioni sono in `05_PIANO_DI_MIGRAZIONE.md`; il riassunto per l'utente
 in `06_RIEPILOGO_PER_L_UTENTE.md`. Le decisioni gia' prese NON si richiedono all'utente.
 
+## Regola dei rami e dell'ingresso su master (decisione dell'utente, 09/10 — VALE PER OGNI SESSIONE)
+
+1. L'architettura vive SOLO sul ramo `claude/architettura-tappa0` (poi un ramo per tappa, nominato in questa tabella). Mai
+   mescolata con altre funzionalita' (pagine, correzioni ai bot): quelle vanno su rami loro.
+2. Una tappa alla volta: il cloud la costruisce e certifica (test, replay, falsificazione), il PC la verifica di persona e firma.
+3. Solo DOPO la firma e SOLO con l'ok esplicito dell'utente, QUELLA tappa entra su master con l'interruttore su «vecchio»
+   (l'app funziona identica; il codice nuovo c'e' ma e' spento). Mai la punta del ramo senza controllo di cosa contiene.
+4. Poi «ombra» sulle giornate vere (il nuovo calcola e confronta, non manda ordini), poi «nuovo» solo su decisione dell'utente;
+   ritorno a «vecchio» con l'interruttore.
+5. Dopo ogni ingresso su master il ramo dell'architettura riparte da master aggiornato per la tappa successiva.
+6. Alla fine nessuna fusione gigante: il codice definitivo e' gia' su master tappa per tappa; resta solo da archiviare il vecchio.
+
 ## Obiettivo (parole dell'utente, 09/10)
 
 - Tutto cio' che e' Betfair vive nell'app desktop, «esattamente come i competitor»: nessun database nel percorso
@@ -78,6 +90,10 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
   `tutti` nel repo COMPRESSE (~0,4-0,8 MB ciascuna).
 - 09/10 — DECISIONI CHIESTE ALL'UTENTE: (1) scenario «modalita-mista» di Omega prima del congelamento (reperto R1 di T0B4);
   (2) conservazione di `monitor_metrics` nel DB.
+
+- 09/10 — Separazione dei rami (ordine dell'utente: «l'architettura e' un argomento a se'»): tutto il lavoro della tappa 0 e'
+  sul ramo `claude/architettura-tappa0` (cima `66c19c7d` prima di questa riga). Su master va SOLO `a7cf9fdd` del ramo
+  `claude/sweet-hypatia-t4bmna` (Programma del giorno + Control Room). Regola dei rami scritta in testa a questo file.
 
 ## Punto di ripresa
 
