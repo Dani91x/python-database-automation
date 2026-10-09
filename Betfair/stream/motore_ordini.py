@@ -74,6 +74,7 @@ from datetime import datetime
 from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 from . import live_order_worker as LOW
+from ..monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
 
 logger = logging.getLogger(__name__)
 
@@ -1466,7 +1467,14 @@ class MotoreOrdini:
                 })
             else:
                 rec.update({"market_id": getattr(market, "market_id", None), **(info or {})})
+            if not _mon.ATTIVO:
+                self.diario.scrivi(rec)
+                return
+            # 09/10 (T0A "Salute", L6b): marca prima/dopo il flush+fsync del diario
+            # write-ahead, nel percorso dell'ordine (contatore in memoria)
+            t0 = time.perf_counter()
             self.diario.scrivi(rec)
+            _mon.tratto("diario_fsync_ms", (time.perf_counter() - t0) * 1000.0)
         return _hook
 
     def _esegui(self, attore: str, ref: str, piano: Dict[str, Any],

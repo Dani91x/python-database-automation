@@ -2435,6 +2435,9 @@ def main() -> None:
     sys.path.insert(0, os.path.abspath(os.path.join(
         os.path.dirname(__file__), "..", "..", "..")))
     installa_segnali_di_arresto()
+    # 09/10 (T0A "Salute"): acceso solo con MONITOR_SALUTE=1 (di serie spento)
+    from ...monitor import sonde as _mon
+    _mon.avvia("scalper-sessione-" + str(sys.argv[1])[:20], sport="calcio")
     run_session(str(sys.argv[1]))
 
 

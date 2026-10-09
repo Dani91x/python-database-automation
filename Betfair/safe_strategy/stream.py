@@ -46,6 +46,7 @@ import threading
 import time
 from typing import Any, Callable, List, Optional, Set
 
+from Betfair.monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
 from Betfair.stream import valuta as _valuta
 
 logger = logging.getLogger("safe_strategy")
@@ -151,6 +152,8 @@ class _HealthListener:
         class _Listener(StreamListener):  # type: ignore[misc]
             def on_data(self_inner, raw_data: str):  # noqa: N805 - classe interna
                 on_message()
+                if _mon.ATTIVO:  # 09/10 (T0A): messaggi, rx - pt, connectionsAvailable
+                    _mon.osserva_stream("scanner", raw_data)
                 return super().on_data(raw_data)
 
         # max_latency=None: con l'orologio locale sfasato (−2.8s misurati) il

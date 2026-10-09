@@ -107,6 +107,7 @@ from .risk_engine_worker import risk_engine_worker
 from .trading.controls import LiveEventExposureControl, LiveExposureControl, LiveRateControl
 from .xhedge_worker import xhedge_worker
 from .raw_listener import RawTeeMarketStream, close_raw, configure_raw
+from ..monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
 from .recorder import MarketRecorderStrategy
 from . import valuta as _valuta
 from .runner_lifecycle import (
@@ -743,7 +744,10 @@ def ladder_worker(context: dict, flumine: Flumine, session: LiveSession) -> None
                 "ladder": payload,
             }
             if al_canale:
-                _lc.publish("ladder", row)
+                # 09/10 (T0A): a monitor acceso il CANALE riceve una copia con
+                # ``ts_pub_ms`` e ``pt`` (eta' del dato alla pubblicazione); la
+                # riga del DB resta questa, identica
+                _lc.publish("ladder", _mon.marca_ladder(row, book) if _mon.ATTIVO else row)
                 st.segna_canale(mid, sig)
             if not al_db:
                 continue
@@ -3248,10 +3252,13 @@ def _main() -> None:
     # il processo (il socket va tenuto referenziato); la seconda istanza esce subito.
     global _INSTANCE_LOCK  # noqa: PLW0603 - referenza viva per tutta la vita del processo
     _INSTANCE_LOCK = acquire_single_instance_lock(_RUNNER_LOCK_PORT, "runner")
+    # 09/10 (T0A "Salute"): acceso solo con MONITOR_SALUTE=1 (di serie spento)
+    _mon.avvia("runner-calcio", sport="calcio")
     # NB: l'endpoint HTTP quote/ordini (8787) NON è ospitato qui: vive solo in
     # start_order_server.py (aggiorna_quote_betfair.bat). Così questo runner e il
     # server quote/ordini possono girare INSIEME senza contendersi la porta.
     done = setup_and_run(only_event=args.event, auto_subscribe=not args.no_auto_subscribe)
+    _mon.ferma()
     logger.info("[runner] terminato. Eventi finalizzati: %s", done)
     if _PLANNED_RESTART:
         logger.info("[runner] ricambio pianificato (vita massima, desktop): exit %d, il watchdog rilancia.",

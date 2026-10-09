@@ -36,6 +36,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Optional
 
+from Betfair.monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
 from Betfair.omega import omega_engine as E
 from Betfair.omega.omega_market import PlaceRifiutato
 from Betfair.stream.trading.greenup import GreenupPlan, compute_greenup
@@ -1809,6 +1810,10 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
         "persistence": "LAPSE",
         "params": {"source": "safe", "trade_id": int(trade_id)},
     }
+    if _mon.ATTIVO:
+        # 09/10 (T0A "Salute"): ``emesso_ms`` additivo per ``tempi_ordine``
+        # (tratto ``decisione_ms``); nessuno lo legge per decidere
+        _mon.marca_emesso(payload["params"])
     # CERT. 13/09 — una CHIUSURA riduce la posizione: il flag la marca come tale
     # (control di flusso, kill-switch). 01/10/2026: NON la esenta piu' dai minimi
     # (ipotesi smentita da Betfair, INVALID_BET_SIZE): sotto il minimo la chiusura

@@ -853,6 +853,9 @@ def main() -> None:
     from ..single_instance import acquire_single_instance_lock
     _lock = acquire_single_instance_lock(  # noqa: F841 - vita = processo
         int(os.getenv("SCALPER_SVC_LOCK_PORT", "47314")), "scalper-svc")
+    # 09/10 (T0A "Salute"): acceso solo con MONITOR_SALUTE=1 (di serie spento)
+    from ...monitor import sonde as _mon
+    _mon.avvia("scalper-service", sport="calcio")
     db = Db()
     children: Dict[str, subprocess.Popen] = {}
     logger.info("[scalper-svc] supervisore avviato (un processo per partita). "
