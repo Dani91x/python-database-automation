@@ -9,9 +9,9 @@ nessun replay del banco salvo la parita' per tick chiesta dal brief (servizio PA
 
 | File | Righe | Punti chiave |
 |---|---|---|
-| `calcolo.py` | 379 | `stato_calcio_da_grezzo` :181 (parse_score_dict + tempo_da_stato_ips + mission_phase), `stato_calcio_da_riga` :203 (numeri della riga che i bot leggono), `stato_calcio_da_api_football` :233, `stato_tennis_da_grezzo` :290 / `_da_riga` :308, `chiave_tennis` :282, `fase_partita` :142 / `fase_come_omega` :156, `ko_epoch_ms` :324, `KoPerMercato` :349, `KoUnico` :368, `ko_ms_intero` :342, `minuto_da_orologio` :163 |
+| `calcolo.py` | 408 | `stato_calcio_da_grezzo` :181 (parse_score_dict + tempo_da_stato_ips + mission_phase), `stato_calcio_da_riga` :203 (numeri della riga che i bot leggono), `stato_calcio_da_api_football` :233 (fase 'sconosciuta'), `punteggio_tennis` :293 (parser con la guardia del runner), `stato_tennis_da_grezzo` :304 / `_da_riga` :327, `chiave_tennis` :285, `fase_partita` :142 / `fase_come_omega` :156, `ko_epoch_ms` :343, `KoPerMercato` :368 (`dimentica` :376), `KoUnico` :397, `ko_ms_intero` :361, `minuto_da_orologio` :163 |
 | `freschezza.py` | 91 | SOLO eta': `eta_riga_s` :46 (= `row_age_sec`), `eta_punteggio_s` :53 (= `score_age_sec`), `eta_scanner_da_stato_s` :60, `calcola_eta` :76. Nessuna soglia (U-08, contraddizione 4) |
-| `servizio.py` | 388 | `ServizioStatoPartita` :210 (`segui` :238, `stato` :252, `iscrivi` :256, `iscrivi_eventi` :259, `osserva_book` :275, `aggiorna` :296, `prezzi_vivi` :343, `avvia`/`ferma` :358/:377), `stato_da_lettura` :126, `esito_flusso` :115 (= `flusso_prezzi.valuta`), eventi :59-98 |
+| `servizio.py` | 525 | `ServizioStatoPartita` :268 (`segui` :300, `stato`/`stato_a` :320/:324, `istante_dato_s` :336, `iscrivi` :341, `iscrivi_eventi` :344, `osserva_book` :360, `aggiorna` :382 con `_calcola_uno` :413 e `_senza_dato` :446, `prezzi_vivi` :465, `avvia`/`ferma` :482/:504), `stato_da_lettura` :154, `esito_flusso` :143 (= `flusso_prezzi.valuta`), `eventi_fra` :213, eventi :79-127 |
 | `adattatori/lettura.py` | 52 | la busta comune di ogni `FonteStato.leggi` |
 | `adattatori/ips.py` | 139 | `FonteIpsScanner` :52 (righe senza filtro), `FonteIpsRunner` :85 (regola del runner: `fresh_payload` poi IPS diretto; fonte vera per evento) |
 | `adattatori/ips_tennis.py` | 81 | `FonteIpsTennisRunner` :37 (strada di `score_and_now_worker`) |
@@ -33,6 +33,7 @@ Estensioni (in file miei, proposte per il contratto):
    contratto li nomina in commento; qui sono classi). `GolSegnato` solo se il totale SALE fra due stati noti.
 2. `osserva_book(event_id, market_book)`: KO e "in gioco" per le fonti senza riga (IPS diretto, ripiego).
 3. `prezzi_vivi(event_id, mercati)`: la cond. 11 per i mercati di una decisione (ogni bot passa i suoi, come oggi).
+3-bis. (correzione) `stato_a(event_id, adesso_s)` e `istante_dato_s(event_id)`: eta' oneste e istante dell'ultimo dato.
 4. La busta di `leggi` (`adattatori/lettura.py`) con `trasporto` (`db`/`canale`/`http`/`file`) e `origine`.
 5. Proposte di tipo: `FasePartita` e' solo calcio (il tennis resta `sconosciuta`; proporrei `in_corso`);
    `TennisSet` dichiara `int`/`str` ma il parser di oggi produce anche None (un lato assente): lo stato li porta
@@ -160,7 +161,8 @@ scanner per ULTIMO perche' serve 4 bot, rischio a della scheda B):
    `:1685` (`upsert_tennis_now`).
 3. **Lettori della riga (Omega, Mike, Safe), ombra** - `omega_service.py:8905` (`_build_score_lookup`),
    `mike/feed.py:425-475`, `safe_strategy/bot_service.py:3214,3409`: `stato_calcio_da_riga` sulla stessa riga;
-   confronto minuto/gol/rossi/tempo/fase e `prezzi_vivi` contro l'esito che il bot ha appena calcolato.
+   confronto minuto/gol/rossi/tempo/fase, `in_gioco` contro `payload.inplay` (non contro `live_now`, divergenza 9) e
+   `prezzi_vivi` contro l'esito che il bot ha appena calcolato.
 4. **Nuovo, runner calcio** - `runner.py:2203-2207`: `ScorePoller` -> `FonteCircuitoCalcio(FonteIpsRunner(...),
    provider_api_football)` dentro un `ServizioStatoPartita` per sessione; `score_worker` legge `stato()`.
 5. **Scalper (U-11, solo con decisione dell'utente)** - `scalper_session.py:1734-1925`: i 3 osservatori diventano
@@ -173,6 +175,8 @@ flusso su N giornate vere (calcio, poi tennis) con le sole 3 tolleranze di U-59;
 referto; tempi del giro non peggiori. Ritorno: interruttore su `vecchio`.
 
 ## 9. Divergenze per l'utente, rischi, dubbi
+
+(Le voci 8-11 sono state aggiunte con le correzioni dopo la revisione, par. 10.)
 
 Divergenze di OGGI (non scelte: lo stato riporta il valore di ciascun chiamante; test che le fissano):
 1. **Fase di Omega contro tempo di Safe/Mike su uno stato vecchio**: 'KickOff' con `timeElapsed` 88 (caso 35833626):
@@ -190,6 +194,25 @@ Divergenze di OGGI (non scelte: lo stato riporta il valore di ciascun chiamante;
 6. **`_is_fresh(None) = True`** (`omega_service.py:62-66`): resta in Omega (decisione B dec. 2 non presa); lo stato non
    tratta mai un dato assente come fresco.
 7. **API-Football parte dopo UN fallimento** (`poller.py:81-82`, U-10): riprodotto identico.
+8. **Fase dal ripiego API-Football**: oggi NESSUNO calcola una fase o un tempo dal ripiego (`status.short` - HT, FT, ET,
+   P, AET, PEN, PST, ABD - non e' letto da nessuna regola). Lo stato dice fase 'sconosciuta' e tempo None (scelta
+   prudente: dedurle dal minuto inventava fasi, es. 'HT' al 45' = '1t', 'FT' = '2t' mai 'finita'); `FaseCambiata` non
+   scatta da/verso 'sconosciuta' (si confronta con l'ultima fase nota). Una mappatura esplicita di `status.short` e' una
+   decisione dell'utente, non presa. `test_api_football_fase_sconosciuta_e_tempo_assente`,
+   `test_passaggio_al_ripiego_non_inventa_fasi`.
+9. **"In gioco": riga dello scanner contro regola del runner**: la riga porta `payload.inplay` (cio' che leggono Mike,
+   Omega, Safe); il runner calcio scrive `live_now.inplay` dai book (`runner.py:358-363`: un mercato CLOSED non e' in
+   gioco). A mercato chiuso con la riga ancora `inplay=True` le due letture divergono. Lo stato: con un book osservato
+   vince la regola del runner (il runner osserva sempre i book), senza book vale la riga (i bot lettori). L'ombra (par. 8)
+   confronta il runner con `live_now.inplay` e i lettori con `payload.inplay`, MAI incrociati.
+   `test_in_gioco_segue_il_book_quando_osservato`.
+10. **Record con soli `timeElapsedSeconds`**: lo scanner calcola `minute` sul record intero (1500 s = 25') ma pubblica
+    uno `score_raw` spogliato dei secondi (`strip_volatile_state`, `scanner.py:637`): chi legge la riga vede 25, chi
+    riparsa lo `score_raw` (runner sul feed) vede None. 0 casi nelle registrazioni (17.793 giri con `score_raw`).
+    `test_divergenza_record_con_soli_secondi`.
+11. **Cache del KO senza tetto**: le 4 copie di `_ko_epoch_ms` non potano mai la cache per mercato (vita del bot). Il
+    servizio pota la sua quando una partita esce da `segui` (`KoPerMercato.dimentica`); proposta per i bot che leggeranno
+    `ko_ms` dallo stato: nessuna cache propria (o tetto ai mercati sottoscritti, 200 per sottoscrizione).
 
 Rischi e dubbi:
 - Il comparto importa funzioni pure da pacchetti di bot (`omega_engine`, `atlante_v4`, `tennis_score`): consentito come
@@ -200,3 +223,33 @@ Rischi e dubbi:
 - La parita' per tick usa la riga di stato dello scanner costruita dal suo blocco `flusso` di quell'istante (il banco non
   ha `safe_strategy_status`): `scanner_s` per tick e' quindi 0 per costruzione.
 - Nessuna dipendenza nuova.
+
+## 10. Correzioni dopo la revisione indipendente di `be3cf075`
+
+Esito della revisione: DA CORREGGERE. Correzioni in un commit nuovo sullo stesso ramo (storia non riscritta). File
+temporanei solo in `scratchpad/w1b/`.
+
+| # | Difetto | Correzione | Test (falsificato) |
+|---|---|---|---|
+| 1 | ALTA: `mutazioni.py` nel referto era lo script di W1-G2 (lo scratchpad condiviso l'aveva sovrascritto prima della copia) | script VERO ricostruito: le 29 mutazioni di B (righe adeguate al codice corretto) + 17 nuove per le correzioni | `python ARCHITETTURA_2026-10/ondata1/W1-B/mutazioni.py .`: **46/46 ROSSE**, sha256 uguale dopo ogni ripristino (`calcolo` `37c0e16a53cb`, `servizio` `cdd462d874a5`, `freschezza` `bce82b0608e7`, `ips` `5e3148fc87f7`, `registrazione` `3bad506c8758`, `canale` `32053b612eb7`, `api_football` `a429d08b6ba0`, `ips_tennis` `c73030e5cb35`) |
+| 2 | ALTA: un'eccezione nel calcolo di UNA partita (es. tennis con `score` stringa/lista: `parse_tennis_scores` solleva `AttributeError`) faceva perdere per sempre gli eventi delle partite gia' calcolate e bloccava le successive | guardia sul parser tennis come nel worker del runner (`calcolo.punteggio_tennis`: record rotto = nessun punteggio, motivo nel log); guardia PER PARTITA in `_calcola_uno` (log al piu' una volta al minuto per partita con `flusso_prezzi.Promemoria`, la partita resta com'era, le altre proseguono) | `test_tennis_malformato_vale_nessun_punteggio_come_il_runner` (2 forme), `test_calcolo_che_solleva_non_perde_gli_eventi_delle_altre` |
+| 3 | MEDIA-ALTA: eta' congelate quando la fonte tace (dopo 600 s `riga_s` restava 1,0) | `stato()` ricalcola eta' e verdetto del flusso all'istante della chiamata dall'ultimo dato (`stato_a` per un istante dato); `istante_dato_s` esposto (fonti senza riga: eta' None come oggi); tennis con la fonte muta = senza punteggio, come `strat.score = None` del runner tennis | `test_eta_crescono_quando_la_fonte_tace` (601 s, flusso "scanner bloccato"), `test_diretto_senza_riga_eta_none_ma_istante_esposto`, `test_tennis_fonte_muta_toglie_il_punteggio_come_oggi` |
+| 4 | MEDIA: fase da API-Football dedotta dal minuto (HT->1t, FT->2t...) e `FaseCambiata` falsa al passaggio al ripiego | fase 'sconosciuta' e tempo None dal ripiego; `FaseCambiata` solo fra fasi NOTE (confronto con l'ultima nota); divergenza 8 | `test_api_football_fase_sconosciuta_e_tempo_assente` (11 `status.short`), `test_passaggio_al_ripiego_non_inventa_fasi`, `test_servizio_con_busta_api_football` |
+| 5 | MEDIA: `in_gioco` sul ramo feed seguiva `payload.inplay` e non la regola del runner | con un book osservato vince la regola del runner per ogni fonte; senza book la riga; divergenza 9 e criterio dell'ombra corretto | `test_in_gioco_segue_il_book_quando_osservato` |
+| 6 | MEDIA-BASSA: `ferma` scaduto + `avvia` rianimava il vecchio thread; `avvia` fuori lock; giri concorrenti consegnati fuori ordine; `FlussoRipreso` spurio passando al diretto (NON_NOTO vivo=True) | una generazione per thread con il SUO stop e la SUA sveglia (`_Giro`), `avvia`/`ferma` sotto lock, `ferma` dice se il thread e' uscito; giro serializzato (calcolo + consegna) con un RLock; `FlussoInterrotto`/`FlussoRipreso` solo fra esiti NOTI (ultimo verdetto noto per partita) | `test_ferma_scaduto_poi_avvia_non_rianima_il_vecchio`, `test_riavvio_dopo_ferma`, `test_avvia_concorrenti_un_solo_thread`, `test_due_giri_concorrenti_consegnano_in_ordine`, `test_segui_iscrivi_aggiorna_concorrenti`, `test_nessuna_ripresa_senza_prova` |
+| 7 | mutazioni sopravvissute al revisore | test nuovi: rigori/supplementari, firma con `set_game`, rossi, corner, gialli, servizio con busta API-Football e tennis, `ko_ms_intero` arrotondato (0,6 ms), casi strani del KO contro le 4 copie (date, int, NaN, Decimal, anno 1 e 9999, fuso +2), riavvio dopo `ferma`, potatura della cache del KO | `test_rigori_e_supplementari_sono_supplementari`, `test_cambia_solo_rossi_corner_o_gialli_e_lo_stato_cambia` (3), `test_ogni_punto_del_tennis_e_un_cambio`, `test_ko_arrotondato_non_troncato`, `test_ko_casi_strani_come_le_4_copie`, `test_segui_pota_la_cache_del_ko` |
+| 8 | divergenze e limiti non scritti; il doc diceva "spento = codice di oggi" senza interruttore | divergenze 8-11 (par. 9); doc par. 6 corretto (l'interruttore non esiste ancora: nessun codice di produzione importa il comparto) e par. 9-bis | `test_divergenza_record_con_soli_secondi` |
+
+Le prove del revisore (`test_rev_servizio.py`, `test_rev_parita.py`, `test_rev_conc.py`) sono incorporate con nomi miei
+in `tests/test_b_correzioni.py`, rovesciate: oggi asseriscono il comportamento CORRETTO (le originali asserivano il
+difetto). Unica scelta diversa dalla proposta del revisore: per l'API-Football 'sconosciuta' invece di una mappatura di
+`status.short` (la mappatura e' una regola nuova: decisione dell'utente).
+
+Numeri dopo la correzione:
+- test del comparto: **175 non-cert verdi** (calcolo 38, freschezza 38, adattatori 65, servizio 9, correzioni 24, import 1)
+  + 2 cert (parita' per tick, invariata: il servizio ricalcola le eta' allo stesso istante del giro, numeri identici);
+- mutazioni: **46/46 rosse** (29 della consegna + 17 delle correzioni);
+- suite intera (`python -m pytest Betfair/ -q -p no:cacheprovider`, UNA volta, dopo questa correzione, test cert
+  compresi): **11.770 verdi, 0 rossi, 65 saltati, 6 xfailed, 616 s**. La falsificazione a livello di banco
+  (`mutazioni_cert.py`, par. 5-bis) non e' stata rilanciata: il test cert e `esito_flusso`/`eta_punteggio_s` non sono
+  cambiati.

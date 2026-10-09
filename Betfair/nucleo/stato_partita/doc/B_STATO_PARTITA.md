@@ -30,10 +30,22 @@ Tutte le fonti restituiscono la stessa busta (`adattatori/lettura.py`: `fonte`, 
 
 ## 3. Uscite
 
-- `ServizioStatoPartita.stato(event_id) -> StatoPartita | None` (contratto);
+- `ServizioStatoPartita.stato(event_id) -> StatoPartita | None` (contratto): eta' e verdetto del flusso RICALCOLATI
+  all'istante della chiamata (orologio del servizio) dall'ultimo dato ricevuto: un dato che non si rinnova invecchia;
+  `stato_a(event_id, adesso_s)` per un istante dato; `istante_dato_s(event_id)`: quando e' arrivato l'ultimo dato (serve
+  per le fonti senza riga, come l'IPS diretto, le cui eta' restano None come `score_age_sec` di oggi);
+- fonte muta in un giro: calcio = resta l'ultimo stato (come `live_now`), con le eta' che crescono; tennis = stato SENZA
+  punteggio (`set_game` None), come `strat.score = None` del runner tennis (`tennis_runner.py:1641-1661`);
+- "in gioco": con almeno un `MarketBook` osservato (`osserva_book`) vale la regola del runner calcio (`runner.py:358-363`,
+  un mercato in gioco e non CLOSED) per qualunque fonte; senza book vale `payload.inplay` della riga (bot lettori);
 - `iscrivi(cb)` (contratto): `cb(StatoPartita)` a ogni cambio, nessuna SELECT per chi legge;
-- `iscrivi_eventi(cb)` (estensione): `StatoCambiato`, `GolSegnato`, `FaseCambiata`, `FlussoInterrotto`,
-  `FlussoRipreso` (`servizio.py:59-98`);
+- `iscrivi_eventi(cb)` (estensione): `StatoCambiato`, `GolSegnato` (totale che SALE), `FaseCambiata` (fra fasi NOTE:
+  'sconosciuta' non e' una fase, il confronto e' con l'ultima nota), `FlussoInterrotto`/`FlussoRipreso` (fra esiti NOTI
+  di `flusso_prezzi.valuta`: un "non noto" non e' prova di ripresa);
+- giri serializzati (calcolo + consegna): gli iscritti ricevono gli stati nell'ordine in cui sono calcolati; un dato
+  che fa sollevare il calcolo di una partita non ferma le altre (log al piu' una volta al minuto per partita);
+- thread di `avvia`: una generazione per volta, ognuna col suo stop; `ferma` torna False se il thread e' ancora dentro
+  un giro (uscira' alla fine, senza rifarne un altro);
 - `prezzi_vivi(event_id, mercati)`: `flusso_prezzi.valuta` sull'ultima riga, per i mercati di una decisione.
 - Funzioni pure di `calcolo.py` (stato da grezzo/riga/API-Football/tennis, `ko_epoch_ms`, `KoPerMercato`,
   `KoUnico`, `fase_partita`, `minuto_da_orologio`) e di `freschezza.py` (`eta_riga_s`, `eta_punteggio_s`,
@@ -71,7 +83,8 @@ si importano come funzioni pure (brief comune regola 3); il trasloco (`tennis_sc
 | B-034 (parte punteggio) | strada feed/diretto del runner tennis | `adattatori/ips_tennis.py` | `test_tennis_feed_diretto_errore` |
 | B-036, B-037 (valuta), E3-S08 | condizione 11 dentro lo stato | `servizio.esito_flusso`, `prezzi_vivi` | `test_prezzi_vivi_per_i_mercati_della_decisione`, `test_b_parita_banco` |
 | B-045, B-044 | fase e tempo da stato IPS | `calcolo.fase_partita`, `tempo_partita` | sidecar + per tick + divergenze |
-| B-047 | `_ko_epoch_ms` (4 copie) | `calcolo.ko_epoch_ms`, `KoPerMercato`, `KoUnico` | `test_ko_identico_alle_4_copie_sui_book_veri`, `test_ko_bordi_e_divergenza_della_cache_unica` |
+| B-047 | `_ko_epoch_ms` (4 copie) | `calcolo.ko_epoch_ms`, `KoPerMercato`, `KoUnico` | `test_ko_identico_alle_4_copie_sui_book_veri`, `test_ko_bordi_e_divergenza_della_cache_unica`, `test_b_correzioni::test_ko_*` |
+| - | robustezza, eta' oneste, ciclo di vita (correzioni dopo la revisione) | `servizio.py` | `test_b_correzioni.py` (24 test) |
 | B-049 | sidecar per registrazioni (lettura) | `adattatori/registrazione.py` | `test_registrazione_scorre_come_il_banco`, `test_registrazione_tennis` |
 | B-050 | parita' paper/live: una sola strada, nessun ramo per modo | tutto il comparto (nessun parametro di modo) | per costruzione (nessun `mode` nel codice) |
 | D-017 (parte) | punteggio/minuto per chi oggi legge `live_now` | `servizio.iscrivi` | `test_segui_stato_iscrivi_ed_eventi` |
@@ -83,8 +96,9 @@ B-046/B-048 (osservatori dello scalper e minuto di telemetria: leggeranno `stato
 
 ## 6. Interruttore previsto
 
-`ARCH_STATO_PARTITA=vecchio|ombra|nuovo` (05 T9). Spento = il codice di oggi riga per riga. Dettaglio
-dell'aggancio: referto par. 8.
+`ARCH_STATO_PARTITA=vecchio|ombra|nuovo` (05 T9). L'interruttore NON esiste ancora (nasce con l'aggancio dell'ondata 2):
+oggi nessun codice di produzione importa questo comparto, quindi l'app gira col codice di oggi. Dettaglio dell'aggancio:
+referto par. 8.
 
 ## 7. Come si sostituisce
 
@@ -95,7 +109,8 @@ non cambiano. Oggi la stessa sostituzione tocca >= 11 file (scheda B par. 4.5).
 ## 8. Come si prova da solo
 
 ```
-python -m pytest Betfair/nucleo/stato_partita/tests -q -p no:cacheprovider -m "not cert"   # ~45 s
+python -m pytest Betfair/nucleo/stato_partita/tests -q -p no:cacheprovider -m "not cert"   # ~20-45 s
+python ARCHITETTURA_2026-10/ondata1/W1-B/mutazioni.py .                                       # 46 mutazioni, tutte rosse
 python -m pytest Betfair/nucleo/stato_partita/tests/test_b_parita_banco.py -q -p no:cacheprovider -s   # cert, ~150 s
 ```
 I test leggono le registrazioni da `registrazioni_banco/` (gz) e scompattano in una cartella temporanea:
@@ -106,6 +121,16 @@ nessun file fuori da `tmp`, nessuna rete, nessun DB.
 Parita' 100% su 220 righe di sidecar e su 17.796 giri per tick dello scanner vero (6.076 + 11.720), 0
 divergenze; numeri e durate nel referto par. 3-5. Latenza: il servizio non aggiunge relay ne' SELECT per
 chi si iscrive (sveglia in processo); la misura del ritardo reale e' dell'ombra (ondata 2).
+
+## 9-bis. Limiti e divergenze da conoscere
+
+- Ripiego API-Football: fase 'sconosciuta' e tempo None (oggi nessuno li deduce dal ripiego; `status.short` non e' letto).
+- Record IPS con soli `timeElapsedSeconds`: la riga dello scanner dice 25' (minuto calcolato sul record intero), chi
+  riparsa lo `score_raw` spogliato (`strip_volatile_state`) dice None: lo stato riproduce ciascuno dei due.
+- `KoPerMercato`: come le 4 copie di oggi la cache cresce per tutta la vita di chi la usa; il SERVIZIO la pota quando una
+  partita esce da `segui` (`KoPerMercato.dimentica`). Proposta per i bot (quando leggeranno `ko_ms` dallo stato): nessuna
+  cache propria, oppure tetto pari ai mercati sottoscritti (200 per sottoscrizione Betfair).
+- Divergenze di oggi fra copie: referto par. 9.
 
 ## 10. PROCESSO_STANDARD_BOT par. 6/7
 

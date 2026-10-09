@@ -60,7 +60,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import re
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 from Betfair.nucleo.comuni import Sport
 from Betfair.nucleo.stato_partita.contratto import (Eta, FasePartita, FonteStatoPartita,
@@ -235,9 +235,13 @@ def stato_calcio_da_api_football(event_id: str, entry: Optional[Mapping[str, Any
                                  ko_ms: Optional[int] = None) -> StatoPartita:
     """Stato calcio dal ripiego API-Football (``parse_fixture_response``).
 
-    L'entry non ha lo stato IPS: fase e tempo dal SOLO minuto, come quando
-    Omega o Safe leggono un minuto senza stato (``mission_phase(status=None)``,
-    ``tempo_da_stato_ips(None, minuto)``). Rossi, corner, gialli: assenti."""
+    Minuto e gol = ``parse_fixture_response`` (quelli che il runner scrive in
+    ``live_now``). Fase e tempo: ``sconosciuta`` e None. OGGI NESSUNO calcola una
+    fase o un tempo dal ripiego (l'entry non ha lo stato IPS; ``status.short``
+    di API-Football - HT, FT, ET, P, AET, PEN, PST, ABD... - non e' letto da
+    nessuna regola di oggi): dedurli dal solo minuto inventerebbe fasi mai
+    avvenute (un 'HT' al 45' sarebbe '1t'). Divergenza dichiarata nel referto.
+    Rossi, corner, gialli: assenti (il ripiego non li porta)."""
     snap = None
     if isinstance(entry, Mapping):
         snap = _api_football().parse_fixture_response(str(event_id), {"response": [dict(entry)]})
@@ -245,8 +249,7 @@ def stato_calcio_da_api_football(event_id: str, entry: Optional[Mapping[str, Any
         return _stato_vuoto(event_id, "calcio", "api_football", eta, prezzi_vivi, in_gioco, ko_ms)
     return StatoPartita(
         event_id=str(event_id), sport="calcio", in_gioco=bool(in_gioco),
-        fase=fase_partita(None, snap.minute), minuto=snap.minute,
-        tempo=tempo_partita(None, snap.minute),
+        fase="sconosciuta", minuto=snap.minute, tempo=None,
         gol=coppia(snap.score_home, snap.score_away), rossi=None, corner=None, gialli=None,
         set_game=None, ko_ms=ko_ms, fonte="api_football", eta=eta,
         prezzi_vivi=prezzi_vivi, grezzo=entry or {},
@@ -287,14 +290,30 @@ def chiave_tennis(set_game: Optional[TennisSet]) -> Optional[tuple]:
             set_game.punto[0], set_game.punto[1], set_game.servizio)
 
 
+def punteggio_tennis(grezzi: Optional[Sequence[Mapping[str, Any]]],
+                     event_id: str) -> Optional[TennisScore]:
+    """``parse_tennis_scores`` con la guardia del worker del runner tennis:
+    qualunque eccezione del parser = None (registrata nel log, mai muta)."""
+    try:
+        return parse_tennis_scores(list(grezzi) if grezzi else None, event_id)
+    except Exception as ex:  # noqa: BLE001 - come tennis_runner.py:1652: record rotto = nessun punteggio
+        logger.debug("[stato-partita] punteggio tennis illeggibile %s: %s", event_id, str(ex)[:120])
+        return None
+
+
 def stato_tennis_da_grezzo(event_id: str, grezzi: Optional[Sequence[Mapping[str, Any]]], *,
                            fonte: FonteStatoPartita, eta: Eta, prezzi_vivi: Any,
                            in_gioco: bool = False, ko_ms: Optional[int] = None) -> StatoPartita:
     """Stato tennis: ``parse_tennis_scores(grezzi, event_id)`` invariata.
 
     La fase resta 'sconosciuta': ``FasePartita`` e' del calcio (estensione
-    proposta nel referto); lo stato del tennis e' in ``grezzo``."""
-    ts = parse_tennis_scores(list(grezzi) if grezzi else None, event_id)
+    proposta nel referto); lo stato del tennis e' in ``grezzo``.
+
+    Un record malformato (es. ``score`` stringa o lista: il parser di oggi
+    solleva ``AttributeError``) vale "nessun punteggio", come nel worker del
+    runner tennis, che chiama lo stesso parser dentro un try/except e lascia
+    ``ts=None`` (``tennis_runner.py:1641-1653``); il motivo va nel log."""
+    ts = punteggio_tennis(grezzi, event_id)
     if ts is None:
         return _stato_vuoto(event_id, "tennis", fonte, eta, prezzi_vivi, in_gioco, ko_ms)
     return StatoPartita(
@@ -353,6 +372,16 @@ class KoPerMercato:
 
     def __init__(self) -> None:
         self._ko_ms: Dict[str, float] = {}
+
+    def dimentica(self, market_ids: Iterable[str]) -> None:
+        """Toglie dalla cache i mercati di una partita non piu' seguita (le 4
+        copie di oggi non lo fanno: la cache cresce per tutta la vita del bot;
+        qui chi la usa per piu' partite la pota, vedi ``servizio.segui``)."""
+        for mid in market_ids:
+            self._ko_ms.pop(str(mid), None)
+
+    def __len__(self) -> int:
+        return len(self._ko_ms)
 
     def __call__(self, market_book: Any) -> Optional[float]:
         mid = market_book.market_id

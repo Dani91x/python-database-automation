@@ -81,7 +81,8 @@ def test_rispetta_il_contratto() -> None:
 
 def test_segui_stato_iscrivi_ed_eventi() -> None:
     fonte = FonteInMemoria()
-    srv = S.ServizioStatoPartita(fonte, orologio_s=lambda: T0)
+    ora = [T0]
+    srv = S.ServizioStatoPartita(fonte, orologio_s=lambda: ora[0])
     stati: List[K.StatoPartita] = []
     eventi: List[Any] = []
     via = srv.iscrivi(stati.append)
@@ -99,9 +100,11 @@ def test_segui_stato_iscrivi_ed_eventi() -> None:
                                        fonte.buste["7"]["stato_scanner"], "7", None, int(T0 * 1000))
     assert [type(e).__name__ for e in eventi] == ["StatoCambiato"] and len(stati) == 1
     srv.aggiorna()                                            # niente di nuovo: nessuna sveglia
-    srv.aggiorna(T0 + 5.0)                                    # solo il tempo passa: le eta' crescono
+    ora[0] = T0 + 5.0
+    srv.aggiorna()                                            # solo il tempo passa: le eta' crescono
     assert len(eventi) == 1 and len(stati) == 1
     assert srv.stato("7").eta.riga_s == pytest.approx(6.0)    # ...e lo stato le porta aggiornate
+    ora[0] = T0
     fonte.buste["7"] = _busta_riga("7", minuto=11, gol=(1, 0))
     srv.aggiorna()
     assert [type(e).__name__ for e in eventi[1:]] == ["StatoCambiato", "GolSegnato"]
@@ -261,13 +264,15 @@ def test_giro_sul_sidecar_vero(tmp_path: Any, ev: str, gol: int, fasi: List[tupl
     _sidecar_in(tmp_path, ev)
     fonte = FonteRegistrazione(str(tmp_path), ev)
     fonte.apri()
-    srv = S.ServizioStatoPartita(fonte)
+    ora = [0.0]
+    srv = S.ServizioStatoPartita(fonte, orologio_s=lambda: ora[0])
     srv.segui([ev])
     eventi: List[Any] = []
     srv.iscrivi_eventi(eventi.append)
     for ts, rec in fonte.record:
         fonte.posiziona(ts)
-        srv.aggiorna(ts / 1000.0 + 0.5)
+        ora[0] = ts / 1000.0 + 0.5
+        srv.aggiorna()
         st = srv.stato(ev)
         snap = parse_score_dict(ev, rec)
         assert (st.minuto, st.fonte) == (snap.minute, "registrazione")

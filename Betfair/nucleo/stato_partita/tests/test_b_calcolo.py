@@ -232,12 +232,17 @@ def test_riga_dello_scanner_usa_i_numeri_che_i_bot_leggono() -> None:
     assert (vuota.fase, vuota.minuto, vuota.gol, vuota.in_gioco) == ("pre", None, None, False)
 
 
-def test_api_football_fase_e_tempo_dal_solo_minuto() -> None:
-    entry = {"fixture": {"status": {"short": "2H", "elapsed": 67}}, "goals": {"home": 2, "away": 0}}
-    st = C.stato_calcio_da_api_football("9", entry, eta=ETA_ASSENTE, prezzi_vivi=FP.NON_NOTO)
-    assert (st.minuto, st.gol, st.fonte) == (67, (2, 0), "api_football")
-    assert st.tempo == A.tempo_da_stato_ips(None, 67) is None     # 45-89 senza stato: ambiguo
-    assert C.fase_come_omega(st.fase) == E.mission_phase(status=None, minute=67, kickoff=None, now=ORA)
+def test_api_football_fase_sconosciuta_e_tempo_assente() -> None:
+    """Il ripiego non ha lo stato IPS e OGGI nessuno ne deduce fase o tempo:
+    'sconosciuta' e None per ogni ``status.short`` (divergenza dichiarata)."""
+    for short, el in (("1H", 30), ("HT", 45), ("2H", 67), ("FT", 90), ("ET", 105), ("P", 120),
+                      ("AET", 120), ("PEN", 120), ("PST", None), ("ABD", 30), ("NS", None)):
+        entry = {"fixture": {"status": {"short": short, "elapsed": el}},
+                 "goals": {"home": 2, "away": 0}}
+        st = C.stato_calcio_da_api_football("9", entry, eta=ETA_ASSENTE, prezzi_vivi=FP.NON_NOTO)
+        ref = parse_fixture_response("9", {"response": [entry]})
+        assert (st.minuto, st.gol, st.fonte) == (ref.minute, (2, 0), "api_football")
+        assert (st.fase, st.tempo) == ("sconosciuta", None), short
     assert C.stato_calcio_da_api_football("9", None, eta=ETA_ASSENTE,
                                           prezzi_vivi=FP.NON_NOTO).fase == "sconosciuta"
 
