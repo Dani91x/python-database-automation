@@ -19,7 +19,17 @@ delle partite da osservare si preparano una volta e poi si aggiornano in
 modo incrementale, ogni ``HAZARD_ATLAS_CICLO_S`` secondi (default 600).
 'scarica': il comportamento del 24/09 descritto sopra, ogni
 ``HAZARD_ATLAS_SYNC_S`` secondi (default 1800): 1 GET da una riga ogni 30
-minuti + 1 download da ~4 MB al giorno.
+minuti + 1 download per ogni versione nuova.
+
+09/10/2026 (AUDIT_2026-10-09/fallimenti_action/ATLANTE_GLOBALE_LEGGERO.md): la
+action NON scrive piu' nel payload globale by_league/by_team/h2h_hint/v4 (solo
+``meta`` e ``global``, ``genera_atlante.payload_globale_leggero``). Il modo
+'scarica', trovata una versione nuova con il payload leggero, ASSEMBLA l'atlante
+come la action: stati per lega da ``hazard_atlas_leghe`` (stessa select di
+``genera_atlante.leggi_stato_db``, a pagine per league_id), ``genera_atlante.assembla``
+con il seme v3, la data e la filigrana della versione, e ``meta.run`` della versione.
+Con gli stessi stati il file e' identico a quello che scaricava prima. Una versione
+vecchia con il payload intero (prima della migrazione) si scrive come prima.
 
 Mai eccezioni verso il chiamante: un guasto qui lascia il file che c'e'.
 ASCII-only; commenti in italiano.
@@ -68,6 +78,65 @@ def _valido(atlas: Any) -> bool:
             and isinstance(atlas.get("by_league"), dict) and bool(atlas["by_league"]))
 
 
+def _payload_leggero(atlas: Any) -> bool:
+    """09/10: la riga globale scritta dal 09/10 (o svuotata dalla migrazione
+    ``hazard_atlas_globale_leggero_2026-10-09.sql``): meta con la data, nessun
+    ``by_league`` (i blocchi derivati si assemblano dalle righe per lega)."""
+    return (isinstance(atlas, dict) and isinstance(atlas.get("meta"), dict)
+            and bool(atlas["meta"].get("generated_at")) and "by_league" not in atlas)
+
+
+# righe di hazard_atlas_leghe per GET nel modo 'scarica' (~90 KB di stato a riga)
+PAGINA_LEGHE = 50
+
+
+def _assembla_da_leghe(url: str, key: str, get: Callable[..., List[Dict[str, Any]]],
+                       meta: Dict[str, Any], pagina: Optional[int] = None
+                       ) -> Optional[Dict[str, Any]]:
+    """L'atlante della versione ``meta`` riassemblato come la action
+    (``genera_atlante.main``): stati di TUTTE le leghe da ``hazard_atlas_leghe``
+    (``select=league_id,stato``, ordine per league_id come ``leggi_stato_db``),
+    ``assembla`` con il seme v3 se c'e', data e filigrana della versione, poi
+    ``meta.run`` della versione. Paginazione a chiave (niente OFFSET). Un errore
+    di lettura sale al chiamante (il file che c'e' resta).
+
+    None (file lasciato com'e') se le leghe lette sono meno di quelle che la
+    action aveva nello stato (``meta.n_leagues_in_state``) o nessuna: senza
+    questo controllo una lettura vuota o monca produrrebbe un atlante fatto
+    del solo seme v3, che ``_valido`` accetterebbe."""
+    from . import genera_atlante as G
+    pagina = int(pagina or PAGINA_LEGHE)
+    stati: Dict[str, Dict[str, Any]] = {}
+    ultimo: Optional[Any] = None
+    while True:
+        p = {"select": "league_id,stato", "order": "league_id.asc", "limit": str(pagina)}
+        if ultimo is not None:
+            p["league_id"] = f"gt.{ultimo}"
+        rows = get(url, key, "hazard_atlas_leghe", p, timeout=180.0)
+        for r in rows:
+            if isinstance(r.get("stato"), dict):
+                stati[str(r["league_id"])] = r["stato"]
+        if len(rows) < pagina:
+            break
+        ultimo = rows[-1]["league_id"]
+    attese = int(meta.get("n_leagues_in_state") or 0)
+    if not stati or len(stati) < attese:
+        logger.warning("[atlante-sync] versione %s: lette %d leghe da hazard_atlas_leghe, la "
+                       "action ne aveva %d: file lasciato com'e'", meta.get("generated_at"),
+                       len(stati), attese)
+        return None
+    seme = None
+    if os.path.exists(HA.ATLAS_V3_PATH):
+        with open(HA.ATLAS_V3_PATH, "r", encoding="utf-8") as fh:
+            seme = json.load(fh)
+    wm = meta.get("watermark_event_id")
+    atlas = G.assembla(stati, generated_at=str(meta["generated_at"]),
+                       watermark=int(wm) if wm is not None else None, seme=seme)
+    if "run" in meta:
+        atlas["meta"]["run"] = meta["run"]
+    return atlas
+
+
 def sincronizza(*, url: Optional[str] = None, key: Optional[str] = None,
                 path: Optional[str] = None,
                 get: Optional[Callable[..., List[Dict[str, Any]]]] = None) -> Dict[str, Any]:
@@ -93,6 +162,9 @@ def sincronizza(*, url: Optional[str] = None, key: Optional[str] = None,
         righe = get(url, key, "hazard_atlas", {"select": "payload", "id": f"eq.{int(ult[0]['id'])}"},
                     timeout=180.0)
         atlas = righe[0].get("payload") if righe else None
+        if _payload_leggero(atlas):
+            # 09/10: payload leggero (solo meta+global) -> si assembla dalle righe per lega
+            atlas = _assembla_da_leghe(url, key, get, atlas["meta"])
         if not _valido(atlas):
             logger.warning("[atlante-sync] versione %s non valida: file lasciato com'e'", remoto)
             return {"esito": "payload_non_valido", "generated_at": remoto}

@@ -192,7 +192,8 @@ def test_scrivi_riga_usa_la_rpc_se_c_e(monkeypatch: pytest.MonkeyPatch) -> None:
     assert c["metodo"] == "POST" and c["path"] == "rpc/hazard_atlas_salva_versione"
     assert c["corpo"]["p_generated_at"] == "2026-09-28T07:13:00+00:00"
     assert c["corpo"]["p_n_leghe"] == 185 and c["corpo"]["p_watermark_event_id"] == 999
-    assert c["corpo"]["p_payload"] == _atlas(185)
+    # 09/10/2026 (ATLANTE_GLOBALE_LEGGERO): nella riga globale solo meta + global
+    assert c["corpo"]["p_payload"] == {"meta": _atlas(185)["meta"], "global": _atlas(185)["global"]}
 
 
 def test_scrivi_riga_ripiega_sulla_post_diretta_se_manca_la_rpc(
@@ -212,7 +213,9 @@ def test_scrivi_riga_ripiega_sulla_post_diretta_se_manca_la_rpc(
     ripiego = finto.chiamate[1]
     assert ripiego["metodo"] == "POST" and ripiego["path"] == "hazard_atlas"
     assert ripiego["corpo"] == {"generated_at": "2026-09-28T07:13:00+00:00", "n_leghe": 185,
-                                "n_partite": 12345, "watermark_event_id": 999, "payload": atlas}
+                                "n_partite": 12345, "watermark_event_id": 999,
+                                # 09/10/2026 (ATLANTE_GLOBALE_LEGGERO): solo meta + global
+                                "payload": {"meta": atlas["meta"], "global": atlas["global"]}}
 
 
 def test_scrivi_riga_rpc_500_ritenta_e_non_ripiega_subito(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -289,7 +292,8 @@ def test_salva_versione_scrive_il_payload_intero_atomico(monkeypatch: pytest.Mon
     s.salva_versione(atlas, tieni=7)
     prima = finto.chiamate[0]
     assert prima["metodo"] == "POST" and prima["path"] == "rpc/hazard_atlas_salva_versione"
-    assert prima["corpo"]["p_payload"] == atlas
+    # 09/10/2026 (ATLANTE_GLOBALE_LEGGERO): una sola POST, payload leggero (meta + global)
+    assert prima["corpo"]["p_payload"] == {"meta": atlas["meta"], "global": atlas["global"]}
     assert prima["corpo"]["p_n_leghe"] == 185
 
 
