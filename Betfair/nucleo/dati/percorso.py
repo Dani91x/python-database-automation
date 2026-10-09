@@ -111,7 +111,7 @@ class Lucchetto:
     """Lucchetto di processo su ``<cartella>/.lucchetto`` (esclusivo, non bloccante).
 
     Il sistema operativo lo rilascia da solo se il processo muore (anche con
-    ``os._exit``): nessun lucchetto «orfano» da pulire a mano.
+    ``os._exit``): nessun lucchetto "orfano" da pulire a mano.
     """
 
     def __init__(self, cartella: Path) -> None:

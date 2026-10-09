@@ -1,0 +1,60 @@
+# misura_g1: N=3000 record per tabella, 3 ripetizioni, cartella /tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/misura
+
+## A. archivio vero (checkpoint nel thread di manutenzione): microsecondi
+rep1 betfair_live_orders  accodamento n=3000 p50=12.5 p95=25.8 p99=65.9 max=24333.1 | rec/s accodamento 12008, durevole 7653
+rep1 live_follow          accodamento n=3000 p50=11.2 p95=17.2 p99=42.7 max=44168.4 | rec/s accodamento 21209, durevole 11789
+rep1 mike_activity        accodamento n=3000 p50=18.4 p95=60.9 p99=1423.5 max=12107.1 | rec/s accodamento 14045, durevole 13684
+rep1 commit stato_denaro  n=30 p50=1565.6 p95=22408.7 p99=30720.8 max=30720.8 | durevole dopo n=3000 p50=178960.7 p95=227213.4 p99=228922.6 max=229395.8
+rep1 commit stato_vivo    n=30 p50=217.9 p95=4189.2 p99=22754.4 max=22754.4 | durevole dopo n=3000 p50=143576.6 p95=165505.7 p99=170278.2 max=170677.3
+rep1 commit log           n=120 p50=3.7 p95=12.4 p99=110.0 max=141.3 | durevole dopo n=3000 p50=7660.4 p95=26507.2 p99=28034.7 max=28521.9
+rep1 checkpoint n=6 p50=14057.7 p95=70823.2 p99=70823.2 max=70823.2 | disco 4.31 MB
+rep2 betfair_live_orders  accodamento n=3000 p50=12.4 p95=22.4 p99=77.1 max=17288.1 | rec/s accodamento 20225, durevole 8622
+rep2 live_follow          accodamento n=3000 p50=11.4 p95=21.2 p99=62.2 max=23542.0 | rec/s accodamento 22347, durevole 12407
+rep2 mike_activity        accodamento n=3000 p50=18.5 p95=75.8 p99=165.9 max=3815.6 | rec/s accodamento 22737, durevole 21981
+rep2 commit stato_denaro  n=30 p50=5903.9 p95=15014.9 p99=33992.8 max=33992.8 | durevole dopo n=3000 p50=159027.7 p95=195708.0 p99=200515.0 max=200928.5
+rep2 commit stato_vivo    n=30 p50=319.6 p95=472.1 p99=5782.4 max=5782.4 | durevole dopo n=3000 p50=107326.2 p95=129523.1 p99=131039.1 max=138627.3
+rep2 commit log           n=228 p50=3.3 p95=11.0 p99=41.0 max=69.7 | durevole dopo n=3000 p50=3203.8 p95=5436.3 p99=5951.9 max=9829.9
+rep2 checkpoint n=4 p50=17288.8 p95=50309.2 p99=50309.2 max=50309.2 | disco 4.31 MB
+rep3 betfair_live_orders  accodamento n=3000 p50=13.5 p95=33.9 p99=75.3 max=24629.6 | rec/s accodamento 13712, durevole 8701
+rep3 live_follow          accodamento n=3000 p50=11.3 p95=19.0 p99=47.8 max=12123.9 | rec/s accodamento 38094, durevole 22541
+rep3 mike_activity        accodamento n=3000 p50=18.5 p95=75.5 p99=713.2 max=8162.1 | rec/s accodamento 20146, durevole 20075
+rep3 commit stato_denaro  n=30 p50=1874.0 p95=34021.7 p99=53081.1 max=53081.1 | durevole dopo n=3000 p50=174022.1 p95=210137.3 p99=217112.2 max=217564.1
+rep3 commit stato_vivo    n=30 p50=189.7 p95=303.7 p99=10864.1 max=10864.1 | durevole dopo n=3000 p50=66364.8 p95=80954.3 p99=81986.4 max=82775.0
+rep3 commit log           n=263 p50=3.3 p95=10.6 p99=14.6 max=16.5 | durevole dopo n=3000 p50=2699.6 p95=5506.4 p99=11298.3 max=17893.2
+rep3 checkpoint n=4 p50=19468.3 p95=20550.2 p99=20550.2 max=20550.2 | disco 4.31 MB
+
+## B. checkpoint NEL commit (wal_autocheckpoint=1000, default)
+rep1 commit stato_denaro  n=30 p50=6224.2 p95=15103.2 p99=19458.1 max=19458.1
+rep1 commit stato_vivo    n=30 p50=241.9 p95=20448.4 p99=30841.9 max=30841.9
+rep2 commit stato_denaro  n=30 p50=2649.5 p95=7793.9 p99=16607.5 max=16607.5
+rep2 commit stato_vivo    n=31 p50=232.1 p95=399.0 p99=25763.6 max=25763.6
+rep3 commit stato_denaro  n=30 p50=9218.6 p95=26081.5 p99=26426.0 max=26426.0
+rep3 commit stato_vivo    n=30 p50=228.7 p95=453.0 p99=38992.6 max=38992.6
+
+## C. U-55: commit del denaro (FULL) con il vivo a lotti da 100 nello stesso thread
+rep1 UN file  n=1000 p50=3987.4 p95=7998.2 p99=10635.0 max=17162.4
+rep1 DUE file n=1000 p50=4428.7 p95=12003.7 p99=18463.2 max=30495.8
+rep2 UN file  n=1000 p50=3990.2 p95=4908.2 p99=15859.4 max=101452.7
+rep2 DUE file n=1000 p50=3989.6 p95=7695.3 p99=11310.8 max=24013.0
+rep3 UN file  n=1000 p50=3990.9 p95=4047.4 p99=8240.6 max=12077.8
+rep3 DUE file n=1000 p50=4018.1 p95=8019.7 p99=11975.5 max=15728.0
+
+## D. R08 laboratorio: giro di decisione (json.dumps ladder + calcolo), microsecondi
+rep1 spento #1           n=2299 p50=124.2 p95=207.1 p99=269.5 max=8925.2 | giri/s 383
+rep1 spento #2           n=2336 p50=129.7 p95=225.0 p99=266.9 max=4828.9 | giri/s 389
+rep1 ACCESO 600 righe/s  n=1467 p50=139.0 p95=231.5 p99=314.3 max=5400.1 | giri/s 244
+rep1 ACCESO 60 righe/s   n=2256 p50=131.2 p95=229.6 p99=291.4 max=4165.5 | giri/s 376
+rep2 spento #1           n=2315 p50=126.8 p95=216.2 p99=264.4 max=582.3 | giri/s 386
+rep2 spento #2           n=2367 p50=104.3 p95=176.3 p99=229.2 max=1593.2 | giri/s 394
+rep2 ACCESO 600 righe/s  n=1494 p50=124.2 p95=220.3 p99=346.4 max=5744.4 | giri/s 249
+rep2 ACCESO 60 righe/s   n=2437 p50=104.5 p95=183.7 p99=256.7 max=3231.8 | giri/s 406
+rep3 spento #1           n=2439 p50=127.6 p95=222.4 p99=279.6 max=1257.5 | giri/s 406
+rep3 spento #2           n=2320 p50=120.1 p95=207.6 p99=272.1 max=1577.0 | giri/s 387
+rep3 ACCESO 600 righe/s  n=1366 p50=151.3 p95=263.2 p99=602.7 max=5567.6 | giri/s 228
+rep3 ACCESO 60 righe/s   n=2255 p50=152.5 p95=246.7 p99=341.9 max=6044.9 | giri/s 376
+
+# Prova di crash (FIGLIO_SCRITTORE di test_g1_crash.py, os._exit da un timer; conteggio dopo la riapertura)
+ritardo 0.25s rc=1 confermate=700 ritrovate=767 (denaro 267, vivo 233, log 267) file_log_troncati=0
+ritardo 0.6s rc=1 confermate=1500 ritrovate=1518 (denaro 500, vivo 500, log 518) file_log_troncati=0
+ritardo 1.0s rc=1 confermate=4200 ritrovate=4267 (denaro 1433, vivo 1400, log 1434) file_log_troncati=0
+# container cloud condiviso con altri 6 agenti (suite e banco in parallelo): NON e' il PC dell'utente

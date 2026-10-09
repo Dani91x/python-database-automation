@@ -85,6 +85,8 @@ TETTO_ATTESA_S = 60.0
 ATTESE_PREDEFINITE_S: Tuple[float, ...] = (2.0, 4.0, 8.0, 16.0, 32.0)   # G par. 4.2 = db_client.ATTESE_RETE_S
 BLOCCO_PREDEFINITO = 200
 LETTURA_LOG_BYTE = 1_048_576
+#: dopo quest'ora UTC il thread del postino riconcilia il giorno prima (pulizia abilitata)
+ORA_RICONCILIAZIONE_UTC = 3
 
 
 def _attese_rete() -> Tuple[float, ...]:
@@ -178,6 +180,8 @@ class PostinoLocale:
         self.ripiego_diretto = False
         self.contatori: Counter[str] = Counter()
         self._riconciliatore = riconciliatore
+        self._riconciliato_fino: Optional[str] = None
+        self._prossima_riconciliazione_ms = 0
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
 
@@ -249,8 +253,12 @@ class PostinoLocale:
         return rapporto
 
     # ------------------------------------------------------------------ thread (facoltativo)
-    def avvia(self, intervallo_s: float = 1.0, max_righe: int = 200) -> None:
-        """Thread ``postino``: drena finche' c'e' lavoro, poi dorme ``intervallo_s``."""
+    def avvia(self, intervallo_s: float = 1.0, max_righe: int = 200, *,
+              ora_riconciliazione_utc: Optional[int] = ORA_RICONCILIAZIONE_UTC) -> None:
+        """Thread ``postino``: drena finche' c'e' lavoro, poi dorme ``intervallo_s``.
+
+        Una volta per giorno UTC, dopo ``ora_riconciliazione_utc``, riconcilia il giorno
+        prima (marcatori che abilitano la pulizia automatica). ``None`` = mai."""
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
@@ -260,6 +268,8 @@ class PostinoLocale:
                 try:
                     esito = self.drena(max_righe)
                     pieno = esito.consegnate + esito.dead_letter >= max_righe and esito.errore is None
+                    if not pieno and ora_riconciliazione_utc is not None:
+                        self.riconciliazione_notturna(ora_riconciliazione_utc)
                 except Exception as exc:  # un giro guasto si vede e si riprova, il thread non muore
                     logger.error("[postino] giro fallito: %s", exc)
                     self.ultimo_errore = f"giro: {exc}"[:300]
@@ -278,16 +288,27 @@ class PostinoLocale:
 
     # ------------------------------------------------------------------ raccolta
     def _raccogli(self, max_righe: int, adesso: int) -> List[_Voce]:
-        voci: List[_Voce] = []
+        """Quota equa: ogni fonte (denaro, vivo, log) ha almeno un terzo del giro; cio'
+        che una fonte non usa passa alle altre. Nessuna fonte affama le altre."""
+        quota = max(1, -(-max_righe // 3))
+        per_fonte: List[List[_Voce]] = []
         for regime in REGIMI_SQLITE:
-            for v in self.archivio.outbox_pronta(regime, adesso, max_righe - len(voci)):
-                voci.append(self._da_outbox(v))
-            if len(voci) >= max_righe:
-                return voci
+            per_fonte.append([self._da_outbox(v) for v in self.archivio.outbox_pronta(regime, adesso, max_righe)])
+        log: List[_Voce] = []
         for percorso in self.archivio.file_log():
-            if len(voci) >= max_righe:
+            if len(log) >= max_righe:
                 break
-            voci.extend(self._leggi_log(percorso, max_righe - len(voci)))
+            log.extend(self._leggi_log(percorso, max_righe - len(log)))
+        per_fonte.append(log)
+        prese = [min(len(f), quota) for f in per_fonte]
+        resto = max_righe - sum(prese)
+        for i, f in enumerate(per_fonte):
+            extra = min(len(f) - prese[i], max(0, resto))
+            prese[i] += extra
+            resto -= extra
+        voci: List[_Voce] = []
+        for f, n in zip(per_fonte, prese):
+            voci.extend(f[:n])                  # per i log: righe CONTIGUE dall'offset, l'avanzamento resta esatto
         return voci
 
     @staticmethod
@@ -301,6 +322,11 @@ class PostinoLocale:
         with open(percorso, "rb") as f:
             f.seek(offset)
             dati = f.read(LETTURA_LOG_BYTE)
+            while b"\n" not in dati and len(dati) >= LETTURA_LOG_BYTE:
+                altro = f.read(LETTURA_LOG_BYTE)      # una riga piu' lunga del blocco: si legge per intero
+                if not altro:
+                    break
+                dati += altro
         pos = offset
         for linea in dati.splitlines(keepends=True):
             if not linea.endswith(b"\n") or len(voci) >= quante:
@@ -534,6 +560,23 @@ class PostinoLocale:
             from .riconcilia import Riconciliatore
             self._riconciliatore = Riconciliatore(self.archivio, self.cloud, destinazione=self.destinazione)
         return self._riconciliatore
+
+    def riconciliazione_notturna(self, ora_utc: int = 3) -> Optional[str]:
+        """Se e' passata l'ora ``ora_utc`` e il giorno prima non e' ancora riconciliato in
+        questo processo, lo riconcilia (tabelle con righe locali quel giorno). Ritorna il
+        giorno riconciliato o ``None``. Offline: solleva, e il giro dopo riprova."""
+        adesso = self._ora_ms()
+        if self.offline_da is not None:
+            return None
+        ora = datetime.fromtimestamp(adesso / 1000.0, tz=timezone.utc)
+        giorno = (ora - timedelta(days=1)).strftime("%Y-%m-%d")
+        if ora.hour < ora_utc or self._riconciliato_fino == giorno or adesso < self._prossima_riconciliazione_ms:
+            return None
+        self._prossima_riconciliazione_ms = adesso + 300_000        # un errore non diventa un martellamento
+        tabelle = self.archivio.tabelle_del_giorno(giorno)
+        self.riconcilia_giorno(giorno, tabelle)
+        self._riconciliato_fino = giorno
+        return giorno
 
     def riconcilia_giorno(self, giorno: str, tabelle: Sequence[str]) -> List[RapportoRiconciliazione]:
         """Confronto notturno di un giorno UTC per ogni tabella; scrive il marcatore

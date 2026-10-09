@@ -363,7 +363,7 @@ def test_pulizia_solo_consegnato_e_riconciliato(tmp_path: Path) -> None:
         a.scrivi("mike_activity", riga_attivita(1))
         assert a.conferma()
         voci = {json.loads(v.testo)["event_id"]: v.seq for v in a.outbox_pronta("stato_vivo", 2 ** 62, 10)}
-        a.chiudi_voci("stato_vivo", [voci["vecchio"]], [], [])           # consegnato solo «vecchio»
+        a.chiudi_voci("stato_vivo", [voci["vecchio"]], [], [])           # consegnato solo "vecchio"
         giorno = S.giorno_utc(ora[0])
         ora[0] += 10 * 86_400_000                                           # dieci giorni dopo
         assert a.pulisci() == {"stato_denaro": 0, "stato_vivo": 0, "file_log": 0}   # niente riconciliato: niente tolto

@@ -4,7 +4,7 @@ Scopo
     Uno schema solo, uguale per i due file SQLite di un processo (``denaro`` e
     ``vivo``), che non conosce NESSUNA tabella del cloud: aggiungere una
     tabella al postino = una riga di registro (``SpecTabella``), mai uno schema
-    nuovo (requisito dell'utente «cambiare un componente in minuti»).
+    nuovo (requisito dell'utente "cambiare un componente in minuti").
 
     Tabelle locali (versione 1):
       * ``righe``       (tabella, chiave) -> json, rev, aggiornato_ms: l'ultima

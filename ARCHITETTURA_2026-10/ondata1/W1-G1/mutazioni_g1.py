@@ -24,8 +24,8 @@ SQL = "migrations/architettura_uid_ombra_2026-10-09.sql"
 # (id, file, testo originale, testo mutato, test che devono diventare rossi, cosa prova)
 MUTAZIONI = [
     ("M01", D + "archivio.py", "                self._file_log[nome].flush()", "                pass",
-     [T + "test_g1_crash.py::test_scrittore_ucciso_a_meta_zero_confermati_persi"],
-     "senza flush le righe di log confermate si perdono al crash"),
+     [T + "test_g1_crash.py::test_scrittore_ucciso_a_meta_zero_confermati_persi[0.0-conferma]"],
+     "senza flush le righe di log confermate si perdono al crash (prova deterministica)"),
     ("M02", D + "archivio.py", 'conn.execute("BEGIN IMMEDIATE")\n                    aperte.append',
      'aperte.append',
      [T + "test_g1_archivio.py::test_riga_e_outbox_nella_stessa_transazione"],
@@ -100,6 +100,20 @@ MUTAZIONI = [
      "schema piu' nuovo toccato da codice vecchio"),
     ("M26", D + "archivio.py", "            if c in COLONNE_UID and r.get(c) is None:", "            if False:",
      [T + "test_g1_archivio.py::test_tre_regimi_due_file_e_sincronia"], "uid non generato nel punto di scrittura"),
+    ("M27", D + "archivio.py",
+     '        testo = json.dumps(r, ensure_ascii=False, separators=(",", ":"), default=str)\n        ms = self._ora_ms()\n        n = ',
+     '        testo = json.dumps({k: v for k, v in r.items() if v is not None}, ensure_ascii=False, separators=(",", ":"), '
+     'default=str)\n        ms = self._ora_ms()\n        n = ',
+     [T + "test_g1_parita.py"], "riga alterata nel trasporto (i None tolti): non e' piu' quella di oggi"),
+    ("M28", D + "postino.py", "        quota = max(1, -(-max_righe // 3))", "        quota = 0",
+     [T + "test_g1_postino.py::test_nessuna_fonte_affama_le_altre"], "una fonte affama le altre (log mai consegnati)"),
+    ("M29", D + "postino.py", "            while b\"\\n\" not in dati and len(dati) >= LETTURA_LOG_BYTE:",
+     "            while False:", [T + "test_g1_postino.py::test_riga_di_log_piu_lunga_del_blocco_di_lettura"],
+     "riga piu' lunga del blocco: il file si blocca per sempre"),
+    ("M30", D + "postino.py", '        giorno = (ora - timedelta(days=1)).strftime("%Y-%m-%d")',
+     '        giorno = ora.strftime("%Y-%m-%d")',
+     [T + "test_g1_postino.py::test_riconciliazione_notturna_automatica_abilita_la_pulizia"],
+     "riconciliazione notturna del giorno sbagliato (ancora aperto)"),
 ]
 
 MUTAZIONI_SQL = [
@@ -162,6 +176,10 @@ def esegui(mutazioni: list, sql: bool) -> int:
 
 
 if __name__ == "__main__":
+    solo = sys.argv[sys.argv.index("--solo") + 1].split(",") if "--solo" in sys.argv else None
+    if solo:
+        MUTAZIONI = [m for m in MUTAZIONI if m[0] in solo]
+        MUTAZIONI_SQL = [m for m in MUTAZIONI_SQL if m[0] in solo]
     tutte = list(MUTAZIONI)
     print(f"# mutazioni Python: {len(tutte)}")
     rossi = esegui(tutte, False)

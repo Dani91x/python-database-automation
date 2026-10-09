@@ -36,13 +36,21 @@ from pathlib import Path
 from Betfair.nucleo.dati.archivio import ArchivioLocale
 from Betfair.nucleo.dati.tests.test_g1_finti import SPEC, riga_attivita, riga_ordine
 base, ritardo = Path(sys.argv[1]), float(sys.argv[2])
+modo = sys.argv[3] if len(sys.argv) > 3 else "timer"
 SPAZIO = uuid.UUID("6f1c3b4e-8a51-4c7a-9a5e-0d2f3c4b5a69")
 def ack(n):
     sys.stdout.write("ack %d\n" % n); sys.stdout.flush()
 a = ArchivioLocale("prova", SPEC, base=base, alla_conferma=ack).apri()
-threading.Timer(ritardo, lambda: os._exit(1)).start()
+if modo == "timer":
+    threading.Timer(ritardo, lambda: os._exit(1)).start()
 i = 0
 while True:
+    if modo == "conferma" and i == 1500:
+        # raffica, poi barriera di durabilita' e morte SUBITO: deterministico (nessun caso fortunato)
+        if not a.conferma(60):
+            os._exit(2)
+        ack(1500)                       # cio' che il chiamante SA durevole (la barriera e' tornata vera)
+        os._exit(1)
     k = i // 3
     if i % 3 == 0:
         a.scrivi("mike_activity", riga_attivita(k, uid=str(uuid.uuid5(SPAZIO, str(k)))))
@@ -64,13 +72,18 @@ def _identita(n: int) -> tuple[str, str]:
     return [("log", str(uuid.uuid5(SPAZIO, str(k)))), ("denaro", f"r{k}"), ("vivo", f"e{k}")][i % 3]
 
 
-@pytest.mark.parametrize("ritardo", [0.25, 0.6])
-def test_scrittore_ucciso_a_meta_zero_confermati_persi(tmp_path: Path, ritardo: float) -> None:
-    r = subprocess.run([sys.executable, "-c", FIGLIO_SCRITTORE, str(tmp_path), str(ritardo)], cwd=RADICE,
+@pytest.mark.parametrize("ritardo, modo", [(0.25, "timer"), (0.6, "timer"), (0.0, "conferma")])
+def test_scrittore_ucciso_a_meta_zero_confermati_persi(tmp_path: Path, ritardo: float, modo: str) -> None:
+    """``timer``: morte in un istante qualunque mentre il ciclo scrive (a meta' davvero);
+    ``conferma``: raffica di 1.500 righe, barriera ``conferma()``, morte subito dopo: senza
+    flush la coda del buffer di Python si perde SEMPRE (prova deterministica, M01)."""
+    r = subprocess.run([sys.executable, "-c", FIGLIO_SCRITTORE, str(tmp_path), str(ritardo), modo], cwd=RADICE,
                        capture_output=True, text=True, timeout=120)
     assert r.returncode == 1, r.stderr[-2000:]                                   # morto con os._exit(1)
     ack = max(int(x.split()[1]) for x in r.stdout.splitlines() if x.startswith("ack "))
     assert ack > 300, "il figlio deve aver confermato abbastanza scritture per essere una prova"
+    if modo == "conferma":
+        assert ack == 1500
     cart = tmp_path / "prova"
     denaro = {json.loads(j)["client_order_ref"] for (j,) in
               sqlite3.connect(cart / "denaro.sqlite3").execute("SELECT json FROM righe")}

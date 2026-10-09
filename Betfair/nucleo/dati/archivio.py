@@ -8,7 +8,7 @@ Scopo
     * ``stato_denaro`` -> ``denaro.sqlite3``, WAL ``synchronous=FULL``: durevole
       anche a PC spento (documentazione SQLite); un commit per gruppo di eventi
       arrivati insieme (group commit: ogni evento e' confermato solo dopo il
-      SUO commit, la garanzia e' la stessa di «1 commit per evento»);
+      SUO commit, la garanzia e' la stessa di "1 commit per evento");
     * ``stato_vivo``   -> ``vivo.sqlite3``, WAL ``synchronous=NORMAL``, lotti fino
       a ``lotto_max`` righe per commit (righe ri-derivabili dallo stream);
     * ``log``          -> ``log/AAAA-MM-GG.jsonl`` (giorno UTC), write+flush:
@@ -810,6 +810,22 @@ class ArchivioLocale:
             out.update(r[0] for r in self._leggi_tutti(regime, "SELECT chiave FROM outbox WHERE tabella = ?", (tabella,))
                        if r[0] is not None)
         return out
+
+    def tabelle_del_giorno(self, giorno: str) -> List[str]:
+        """Le tabelle con righe locali nel giorno UTC (stato aggiornato o log scritto)."""
+        trovate: set[str] = set()
+        for regime in REGIMI_SQLITE:
+            trovate.update(r[0] for r in self._leggi_tutti(
+                regime, "SELECT DISTINCT tabella FROM righe WHERE strftime('%Y-%m-%d', aggiornato_ms / 1000, "
+                        "'unixepoch') = ?", (giorno,)))
+        percorso = self.cartella_log() / (giorno + ".jsonl")
+        if percorso.exists():
+            with open(percorso, "r", encoding="ascii", errors="replace") as f:
+                for linea in f:
+                    t = tabella_della_riga_log(linea)
+                    if t:
+                        trovate.add(t)
+        return sorted(trovate)
 
     def scrivi_riconciliazione(self, tabella: str, giorno: str, esito: str, dettagli: Mapping[str, Any]) -> None:
         testo = json.dumps(dict(dettagli), default=str)

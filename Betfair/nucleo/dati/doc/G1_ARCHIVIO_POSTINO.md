@@ -27,8 +27,10 @@ altrove; `ARCH_ARCHIVIO_DIR` la allinea all'app desktop. Mai dentro il repo. Un 
   `transizione(tabella, chiave, da, a)` (claim atomico), `leggi(tabella, chiave)`, `conferma(timeout_s)` (barriera di
   durabilita': «prima la riga, poi l'invio», R03), `accoda(...)` (forma sincrona con seq).
 - `PostinoLocale(archivio, cloud, ombra=False, tetto_disco_mb=2048, ...)`: `cloud` e' il protocollo `Cloud` (client unico,
-  W1-G2). `drena(max_righe)`, `stato()`, `riconcilia(tabella, da_ts)`, `riconcilia_giorno(giorno, tabelle)`,
-  `avvia()/ferma()` (thread facoltativo `postino`).
+  W1-G2). `drena(max_righe)` (quota equa fra denaro, vivo e log: nessuna fonte affama le altre), `stato()`,
+  `riconcilia(tabella, da_ts)`, `riconcilia_giorno(giorno, tabelle)`, `avvia()/ferma()` (thread `postino`: drena e,
+  una volta al giorno dopo le 03:00 UTC, riconcilia il giorno prima: i marcatori `ok` abilitano la pulizia automatica
+  del thread di manutenzione dell'archivio; nessun intervento dell'utente).
 
 ## 3. Uscite
 
@@ -74,7 +76,7 @@ scrive SOLO su `<tabella>_ombra` (`PostinoLocale(..., ombra=True)`); confronto c
 
 ## 8. Come si prova da solo
 
-`python -m pytest Betfair/nucleo/dati/tests -q -p no:cacheprovider -k g1` (46 verdi + 5 saltati senza PostgreSQL).
+`python -m pytest Betfair/nucleo/dati/tests -q -p no:cacheprovider -k g1` (55 verdi + 5 saltati senza PostgreSQL; 60 verdi con).
 Con un PostgreSQL usa-e-getta e la migrazione applicata: `G1_PG_PSQL="-h /tmp -p 54329 -U postgres"` accende
 `test_g1_pg_reale.py` (stesse prove sul SQL vero). Falsificazione: `ARCHITETTURA_2026-10/ondata1/W1-G1/mutazioni_g1.py
 [--sql]`. Misure: `ARCHITETTURA_2026-10/ondata1/W1-G1/misura_g1.py <tmp> 3000 3`.
@@ -88,8 +90,8 @@ rilanciano sul PC con lo stesso strumento.
 ## 10. Voci di `PROCESSO_STANDARD_BOT.md` par. 6/7
 
 Sollecitate: 6.3 (riavvio con stato su disco: crash con `os._exit`), 6.5 (colonne vere e CHECK veri: finti dalle
-migrazioni e PostgreSQL vero), 6.6 (concorrenza: claim con 8 thread, uno scrittore), 6.7 (falsificazione 26+3
-mutazioni), 6.8 (referto riproducibile: comandi e strumenti); 7 n.18 (scrittura fallita mai warning: dead_letter +
+migrazioni e PostgreSQL vero), 6.6 (concorrenza: claim con 8 thread, uno scrittore), 6.7 (falsificazione 30
+mutazioni Python + 3 SQL), 6.8 (referto riproducibile: comandi e strumenti); 7 n.18 (scrittura fallita mai warning: dead_letter +
 evento), n.19 (stato sopravvive al riavvio), n.21 (paper e live: `mode` e' nella chiave naturale, mai sommati qui),
 n.27 (finti con chiavi e tipi veri: client supabase vero), n.29-30 (test che sanno diventare rossi). Le altre sono
 ⊘ per il comparto (nessun ordine, nessun bot, nessun mercato): elenco con la causa nel referto par. 7.

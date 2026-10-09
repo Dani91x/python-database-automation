@@ -8,11 +8,11 @@
 -- NESSUN comportamento di oggi cambia: le colonne nuove sono facoltative (NULL), senza
 -- default e senza riscrittura delle tabelle; i vecchi scrittori continuano identici.
 -- Le tabelle d'ombra e le RPC non le usa nessuno finche' l'interruttore dell'ondata 2
--- (ARCH_POSTINO_LOG / ARCH_STATO_DENARO_<BOT>) non passa a «ombra» o «nuovo».
+-- (ARCH_POSTINO_LOG / ARCH_STATO_DENARO_<BOT>) non passa a "ombra" o "nuovo".
 --
 -- Contenuto:
---   1. colonna `uid uuid` + indice UNICO sulle 10 tabelle di LOG (G par. 4.2, «MANCA LA
---      CHIAVE»): il postino ritenta con INSERT ... ON CONFLICT (uid) DO NOTHING senza doppioni;
+--   1. colonna `uid uuid` + indice UNICO sulle 10 tabelle di LOG (G par. 4.2, "MANCA LA
+--      CHIAVE"): il postino ritenta con INSERT ... ON CONFLICT (uid) DO NOTHING senza doppioni;
 --   2. colonna `trade_uid uuid` + indice UNICO sulle 3 tabelle dei TRADE (U-50, U-80);
 --   3. tabelle `<nome>_ombra` (STESSA FORMA: LIKE ... INCLUDING ALL, senza chiavi esterne,
 --      sequenze proprie) per le tappe T8 e T14: in ombra il postino scrive SOLO li' (05 par. 0
@@ -166,7 +166,7 @@ BEGIN
     END IF;
     EXECUTE format('COMMENT ON TABLE public.%I IS %L', v_ombra,
                    'Ombra di ' || p_nome || ' (architettura 2026-10, T8/T14): la scrive SOLO il postino in modo '
-                   '«ombra»; si confronta con la tabella vera (postino_confronta_ombra / postino_impronte).');
+                   '"ombra"; si confronta con la tabella vera (postino_confronta_ombra / postino_impronte).');
     RETURN v_ombra;
 END $$;
 

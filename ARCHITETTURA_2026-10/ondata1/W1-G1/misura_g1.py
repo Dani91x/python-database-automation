@@ -5,12 +5,12 @@ il PostgREST finto dei test dietro il client supabase VERO (httpx.MockTransport)
 
 Misure:
   A. ArchivioLocale vero, 3 regimi: latenza di ACCODAMENTO (paga il chiamante), di COMMIT (thread
-     di scrittura) e «durevole dopo» (accodamento -> commit), p50/p95/p99/max, N record x R ripetizioni;
+     di scrittura) e "durevole dopo" (accodamento -> commit), p50/p95/p99/max, N record x R ripetizioni;
   B. checkpoint: nel commit (wal_autocheckpoint=1000, il default misurato da m06) contro il thread di
      manutenzione (wal_autocheckpoint=0 + PASSIVE ogni 1 s): massimo del commit del vivo;
   C. U-55, un file contro due: commit del denaro (FULL) mentre il vivo (NORMAL) scrive lotti da 100,
      stesso thread, sullo STESSO file contro file SEPARATI (laboratorio sqlite3 puro, come m06);
-  D. R08 (sostituto di laboratorio della prova sotto carico di T8): un ciclo di «decisione» CPU
+  D. R08 (sostituto di laboratorio della prova sotto carico di T8): un ciclo di "decisione" CPU
      (json.dumps di un ladder + calcolo) misura il suo giro con scrittore e postino SPENTI (due volte:
      variabilita') e ACCESI (scrittura a cadenza + drenaggio verso il cloud finto).
 Uso: python misura_g1.py <cartella_tmp> [N=3000] [R=3]

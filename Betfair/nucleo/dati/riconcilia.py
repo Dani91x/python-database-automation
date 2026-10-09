@@ -5,7 +5,7 @@ Scopo
     ha TUTTE e SOLE le righe che l'archivio locale ha prodotto, e con la stessa
     versione: ``RapportoRiconciliazione`` (contratto) con
       * ``mancanti_nel_cloud``: chiavi locali della finestra che il cloud non ha
-        (esclusa la riga ancora in coda nel postino: e' «in viaggio», non persa);
+        (esclusa la riga ancora in coda nel postino: e' "in viaggio", non persa);
       * ``in_piu_nel_cloud``: chiavi del cloud nella finestra che il locale non
         conosce affatto (ha senso dove questo processo e' l'unico scrittore);
       * ``diverse``: stessa chiave, versione (``rev_colonna``) diversa.
@@ -156,7 +156,7 @@ class Riconciliatore:
 def confronta_ombra(cloud: Cloud, tabella: str, gruppo: Sequence[str], colonna_tempo: str,
                     da: datetime, a: Optional[datetime] = None) -> List[Dict[str, Any]]:
     """T8 in ombra: le righe (giorno, gruppo) con conteggi DIVERSI fra ``tabella`` e
-    ``tabella_ombra``. Lista vuota = +/- 0, il criterio di «uguale» di 05 T8."""
+    ``tabella_ombra``. Lista vuota = +/- 0, il criterio di "uguale" di 05 T8."""
     risposta = cloud.rpc(RPC_CONFRONTA_OMBRA, {
         "p_tabella": tabella, "p_gruppo": list(gruppo), "p_colonna_tempo": colonna_tempo,
         "p_da": da.isoformat(), "p_a": (a or (da + timedelta(days=1))).isoformat()})

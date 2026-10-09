@@ -386,6 +386,54 @@ def test_ordine_delle_operazioni_sulla_stessa_chiave(banco: Banco) -> None:
     assert ops == ["upsert", "patch", "upsert"]
 
 
+def test_nessuna_fonte_affama_le_altre(banco: Banco) -> None:
+    """Molte righe pronte nella outbox del vivo non fermano i log ne' il denaro."""
+    a, p = banco.archivio, banco.postino
+    for i in range(300):
+        a.scrivi("live_follow", {"event_id": f"e{i}", "home_name": "A", "away_name": "B", "status": "PENDING",
+                                 "open_date": "x", "updated_at": "2025-10-09T10:00:00+00:00"})
+    for i in range(5):
+        a.scrivi("mike_activity", riga_attivita(i))
+    a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTABLE", "2025-10-09T10:00:00+00:00"))
+    assert a.conferma()
+    e = p.drena(30)
+    assert e.consegnate == 30
+    assert len(banco.righe("mike_activity")) == 5 and len(banco.righe("betfair_live_orders")) == 1
+    assert len(banco.righe("live_follow")) == 24
+    while p.drena(200).consegnate:
+        pass
+    assert len(banco.righe("live_follow")) == 300 and p.stato().in_coda == 0
+
+
+def test_riga_di_log_piu_lunga_del_blocco_di_lettura(banco: Banco) -> None:
+    a, p = banco.archivio, banco.postino
+    a.scrivi("mike_activity", riga_attivita(1, payload={"grande": "x" * 1_500_000}))
+    a.scrivi("mike_activity", riga_attivita(2))
+    assert a.conferma()
+    assert p.drena().consegnate == 2
+    assert len(banco.righe("mike_activity")[0]["payload"]["grande"]) == 1_500_000
+
+
+def test_riconciliazione_notturna_automatica_abilita_la_pulizia(banco: Banco) -> None:
+    a, p = banco.archivio, banco.postino
+    a.scrivi("mike_activity", riga_attivita(1))
+    a.scrivi("live_follow", {"event_id": "e1", "home_name": "A", "away_name": "B", "status": "PENDING",
+                             "open_date": "x", "updated_at": "2025-10-09T10:00:00+00:00"})
+    assert a.conferma() and p.drena().consegnate == 2
+    assert p.riconciliazione_notturna(3) == "2025-10-08"                       # ieri: nessuna tabella, nessun marcatore
+    assert a.riconciliazione("mike_activity", "2025-10-09") is None            # oggi non e' ancora finito
+    banco.ora[0] = 1_760_061_600_000                                            # 2025-10-10T02:00:00Z: troppo presto
+    assert p.riconciliazione_notturna(3) is None
+    banco.ora[0] = 1_760_065_200_000                                            # 2025-10-10T03:00:00Z
+    assert p.riconciliazione_notturna(3) == "2025-10-09"
+    assert a.riconciliazione("mike_activity", "2025-10-09") == "ok"
+    assert a.riconciliazione("live_follow", "2025-10-09") == "ok"
+    assert p.riconciliazione_notturna(3) is None                               # una volta sola
+    banco.ora[0] += 10 * 86_400_000
+    a.chiudi_log(a.file_log()[0].name, a.file_log()[0].stat().st_size, [], [])
+    assert a.pulisci() == {"stato_denaro": 0, "stato_vivo": 1, "file_log": 1}  # pulizia da sola
+
+
 def test_thread_del_postino_drena_da_solo(tmp_path: Path) -> None:
     srv = PostgrestFinto()
     archivio = ArchivioLocale("prova", SPEC, base=tmp_path).apri()

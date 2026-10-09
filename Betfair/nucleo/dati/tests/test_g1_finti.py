@@ -2,7 +2,7 @@
 
 I finti NON sono finti del client: il client e' il VERO ``supabase``/``postgrest``/``httpx``
 con un ``httpx.MockTransport`` al posto della rete (modello: ``test_catchup_rete_2026_10_08.py``).
-Dietro il trasporto ci sono due «database»:
+Dietro il trasporto ci sono due "database":
 
 * ``PostgrestFinto``: risponde come PostgREST (rotta ``/rest/v1/rpc/<nome>``, corpi d'errore
   ``{code, message, details, hint}``) e applica in Python la STESSA semantica delle RPC della
@@ -41,6 +41,10 @@ SPEC: Dict[str, SpecTabella] = {s.nome: s for s in (
     # log con uid (migrations/mike_bot.sql:124-130 + migrazione G1)
     SpecTabella("mike_activity", ("uid",), "ARC", "log", 60.0, False, None, ()),
     SpecTabella("scalper_activity", ("uid",), "ARC", "log", 60.0, False, None, ()),
+    SpecTabella("omega_activity", ("uid",), "ARC", "log", 60.0, False, None, ()),
+    SpecTabella("safe_strategy_activity", ("uid",), "ARC", "log", 60.0, False, None, ()),
+    # journal (migrations/betfair_live_pnl_journal.sql:89): CHECK su mode/origin/side
+    SpecTabella("betfair_live_journal", ("uid",), "ARC", "log", 60.0, False, None, ()),
     # live_alerts: CHECK su level e FK su live_follow (migrations/live_alerts.sql:22-30)
     SpecTabella("live_alerts", ("uid",), "ARC", "log", 60.0, False, None, ("live_follow",)),
     # padre di live_alerts (migrations/live_stream.sql:34-46), stato vivo
@@ -95,6 +99,16 @@ def _tabelle_vere() -> Dict[str, TabellaFinta]:
     t = [
         TabellaFinta("mike_activity", ("id", "ts", "event_id", "kind", "payload", "uid"), [("id",), ("uid",)]),
         TabellaFinta("scalper_activity", ("id", "event_id", "ts", "kind", "payload", "uid"), [("id",), ("uid",)]),
+        TabellaFinta("omega_activity", ("id", "ts", "kind", "payload", "uid"), [("id",), ("uid",)]),
+        TabellaFinta("safe_strategy_activity", ("id", "ts", "kind", "payload", "uid"), [("id",), ("uid",)]),
+        TabellaFinta("betfair_live_journal", ("id", "ts", "mode", "request_id", "action", "origin", "event_id",
+                                              "market_id", "market_name", "selection_id", "side", "price", "size",
+                                              "persistence", "bet_id", "minute", "score_home", "score_away", "inplay",
+                                              "ltp", "best_back", "best_lay", "book", "signals", "params", "tag",
+                                              "note", "uid"), [("id",), ("uid",)],
+                     check=[("betfair_live_journal_mode_check", lambda r: r.get("mode") in ("paper", "live")),
+                            ("betfair_live_journal_origin_check",
+                             lambda r: r.get("origin", "manual") in ("manual", "risk_rule", None))]),
         TabellaFinta("live_alerts", ("id", "level", "code", "message", "event_id", "acknowledged", "created_at", "uid"),
                      [("id",), ("uid",)],
                      check=[("live_alerts_level_check", lambda r: r.get("level") in ("INFO", "WARN", "CRITICAL"))],
