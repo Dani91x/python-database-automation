@@ -228,6 +228,7 @@ class _Riassunto:
     chiave_acc: Optional[Tuple[int, float, str, str]]
     abbinato: float
     somma: float
+    attribuzione: Optional[attr.Attribuzione] = None
 
 
 #: tetto degli indizi tenuti per bet_id non (ancora) nel libro
@@ -267,13 +268,18 @@ class LibroConto:
         # tardivo) si storna la loro parte, mai contati due volte
         self._riassunti_bet: Dict[Tuple[str, str], Dict[str, _Riassunto]] = {}
         self._attore_rientrato: Dict[Tuple[str, str], str] = {}
+        # replaceOrders (terza verifica del coordinatore 09/10): nuovo -> sostituito e
+        # sostituito -> nuovi, per modo; il nuovo eredita l'autore del sostituito
+        self._sostituito_da: Dict[Tuple[str, str], str] = {}
+        self._successori: Dict[Tuple[str, str], Set[str]] = {}
         self._mancanze: Dict[Tuple[str, str, int, float], Dict[str, float]] = {}
         # il live parte SENZA seme: lo stream non porta gli ordini gia' completi
         self._seme: Dict[str, bool] = {"live": False, "paper": True}
         self.conti: Dict[str, int] = {"ricevuti": 0, "fuori_ordine": 0, "regressioni": 0,
                                       "scartati": 0, "dimenticati": 0,
                                       "dimenticati_aperti": 0, "consumatori_ko": 0,
-                                      "semi": 0, "semi_ko": 0, "riassunti_rientrati": 0}
+                                      "semi": 0, "semi_ko": 0, "riassunti_rientrati": 0,
+                                      "legami": 0, "legami_dallo_stream": 0}
 
     # ------------------------------------------------------------ alimentazione
     def collega_live(self, flusso: FlussoOrdiniConto, *,
@@ -359,14 +365,111 @@ class LibroConto:
                     tenuti.append(ind)
             self._indizi[bid] = tuple(tenuti)
             voce = self._voci.get(("live", bid))
+            cambiati: List[Tuple[str, str]] = []
             if voce is not None:
                 nuovo = self._componi("live", voce.ordine, None)
                 voce.conto = nuovo
+                cambiati.append(("live", bid))
             else:
                 self._pota_indizi()
-        if nuovo is not None:
-            self._avvisa(("live", bid))
+            cambiati += self._ricomponi_successori("live", bid, set())
+        for k in cambiati:
+            self._avvisa(k)
         return nuovo
+
+    def lega_sostituzione(self, vecchio_bet_id: str, nuovo_bet_id: str,
+                          modo: Modo = "live") -> Optional[OrdineConto]:
+        """replaceOrders: l'ordine ``nuovo_bet_id`` sostituisce ``vecchio_bet_id``
+        (legame preso dalle fonti vere: ``attr.legame_da_replace_tennis``, lo
+        specchio con ``attr.indizi_da_origine`` per il calcio, le tabelle dei bot,
+        lo stream). Il nuovo eredita l'autore del sostituito (``attr.eredita``),
+        anche in catena e anche se arriva prima o dopo il legame."""
+        if modo not in MODI:
+            raise ValueError(f"modo non ammesso: {modo!r}")
+        v, n = str(vecchio_bet_id), str(nuovo_bet_id)
+        if not v or not n or v == n:
+            return None
+        with self._lock:
+            if self._sostituito_da.get((modo, n)) == v:
+                return self._voci[(modo, n)].conto if (modo, n) in self._voci else None
+            self._sostituito_da[(modo, n)] = v
+            self._successori.setdefault((modo, v), set()).add(n)
+            self.conti["legami"] += 1
+            cambiati = self._ricomponi_successori(modo, v, set())
+            voce = self._voci.get((modo, n))
+        for k in cambiati:
+            self._avvisa(k)
+        return voce.conto if voce is not None else None
+
+    def _attribuzione_nota(self, modo: str, bet_id: str) -> Optional[attr.Attribuzione]:
+        """L'attribuzione di un ordine del libro o di un ordine riassunto dal tetto."""
+        a = self._attribuzioni.get((modo, bet_id))
+        if a is not None:
+            return a
+        for per_bet in (r for (m, _mid), r in self._riassunti_bet.items() if m == modo):
+            rec = per_bet.get(bet_id)
+            if rec is not None:
+                return rec.attribuzione
+        return None
+
+    def _attribuzione_del_sostituito(self, modo: str, vecchio: str, o: OrdineDalConto,
+                                     regole: attr.RegoleAttribuzione,
+                                     visti: Set[str]) -> Optional[attr.Attribuzione]:
+        """L'attribuzione del sostituito ``vecchio``: quella nota; altrimenti
+        (dopo un riavvio il sostituito, annullato, puo' non tornare dal conto) i
+        suoi indizi riletti dalle righe, coi riferimenti del rimpiazzo che Betfair
+        gli lascia; altrimenti, risalendo la catena, quella del suo sostituito."""
+        if vecchio in visti:
+            return None
+        visti.add(vecchio)
+        nota = self._attribuzione_nota(modo, vecchio)
+        if nota is not None:
+            return nota
+        if modo == "live" and self._indizi.get(vecchio):
+            return attr.attribuisci(o, self._indizi[vecchio], regole)
+        prima = self._sostituito_da.get((modo, vecchio))
+        if prima is None:
+            return None
+        return self._attribuzione_del_sostituito(modo, prima, o, regole, visti)
+
+    def _ricomponi_successori(self, modo: str, bet_id: str,
+                              visti: Set[str]) -> List[Tuple[str, str]]:
+        """Riattribuisce gli ordini nati da replace di ``bet_id`` (in catena)."""
+        cambiati: List[Tuple[str, str]] = []
+        for n in sorted(self._successori.get((modo, bet_id), ())):
+            if n in visti:
+                continue
+            visti.add(n)
+            voce = self._voci.get((modo, n))
+            if voce is not None:
+                voce.conto = self._componi(modo, voce.ordine, voce.attore_dichiarato)
+                cambiati.append((modo, n))
+            cambiati += self._ricomponi_successori(modo, n, visti)
+        return cambiati
+
+    def _lega_dallo_stream(self, modo: str, o: OrdineDalConto) -> None:
+        """Prova IN PIU' (da verificare nell'ombra). Betfair porta sul rimpiazzo
+        di un replaceOrders lo STESSO customerOrderRef del sostituito: flumine
+        lo sa (``flumine/order/process.py``, "replaceOrder handling": l'ordine
+        trovato col ref ha un bet_id diverso e si cerca per bet_id). Allora due
+        ordini dello stesso mercato, selezione e lato con lo stesso ref non
+        vuoto, il piu' VECCHIO (bet_id minore) completo, si legano: il bet_id
+        maggiore sostituisce il minore. Vale in qualunque ordine arrivino."""
+        cor = (o.customer_order_ref or "").strip()
+        bid = str(o.bet_id)
+        if not cor or not bid.isdigit():
+            return
+        for b in sorted(self._per_mercato.get((modo, str(o.market_id)), ())):
+            altro = self._voci[(modo, b)].ordine
+            if (b == bid or not b.isdigit() or (altro.customer_order_ref or "").strip() != cor
+                    or int(altro.selection_id) != int(o.selection_id) or altro.lato != o.lato):
+                continue
+            vecchio, nuovo, ord_vecchio = (b, bid, altro) if int(b) < int(bid) else (bid, b, o)
+            if ord_vecchio.stato != "EXECUTION_COMPLETE" or (modo, nuovo) in self._sostituito_da:
+                continue
+            self._sostituito_da[(modo, nuovo)] = vecchio
+            self._successori.setdefault((modo, vecchio), set()).add(nuovo)
+            self.conti["legami_dallo_stream"] += 1
 
     def _pota_indizi(self) -> None:
         """Gli indizi di bet_id mai arrivati non crescono senza limite."""
@@ -407,6 +510,8 @@ class LibroConto:
                     logger.warning("[libro] %s %s: regressione rifiutata (%s): tenuto lo "
                                    "stato piu' avanzato", modo, o.bet_id, regr)
                     return
+            if voce is None or o.stato == "EXECUTION_COMPLETE":
+                self._lega_dallo_stream(modo, o)
             try:
                 conto = self._componi(modo, o, attore)
             except Exception:  # noqa: BLE001 - un ordine illeggibile non ferma il libro
@@ -417,8 +522,10 @@ class LibroConto:
                 self._quanti[modo] += 1
             self._voci[chiave] = _Voce(o, conto, attore)
             self._per_mercato.setdefault((modo, str(o.market_id)), set()).add(str(o.bet_id))
+            cambiati = [chiave] + self._ricomponi_successori(modo, str(o.bet_id), set())
             self._rispetta_tetto(modo)
-        self._avvisa(chiave)
+        for k in cambiati:
+            self._avvisa(k)
 
     def _rientro_da_riassunto(self, modo: str, o: OrdineDalConto) -> bool:
         """Un ordine gia' riassunto dal tetto rientra (seme dopo riconnessione,
@@ -463,6 +570,12 @@ class LibroConto:
             a = attr.attribuisci_dichiarato(attore, o, regole)
         else:
             a = attr.attribuisci(o, self._indizi.get(str(o.bet_id), ()), regole)
+        vecchio = self._sostituito_da.get((modo, str(o.bet_id)))
+        if vecchio is not None:
+            sostituito = self._attribuzione_del_sostituito(modo, vecchio, o, regole,
+                                                           {str(o.bet_id)})
+            if sostituito is not None:
+                a = attr.eredita(sostituito, vecchio, a)
         self._attribuzioni[(modo, str(o.bet_id))] = a
         return componi_ordine_conto(modo, o, a)
 
@@ -504,7 +617,7 @@ class LibroConto:
         v = self._voci[chiave]
         c = v.conto
         rec = _Riassunto(v.ordine, v.attore_dichiarato, tuple(self._indizi.get(chiave[1], ())),
-                         None, 0.0, 0.0)
+                         None, 0.0, 0.0, self._attribuzioni.get(chiave))
         self._riassunti_bet.setdefault((chiave[0], str(c.market_id)), {})[chiave[1]] = rec
         if c.abbinato <= 0 or c.prezzo_medio is None or not c.prezzo_medio > 1.0:
             return
@@ -539,6 +652,14 @@ class LibroConto:
             if ids is not None:
                 ids.discard(chiave[1])
 
+    def _slega(self, chiave: Tuple[str, str]) -> None:
+        """Toglie i legami di sostituzione di un ordine dimenticato col mercato."""
+        vecchio = self._sostituito_da.pop(chiave, None)
+        if vecchio is not None:
+            self._successori.get((chiave[0], vecchio), set()).discard(chiave[1])
+        for n in self._successori.pop(chiave, set()):
+            self._sostituito_da.pop((chiave[0], n), None)
+
     def dimentica_mercato(self, market_id: str, modo: Optional[Modo] = None) -> int:
         """Mercato chiuso e regolato: toglie i suoi ordini (di un modo o di
         entrambi), i riassunti, le mancanze e gli indizi."""
@@ -548,9 +669,11 @@ class LibroConto:
             for m in ((modo,) if modo else MODI):
                 for bid in list(self._per_mercato.pop((m, mid), set())):
                     self._togli((m, bid))
+                    self._slega((m, bid))
                     n += 1
                 self._riassunti.pop((m, mid), None)
-                self._riassunti_bet.pop((m, mid), None)
+                for bid in list(self._riassunti_bet.pop((m, mid), {})):
+                    self._slega((m, bid))
                 for k in [k for k in self._mancanze if k[0] == m and k[1] == mid]:
                     self._mancanze.pop(k, None)
             if modo is None:

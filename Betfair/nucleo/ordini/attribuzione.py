@@ -417,6 +417,93 @@ def indizi_da_riga_tennis(riga: Mapping[str, Any],
     return indizi_da_riga_coda(vista, regole, bet_id=bet_id)
 
 
+# ---------------------------------------------------------------------------
+# replaceOrders: l'ordine NUOVO eredita l'autore di quello SOSTITUITO (terza
+# verifica del coordinatore 09/10: parita' col ladder di oggi, dove un ordine
+# dell'utente spostato resta controllabile)
+# ---------------------------------------------------------------------------
+#: prefissi dei ref interni con cui il runner calcio (``live_order_worker._cust_ref``,
+#: ``awlq<id>``) e il runner tennis (``awtq<sid>``) scrivono gli specchi
+PREFISSO_REF_CALCIO = "awlq"
+
+
+def origine_della_riga_specchio(riga: Mapping[str, Any]) -> Optional[int]:
+    """L'id della richiesta di coda da cui DISCENDE l'ordine di una riga di
+    ``betfair_live_orders``: ``request_id`` o il ``client_order_ref``
+    ``awlq<id>`` (``live_trading_strategy._request_id_from_ref``). Un rimpiazzo
+    di flumine (``Trade.create_order_replacement``) eredita il ``context`` del
+    sostituito, quindi lo specchio lo scrive sotto lo STESSO ``awlq<id>``
+    della richiesta d'origine, anche dopo piu' replace."""
+    rid = riga.get("request_id")
+    if rid is not None:
+        try:
+            return int(rid)
+        except (TypeError, ValueError):
+            return None
+    ref = _testo(riga.get("client_order_ref"))
+    if ref.startswith(PREFISSO_REF_CALCIO) and ref[len(PREFISSO_REF_CALCIO):].isdigit():
+        return int(ref[len(PREFISSO_REF_CALCIO):])
+    return None
+
+
+def indizi_da_origine(riga_specchio: Mapping[str, Any], riga_coda: Mapping[str, Any],
+                      regole: Optional[RegoleAttribuzione] = None) -> Tuple[Indizio, ...]:
+    """Gli indizi della richiesta d'ORIGINE (``betfair_live_order_requests``, colonne
+    vere) per l'ordine di una riga dello specchio che ne discende: l'ordine
+    piazzato o un suo rimpiazzo dopo uno o piu' replace (calcio: la riga di
+    replace porta in ``result`` il bet_id VECCHIO, lo snapshot di
+    ``_do_replace`` e' preso prima del rimpiazzo asincrono di flumine; il legame
+    col nuovo e' lo specchio). La richiesta e' quella con ``id`` = origine (coda
+    DB) o ``client_ref`` = ``local<origine>`` (canale locale)."""
+    origine = origine_della_riga_specchio(riga_specchio)
+    if origine is None:
+        return ()
+    if str(riga_coda.get("id")) != str(origine) and \
+            _testo(riga_coda.get("client_ref")) != f"local{origine}":
+        return ()
+    return indizi_da_riga_coda(riga_coda, regole)
+
+
+def eredita(sostituito: Attribuzione, vecchio_bet_id: str, propria: Attribuzione) -> Attribuzione:
+    """L'attribuzione dell'ordine NUOVO di un replace: quella dell'ordine
+    SOSTITUITO (autore e provvisorieta', qualunque fossero). Fanno eccezione solo
+    le prove PROPRIE del nuovo che dicono un bot (una riga di tabella o di coda
+    col suo bet_id) o l'attore dichiarato dalla sorgente in prova: restano, e se
+    dicono un autore diverso il conflitto si scrive. Niente si inventa: un
+    sostituito provvisorio da' un nuovo provvisorio."""
+    if propria.fonte == "dichiarato":
+        return propria
+    if propria.fonte == "indizio" and propria.autore not in AUTORI_UTENTE \
+            and propria.autore != SCONOSCIUTO:
+        if propria.autore != sostituito.autore:
+            return Attribuzione(propria.autore, propria.motivo, propria.fonte,
+                                f"sostituisce {vecchio_bet_id} di {sostituito.autore}")
+        return propria
+    return Attribuzione(sostituito.autore, f"sostituisce:{vecchio_bet_id}", "indizio",
+                        sostituito.conflitto, provvisoria=sostituito.provvisoria)
+
+
+def legame_da_replace_tennis(riga_coda: Mapping[str, Any],
+                             riga_specchio: Mapping[str, Any]) -> Optional[Tuple[str, str]]:
+    """(bet_id sostituito, bet_id nuovo) da una riga di ``tennis_live_order_queue``
+    con ``payload.action = replace`` (``payload.bet_id`` = sostituito,
+    ``result.customer_order_ref`` = il ref del comando) e la riga di
+    ``tennis_live_orders`` del rimpiazzo, scritta sotto lo STESSO ref
+    (``tennis_live_order_worker._do_replace`` traccia il trade col ref del
+    replace). ``None`` se non e' un replace o i ref non coincidono."""
+    payload = riga_coda.get("payload") if isinstance(riga_coda.get("payload"), Mapping) else {}
+    if _testo(payload.get("action")).lower() != "replace":
+        return None
+    vecchio = _testo(payload.get("bet_id"))
+    ref = _testo(_risultato(riga_coda).get("customer_order_ref"))
+    nuovo = _testo(riga_specchio.get("bet_id"))
+    if not vecchio or not ref or not nuovo or nuovo == vecchio:
+        return None
+    if _testo(riga_specchio.get("client_order_ref")) != ref:
+        return None
+    return vecchio, nuovo
+
+
 def indizio_ack_desktop(bet_id: str) -> Indizio:
     """Il bet_id e' fra gli esiti dei comandi mandati DAL DESKTOP (ack del canale
     ``order`` o del comando con attore ``desktop``): evidenza positiva."""
