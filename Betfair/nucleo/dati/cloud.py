@@ -9,7 +9,9 @@ Scopo
     come oggi la catena backfill.
 
 Regole (piano T2, G par. 3 punto 4)
-    * si ritenta SOLO cio' che e' idempotente: letture, upsert, RPC di sola lettura;
+    * si ritenta SOLO cio' che e' idempotente: letture, RPC di sola lettura, upsert che arbitrano
+      sulla chiave naturale del registro (o su ``uid`` ignorando i duplicati: log con U-50);
+      un upsert senza ``on_conflict`` su una tabella di log e' un INSERT e NON si ritenta;
     * MAI un insert (log senza ``uid``: un ritento scrive due volte), MAI un patch o un delete
       (proposta prudente: in T2 il piano ritenta solo letture e upsert), MAI una RPC che
       scrive (registro: ``RPC_SCRIVENTI_ELENCO``) ne' una RPC sconosciuta;
@@ -110,7 +112,19 @@ def costruisci_lettura(client: Any, tabella: str, filtri: Mapping[str, Any]) -> 
     q = client.table(tabella).select(str(f.pop("select", "*")))
     ordine = f.pop("order", None)
     limite = f.pop("limit", None)
-    for chiave, valore in f.items():
+    q = applica_filtri(q, f)
+    for pezzo in (str(ordine).split(",") if ordine else ()):
+        colonna, _, verso = pezzo.strip().partition(".")
+        q = q.order(colonna, desc=(verso == "desc"))
+    if limite is not None:
+        q = q.limit(int(limite))
+    return q
+
+
+def applica_filtri(q: Any, filtri: Mapping[str, Any]) -> Any:
+    """Gli stessi filtri per letture, patch e delete: scalare -> ``eq``, lista/tupla/insieme
+    -> ``in``, None -> ``is null``, ``col__op`` -> l'operatore (gt/gte/lt/lte/neq/like/ilike)."""
+    for chiave, valore in filtri.items():
         colonna, _, op = chiave.partition("__")
         if op:
             q = getattr(q, op)(colonna, valore)
@@ -120,11 +134,6 @@ def costruisci_lettura(client: Any, tabella: str, filtri: Mapping[str, Any]) -> 
             q = q.in_(colonna, list(valore))
         else:
             q = q.eq(colonna, valore)
-    for pezzo in (str(ordine).split(",") if ordine else ()):
-        colonna, _, verso = pezzo.strip().partition(".")
-        q = q.order(colonna, desc=(verso == "desc"))
-    if limite is not None:
-        q = q.limit(int(limite))
     return q
 
 
@@ -162,6 +171,13 @@ class _Cache:
     def svuota(self) -> None:
         with self._lock:
             self._voci.clear()
+
+    def svuota_tabella(self, tabella: str) -> None:
+        """Toglie le letture in cache di UNA tabella (chiavi ``t:<tabella>:...``)."""
+        prefisso = f"t:{tabella}:"
+        with self._lock:
+            for chiave in [k for k in self._voci if k.startswith(prefisso)]:
+                del self._voci[chiave]
 
 
 class ClienteCloud:
@@ -241,8 +257,12 @@ class ClienteCloud:
     # ------------------------------------------------------------------ estensione: scrittura
     def scrivi(self, tabella: str, op: Operazione, righe: Any, *, on_conflict: Optional[str] = None,
                ignora_duplicati: bool = False, filtri: Optional[Mapping[str, Any]] = None) -> Sequence[Mapping[str, Any]]:
-        """Scrittura (estensione per il postino), SOLO su tabelle del registro. Ritentata SOLO
-        l'``upsert``; ``insert``, ``patch`` e ``delete`` hanno UN tentativo (l'errore risale identico)."""
+        """Scrittura (estensione per il postino), SOLO su tabelle del registro. Ritentato SOLO
+        l'``upsert`` idempotente (``upsert_ritentabile``); ``insert``, ``patch``, ``delete`` e gli
+        upsert senza la chiave naturale hanno UN tentativo (l'errore risale identico). Dopo la
+        scrittura le letture in cache della stessa tabella sono invalidate.
+        Nota: nei processi con ``DB_RESILIENZA_ACTION=1`` (solo action) il TRASPORTO di
+        ``db_client`` ritenta da se' anche PATCH/DELETE: li' il "un tentativo" di qui non vale."""
         if op not in ("upsert", "insert", "patch", "delete"):
             raise ValueError(f"operazione sconosciuta: {op!r}")
         if tabella not in self._registro.tabelle():
@@ -258,14 +278,26 @@ class ClienteCloud:
                 return t.upsert(righe, on_conflict=on_conflict or "", ignore_duplicates=ignora_duplicati)
             if op == "insert":
                 return t.insert(righe)
-            q = t.update(righe) if op == "patch" else t.delete()
-            for colonna, valore in (filtri or {}).items():
-                q = q.in_(colonna, list(valore)) if isinstance(valore, (list, tuple, set)) else q.eq(colonna, valore)
-            return q
+            return applica_filtri(t.update(righe) if op == "patch" else t.delete(), filtri or {})
 
+        ritenta = op == "upsert" and self.upsert_ritentabile(tabella, on_conflict, ignora_duplicati)
         self._conta("scritture")
-        risposta = self._esegui(costruisci, f"{op} {tabella}", op == "upsert")
+        try:
+            risposta = self._esegui(costruisci, f"{op} {tabella}", ritenta)
+        finally:
+            self._cache.svuota_tabella(tabella)       # anche su errore: l'esito puo' essere ambiguo
         return [dict(r) for r in (getattr(risposta, "data", None) or [])]
+
+    def upsert_ritentabile(self, tabella: str, on_conflict: Optional[str], ignora_duplicati: bool) -> bool:
+        """Un upsert e' idempotente SOLO se arbitra sulla chiave naturale del registro (allora
+        riscriverlo da' la stessa riga) o, per i log, su ``uid`` ignorando i duplicati (U-50).
+        Senza ``on_conflict`` su una tabella senza chiave e' un INSERT: mai ritentato."""
+        colonne = tuple(c.strip() for c in (on_conflict or "").split(",") if c.strip())
+        if not colonne:
+            return False
+        if colonne == ("uid",):
+            return ignora_duplicati
+        return colonne == self._registro.spec(tabella).chiave_naturale
 
     # ------------------------------------------------------------------ servizio
     def rpc_ritentabile(self, nome: str) -> bool:

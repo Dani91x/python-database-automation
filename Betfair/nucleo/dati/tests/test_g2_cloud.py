@@ -273,6 +273,44 @@ def test_upsert_ritentato_patch_e_delete_no(server):
         _cliente().scrivi("mike_control", "delete", None)
 
 
+@pytest.mark.parametrize("tabella,on_conflict,ignora,tentativi", [
+    ("mike_activity", None, False, 1),                 # log senza chiave: upsert = INSERT, mai ritentato
+    ("mike_activity", "", True, 1),
+    ("live_ladder", "event_id", False, 1),             # on_conflict diverso dalla chiave naturale
+    ("live_ladder", "market_id,event_id", False, 1),   # ordine diverso: non e' la chiave dichiarata
+    ("live_ladder", "event_id,market_id", False, 2),   # la chiave naturale del registro
+    ("mike_activity", "uid", False, 1),                # uid senza ignorare i duplicati: aggiornerebbe
+    ("mike_activity", "uid", True, 2),                 # log con uid (U-50): ON CONFLICT DO NOTHING
+])
+def test_upsert_ritentato_solo_sulla_chiave_naturale(server, tabella, on_conflict, ignora, tentativi):
+    server.copione[("POST", f"/{tabella}")] = [html_520, None]
+    try:
+        _cliente().scrivi(tabella, "upsert", [{"event_id": "1", "market_id": "1.2", "uid": "u"}],
+                          on_conflict=on_conflict, ignora_duplicati=ignora)
+    except APIError:
+        assert tentativi == 1
+    assert server.conta("POST", f"/{tabella}") == tentativi
+
+
+def test_filtri_di_patch_e_delete_e_cache_invalidata(server):
+    c = _cliente(orologio=lambda: 0.0)
+    c.scrivi("mike_control", "patch", {"status": "x"},
+             filtri={"id": 1, "updated_at__lt": "2026-10-09", "nota": None, "kind": frozenset({"a"})})
+    q = parse_qs(server.richieste[-1][3])
+    assert q["id"] == ["eq.1"] and q["updated_at"] == ["lt.2026-10-09"]
+    assert q["nota"] == ["is.null"] and q["kind"] == ["in.(a)"]
+    c.scrivi("mike_control", "delete", None, filtri={"id": (1, 2)})
+    assert parse_qs(server.richieste[-1][3])["id"] == ["in.(1,2)"]
+    c.leggi("mike_control", {"id": 1}, cache_s=60)
+    c.leggi("x", {}, cache_s=60)
+    c.leggi("mike_control", {"id": 1}, cache_s=60)
+    assert server.conta("GET", "/mike_control") == 1
+    c.scrivi("mike_control", "patch", {"status": "y"}, filtri={"id": 1})   # invalida mike_control
+    c.leggi("mike_control", {"id": 1}, cache_s=60)
+    c.leggi("x", {}, cache_s=60)
+    assert server.conta("GET", "/mike_control") == 2 and server.conta("GET", "/x") == 1
+
+
 def test_rpc_di_lettura_ritentate_scriventi_mai(server):
     server.copione[("POST", "/rpc/get_omega_ht_ft")] = [html_520]
     assert _cliente().rpc("get_omega_ht_ft", {"p_league_id": 39}) == server.rpc["get_omega_ht_ft"]

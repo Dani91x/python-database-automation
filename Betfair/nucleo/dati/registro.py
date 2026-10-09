@@ -32,7 +32,7 @@ Cosa NON fa
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Dict, FrozenSet, Iterable, List, Literal, Mapping, Optional, Tuple
 
 from .contratto import Natura, Regime, SpecTabella
@@ -64,6 +64,22 @@ RPC_SOLA_LETTURA_DICHIARATE: Mapping[str, str] = {
     "omega_eventi_chiusi_dall_utente": "migrations/omega_chiuso_dall_utente_2026-09-16.sql:104, solo SELECT",
 }
 
+#: nomi che il controllo DML delle migrazioni trova dopo INSERT/UPDATE/DELETE/TRUNCATE e che NON
+#: sono tabelle del cloud che ricevono righe: ogni eccezione ha il suo motivo
+ECCEZIONI_DML: Mapping[str, str] = {
+    "set": "parola SQL: 'ON CONFLICT ... DO UPDATE SET' (non una tabella)",
+    "nowait": "parola SQL: 'FOR UPDATE NOWAIT' (omega_models_v4.sql, omega_build_minute_transitions_step)",
+    "pg_temp": "tabelle temporanee di sessione pg_temp.* (spariscono a fine transazione)",
+    "tmp_fx": "tabella temporanea della costruzione una tantum (omega_models_v3.sql, CREATE TEMP TABLE)",
+    "prima": "parola di un commento dentro upsert_imported_trade (personal_tracking_import.sql)",
+    "senza": "parola di un commento dentro reset_personal_report (personal_tracking_rpc.sql)",
+    "sicurezza_bk": "schema PRIVATO di fotografia dei permessi (sicurezza_db_2026-09-24_BLOCCO_*): "
+                    "una tantum per il rollback, fuori da public",
+}
+
+#: bucket dello Storage di Supabase scritti o letti dal codice (non sono tabelle: file dei modelli)
+BUCKET_MODELLI = "ai-models-league-<league_id>"
+
 
 @dataclass(frozen=True)
 class VoceRegistro:
@@ -78,6 +94,7 @@ class VoceRegistro:
     scrittura_fuori_codice: Optional[str]  # chi la scrive fuori dal codice scansionato
     verifica: str                       # come si verifica che non manca nulla
     note: str = ""
+    schema_nel_repo: bool = True        # False: CREATE TABLE fuori dal repo, chiave NON verificabile
 
 
 @dataclass(frozen=True)
@@ -113,7 +130,8 @@ class Scansione:
     ``rpc``: RPC letterale -> {"file:riga"} dei chiamanti; ``rpc_dinamiche``: (file, nome) ->
     righe; ``rest``: (file, tabella) -> righe di POST/PATCH/DELETE REST diretti;
     ``dml_rpc``: RPC -> tabelle toccate dalla sua definizione SQL (chiusa sulle chiamate);
-    ``rpc_definite``: RPC con almeno una definizione nelle migrazioni."""
+    ``rpc_definite``: RPC con almeno una definizione nelle migrazioni. Comprende anche i
+    workflow ``.github/**/*.yml`` (REST ``/rest/v1/rpc/<nome>`` e ``/rest/v1/<tabella>``)."""
 
     scritture: Mapping[str, FrozenSet[str]]
     dinamici: Mapping[Tuple[str, str], FrozenSet[int]]
@@ -123,6 +141,11 @@ class Scansione:
     rest: Mapping[Tuple[str, str], FrozenSet[int]]
     dml_rpc: Mapping[str, FrozenSet[str]]
     rpc_definite: FrozenSet[str]
+    #: tabella -> {"file:funzione"|"file:cron"}: INSERT/UPDATE/DELETE/TRUNCATE dentro OGNI funzione
+    #: delle migrazioni e dentro i ``cron.schedule`` (anche quelle che nessun codice chiama)
+    dml_migrazioni: Mapping[str, FrozenSet[str]] = field(default_factory=dict)
+    #: (file, espressione del bucket) -> righe delle chiamate ``.storage.from_(...)``
+    storage: Mapping[Tuple[str, str], FrozenSet[int]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -329,6 +352,16 @@ SITI_PASSANTI: Tuple[SitoDinamico, ...] = (
     SitoDinamico("Betfair/stream/live_order_worker.py", "<dinamico:name>", (3735,), (),
                  "adattatore del comando locale: table(name) inoltra al client vero le tabelle dei "
                  "chiamanti, gia' scansionate per nome (:3725-3738)"),
+    SitoDinamico("Betfair/stream/scalper/genera_atlante.py", "<dinamico:rest>", (593, 969), (),
+                 "LettoreDB.get (:593, GET) e _Scrittore._req (:969): le scritture sono le chiamate _req "
+                 "con metodo e tabella letterali, registrate in SCRITTURE_REST"),
+    SitoDinamico("Betfair/stream/scalper/hazard_atlas_sync.py", "<dinamico:rest>", (57,), (),
+                 "_get: method='GET' (:57), sola lettura"),
+    SitoDinamico("valida_motore_poisson.py", "<dinamico:rest>", (48,), (), "_get: urlopen senza dati = GET"),
+    SitoDinamico("ventaglio_segnali.py", "<dinamico:rest>", (59,), (),
+                 "_get (:58-61) GET; le RPC passano da _rpc, gia' scansionate per nome"),
+    SitoDinamico(".github/workflows/hazard_atlas.yml", "<dinamico:rest>", (108,), (),
+                 "leggi(path): GET con ritentativi del passo di controllo (:103-118), nessuna scrittura"),
 )
 
 #: ``.rpc(<variabile>)``: nessuna scrive (verificato leggendo il chiamante)
@@ -355,6 +388,21 @@ SCRITTURE_REST: Tuple[SitoDinamico, ...] = (
                  ("hazard_atlas",), "POST (ripiego) e DELETE delle versioni vecchie"),
 )
 
+#: ``.storage.from_(...)``: file dei modelli ML nei bucket ``ai-models-league-<league_id>``
+#: (non tabelle; restano nel cloud, raccoglitori invariati). ``tabelle`` = il bucket, ``prova`` = operazione
+SITI_STORAGE: Tuple[SitoDinamico, ...] = (
+    SitoDinamico("Ai Engine/ai_engine/seriea_model_export.py", "<dinamico:bucket>", (679,), (BUCKET_MODELLI,),
+                 "SCRIVE: upload del modello (upsert) dopo create_bucket (:55-58); riga in ai_model_registry :689"),
+    SitoDinamico("cleanup_models.py", "<dinamico:name>", (53, 64), (BUCKET_MODELLI,),
+                 "CANCELLA: list + remove di tutti i file (script manuale di pulizia)"),
+    SitoDinamico("reset_ai_models.py", "<dinamico:bucket_name>", (63, 80), (BUCKET_MODELLI,),
+                 "CANCELLA: list + remove a blocchi di 100 (script manuale)"),
+    SitoDinamico("Ai Engine/ai_engine/predict_fixture.py", "<dinamico:bucket>", (83,), (BUCKET_MODELLI,),
+                 "legge: download del modello"),
+    SitoDinamico("Betfair/betfair_report_manager.py", "<dinamico:bucket>", (1335,), (BUCKET_MODELLI,),
+                 "legge: download del modello"),
+)
+
 
 # ---------------------------------------------------------------------------
 # 3. RPC che scrivono (definizione SQL chiusa sulle funzioni chiamate)
@@ -372,6 +420,8 @@ RPC_SCRIVENTI_ELENCO: Tuple[RpcScrivente, ...] = (
     _r("cancel_live_risk_rule", ("betfair_live_risk_rules",), "betfair_live_risk_rules.sql:152"),
     _r("delete_from_watchlist", ("personal_watchlist",), "personal_tracking_rpc.sql:890"),
     _r("delete_strategy", ("strategies",), "analytics_strategies_store.sql:60"),
+    _r("flush_analytics_prob_staging", ("analytics_prob_staging", "analytics_signals"),
+       "analytics_prob_staging.sql:22", "nessun chiamante nel codice di oggi (dormiente)"),
     _r("flush_analytics_snap_staging", ("analytics_signals", "analytics_snap_staging"),
        "analytics_snap_staging.sql:58"),
     _r("hazard_atlas_salva_versione", ("hazard_atlas",), "hazard_atlas_rpc_scrittura_2026-09-28.sql:52",
@@ -395,6 +445,9 @@ RPC_SCRIVENTI_ELENCO: Tuple[RpcScrivente, ...] = (
     _r("omega_update_params", ("omega_control", "omega_daily_goal"), "omega_daily_v2.sql:89"),
     _r("record_fixture_detail_checks", ("fixture_detail_checks",), "season_gaps_2026-09-25.sql:96",
        "NON idempotente (db_client.RPC_NON_IDEMPOTENTI)"),
+    _r("refresh_analytics_riepilogo", ("analytics_riepilogo_decisioni", "analytics_riepilogo_meta",
+                                       "analytics_riepilogo_segnali"), "analytics_rpc_veloci_2026-09-26.sql:196",
+       "chiamata ogni notte via curl da .github/workflows/predictions_results_backfill.yml:200"),
     _r("refresh_analytics_bets_range", ("analytics_bets", "book_odds_cache", "book_odds_cache_fonte"),
        "refresh_analytics_bets_range_v2_2026-09-24.sql:277",
        "delega a refresh_analytics_bets_range_diag (stesso file): book_odds_cache e "
@@ -465,6 +518,17 @@ D_RUNTIME = "runtime/persistenza via Archivio + postino"
 D_LOG = "chi scrive oggi, via Archivio (log) + postino; colonna uid (U-50)"
 
 
+#: tabelle il cui CREATE TABLE NON e' nel repo (00 par. 3.4: "usate e non definite"): la chiave naturale
+#: viene dagli ``on_conflict`` del codice dove ci sono, altrimenti e' vuota perche' NON VERIFICABILE
+#: (diverso dai log senza chiave, che hanno lo schema nel repo e davvero non ne hanno una)
+SENZA_SCHEMA_NEL_REPO: FrozenSet[str] = frozenset({
+    "ai_model_registry", "api_call_log", "api_coverage_by_season", "fixture_predictions", "injuries", "leads",
+    "match_events", "match_lineups", "match_odds", "match_player_stats", "match_team_stats", "matches",
+    "ml_post_calibration", "model_performance", "season_backfill_state", "standings", "top_assists",
+    "top_cards", "top_scorers",
+})
+
+
 def _v(nome: str, famiglia: str, natura: Natura, regime: Regime, proposta: Proposta,
        ritardo: float, chiave: Tuple[str, ...], *, domani: str, coalesce: bool = False,
        rev: Optional[str] = None, dipende: Tuple[str, ...] = (), origine: Origine = "inventario_89",
@@ -473,9 +537,12 @@ def _v(nome: str, famiglia: str, natura: Natura, regime: Regime, proposta: Propo
                        ritardo_max_s=ritardo, coalesce=coalesce, rev_colonna=rev,
                        dipende_da=dipende, scrittori_oggi=(), scrittore_domani=domani)
     return VoceRegistro(spec=spec, famiglia=famiglia, proposta=proposta, origine=origine,
-                        rpc_scriventi=(), scrittura_fuori_codice=fuori, verifica=verifica, note=note)
+                        rpc_scriventi=(), scrittura_fuori_codice=fuori, verifica=verifica, note=note,
+                        schema_nel_repo=nome not in SENZA_SCHEMA_NEL_REPO)
 
 
+_NOTTE = ("pg_cron omega_transitions_nightly alle 04:00 UTC -> omega_transitions_step/_publish "
+          "(omega_transitions_catchup_2026-09-25.sql)")
 _FOLLOW = ("live_follow",)
 _FOLLOW_T = ("tennis_live_follow",)
 _UA = "updated_at"
@@ -712,6 +779,42 @@ _VOCI: Tuple[VoceRegistro, ...] = (
        ("league_id", "bucket", "target", "score", "result"), origine="mondo_sql",
        fuori="pg_cron omega_transitions_nightly alle 04:00 UTC: nessuno scrittore nel codice",
        domani="invariato (pg_cron); letta da dati/cache_cloud.py per lega", verifica=V_CLOUD),
+    # --- EXTRA dalla revisione del 09/10 (D-1): scritte lato server o dai workflow
+    _v("analytics_riepilogo_segnali", "T16", "STA", "cloud", "BATCH", NON_APPLICABILE, (), origine="solo_rpc",
+       domani=D_INVARIATO, verifica=V_CLOUD, note="ricostruita per intero dalla RPC refresh_analytics_riepilogo "
+       "(predictions_results_backfill.yml:200, ogni notte): nessuna chiave, riepilogo aggregato"),
+    _v("analytics_riepilogo_decisioni", "T16", "STA", "cloud", "BATCH", NON_APPLICABILE, (), origine="solo_rpc",
+       domani=D_INVARIATO, verifica=V_CLOUD, note="come analytics_riepilogo_segnali"),
+    _v("analytics_riepilogo_meta", "T16", "STA", "cloud", "BATCH", NON_APPLICABILE, ("chiave",), origine="solo_rpc",
+       domani=D_INVARIATO, verifica=V_CLOUD),
+    _v("analytics_prob_staging", "T16", "STA", "cloud", "BATCH", NON_APPLICABILE, ("signal_uid",),
+       origine="solo_rpc", domani=D_INVARIATO, verifica=V_CLOUD,
+       fuori="dormiente: nessun codice del repo la riempie ne' chiama flush_analytics_prob_staging "
+       "(analytics_prob_staging.sql:11,22)"),
+    _v("omega_ht_ft_transitions_raw", "EXTRA", "STA", "cloud", "CLOUD", NON_APPLICABILE, ("league_id", "ht", "ft"),
+       origine="mondo_sql", fuori=_NOTTE, domani="invariato (pg_cron)", verifica=V_CLOUD),
+    _v("omega_minute_transitions_raw", "EXTRA", "STA", "cloud", "CLOUD", NON_APPLICABILE,
+       ("league_id", "bucket", "target", "score", "result"), origine="mondo_sql", fuori=_NOTTE,
+       domani="invariato (pg_cron)", verifica=V_CLOUD),
+    _v("omega_transitions_league_counts", "EXTRA", "STA", "cloud", "CLOUD", NON_APPLICABILE, ("league_id",),
+       rev=_UA, origine="mondo_sql", fuori=_NOTTE, domani="invariato (pg_cron)", verifica=V_CLOUD),
+    _v("omega_transitions_ledger", "EXTRA", "STA", "cloud", "CLOUD", NON_APPLICABILE, ("fixture_id",),
+       origine="mondo_sql", fuori=_NOTTE, domani="invariato (pg_cron)", verifica=V_CLOUD),
+    _v("omega_transitions_runs", "EXTRA", "ARC", "cloud", "CLOUD", NON_APPLICABILE, ("id",),
+       origine="mondo_sql", fuori=_NOTTE, domani="invariato (pg_cron)", verifica=V_CLOUD,
+       note="referto per giro del pg_cron"),
+    _v("omega_transitions_state", "EXTRA", "STA", "cloud", "CLOUD", NON_APPLICABILE, ("id",), rev=_UA,
+       origine="mondo_sql", fuori=_NOTTE, domani="invariato (pg_cron); sentinella di dati/cache_cloud.py",
+       verifica=V_CLOUD, note="singleton id=1: updated_at a ogni giro del pg_cron"),
+    _v("omega_minute_league_counts", "EXTRA", "STA", "cloud", "CLOUD", NON_APPLICABILE, ("league_id",),
+       origine="mondo_sql", fuori=_NOTTE + " e costruzione v3/v4 a mano (omega_models_v3.sql, v4.sql)",
+       domani="invariato (SQL)", verifica=V_CLOUD),
+    _v("omega_build_jobs", "EXTRA", "STA", "cloud", "CLOUD", NON_APPLICABILE, ("job",), rev=_UA,
+       origine="mondo_sql", fuori="costruzione a passi della tabella per minuto (omega_models_v3.sql:93, "
+       "omega_models_v4.sql:166), lanciata a mano", domani="invariato (SQL)", verifica=V_CLOUD),
+    _v("lanci_action", "EXTRA", "ARC", "cloud", "CLOUD", NON_APPLICABILE, ("giorno", "workflow_file"),
+       origine="mondo_sql", fuori="pg_cron orologio_daily/orologio_verifica_* (orologio_action_notturne_2026-10-09.sql"
+       ":208-355,525-533)", domani="invariato (pg_cron)", verifica=V_CLOUD),
 )
 
 
@@ -902,7 +1005,10 @@ def _controlla_tabelle(registro: RegistroTabelle, scansione: Scansione,
         elif set(dichiarati) != codice:
             avvisi.append(f"{t}: righe spostate (registro {sorted(set(dichiarati) - codice)[:3]}, "
                           f"codice {sorted(codice - set(dichiarati))[:3]})")
-        vive = codice or (set(v.rpc_scriventi) & rpc_chiamate)
+        dal_sql = t in scansione.dml_migrazioni and v.scrittura_fuori_codice is not None
+        if v.origine == "mondo_sql" and t not in scansione.dml_migrazioni:
+            avvisi.append(f"{t}: dichiarata scritta dal SQL ma nessun DML nelle migrazioni")
+        vive = codice or (set(v.rpc_scriventi) & rpc_chiamate) or dal_sql
         if not vive:
             if v.scrittura_fuori_codice:
                 avvisi.append(f"{t}: nessuno la scrive dal codice (dichiarato: {v.scrittura_fuori_codice})")
@@ -911,9 +1017,31 @@ def _controlla_tabelle(registro: RegistroTabelle, scansione: Scansione,
                               f"chiamata): dichiarare scrittura_fuori_codice o togliere la voce")
 
 
+def _controlla_migrazioni(registro: RegistroTabelle, scansione: Scansione, errori: List[str]) -> None:
+    """Ogni tabella con INSERT/UPDATE/DELETE/TRUNCATE in una funzione o in un ``cron.schedule``
+    delle migrazioni e' registrata o e' un'eccezione motivata (``ECCEZIONI_DML``)."""
+    registrate = set(registro.tabelle())
+    for t, dove in sorted(scansione.dml_migrazioni.items()):
+        if t in registrate and t in ECCEZIONI_DML:
+            errori.append(f"ECCEZIONE DML SU UNA TABELLA REGISTRATA: {t}")
+        elif t not in registrate and t not in ECCEZIONI_DML:
+            errori.append(f"TABELLA SCRITTA DA FUNZIONI SQL/PG_CRON E ASSENTE DAL REGISTRO: {t} ({sorted(dove)[:3]})")
+
+
+def _controlla_storage(scansione: Scansione, errori: List[str], avvisi: List[str]) -> None:
+    noti = _chiavi_siti(SITI_STORAGE)
+    for chiave, righe in sorted(scansione.storage.items()):
+        sito = noti.get(chiave)
+        if sito is None:
+            errori.append(f"STORAGE NON DICHIARATO: {chiave[0]}:{sorted(righe)} {chiave[1]} -> SITI_STORAGE")
+        elif set(righe) != set(sito.righe):
+            avvisi.append(f"righe spostate (storage) {chiave[0]}: registro {sorted(sito.righe)}, codice {sorted(righe)}")
+
+
 def verifica_copertura(registro: RegistroTabelle, scansione: Scansione,
                        sola_lettura_strumento: Iterable[str] = ()) -> EsitoCopertura:
-    """Confronta il registro con il codice di oggi. ERRORI: tabella scritta e non registrata,
+    """Confronta il registro con il codice di oggi (Python, frontend, workflow, migrazioni).
+    ERRORI: tabella scritta (dal codice o da una funzione SQL/pg_cron) e non registrata,
     file scrittore non registrato, nome dinamico o REST non risolto, RPC scrivente non
     registrata o che scrive tabelle non dichiarate, voce senza scrittori non dichiarata.
     AVVISI: righe spostate, scrittori spariti, voci senza scrittori ma dichiarate."""
@@ -923,6 +1051,8 @@ def verifica_copertura(registro: RegistroTabelle, scansione: Scansione,
     _controlla_rest(scansione, errori)
     _controlla_rpc(registro, scansione, sola_lettura_strumento, errori, avvisi)
     _controlla_tabelle(registro, scansione, errori, avvisi)
+    _controlla_migrazioni(registro, scansione, errori)
+    _controlla_storage(scansione, errori, avvisi)
     return EsitoCopertura(tuple(errori), tuple(avvisi))
 
 

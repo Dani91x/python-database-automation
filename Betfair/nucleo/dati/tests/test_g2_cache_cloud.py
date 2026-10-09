@@ -75,7 +75,7 @@ def costruisci_notte(seme: int, built_at: str) -> Dict[str, Any]:
                         if rnd.random() < 0.3:
                             minuti.append({"league_id": lega, "bucket": b, "score": s, "target": target,
                                            "result": r, "n": rnd.randint(1, 500)})
-    return {"ht": ht, "minuti": minuti, "built_at": built_at}
+    return {"ht": ht, "minuti": minuti, "built_at": built_at, "stato_at": built_at}
 
 
 TACTICAL_OK = {"lambda_home": 1.45, "lambda_away": 1.05}
@@ -158,6 +158,11 @@ class CloudFinto:
     def _select(self, tabella: str, q: Dict[str, str]) -> httpx.Response:
         if tabella == "omega_ht_ft_transitions":
             return httpx.Response(200, json=[{"built_at": self.notte["built_at"]}])
+        if tabella == "omega_transitions_state":            # updated_at a ogni giro del pg_cron
+            return httpx.Response(200, json=[{"updated_at": self.notte["stato_at"],
+                                              "published_at": "2026-09-25T10:00:00+00:00"}])
+        if tabella == "omega_build_jobs":
+            return httpx.Response(200, json=[{"job": "minute", "updated_at": "2026-09-20T00:00:00+00:00"}])
         righe = list(self.tabelle.get(tabella, []))
         for col, cond in q.items():
             if col in ("select", "limit", "order"):
@@ -313,13 +318,13 @@ def test_bot_identici_con_la_replica_al_posto_della_rpc(cloud, monkeypatch):
 def test_rilettura_dopo_la_ricostruzione_delle_04_utc_e_scadenze_di_oggi(cloud, monkeypatch):
     """Il caso del rischio di T7: prefetch alle 03:00, pg_cron alle 04:00, sorveglianza alle 05:00.
     Omega (6 h) rilegge alle 09:01 e deve vedere la notte NUOVA come con la RPC; Mike (mai) resta
-    sulla vecchia come oggi. Controllo negativo: una replica che non rilegge dopo built_at da'
-    righe diverse dalla RPC (e' la falsificazione «cache senza scadenza»)."""
+    sulla vecchia come oggi. Controllo negativo: una replica che non rilegge dopo la sentinella da'
+    righe diverse dalla RPC (e' la falsificazione "cache senza scadenza")."""
     adesso = [_istante("2026-10-10T03:00:00")]
     monkeypatch.setattr(omega_service, "time", SimpleNamespace(time=lambda: adesso[0]))
     r = _replica(ripiego_sincrono=False)
     ferma = _replica(ripiego_sincrono=False)                 # non chiama mai controlla_ricostruzione
-    assert r.controlla_ricostruzione() is False              # prima lettura di built_at: nessuna "ricostruzione"
+    assert r.controlla_ricostruzione() is False              # prima lettura della sentinella: registra soltanto
     for x in (r, ferma):
         x.prefetch_lega(39)
     cache = {"v": ({}, {}), "n": ({}, {})}
@@ -357,36 +362,137 @@ def test_rilettura_dopo_la_ricostruzione_delle_04_utc_e_scadenze_di_oggi(cloud, 
     assert _tabella(dossier.get_empirical(39, r, now_ts=adesso[0])) == mike_a["n"] == mike_a["v"]
 
 
+def test_ricostruzione_della_sola_tabella_per_minuto(cloud):
+    """D-5: il pg_cron incrementale puo' aggiornare SOLO la tabella per minuto (``need_min``): l'HT->FT
+    e il suo built_at restano uguali, cambia ``omega_transitions_state.updated_at``. La replica
+    rilegge lo stesso e i minuti tornano uguali alla RPC."""
+    r = _replica(ripiego_sincrono=False)
+    r.controlla_ricostruzione()
+    r.prefetch_lega(39)
+    vecchia = cloud.notte
+    nuova = costruisci_notte(7, vecchia["built_at"])
+    cloud.notte = {"ht": vecchia["ht"], "minuti": nuova["minuti"], "built_at": vecchia["built_at"],
+                   "stato_at": "2026-10-10T04:00:03+00:00"}
+    assert r.controlla_ricostruzione() is True
+    for target, bucket in (("ft", K.BUCKET_FT), ("ht", K.BUCKET_HT)):
+        for b in bucket:
+            assert r.minute_transitions(39, b, target) == omega_db.minute_transitions(39, b, target)
+    assert r.ht_ft_transitions(39) == omega_db.ht_ft_transitions(39)
+    assert vecchia["minuti"] != nuova["minuti"]
+
+
+class _SorgenteConGancio(K.SorgenteOmega):
+    """La sorgente vera con un gancio chiamato alla PRIMA lettura di una chiave scelta (per
+    simulare, senza sonni, un altro thread che lavora nel mezzo)."""
+
+    def __init__(self, cloud: Any, chiave: Tuple[Any, ...], gancio: Any) -> None:
+        super().__init__(cloud)
+        self._chiave, self._gancio = chiave, gancio
+
+    def minuti(self, league_id: Optional[int], bucket: int, target: str) -> Any:
+        righe = super().minuti(league_id, bucket, target)
+        if (league_id, bucket, target) == self._chiave and self._gancio is not None:
+            gancio, self._gancio = self._gancio, None
+            gancio()
+        return righe
+
+
+def test_gara_rilettura_e_prefetch_fonde_non_sostituisce(cloud):
+    """D-6 (a): mentre la rilettura dopo la ricostruzione legge, un altro giro prepara una lega
+    NUOVA: le sue chiavi restano (si fonde, non si sostituisce)."""
+    r: K.ReplicaEmpirica
+
+    def prepara_61() -> None:
+        r.prefetch_lega(61)
+
+    r = K.ReplicaEmpirica(_SorgenteConGancio(_cliente(), (39, 40, "ht"), None), ripiego_sincrono=False)
+    r.controlla_ricostruzione()
+    r.prefetch_lega(39)
+    r._sorgente._gancio = prepara_61                                  # type: ignore[attr-defined]
+    cloud.notte = costruisci_notte(5, "2026-10-12T04:00:00.170000+00:00")
+    assert r.controlla_ricostruzione() is True
+    n = cloud.conta()
+    assert r.ht_ft_transitions(61) == omega_db.ht_ft_transitions(61)
+    assert r.minute_transitions(61, 85, "ft") == omega_db.minute_transitions(61, 85, "ft")
+    assert cloud.conta() == n + 2                                       # solo le due chiamate della RPC
+    assert r.statistiche()["chiavi"] == 2 * K.CHIAVI_PER_LEGA
+
+
+def test_gara_ripiego_lento_non_scrive_la_notte_vecchia(cloud):
+    """D-6 (b): un ripiego iniziato prima del cambio di generazione e finito dopo NON entra in
+    memoria (righe della notte vecchia); la chiave resta quella riletta dopo la ricostruzione."""
+    r: K.ReplicaEmpirica
+
+    def ricostruisci() -> None:
+        cloud.notte = costruisci_notte(6, "2026-10-13T04:00:00.170000+00:00")
+        assert r.controlla_ricostruzione() is True
+
+    r = K.ReplicaEmpirica(_SorgenteConGancio(_cliente(), (39, 10, "ft"), None), ripiego_sincrono=True)
+    r.controlla_ricostruzione()
+    r.prefetch_lega(39)
+    r._sorgente._gancio = ricostruisci                                  # type: ignore[attr-defined]
+    with r._lock:                                                       # la chiave manca: si va al ripiego
+        del r._righe[("minuti", 39, 10, "ft")]
+    vecchie = r.minute_transitions(39, 10, "ft")                        # lette prima della ricostruzione
+    assert r.statistiche()["scartate"] >= 1
+    nuove = r.minute_transitions(39, 10, "ft")
+    assert nuove == omega_db.minute_transitions(39, 10, "ft")
+    assert vecchie != nuove
+
+
 def test_rete_che_rifiuta_tutto_la_replica_e_il_dossier_rispondono_uguali(cloud):
     r = _replica(ripiego_sincrono=True)
     d = K.DossierPrematch(_cliente(), replica=r, ripiego=mike_db)
     for lega in LEGHE:
         r.prefetch_lega(lega)
     d.precarica(EVENTI)
+    eventi_pieni = [ev for ev in EVENTI if (dossier.build_prematch(ev, d).get("lambda_home") is not None)]
     prima_ht = {lega: r.ht_ft_transitions(lega) for lega in LEGHE}
-    prima_dossier = {ev: dossier.build_prematch(ev, d) for ev in EVENTI}
+    prima_dossier = {ev: dossier.build_prematch(ev, d) for ev in eventi_pieni}
+    assert len(eventi_pieni) >= 5
     cloud.rifiuta_tutto = True
     n = cloud.conta()
     assert {lega: r.ht_ft_transitions(lega) for lega in LEGHE} == prima_ht
-    assert {ev: dossier.build_prematch(ev, d) for ev in EVENTI} == prima_dossier
+    assert {ev: dossier.build_prematch(ev, d) for ev in eventi_pieni} == prima_dossier
     assert cloud.conta() == n                                              # nessuna richiesta nel ciclo
 
 
 def test_mancato_prefetch_ripiego_o_none_e_errori_mai_in_cache(cloud):
+    adesso = [0.0]
     cloud.errore_minuti.add((45, "ft"))
-    r = _replica(ripiego_sincrono=False)
+    r = _replica(ripiego_sincrono=False, orologio=lambda: adesso[0])
     esito = r.prefetch_lega(39)
     assert esito.errori == 1
     assert r.minute_transitions(39, 45, "ft") is None                     # errore: non in cache, None come oggi
     assert r.ht_ft_transitions(999) is None                               # lega mai preparata
-    assert r._coda.qsize() == 1                                           # ... e il prefetch e' chiesto
-    cloud.errore_minuti.clear()
+    assert r._coda.qsize() == 2                                           # ... e il prefetch e' chiesto per entrambe
     con_ripiego = _replica(ripiego_sincrono=True)
     assert con_ripiego.ht_ft_transitions(999) == omega_db.ht_ft_transitions(999)
     assert con_ripiego.statistiche()["ripieghi"] == 1
     n = cloud.conta()
     con_ripiego.ht_ft_transitions(999)                                    # ora e' in memoria
     assert cloud.conta() == n
+
+
+def test_chiave_mancante_di_una_lega_nota_si_riprefetcha(cloud):
+    """D-4: con ripiego spento una chiave fallita al prefetch di una lega gia' nota NON resta None
+    per sempre: il mancato la richiede (al piu' ogni RITARDO_RIPREFETCH_S) e il giro la rilegge."""
+    adesso = [0.0]
+    cloud.errore_minuti.add((45, "ft"))
+    r = _replica(ripiego_sincrono=False, orologio=lambda: adesso[0])
+    r.prefetch_lega(39)
+    assert r.minute_transitions(39, 45, "ft") is None
+    assert r.minute_transitions(39, 45, "ft") is None                     # entro il ritardo: nessuna nuova richiesta
+    assert r._coda.qsize() == 1
+    assert r.drena_coda() == 1                                            # errore ancora presente: resta fuori
+    assert r.minute_transitions(39, 45, "ft") is None and r._coda.qsize() == 0
+    cloud.errore_minuti.clear()
+    adesso[0] += K.RITARDO_RIPREFETCH_S
+    assert r.richiedi_incomplete() == 1                                   # il giro trova la lega incompleta
+    n = cloud.conta()
+    assert r.drena_coda() == 1
+    assert cloud.conta() == n + 1                                          # solo la chiave che mancava
+    assert r.minute_transitions(39, 45, "ft") == omega_db.minute_transitions(39, 45, "ft")
 
 
 def test_thread_di_prefetch_e_sorveglianza_avvia_e_ferma(cloud):
@@ -397,13 +503,13 @@ def test_thread_di_prefetch_e_sorveglianza_avvia_e_ferma(cloud):
     try:
         assert r.vivo()
         fine = time.monotonic() + 10
-        while r.statistiche()["chiavi"] < 2 * 28 and time.monotonic() < fine:
+        while r.statistiche()["chiavi"] < 2 * K.CHIAVI_PER_LEGA and time.monotonic() < fine:
             time.sleep(0.02)
-        assert r.statistiche()["chiavi"] == 2 * 28
+        assert r.statistiche()["chiavi"] == 2 * K.CHIAVI_PER_LEGA
         cloud.notte = costruisci_notte(3, "2026-10-11T04:00:00.170000+00:00")
         while r.statistiche()["ricostruzioni"] < 1 and time.monotonic() < fine:
             time.sleep(0.02)
-        assert r.statistiche()["built_at"] == "2026-10-11T04:00:00.170000+00:00"
+        assert "2026-10-11T04:00:00.170000+00:00" in r.statistiche()["sentinella"]
     finally:
         r.ferma()
     assert not r.vivo()
@@ -433,15 +539,15 @@ def test_lambdas_da_riga_uguale_a_get_fixture_prematch_lambdas(cloud, riga):
 
 
 def test_dossier_uguale_a_mike_db_per_ogni_evento(cloud):
-    d = K.DossierPrematch(_cliente(), ripiego=None)
-    assert d.precarica(EVENTI) == len(EVENTI)
+    d = K.DossierPrematch(_cliente(), ripiego=mike_db)
+    pronti = d.precarica(EVENTI)
+    assert pronti == sum(mike_db.fixture_id_for_event(ev) is not None for ev in EVENTI)
     n = cloud.conta()
     for ev in EVENTI:
         fid = mike_db.fixture_id_for_event(ev)
         assert d.fixture_id_for_event(ev) == fid, ev
         assert d.fixture_lambdas(fid) == mike_db.fixture_lambdas(fid), ev
         assert d.fixture_analysis(fid) == mike_db.fixture_analysis(fid), ev
-    assert d.statistiche()["ripieghi"] == 0
     assert d.fixture_id_for_event("ev11") == mike_db.fixture_id_for_event("ev11") == 103
     n_vecchio = cloud.conta() - n
     for ev in EVENTI:                                                     # le chiavi del contratto T7
@@ -455,9 +561,53 @@ def test_dossier_uguale_a_mike_db_per_ogni_evento(cloud):
     assert dossier.build_prematch("ev2", d)["p_under35_fonte"] == "raw"
     assert n_vecchio >= 2 * len(EVENTI)                                   # oggi: >= 2 letture a evento
     assert d.statistiche()["letture_rete"] == 3                           # domani: 3 letture per tutti
+    # i negativi (evento senza fixture, fixture senza previsione o senza lambda) NON sono in memoria
+    assert set(d._ponte) == {ev for ev in EVENTI if mike_db.fixture_id_for_event(ev) is not None}
+    assert all(K.lambdas_da_riga(r)[0] is not None for _, r in d._fixture.values())
+    assert 104 not in d._fixture and 105 not in d._fixture
 
 
-def test_dossier_errori_mai_in_memoria_e_scadenza_oraria(cloud):
+def test_dossier_la_fixture_che_arriva_dopo_accende_il_modello(cloud):
+    """D-2 (CERT 12/09): una fixture o una previsione che arriva DOPO il precarica deve accendere il
+    modello al primo ritento di Mike, come oggi; nessun negativo in memoria per un'ora."""
+    adesso = [1000.0]
+    d = K.DossierPrematch(_cliente(), ripiego=mike_db, orologio=lambda: adesso[0])
+    d.precarica(EVENTI + ("ev_tardo",))
+    assert dossier.build_prematch("ev5", d)["lambda_home"] is None           # 105: previsione assente
+    assert d.fixture_id_for_event("ev_tardo") is None                     # evento non ancora seguito
+    cloud.tabelle["fixture_predictions"].append({**FIXTURE[101], "fixture_id": 105})
+    cloud.tabelle["live_follow"].append({"event_id": "ev_tardo", "fixture_id": 101, "status": "PENDING"})
+    adesso[0] += 1.0                                                      # un secondo dopo, nessun precarica
+    for ev in ("ev5", "ev_tardo"):
+        nuovo = dossier.build_prematch(ev, d)
+        assert nuovo == dossier.build_prematch(ev, mike_db)
+        assert nuovo["lambda_home"] == TACTICAL_OK["lambda_home"]
+
+
+def test_dossier_scadenza_uguale_al_ritento_di_mike():
+    sorgente = (stream_db.__file__.replace("stream/db.py", "mike/service.py"))
+    with open(sorgente, encoding="utf-8") as f:
+        testo = f.read()
+    import re
+    m = re.search(r"^_DOSSIER_RETRY_SEC = ([0-9.]+)", testo, re.M)
+    assert m is not None
+    assert K.SCADENZA_DOSSIER_S == float(m.group(1)) == 300.0
+
+
+def test_dossier_errore_su_live_follow_nessun_evento_in_memoria(cloud):
+    """Se ``live_follow`` non si legge, la risposta di oggi potrebbe venire da li' (ev11: 103 in
+    ``live_follow``, 106 in ``omega_events``): niente in memoria, tutto al ripiego."""
+    cloud.errori[("GET", "/live_follow")] = lambda _r: httpx.Response(503, json={
+        "code": "PGRST002", "details": None, "hint": None, "message": "schema cache"})
+    d = K.DossierPrematch(_cliente(), ripiego=mike_db)
+    assert d.precarica(EVENTI) == 0
+    del cloud.errori[("GET", "/live_follow")]
+    for ev in EVENTI:
+        assert d.fixture_id_for_event(ev) == mike_db.fixture_id_for_event(ev), ev
+    assert d.fixture_id_for_event("ev11") == 103
+
+
+def test_dossier_errori_mai_in_memoria_e_scadenza(cloud):
     cloud.errori[("GET", "/omega_events")] = lambda _r: httpx.Response(503, json={
         "code": "PGRST002", "details": None, "hint": None, "message": "schema cache"})
     adesso = [1000.0]
@@ -470,7 +620,10 @@ def test_dossier_errori_mai_in_memoria_e_scadenza_oraria(cloud):
     for ev in EVENTI:
         assert d.fixture_id_for_event(ev) == mike_db.fixture_id_for_event(ev), ev
     assert d.statistiche()["ripieghi"] >= 1
-    adesso[0] += K.SCADENZA_DOSSIER_S                                    # un'ora dopo: scaduto
+    adesso[0] += K.SCADENZA_DOSSIER_S - 1.0                              # ancora valido
     prima = d.statistiche()["ripieghi"]
+    assert d.fixture_id_for_event("ev1") == 101
+    assert d.statistiche()["ripieghi"] == prima
+    adesso[0] += 1.0                                                      # scaduto: ripiego
     assert d.fixture_id_for_event("ev1") == 101
     assert d.statistiche()["ripieghi"] == prima + 1

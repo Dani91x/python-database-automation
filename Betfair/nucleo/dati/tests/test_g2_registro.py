@@ -36,7 +36,13 @@ RX_REST = re.compile(r'_req\(\s*"(POST|PATCH|DELETE|PUT)"\s*,\s*f?"([A-Za-z_][A-
 RX_FUNZ = re.compile(r"create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?\"?([a-z_0-9]+)\"?", re.I)
 RX_CORPO = re.compile(r"\bas\s+(\$[a-z_]*\$)", re.I)
 RX_TAB = re.compile(r"create\s+(?:unlogged\s+)?table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?\"?([a-z_0-9]+)\"?", re.I)
-RX_DML = re.compile(r"\b(?:insert\s+into|update|delete\s+from)\s+(?:only\s+)?(?:public\.)?\"?([a-z_][a-z0-9_]*)", re.I)
+RX_DML = re.compile(r"\b(?:insert\s+into|update|delete\s+from|truncate(?:\s+table)?)\s+(?:only\s+)?(?:public\.)?"
+                    r"\"?([a-z_][a-z0-9_]*)", re.I)
+RX_CRON = re.compile(r"cron\.schedule\s*\((.*?)\)\s*;", re.I | re.S)
+RX_YML_RPC = re.compile(r"/rest/v1/rpc/([a-z_][a-z0-9_]*)")
+RX_YML_TAB = re.compile(r"/rest/v1/([a-z_][a-z0-9_]*)")
+RX_YML_DIN = re.compile(r"/rest/v1/[\"']\s*\+|/rest/v1/\$\{?[A-Za-z_]")
+RX_YML_SCRIVE = re.compile(r"-X\s+(POST|PATCH|DELETE|PUT)\b|method\s*=\s*[\"'](POST|PATCH|DELETE|PUT)", re.I)
 RX_CHIAMATA = re.compile(r"\b(?:public\.)?([a-z_][a-z0-9_]*)\s*\(", re.I)
 
 
@@ -84,22 +90,52 @@ def _chiamate_codice() -> List[tuple]:
                     out.append((rel, i, "rest_scrive", m.group(2), m.group(1), cat, "py"))
         elif rel.startswith(("frontend/src/", "desktop/")):
             s03.analizza_ts(rel, testo, cat, out)
+    out.extend(_chiamate_workflow(c))
     return out
 
 
-def _definizioni_sql() -> Tuple[Dict[str, List[str]], Set[str]]:
+def _chiamate_workflow(c: ModuleType) -> List[tuple]:
+    """I workflow ``.github/**/*.yml``: RPC e tabelle via REST (curl, urllib); una tabella e'
+    scritta se entro 3 righe c'e' ``-X POST|PATCH|DELETE|PUT`` o ``method="POST"...``."""
+    out: List[tuple] = []
+    for rel in c.file_tracciati():
+        if not (rel.startswith(".github/") and rel.endswith((".yml", ".yaml"))):
+            continue
+        righe = (c.leggi_testo(rel) or "").splitlines()
+        for i, riga in enumerate(righe, 1):
+            for m in RX_YML_RPC.finditer(riga):
+                out.append((rel, i, "rpc", m.group(1), "", "workflow", "yml"))
+            if RX_YML_DIN.search(riga):
+                out.append((rel, i, "table", "<dinamico:rest>", "?", "workflow", "yml"))
+            intorno = "\n".join(righe[max(0, i - 4):i + 3])
+            for m in RX_YML_TAB.finditer(riga):
+                if m.group(1) != "rpc" and RX_YML_SCRIVE.search(intorno):
+                    out.append((rel, i, "rest_scrive", m.group(1), "POST", "workflow", "yml"))
+    return out
+
+
+def _definizioni_sql() -> Tuple[Dict[str, List[str]], Set[str], Dict[str, Set[str]]]:
+    """(corpi delle funzioni per nome, tabelle create, DML di OGNI funzione e di ogni cron.schedule)."""
     corpi: Dict[str, List[str]] = {}
     tabelle: Set[str] = set()
+    dml: Dict[str, Set[str]] = {}
     for p in sorted(list((RADICE / "migrations").glob("*.sql")) + list((RADICE / "sql").glob("*.sql"))):
         t = p.read_text(encoding="utf-8", errors="replace")
+        rel = p.relative_to(RADICE).as_posix()
         tabelle |= {m.group(1).lower() for m in RX_TAB.finditer(t)}
         for m in RX_FUNZ.finditer(t):
             a = RX_CORPO.search(t, m.end())
             if not a:
                 continue
             b = t.find(a.group(1), a.end())
-            corpi.setdefault(m.group(1).lower(), []).append(t[a.end():b if b > 0 else len(t)])
-    return corpi, tabelle
+            corpo = t[a.end():b if b > 0 else len(t)]
+            corpi.setdefault(m.group(1).lower(), []).append(corpo)
+            for d in RX_DML.finditer(corpo):
+                _aggiungi(dml, d.group(1).lower(), f"{rel}:{m.group(1).lower()}")
+        for c in RX_CRON.finditer(t):
+            for d in RX_DML.finditer(c.group(1)):
+                _aggiungi(dml, d.group(1).lower(), f"{rel}:cron")
+    return corpi, tabelle, dml
 
 
 def _chiusura_dml(nome: str, corpi: Dict[str, List[str]], tabelle: Set[str], visti: Set[str]) -> Set[str]:
@@ -130,6 +166,7 @@ def scansione_di_oggi() -> R.Scansione:
     rpc: Dict[str, Set[str]] = {}
     rpc_din: Dict[Tuple[str, str], Set[int]] = {}
     rest: Dict[Tuple[str, str], Set[int]] = {}
+    storage: Dict[Tuple[str, str], Set[int]] = {}
     for rel, riga, tipo, nome, op, _cat, _ling in _chiamate_codice():
         if tipo == "table":
             ops = set(op.split(","))
@@ -145,19 +182,24 @@ def scansione_di_oggi() -> R.Scansione:
                 _aggiungi(rpc, nome, f"{rel}:{riga}")
             else:
                 _aggiungi(rpc_din, (rel, nome), riga)
+        elif tipo == "storage":
+            _aggiungi(storage, (rel, nome), riga)
+        elif tipo == "rest_dinamico":
+            _aggiungi(indeterminati, (rel, "<dinamico:rest>"), riga)
         elif tipo == "rest_scrive":
             if nome.startswith("rpc/"):
                 _aggiungi(rpc, nome[4:], f"{rel}:{riga}")
             else:
                 _aggiungi(rest, (rel, nome), riga)
-    corpi, tabelle_sql = _definizioni_sql()
+    corpi, tabelle_sql, dml_migrazioni = _definizioni_sql()
     universo = tabelle_sql | set(scritture) | set(R.REGISTRO.tabelle())
     nomi_rpc = set(rpc) | set(R.REGISTRO.rpc_scriventi())
     dml = {n: frozenset(_chiusura_dml(n, corpi, universo, set())) for n in nomi_rpc}
     congela = lambda d: {k: frozenset(v) for k, v in d.items()}  # noqa: E731
     return R.Scansione(scritture=congela(scritture), dinamici=congela(dinamici),
                        indeterminati=congela(indeterminati), rpc=congela(rpc), rpc_dinamiche=congela(rpc_din),
-                       rest=congela(rest), dml_rpc=dml, rpc_definite=frozenset(corpi))
+                       rest=congela(rest), dml_rpc=dml, rpc_definite=frozenset(corpi),
+                       dml_migrazioni=congela(dml_migrazioni), storage=congela(storage))
 
 
 def _sola_lettura_strumento() -> FrozenSet[str]:
@@ -189,11 +231,16 @@ def test_le_89_dell_inventario_e_le_6_da_rpc_sono_registrate():
     assert extra == {"book_odds_cache", "book_odds_cache_fonte", "hazard_atlas", "hazard_atlas_leghe",
                      "live_market_snapshots", "live_score_timeline", "match_lineups", "match_player_stats",
                      "monitor_metrics", "omega_ht_ft_transitions", "omega_minute_transitions",
-                     "tennis_replay_punteggio", "tennis_replay_snapshots"}
+                     "tennis_replay_punteggio", "tennis_replay_snapshots",
+                     # revisione del 09/10 (D-1): RPC dei workflow e funzioni SQL / pg_cron
+                     "analytics_riepilogo_segnali", "analytics_riepilogo_decisioni", "analytics_riepilogo_meta",
+                     "analytics_prob_staging", "omega_ht_ft_transitions_raw", "omega_minute_transitions_raw",
+                     "omega_transitions_league_counts", "omega_transitions_ledger", "omega_transitions_runs",
+                     "omega_transitions_state", "omega_minute_league_counts", "omega_build_jobs", "lanci_action"}
 
 
 def test_una_voce_per_tabella_e_spec_del_contratto():
-    assert len(R.REGISTRO.tabelle()) == len(set(R.REGISTRO.tabelle())) == 108
+    assert len(R.REGISTRO.tabelle()) == len(set(R.REGISTRO.tabelle())) == 121
     for t in R.REGISTRO.tabelle():
         s = R.REGISTRO.spec(t)
         assert isinstance(s, SpecTabella) and s.nome == t
@@ -218,7 +265,8 @@ def test_il_registro_copre_il_codice_di_oggi():
     assert esito.errori == (), "\n".join(esito.errori)
     # le voci senza scrittori nel codice sono SOLO quelle dichiarate (segnalate, non errore)
     senza = sorted(a.split(":")[0] for a in esito.avvisi if "nessuno la scrive dal codice" in a)
-    assert senza == ["bet_features", "omega_ht_ft_transitions", "omega_minute_transitions"]
+    # (le tabelle del pg_cron contano come scritte: il DML delle loro funzioni e' nelle migrazioni)
+    assert senza == ["bet_features"]
 
 
 def test_scrittori_di_oggi_hanno_file_e_riga_veri():
@@ -405,3 +453,191 @@ def test_falsifica_scrittore_sparito_e_avviso():
     assert any(a.startswith("mike_activity: scrittore registrato che non scrive piu'") for a in esito.avvisi)
     # e senza alcuno scrittore e senza dichiarazione la voce diventa un errore
     assert any(e.startswith("VOCE SENZA SCRITTORI NON DICHIARATA: mike_activity") for e in esito.errori)
+
+
+# ---------------------------------------------------------------------------
+# 5. Revisione del 09/10 (D-1, D-10): workflow, funzioni SQL e pg_cron, Storage, golden
+# ---------------------------------------------------------------------------
+def test_workflow_e_rpc_notturna_dei_riepiloghi_nella_scansione():
+    sc = scansione_di_oggi()
+    assert any(c.startswith(".github/workflows/predictions_results_backfill.yml:")
+               for c in sc.rpc["refresh_analytics_riepilogo"])
+    assert sc.dml_rpc["refresh_analytics_riepilogo"] == {"analytics_riepilogo_segnali", "analytics_riepilogo_decisioni",
+                                                         "analytics_riepilogo_meta"}
+    for t in ("analytics_riepilogo_segnali", "analytics_riepilogo_decisioni", "analytics_riepilogo_meta"):
+        assert "rpc:refresh_analytics_riepilogo" in R.REGISTRO.spec(t).scrittori_oggi
+
+
+def test_falsifica_rpc_dei_workflow_dichiarata_di_sola_lettura(monkeypatch):
+    """La mutazione del revisore: refresh_analytics_riepilogo dichiarata di sola lettura -> rosso."""
+    monkeypatch.setattr(R, "RPC_SOLA_LETTURA_DICHIARATE",
+                        {**R.RPC_SOLA_LETTURA_DICHIARATE, "refresh_analytics_riepilogo": "mutazione"})
+    esito = _verifica(R.REGISTRO.senza(rpc=("refresh_analytics_riepilogo",)))
+    assert any(e.startswith("RPC DI LETTURA CHE SCRIVE: refresh_analytics_riepilogo") for e in esito.errori)
+
+
+@pytest.mark.parametrize("tabella", ["omega_transitions_ledger", "omega_ht_ft_transitions_raw", "lanci_action",
+                                     "omega_build_jobs", "analytics_prob_staging"])
+def test_falsifica_tabella_scritta_da_funzioni_sql_tolta(tabella):
+    esito = _verifica(R.REGISTRO.senza(tabella))
+    assert any(e.startswith("TABELLA SCRITTA DA FUNZIONI SQL/PG_CRON E ASSENTE DAL REGISTRO: " + tabella)
+               for e in esito.errori), esito.errori
+
+
+def test_eccezioni_dml_tutte_usate_e_nessuna_registrata():
+    sc = scansione_di_oggi()
+    assert set(R.ECCEZIONI_DML) <= set(sc.dml_migrazioni), set(R.ECCEZIONI_DML) - set(sc.dml_migrazioni)
+    assert not set(R.ECCEZIONI_DML) & set(R.REGISTRO.tabelle())
+    finta = replace(sc, dml_migrazioni={**sc.dml_migrazioni, "tabella_del_cron": frozenset({"x.sql:cron"})})
+    assert any("tabella_del_cron" in e for e in _verifica(R.REGISTRO, finta).errori)
+
+
+def test_storage_dichiarato_e_falsificato():
+    sc = scansione_di_oggi()
+    assert {(s.file, s.nome) for s in R.SITI_STORAGE} == set(sc.storage)
+    finta = replace(sc, storage={**sc.storage, ("Betfair/nuovo.py", "<dinamico:b>"): frozenset({3})})
+    assert any(e.startswith("STORAGE NON DICHIARATO: Betfair/nuovo.py") for e in _verifica(R.REGISTRO, finta).errori)
+
+
+def _blocchi_create_table() -> Dict[str, List[str]]:
+    out: Dict[str, List[str]] = {}
+    for p in sorted((RADICE / "migrations").glob("*.sql")):
+        t = p.read_text(encoding="utf-8", errors="replace")
+        for m in RX_TAB.finditer(t):
+            i, prof = t.find("(", m.end() - 1), 0
+            j = i
+            while j < len(t):
+                prof += {"(": 1, ")": -1}.get(t[j], 0)
+                j += 1
+                if prof == 0:
+                    break
+            out.setdefault(m.group(1).lower(), []).append(t[i:j])
+    return out
+
+
+def _ha_updated_at(tabella: str, blocchi: Dict[str, List[str]]) -> bool:
+    if any(re.search(r"^\s*updated_at\s", b, re.I | re.M) for b in blocchi.get(tabella, [])):
+        return True
+    rx = re.compile(rf"alter\s+table\s+(?:if\s+exists\s+)?(?:public\.)?{tabella}\s+add\s+column\s+"
+                    rf"(?:if\s+not\s+exists\s+)?updated_at\b", re.I)
+    return any(rx.search(p.read_text(encoding="utf-8", errors="replace"))
+               for p in (RADICE / "migrations").glob("*.sql"))
+
+
+def _chiavi_candidate(tabella: str, blocchi: Dict[str, List[str]]) -> Set[FrozenSet[str]]:
+    out: Set[FrozenSet[str]] = set()
+    for b in blocchi.get(tabella, []):
+        for riga in b.splitlines():
+            r = riga.split("--")[0]
+            m = re.match(r"\s*\(?\s*([a-z_][a-z0-9_]*)\s+[a-z]", r, re.I)
+            if m and re.search(r"\b(primary\s+key|unique)\b(?!\s*\()", r, re.I):
+                out.add(frozenset({m.group(1).lower()}))
+            for g in re.finditer(r"\b(?:primary\s+key|unique)\s*\(([^)]*)\)", r, re.I):
+                out.add(frozenset(x.strip().lower() for x in g.group(1).split(",")))
+    rx = re.compile(rf"create\s+unique\s+index[^;]*?\bon\s+(?:public\.)?{tabella}\s*(?:using\s+\w+\s*)?"
+                    rf"\(([a-z0-9_,\s]+)\)", re.I | re.S)
+    for p in (RADICE / "migrations").glob("*.sql"):
+        for g in rx.finditer(p.read_text(encoding="utf-8", errors="replace")):
+            out.add(frozenset(x.strip().lower() for x in g.group(1).split(",")))
+    return out
+
+
+def test_schema_nel_repo_dichiarato_come_nelle_migrazioni():
+    _, tabelle_sql, _ = _definizioni_sql()
+    viste = {"bet_features"}
+    senza = {t for t in R.REGISTRO.tabelle() if t not in tabelle_sql and t not in viste}
+    assert senza == set(R.SENZA_SCHEMA_NEL_REPO)
+    for t in R.REGISTRO.tabelle():
+        assert R.REGISTRO.voce(t).schema_nel_repo == (t not in senza), t
+
+
+def test_golden_rev_colonna_dove_la_colonna_esiste():
+    blocchi = _blocchi_create_table()
+    for v in R.REGISTRO.voci():
+        if not v.schema_nel_repo or v.spec.nome == "bet_features":
+            assert v.spec.rev_colonna is None, v.spec.nome
+            continue
+        atteso = "updated_at" if _ha_updated_at(v.spec.nome, blocchi) else None
+        assert v.spec.rev_colonna == atteso, (v.spec.nome, v.spec.rev_colonna, atteso)
+
+
+#: G par. 4.3 (proposta U-86), trascritta a mano famiglia per famiglia: (regime, ritardo s, coalesce, chiave)
+GOLDEN_G43: Dict[str, Tuple[str, float, bool, Tuple[str, ...]]] = {
+    "betfair_live_order_requests": ("stato_denaro", 5.0, False, ("client_ref",)),
+    "betfair_live_orders": ("stato_denaro", 5.0, False, ("mode", "client_order_ref")),
+    "betfair_live_positions": ("stato_denaro", 5.0, False, ("mode", "market_id", "selection_id", "handicap")),
+    "betfair_live_settled": ("stato_denaro", 5.0, False, ("mode", "market_id")),
+    "betfair_live_risk_state": ("stato_denaro", 5.0, False, ("id",)),
+    "betfair_live_xhedge": ("stato_denaro", 5.0, False, ("event_id", "mode")),
+    "betfair_live_account": ("stato_vivo", 15.0, True, ("id",)),
+    "betfair_live_heartbeat": ("stato_vivo", 15.0, True, ("id",)),
+    "betfair_live_risk_rules": ("stato_denaro", 5.0, False, ("client_ref",)),
+    "betfair_live_settings": ("cache", 1.0, True, ("id",)),
+    "betfair_live_journal": ("log", 60.0, False, ()),
+    "betfair_live_audit": ("log", 60.0, False, ()),
+    "live_alerts": ("log", 60.0, False, ()),
+    "live_run_log": ("log", 60.0, False, ("event_id",)),
+    "signal_history": ("log", 60.0, False, ("signal_id",)),
+    "theta_confirm_requests": ("log", 60.0, False, ()),
+    "live_follow": ("stato_vivo", 5.0, False, ("event_id",)),
+    "live_now": ("stato_vivo", 2.0, True, ("event_id",)),
+    "live_markets": ("stato_vivo", 2.0, True, ("event_id", "market_id")),
+    "live_ladder": ("stato_vivo", 2.0, True, ("event_id", "market_id")),
+    "live_signals": ("stato_vivo", 2.0, True, ("event_id",)),
+    "mike_control": ("cache", 1.0, True, ("id",)),
+    "mike_requests": ("cache", 1.0, False, ("id",)),
+    "mike_trades": ("stato_denaro", 5.0, False, ("id",)),
+    "mike_events": ("stato_vivo", 5.0, False, ("event_id",)),
+    "mike_activity": ("log", 60.0, False, ()),
+    "omega_control": ("cache", 1.0, True, ("id",)),
+    "omega_manual_requests": ("cache", 1.0, False, ("id",)),
+    "omega_missions": ("cache", 1.0, False, ("event_id",)),
+    "omega_trades": ("stato_denaro", 5.0, False, ("id",)),
+    "omega_events": ("stato_vivo", 5.0, False, ("event_id",)),
+    "omega_market_snapshot": ("stato_vivo", 5.0, False, ("market_id",)),
+    "omega_daily_goal": ("stato_vivo", 5.0, False, ("day",)),
+    "omega_activity": ("log", 60.0, False, ()),
+    "safe_strategy_control": ("cache", 1.0, True, ("id",)),
+    "safe_strategy_requests": ("cache", 1.0, False, ("id",)),
+    "safe_strategy_status": ("cache", 1.0, True, ("id",)),
+    "safe_strategy_trades": ("stato_denaro", 5.0, False, ("id",)),
+    "safe_strategy_opportunities": ("stato_vivo", 5.0, False, ("event_id",)),
+    "safe_strategy_scan": ("stato_vivo", 5.0, True, ("event_id",)),
+    "safe_strategy_activity": ("log", 60.0, False, ()),
+    "scalper_control": ("cache", 3.0, True, ("event_id",)),
+    "scalper_service_control": ("cache", 3.0, True, ("id",)),
+    "scalper_activity": ("log", 60.0, False, ()),
+    "tennis_live_follow": ("stato_vivo", 5.0, False, ("event_id",)),
+    "tennis_live_now": ("stato_vivo", 5.0, True, ("event_id",)),
+    "tennis_live_ladder": ("stato_vivo", 5.0, True, ("market_id",)),
+    "tennis_live_orders": ("stato_denaro", 5.0, False, ("mode", "client_order_ref")),
+    "tennis_live_positions": ("stato_denaro", 5.0, False, ("mode", "market_id", "selection_id", "handicap")),
+    "tennis_live_order_queue": ("stato_denaro", 5.0, False, ("client_ref",)),
+    "tennis_bot_control": ("cache", 1.0, True, ("event_id", "bot_key")),
+    "tennis_bot_service_control": ("cache", 1.0, True, ("bot_key",)),
+    "tennis_bot_activity": ("log", 60.0, False, ()),
+}
+
+
+def test_golden_regime_ritardo_chiave_di_g_43():
+    for t, atteso in GOLDEN_G43.items():
+        s = R.REGISTRO.spec(t)
+        assert (s.regime, s.ritardo_max_s, s.coalesce, s.chiave_naturale) == atteso, t
+    restanti = [v.spec for v in R.REGISTRO.voci() if v.spec.nome not in GOLDEN_G43]
+    assert len(restanti) == 68
+    for s in restanti:                         # tutte le altre restano nel cloud (G par. 4.3 T14-T17, extra)
+        assert (s.regime, s.ritardo_max_s, s.coalesce) == ("cloud", R.NON_APPLICABILE, False), s.nome
+
+
+def test_golden_chiave_naturale_e_una_chiave_vera_delle_migrazioni():
+    blocchi = _blocchi_create_table()
+    for v in R.REGISTRO.voci():
+        t, k = v.spec.nome, v.spec.chiave_naturale
+        if not v.schema_nel_repo or t == "bet_features":
+            continue
+        candidate = _chiavi_candidate(t, blocchi)
+        if k:
+            assert frozenset(k) in candidate, (t, k, candidate)
+        else:
+            # senza chiave: solo tabelle con il solo id seriale (log, archivi) o senza alcuna chiave
+            assert candidate <= {frozenset({"id"})}, (t, candidate)
