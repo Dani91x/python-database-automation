@@ -133,3 +133,18 @@ Fonte dei punti: `AUDIT_2026-10-08/HANDOFF_VERIFICA_PC_E_FUSIONE.md` §6.
   dalle 00:12 UTC; nel log del Catchup la riga `[CATCHUP] riserva ... predictions_results_backfill.yml=1000 + residua 300 = 1300`.
 - Resta da confermare: le 1000 chiamate riservate a Predictions Results sono derivate (3000/3), non misurate; se Results finisce la
   quota, alzare N in `seasons_catchup.yml` (`predictions_results_backfill.yml=N`), senza toccare codice.
+
+## 8. Decisioni da prendere con l'utente (09/10 pomeriggio): peso del DB. Ordine dell'utente: «nessun dato va tagliato o perso, finisci tutte le task poi decidiamo»
+26. **Atlante, riga globale leggera** (ramo `cantiere-atlante-leggero`, commit `da3b17c9`, VERIFICATO dal coordinatore, NON fuso):
+    payload della riga globale da 24 MB a 125 KB (solo meta+global); by_league/by_team/h2h_hint/v4 restano in
+    `hazard_atlas_leghe` (la fonte, scritta come prima) e nessuno li leggeva dalla riga globale; file dei bot identico byte per byte;
+    `scarica` rimonta dalle righe per lega. Migrazione `hazard_atlas_globale_leggero_2026-10-09.sql` alleggerisce le 7 versioni in
+    tabella. Senza questo cantiere la scrittura da 24 MB continua ad andare in 520 (la versione del 09/10 nel DB MANCA).
+    DA DECIDERE: fondere (nessun dato perso: tutto derivabile) o no.
+27. **Disco** (`AUDIT_2026-10-09/disco_db/INDAGINE_DISCO_DB.md`): nessun taglio per eta' possibile (training 20 stagioni, Poisson
+    tutto). Candidati SENZA lettori: raw_json di match_player_stats/match_events/match_team_stats (9 GB), match_lineups (7,6 GB),
+    top_cards/top_scorers/top_assists/injuries (0,9 GB), api_call_log > 10 gg (0,35 GB); con lettori da spostare: raw_json di
+    matches (1,9 GB, 3 campi letti); irreversibile: match_odds mercati non letti (19 GB). Decisione dell'utente: NIENTE si taglia per
+    ora. Opzione a rischio zero «da oggi in poi»: compressione di Postgres sulle righe nuove (toast_tuple_target) misurata prima su
+    una copia; indici inutili giudicabili solo fra 2-3 settimane (contatori azzerati dal crash del 09/10).
+28. **hazard_atlas_leghe** normalizzazione (33,9 -> 15,1 MB letti ogni notte): cambia il formato, richiede ricertificazione: cantiere a parte.
