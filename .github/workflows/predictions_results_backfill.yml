@@ -213,8 +213,17 @@ jobs:
         if: always()
         env:
           ESITI: "risultati=${{ steps.risultati.outcome }} signals=${{ steps.signals.outcome }} merge=${{ steps.merge.outcome }} enrich=${{ steps.enrich.outcome }} bets=${{ steps.bets.outcome }} pagella=${{ steps.pagella.outcome }} riepilogo=${{ steps.riepilogo.outcome }}"
+          # 09/10/2026 (AUDIT_2026-10-09/fallimenti_action/ENRICH_RINVIO.md): l'enrich scrive
+          # rinvii=N (leghe RINVIATE per DB sotto carico) ed esito=rinviato|guasto. Rinviato
+          # entro soglia = passo success (verde) con avviso qui sotto; oltre soglia o lega
+          # rinviata da 3 run di fila = exit 1 -> failure -> run ROSSA come ogni altro errore.
+          RINVII_ENRICH: ${{ steps.enrich.outputs.rinvii }}
+          ESITO_ENRICH: ${{ steps.enrich.outputs.esito }}
         run: |
           echo "Esiti step: $ESITI"
+          if [ -n "$RINVII_ENRICH" ] && [ "$RINVII_ENRICH" != "0" ]; then
+            echo "::warning::Step 'enrich': $RINVII_ENRICH leghe RINVIATE per DB sotto carico (esito '${ESITO_ENRICH:-?}'): righe riprese al giro successivo, dettaglio nel riepilogo del job e in live_alerts (ENRICH_RINVIO)."
+          fi
           ko=0
           for kv in $ESITI; do
             v="${kv#*=}"

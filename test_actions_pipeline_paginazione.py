@@ -502,13 +502,15 @@ def test_flush_lega_senza_righe_non_chiama_la_rpc():
 
 def test_flush_che_non_riesce_conta_le_righe_dimezza_e_abbandona_la_lega():
     """Nessun errore ingoiato: le righe non scritte finiscono nel contatore
-    (-> exit != 0) e la fetta si dimezza per le leghe successive."""
+    (09/10: delle RINVIATE, non piu' dei "failed") e la fetta si dimezza per le
+    leghe successive."""
     sig, stage = _dati_lega(129, 50)
     db = FakeDB({"analytics_signals": sig, "analytics_snap_staging": []}, max_flush=0)
     c, stato = {"failed": 0}, {"size": en._FLUSH_SLICE}
     upd = en._flush_staging(db, 129, stage, c, stato)
     assert upd == 0
-    assert c["failed"] == len(stage)                 # TUTTE le righe della lega
+    assert c["failed"] == 0
+    assert [(r["lega"], r["righe"]) for r in c["rinviate"]] == [(129, len(stage))]  # TUTTE
     assert stato["size"] == en._FLUSH_SLICE // 2     # fetta adattiva
     assert all(s["freq_current"] is None for s in db.tables["analytics_signals"])
 
@@ -592,7 +594,7 @@ def test_flush_fallito_non_lascia_la_fetta_in_staging():
     db = FakeDB({"analytics_signals": sig, "analytics_snap_staging": []}, max_flush=0)
     c = {"failed": 0}
     assert en._flush_staging(db, 129, stage, c) == 0
-    assert c["failed"] == len(stage)
+    assert c["rinviate"][0]["righe"] == len(stage) and c["failed"] == 0
     assert db.tables["analytics_snap_staging"] == [], "la fetta fallita e' rimasta in staging"
 
 
@@ -609,7 +611,7 @@ def test_pulizia_staging_fallita_abbandona_la_lega_senza_flush():
     db.delete_hook = rompi
     c = {"failed": 0}
     assert en._flush_staging(db, 129, stage, c) == 0
-    assert c["failed"] == len(stage)
+    assert c["rinviate"][0]["righe"] == len(stage) and c["failed"] == 0
     assert db.n_rpc == 0 and db.n_upsert == 0
     assert all(s["freq_current"] is None for s in db.tables["analytics_signals"])
 
@@ -646,8 +648,10 @@ def test_upsert_staging_errore_logico_non_si_ritenta():
 
     db.upsert_hook = hook
     c = {"failed": 0}
-    assert en._upsert_stage(db, [{"fixture_id": 1, "market": "btts", "selection": "Yes"}], c) is False
-    assert tentativi["n"] == 1 and c["failed"] == 1
+    # 09/10: errore LOGICO -> RuntimeError SUBITO (exit 1), causa vera in __cause__
+    with pytest.raises(RuntimeError, match="errore LOGICO") as ex:
+        en._upsert_stage(db, [{"fixture_id": 1, "market": "btts", "selection": "Yes"}], c)
+    assert tentativi["n"] == 1 and not en._is_retry_esauriti(ex.value)
 
 
 def test_is_transient_riconosce_le_forme_vere():
@@ -1505,8 +1509,9 @@ def test_main_lega_57014_persistente_non_ferma_le_altre_leghe(monkeypatch, capsy
     with pytest.raises(SystemExit) as ex:
         en.main()
     out = capsys.readouterr().out
-    assert "[ERR lega 929]" in out
-    assert "929" in str(ex.value.code) and "leghe fallite" in str(ex.value.code)
+    # 09/10: la lega 929 e' RINVIATA; 1 lega su 2 = 50% > soglia 25% -> exit != 0
+    assert "RINVIATA lega 929" in out
+    assert "929" in str(ex.value.code) and "soglia" in str(ex.value.code)
     # la lega 331 E' STATA elaborata comunque: il flush l'ha davvero toccata
     # (updated_at scritto dalla RPC -- freq_current puo' restare None qui, serve
     # mm10 su >=10 partite precedenti, ma la RIGA e' stata aggiornata lo stesso)
