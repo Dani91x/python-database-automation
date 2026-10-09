@@ -28,6 +28,7 @@ import SafeStrategy from "@/pages/SafeStrategy";
 import Mike from "@/pages/Mike";
 import ControlRoom from "@/pages/ControlRoom";
 import CashOut from "@/pages/CashOut";
+import Salute from "@/pages/Salute";
 import { StoricoCalcio, StoricoTennis } from "@/pages/StoricoSport";
 import { SafeStrategyProvider } from "@/components/safestrategy/SafeStrategyProvider";
 import CheckEmail from "@/pages/CheckEmail";
@@ -81,6 +82,8 @@ function RotteGuscioV2() {
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/match-replay" element={<MatchReplay />} />
                 <Route path="/select-sport" element={<SelectSport />} />
+                {/* 09/10 (T0A): la pagina «Salute» (monitor dei servizi, sola lettura) */}
+                <Route path="/salute" element={<Salute />} />
             </Route>
             <Route
                 path="/ladder-popout"
@@ -282,6 +285,15 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <CashOut />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            {/* 09/10 (T0A): la pagina «Salute» (monitor dei servizi, sola lettura) */}
+                            <Route
+                                path="/salute"
+                                element={
+                                    <ProtectedRoute>
+                                        <Salute />
                                     </ProtectedRoute>
                                 }
                             />
