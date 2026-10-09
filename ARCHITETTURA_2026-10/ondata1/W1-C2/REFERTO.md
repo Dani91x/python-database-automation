@@ -134,7 +134,7 @@ topic `conto` senza autore ne' P&L di mercato). Costi misurati (macchina condivi
   (628 s). I 2 rossi sono soglie di latenza su macchina condivisa (`test_auto_follow_2026_09_25.py::test_latenza_logica_aggancio_sotto_i_20_ms`
   20,05 ms contro 20; `test_motore_ordini_2026_09_24.py::test_latenza_logica_comando_place_sotto_20_ms`): rilanciati da soli
   = 2 verdi; non toccano file miei.
-- Suite intera alla fine: <<SUITE2>>
+- Suite intera alla fine (cima `e2646912`): **11.735 verdi, 0 rossi, 87 saltati, 6 xfailed** (491 s).
 
 Nota di metodo: lo `scratchpad` della sessione e' CONDIVISO fra i 7 agenti (un mio script e un'uscita della suite sono
 stati sovrascritti da altri agenti con lo stesso nome di file: rifatti in `scratchpad/w1c2/`). Da dire agli altri.
