@@ -37,6 +37,26 @@ del codice si sistema dopo. Almeno cosi' posso operare una volta finito.» L'ord
 4. DOPO: T1, T3, T13, T18, T22-T26 (pulizia, contabilita' unica, UI dai manifesti, supervisore, banco unico, flumine 3).
 Il cloud resta com'e' (algoritmi, analisi pre-partita, archivio di tutto): nessuna tappa cambia cio' che il cloud calcola.
 
+## ONDATA 1 — costruzione dei comparti del modulo Betfair (avviata il 09/10)
+
+Regola: codice NUOVO solo sotto `Betfair/nucleo/`, nessun file esistente toccato, niente agganciato all'app; parita' col codice di oggi
+provata da test; aggancio = ondata 2 (dopo la tappa 0, una tappa alla volta, interruttore spento, firma del PC, si' dell'utente).
+«Niente andra' su master finche' non siamo certi che funzioni allo stesso modo O MEGLIO» (utente, 09/10).
+Contratti fissi e brief comune: `559a96df` (`Betfair/nucleo/*/contratto.py`, `ondata1/BRIEF_COMUNE_ONDATA1.md`).
+
+| ID | Comparto | Ramo | Stato |
+|---|---|---|---|
+| W1-A1 | sessione unica e REST (T5) | `architettura/w1-a1` | in costruzione |
+| W1-A2 | stream ordini del CONTO, ladder a ogni cambio, profili, gestore stream (T6, T19, T11 parte A) | `architettura/w1-a2` | in costruzione |
+| W1-C1 | porta ordini: adattatore, minimi .it unici, controlli, seq/da_seq, porta (T10) | `architettura/w1-c1` | in costruzione |
+| W1-C2 | libro ordini del conto con autore, P&L di mercato, riconciliazione in ombra (T11) | `architettura/w1-c2` | in costruzione |
+| W1-G1 | archivio locale invisibile, postino, riconcilia, migrazione uid/ombra (T8, T14 base) | `architettura/w1-g1` | in costruzione |
+| W1-G2 | registro delle tabelle, client cloud unico, cache degli algoritmi (T2, T7) | `architettura/w1-g2` | in costruzione |
+| W1-B | stato della partita (T9) | `architettura/w1-b` | in costruzione |
+
+Dopo ogni consegna: verifica del coordinatore (diff, test, mutazioni proprie) + revisore indipendente (Sonnet), poi il ramo entra
+nel ramo dell'architettura. Ondata 2 (aggancio, ombra, replay sul PC) solo dopo la tappa 0 chiusa.
+
 ## Obiettivo (parole dell'utente, 09/10)
 
 - Tutto cio' che e' Betfair vive nell'app desktop, «esattamente come i competitor»: nessun database nel percorso
