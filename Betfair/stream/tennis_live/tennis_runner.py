@@ -597,6 +597,9 @@ class TennisLiveSession:
         self.comandi: Dict[str, Dict[str, Any]] = {}
         self.attesa_libro: Dict[str, Optional[int]] = {}
         self.ultimi_follows: Optional[List[Dict[str, Any]]] = None
+        # 09/10: l'``AgganciaTennis`` del motore, usato anche dal /order del
+        # desktop (None = motore tennis spento: nessun aggancio al volo)
+        self.aggancio_desktop: Any = None
         # 26/09 (R-FA-1): eventi con ``tennis_live_now.status='CLOSED'`` gia'
         # scritto (stato terminale: non si riscrive, NON si svuota a
         # ``reset_streams`` - dopo un rebuild il book vuoto direbbe SUSPENDED)
@@ -3009,6 +3012,10 @@ def _monta_motore_tennis(ch: Any, session: TennisLiveSession) -> None:
     from .tennis_live_order_worker import aggiungi_osservatore_ordini
     aggiungi_osservatore_ordini(motore._su_riga_specchio)
     _MOTORE_TENNIS.update({"motore": motore, "aggancio": ag})
+    # 09/10 (programma del giorno, contratto par. 4): lo STESSO aggancio serve anche
+    # il ``/order`` del desktop (box quota del tabellone) su una partita non
+    # seguita (``tennis_live_order_worker._parcheggia_o_rifiuta``)
+    session.aggancio_desktop = ag
     logger.info("[tennis-runner] motore ordini ATTIVO sul canale %s (diario %s), aggancio "
                 "a comando %s", getattr(ch, "port", "?"), motore.diario.cartella,
                 "ATTIVO" if ag is not None else "SPENTO")
@@ -3019,6 +3026,10 @@ def _smonta_motore_tennis() -> None:
     ag = _MOTORE_TENNIS.get("aggancio")
     if ag is not None:
         ag.ferma()
+        try:
+            ag.session.aggancio_desktop = None   # 09/10: niente piu' aggancio al /order
+        except Exception:  # noqa: BLE001
+            pass
     if motore is not None:
         try:
             from .tennis_live_order_worker import rimuovi_osservatore_ordini
@@ -3125,6 +3136,49 @@ def _pubblica_battito_attesa() -> None:
         logger.debug("[tennis-runner] battito sul canale KO: %s", str(e)[:120])
 
 
+def _attesa_board_e_canale(session: Any) -> None:
+    """09/10 (ordine dell'utente: "per tennis il tabellone non parte proprio, deve
+    essere disponibile come quello del calcio") - il runner tennis PARCHEGGIATO
+    (nessuna partita da seguire: il framework, e con lui il BackgroundWorker
+    ``tennis_board``, non esiste) pubblica il board con la STESSA funzione, la
+    STESSA cadenza (``LIVE_BOARD_POLL_SEC``) e lo STESSO stato del worker (zero
+    costo senza desktop), e drena il canale 47332 (nessun worker ordini lo fa da
+    parcheggiato): ogni comando riceve una risposta. Mai solleva."""
+    from ..board_worker import giro_da_parcheggiato
+    from .tennis_live_order_worker import servi_comandi_da_parcheggiato
+
+    # correzione 09/10: i settings PRIMA dei comandi (kill-switch e modo freschi)
+    _attesa_impostazioni()
+    giro_da_parcheggiato(session, "2")
+    servi_comandi_da_parcheggiato(session)
+
+
+def _attesa_impostazioni() -> None:
+    """09/10 (correzione "modo ordini da parcheggiato") - il runner tennis
+    PARCHEGGIATO rilegge ``betfair_live_settings`` come il worker ordini tennis.
+
+    Difetto: la lettura (kill-switch, "Ordini reali" di questo avvio) e l'uscita
+    del topic ``modo_ordini`` del TENNIS (anche in ``hello.modo_ordini``) le
+    faceva SOLO ``tennis_live_order_worker`` (BackgroundWorker di flumine): da
+    parcheggiati (il caso normale del tennis) nessuno, il tabellone restava
+    "ORDINI: NON NOTA" e ``servi_comandi_da_parcheggiato`` decideva con un
+    kill-switch e un modo vecchi o di default.
+
+    Qui: STESSA funzione (``guardie_tennis.aggiorna_impostazioni``, che pubblica
+    lo stato del TENNIS, mai quello del calcio), STESSO orologio di cadenza
+    (``_IMPOSTAZIONI_RILETTE``, 1 s: nel passaggio parcheggiato -> framework il
+    primo giro del worker NON rilegge), STESSO cancello (tetto OFF -> inerte,
+    come il worker). Nessun thread nuovo. Mai solleva."""
+    try:
+        from .tennis_live_order_worker import _runner_mode
+
+        if _runner_mode() not in ("PAPER", "LIVE"):
+            return  # come il worker: OFF (o ignoto) -> inerte, nessuna lettura
+        _gt.aggiorna_impostazioni(tennis_db.get_tennis_client())
+    except Exception as e:  # noqa: BLE001 - il ciclo d'attesa non cade mai
+        logger.warning("[tennis-runner] impostazioni da parcheggiato KO: %s", str(e)[:160])
+
+
 def _attiva_saldo_su_evento(framework: Any, trading: Any) -> None:
     """Rilettura del saldo su evento d'ordine (``stream/saldo_evento.py``) con
     il client Betfair di QUESTO processo. Mai solleva."""
@@ -3224,6 +3278,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                     _idle_s = float(os.getenv("TENNIS_IDLE_FOLLOW_POLL_SEC", "2.0")) or 2.0
                     logger.info("[tennis-runner] nessun evento: attendo (keep-alive desktop).")
                     _pubblica_battito_attesa()   # 25/09 (punto 6), a ogni giro di attesa
+                    _attesa_board_e_canale(session)   # 09/10: board + canale da parcheggiati
                     time.sleep(_idle_s)
                     # sessione .it: keepAlive ogni ~8 min o scade per inattività
                     # (soglia in CICLI derivata dallo sleep: ~480s reali).
@@ -3253,6 +3308,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
                     logger.info("[tennis-runner] nessun mercato: attendo (keep-alive desktop).")
                     _pubblica_battito_attesa()   # 25/09 (punto 6)
+                    _attesa_board_e_canale(session)   # 09/10: board + canale da parcheggiati
                     time.sleep(15)
                     continue
                 logger.warning("[tennis-runner] nessun mercato sottoscrivibile.")

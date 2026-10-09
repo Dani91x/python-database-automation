@@ -5636,3 +5636,22 @@ degradato dal 08/2026; la run e' creata 5-6 h dopo l'orario) -> Daily alle 07:00
   verificato in sola lettura); `hazard_atlas_leghe` intatta. Da stanotte la action scrive ~125 KB invece di 24 MB.
 - 13:12 VERIFICA dei reperti principali dell'audit matematica/ML (3 verificatori Opus + campioni del coordinatore): esito in `ARCHITETTURA_2026-10/AUDIT_MATEMATICA_ML/verifica_coordinatore/ESITO_VERIFICA.md`. Confermati: dutching variable (lato e anteprima), Poisson vs quote, mercati gol estremi, previsioni post-KO, ML senza valore, gate ML (holdout e BSS). Falso/ridimensionato: Safe tennis, scalper, stop giornaliero, Mike (scelta documentata), Omega. Nessuna modifica al codice. In attesa delle decisioni dell'utente.
 - 15:58 FIX DUTCHING (A1+M11+V3) dalla sessione SDK fase 2 (32,3 USD; totale audit 69,26), VERIFICATO dal coordinatore: diff riletto (worker: rifiuto variable+lay prima di ogni ordine; UI: variable disabilitato su Lay, anteprima = formula del server con arrotondamenti Python, toast «NON piazzato» se ok senza legs); test 26/26 server + 28/28 pannello; falsificazione rossa in 3 direzioni (worker, blocco UI, anteprima+V3) e file ripristinati identici; numeri del server ricalcolati per i casi A/B = anteprima; tsc 0; suite Betfair/ 11483 passed, 0 failed (561 s). Referti certificati della fase 2 in `ARCHITETTURA_2026-10/AUDIT_MATEMATICA_ML/` (CERTIFICAZIONE_REFERTI.md, 05/07 riscritti). Build frontend da fare ad app spenta.
+
+### 09/10 — Sessione cloud: Control Room (interruttori) + Programma del giorno (/board) — ramo `claude/sweet-hypatia-t4bmna`
+Dominio: `frontend/src/pages/{ControlRoom,Board}.tsx` e componenti collegati, `Betfair/stream/board_worker.py`, cicli d'attesa
+dei due runner, `/order` del desktop (motore ordini calcio, worker ordini tennis), `local_channel.py` (metodo `board_mercato`).
+- CHECKPOINT Control Room (ordine dell'utente): interruttori «Nascondi» della sezione AI Terminal e della composizione sotto
+  l'obiettivo (preferenza per viewer, default visibile). Test falsificati; fotografie control-room aggiornate (solo i 2 pulsanti).
+- CHECKPOINT Programma del giorno (contratto `AUDIT_2026-10-09/programma_del_giorno/CONTRATTO.md`, referti BACKEND/FRONTEND):
+  board anche da runner parcheggiato (tennis non partiva), punteggio/minuto, liquidita' (abbinato + importi al miglior prezzo),
+  menu' mercato (calcio senza correct score; `board_mercato` su richiesta, TTL 75 s, tetto 3 tipi), box quote che piazzano col
+  percorso d'ordine esistente (modo dal runner), aggancio al volo del `/order` del desktop su partita non seguita (attesa max 7 s),
+  Statistiche/Trading con ritorno «Torna al Programma». Nessuna connessione nuova. Correzione in revisione: modo ordini e settings
+  riletti anche da parcheggiato (prima: «NON NOTA» e, sul tennis, freno della UI non letto da parcheggiato).
+- Verifica del coordinatore: pytest Betfair 11.453 verdi / 87 skipped / 6 xfailed / 0 rossi; vitest 5533 verdi / 0 rossi;
+  tsc 0 errori; build ok; falsificazioni rifatte di persona (board tennis parcheggiato, aggancio /order, settings da parcheggiato,
+  filtro correct score, modo nel comando d'ordine): tutte rosse.
+- Utente: `MOTORE_ORDINI_CANALE_TENNIS=1` nel suo .env (aggancio al volo tennis attivo).
+- PUNTO DI RIPRESA: sul PC `npm run build` e riavvio dell'app da parte dell'utente; prova a schermo del Programma (prima in PROVA);
+  limiti aperti nei referti (tetto OFF = «NON NOTA»; primo clic da parcheggiato puo' dire «riprova»; ripiego DB senza aggancio).
+  Prossimi passi: le altre pagine che l'utente manda una per una.

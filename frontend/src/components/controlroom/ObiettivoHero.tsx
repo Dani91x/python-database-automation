@@ -22,6 +22,8 @@ import { MarchioSoldi } from './MarchioSoldi';
 import type { ApertoPerBot } from '@/lib/apertoAdesso';
 import type { ComposizioneConto, RigaComposizioneConto } from '@/lib/composizioneConto';
 import type { RigaComposizione } from '@/lib/composizioneObiettivo';
+import { useVisibile } from '@/lib/preferenzaVista';
+import { InterruttoreVista } from '@/components/trading/InterruttoreVista';
 
 export interface ObiettivoHeroProps {
     dayBar: DayBarProps;
@@ -92,6 +94,10 @@ function dalConto(c: ComposizioneObiettivo): boolean | null {
 export function ObiettivoHero({
     dayBar, composizione, manualeSito, onSalvaObiettivo, avvisoMotore, prova = null, contoEtaS, modalitaBot = null, apertoPerBot = null, testId = 'cr-obiettivo',
 }: ObiettivoHeroProps) {
+    // 09/10 (ordine dell'utente): un interruttore nasconde tutto quello che sta
+    // SOTTO la barra dell'obiettivo (composizione, sito, corsia PROVA). Default
+    // visibile; la scelta e' ricordata per viewer. La barra non si nasconde mai.
+    const [composizioneVisibile, setComposizioneVisibile] = useVisibile('cr.composizione');
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
             <div className="px-4 pt-3 flex items-center gap-2">
@@ -112,7 +118,8 @@ export function ObiettivoHero({
             </div>
 
             <div className="px-4 pb-3 pt-1" data-testid="cr-composizione">
-                <div className="text-[10px] uppercase tracking-wider text-white/40 mb-1.5">
+                <div className="flex items-start justify-between gap-2 mb-1.5">
+                <div className="text-[10px] uppercase tracking-wider text-white/40">
                     composizione — solo soldi veri, entra nell&apos;obiettivo
                     {/* 30/09 (P7): da dove vengono le voci dei bot */}
                     {dalConto(composizione) == null ? null : dalConto(composizione) ? (
@@ -125,6 +132,13 @@ export function ObiettivoHero({
                         </span>
                     )}
                 </div>
+                <InterruttoreVista
+                    visibile={composizioneVisibile} onCambia={setComposizioneVisibile}
+                    cosa="la composizione e la prova" testId="cr-composizione-interruttore"
+                    className="shrink-0"
+                />
+                </div>
+                {composizioneVisibile && (<>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-0.5 ds-v2-cr-comp-griglia">
                     {composizione.righe.map((r) => (
                         <div
@@ -191,6 +205,7 @@ export function ObiettivoHero({
                         <span className="text-white/25">— mai sommato all&apos;obiettivo</span>
                     </div>
                 )}
+                </>)}
             </div>
         </Card>
     );

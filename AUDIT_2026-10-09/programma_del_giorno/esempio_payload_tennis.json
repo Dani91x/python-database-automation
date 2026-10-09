@@ -1,0 +1,102 @@
+{
+ "board": {
+  "rows": [
+   {
+    "event_id": "35790084",
+    "event_name": "Barrios Vera v Simakin",
+    "open_date": "2026-10-09T18:00:00+00:00",
+    "market_id": "1.401",
+    "status": "OPEN",
+    "inplay": true,
+    "total_matched": 43210.0,
+    "selections": [
+     {
+      "selection_id": 9633138,
+      "name": "Barrios Vera",
+      "back": 1.8,
+      "lay": 1.82,
+      "ltp": 1.81,
+      "back_size": 300.0,
+      "lay_size": 90.0
+     },
+     {
+      "selection_id": 35635727,
+      "name": "Simakin",
+      "back": 2.2,
+      "lay": 2.24,
+      "ltp": 2.22,
+      "back_size": 70.0,
+      "lay_size": 40.0
+     }
+    ],
+    "bet_delay": 3,
+    "score": {
+     "sport": "tennis",
+     "sets": {
+      "p1": 1,
+      "p2": 0
+     },
+     "games": {
+      "p1": 3,
+      "p2": 2
+     },
+     "points": {
+      "p1": "40",
+      "p2": "AD"
+     },
+     "server": "p2"
+    },
+    "fixture_id": null,
+    "updated_ms": 1791545942151
+   }
+  ],
+  "market_types": [
+   {
+    "market_type": "MATCH_ODDS",
+    "name": "Vincente incontro",
+    "count": 1
+   },
+   {
+    "market_type": "SET_BETTING",
+    "name": "Risultato in set",
+    "count": 1
+   }
+  ]
+ },
+ "board_mercato": {
+  "market_type": "SET_BETTING",
+  "rows": [
+   {
+    "event_id": "35790084",
+    "market_id": "1.402",
+    "market_name": "Set Betting",
+    "status": "OPEN",
+    "inplay": true,
+    "total_matched": 900.0,
+    "selections": [
+     {
+      "selection_id": 1,
+      "name": "2 - 0",
+      "handicap": 0.0,
+      "back": 3.1,
+      "lay": 3.3,
+      "ltp": 3.1,
+      "back_size": 12.0,
+      "lay_size": 4.0
+     },
+     {
+      "selection_id": 2,
+      "name": "2 - 1",
+      "handicap": 0.0,
+      "back": 4.5,
+      "lay": 4.9,
+      "ltp": 4.5,
+      "back_size": 6.0,
+      "lay_size": 2.0
+     }
+    ]
+   }
+  ],
+  "updated_ms": 1791545942152
+ }
+}

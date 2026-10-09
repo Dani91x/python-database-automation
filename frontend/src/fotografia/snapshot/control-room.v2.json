@@ -6,6 +6,7 @@
     "AI Terminal",
     "CONTROL ROOM",
     "1 ottobre 2026",
+    "Nascondi",
     "Esposizione conto",
     "—",
     "CONTO BETFAIR",
@@ -185,6 +186,7 @@
     "conto non letto",
     "composizione — solo soldi veri, entra nell'obiettivo",
     "· conto Betfair non letto: dalle righe dei bot",
+    "Nascondi",
     "Omega",
     "—",
     "Safe calcio",
@@ -529,6 +531,7 @@
   "testid": [
     "page-shell",
     "cr-testata",
+    "cr-testata-interruttore",
     "cr-soldi-veri",
     "cr-esposizione-conto",
     "cr-esposizione-conto-valore",
@@ -659,6 +662,7 @@
     "marchio-soldi-eta",
     "cr-composizione",
     "cr-composizione-fonte",
+    "cr-composizione-interruttore",
     "cr-composizione-omega",
     "cr-composizione-safe_calcio",
     "cr-composizione-safe_tennis",
@@ -898,6 +902,10 @@
     },
     {
       "ruolo": "button",
+      "nome": "Nascondi la sezione AI Terminal"
+    },
+    {
+      "ruolo": "button",
       "nome": "non letto",
       "disabled": true
     },
@@ -935,6 +943,10 @@
     {
       "ruolo": "button",
       "nome": "Modifica l'obiettivo di oggi"
+    },
+    {
+      "ruolo": "button",
+      "nome": "Nascondi la composizione e la prova"
     },
     {
       "ruolo": "link",

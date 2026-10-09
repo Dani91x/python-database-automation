@@ -1545,9 +1545,192 @@ _LOCAL_TENNIS_ACTIONS = frozenset({"place", "cancel", "replace", "greenup"})
 _LOCAL_SEEN: Dict[str, tuple] = {}
 _LOCAL_SEEN_TTL = 300.0
 
+# ---------------------------------------------------------------------------
+# 09/10 (programma del giorno, contratto par. 4) - AGGANCIO AL VOLO del ``/order``
+# del desktop (box quota del tabellone) su una partita NON seguita dal runner.
+# Stesso meccanismo dei comandi dei bot: ``esecutore_tennis.AgganciaTennis``
+# (iscrizione a caldo sulla connessione esistente, stesso tetto), che il runner
+# mette su ``session.aggancio_desktop`` quando lo monta (motore ordini tennis
+# acceso). Senza aggancio: il rifiuto "non sottoscritto" di sempre.
+# Il ``/order`` e' richiesta/risposta e la pagina aspetta al piu' 10 s
+# (``LOCAL_REQUEST_TIMEOUT_MS``): l'attesa resta sotto, con margine (la stessa
+# regola del calcio, ``motore_ordini.AGGANCIO_ORDER_MAX_MS_*``). Oltre: rifiuto
+# esplicito, nessun ordine dopo che la pagina ha smesso di aspettare.
+# ---------------------------------------------------------------------------
+import collections as _collections
+
+#: chiave progressiva -> {req, market_id, scadenza_ms} (FIFO). Toccato solo dal
+#: thread che drena il canale (worker ordini tennis, o ciclo d'attesa a
+#: framework spento: mai i due insieme).
+_LOCAL_IN_AGGANCIO: "_collections.OrderedDict[int, Dict[str, Any]]" = _collections.OrderedDict()
+_N_LOCAL_AGGANCIO = _itertools.count(1)
+_AZIONI_LOCALI_CON_AGGANCIO = frozenset({"place"})
+
+
+def _aggancio_order_max_ms() -> int:
+    from ..motore_ordini import AGGANCIO_ORDER_MAX_MS_DEFAULT, AGGANCIO_ORDER_MAX_MS_TETTO
+
+    try:
+        v = int(float(os.getenv("MOTORE_AGGANCIO_ORDER_MAX_MS", "")
+                      or AGGANCIO_ORDER_MAX_MS_DEFAULT))
+    except ValueError:
+        v = AGGANCIO_ORDER_MAX_MS_DEFAULT
+    return AGGANCIO_ORDER_MAX_MS_DEFAULT if v <= 0 else min(v, AGGANCIO_ORDER_MAX_MS_TETTO)
+
+
+def _aggancio_desktop(session: Any) -> Any:
+    return getattr(session, "aggancio_desktop", None) if session is not None else None
+
+
+def _parcheggia_o_rifiuta(ch: Any, req: Any, ag: Any, mid: str, flumine_ok: bool) -> bool:
+    """Il ``place`` va servito ADESSO (False) o e' stato preso in carico qui
+    (True: parcheggiato in attesa dell'aggancio, oppure rifiutato col motivo
+    del tetto). Zero I/O: ``AgganciaTennis.richiedi`` lavora in RAM."""
+    from ..motore_ordini import M_TETTO
+
+    in_fila = any(o["market_id"] == mid for o in _LOCAL_IN_AGGANCIO.values())
+    if flumine_ok and not in_fila and ag.servibile(mid):
+        return False
+    try:
+        no = ag.richiedi(mid, motivo="ordine dal desktop")
+    except Exception as ex:  # noqa: BLE001 - aggancio rotto: rifiuto, mai alla cieca
+        no = f"aggancio non disponibile: {str(ex)[:160]}"
+    if no is not None:
+        ch.respond(req, False, error=f"{M_TETTO}: {str(no)[:200]} - ordine NON piazzato")
+        return True
+    _LOCAL_IN_AGGANCIO[next(_N_LOCAL_AGGANCIO)] = {
+        "req": req, "market_id": mid,
+        "scadenza_ms": int(time.time() * 1000) + _aggancio_order_max_ms()}
+    logger.info("[tennis-local] /order su %s in attesa dell'aggancio al volo (%s)", mid,
+                "runner senza framework" if not flumine_ok else "partita non seguita")
+    return True
+
+
+def _scadi_locali_in_aggancio(ch: Any, motivo_forzato: Optional[str] = None) -> int:
+    """Le richieste in attesa oltre la scadenza (o TUTTE, con ``motivo_forzato``)
+    ricevono il rifiuto col motivo. Mai in silenzio."""
+    from ..motore_ordini import M_IN_AGGANCIO
+
+    if not _LOCAL_IN_AGGANCIO or ch is None:
+        return 0
+    ora = int(time.time() * 1000)
+    n = 0
+    for k in list(_LOCAL_IN_AGGANCIO.keys()):
+        o = _LOCAL_IN_AGGANCIO.get(k)
+        if o is None or (motivo_forzato is None and ora <= int(o["scadenza_ms"])):
+            continue
+        if _LOCAL_IN_AGGANCIO.pop(k, None) is None:
+            continue                     # gia' servita da un altro giro
+        n += 1
+        motivo = motivo_forzato or (
+            f"{M_IN_AGGANCIO}: mercato {o['market_id']} non sottoscritto entro "
+            f"{_aggancio_order_max_ms()} ms - ordine NON piazzato (aggancio chiesto al "
+            f"runner tennis: riprova fra qualche secondo)")
+        ch.respond(o["req"], False, error=motivo)
+    return n
+
+
+def _avanza_locali_in_aggancio(flumine: Any, session: Any, runner_mode_l: str) -> int:
+    """I ``/order`` in attesa il cui mercato e' ora servibile partono (FIFO) con
+    TUTTE le regole del canale rifatte adesso (modo, kill-switch, dedup); gli
+    scaduti ricevono il rifiuto ``in_aggancio``. Thread del worker ordini."""
+    from .. import local_channel
+
+    if not _LOCAL_IN_AGGANCIO:
+        return 0
+    ch = local_channel.get_channel()
+    ag = _aggancio_desktop(session)
+    n = 0
+    for k in list(_LOCAL_IN_AGGANCIO.keys()):
+        o = _LOCAL_IN_AGGANCIO.get(k)
+        if o is None:
+            continue
+        if ag is not None and flumine is not None and ag.servibile(o["market_id"]):
+            if _LOCAL_IN_AGGANCIO.pop(k, None) is None:
+                continue
+            n += 1
+            _process_local_requests(flumine, session, runner_mode_l, richieste=[o["req"]],
+                                    aggancio=False)
+    return n + _scadi_locali_in_aggancio(ch)
+
+
+# 09/10: un comando del desktop sul 47332 a runner tennis PARCHEGGIATO (nessuna
+# partita seguita, framework non nato, nessun worker ordini che drena il canale)
+_MOTIVO_PARCHEGGIATO = (
+    "runner tennis parcheggiato (nessuna partita agganciata): comando NON eseguito")
+
+
+def servi_comandi_da_parcheggiato(session: Any) -> int:
+    """09/10 - il ciclo d'attesa del runner tennis drena il canale 47332.
+
+    Prima nessuno lo drenava: il comando restava in RAM senza risposta (timeout
+    della pagina a 10 s) e partiva minuti dopo, alla nascita del framework.
+    Adesso: ``snapshot`` -> vuoto come il worker (by design); ``place`` con
+    l'aggancio al volo disponibile e le regole di apertura soddisfatte ->
+    aggancio chiesto (il runner parte con quella partita) e attesa; tutto il
+    resto -> rifiuto immediato col motivo. Ritorna quante richieste ha gestito.
+    Mai solleva."""
+    from .. import local_channel
+
+    ch = local_channel.get_channel()
+    if ch is None:
+        return 0
+    gestite = 0
+    try:
+        runner_mode = _runner_mode()
+        guardia = _gt.guardia_blocca()
+        if guardia:
+            _scadi_locali_in_aggancio(ch, motivo_forzato=_gt.MOTIVO_GUARDIA_LOCALE)
+        ag = _aggancio_desktop(session)
+        while True:
+            reqs = ch.pop_requests()
+            if not reqs:
+                break
+            for req in reqs:
+                gestite += 1
+                if req.method == "snapshot":
+                    ch.respond(req, True, {"orders": [], "positions": []})
+                    continue
+                cmd = dict(req.params) if isinstance(req.params, dict) else {}
+                action = str(cmd.get("action") or "")
+                mid = str(cmd.get("market_id") or "")
+                if guardia:
+                    ch.respond(req, False, error=_gt.MOTIVO_GUARDIA_LOCALE)
+                    continue
+                if runner_mode not in ("PAPER", "LIVE"):
+                    ch.respond(req, False, error="modalita' ordini OFF: comando NON eseguito")
+                    continue
+                if ag is None or action not in _AZIONI_LOCALI_CON_AGGANCIO or not mid:
+                    ch.respond(req, False, error=_MOTIVO_PARCHEGGIATO + (
+                        "" if ag is not None else
+                        " (aggancio al volo spento: motore ordini tennis non attivo)"))
+                    continue
+                # le regole di APERTURA prima di chiedere l'aggancio (nessuna
+                # partita sottoscritta per un ordine che sarebbe rifiutato);
+                # all'esecuzione si rifanno tutte
+                mode_req = str(cmd.get("mode") or "").strip().lower()
+                if mode_req not in _servibili(runner_mode.lower()):
+                    ch.respond(req, False,
+                               error=f"mode richiesta '{cmd.get('mode')}' non servibile dal "
+                                     f"runner tennis in modalita' '{runner_mode.lower()}'")
+                    continue
+                blocco = _blocco_apertura_modo(mode_req, action, cmd.get("params"))
+                if blocco:
+                    ch.respond(req, False, error=blocco)
+                    continue
+                if _gt.kill_switch_attivo() and not _gt.is_riga_di_chiusura(
+                        action, cmd.get("params")):
+                    ch.respond(req, False, error=_MOTIVO_KILL_LOCALE)
+                    continue
+                _parcheggia_o_rifiuta(ch, req, ag, mid, flumine_ok=False)
+        _scadi_locali_in_aggancio(ch)
+    except Exception:  # noqa: BLE001 - il ciclo d'attesa non cade mai
+        logger.exception("[tennis-local] comandi da parcheggiato KO")
+    return gestite
+
 
 def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str,
-                            richieste: Optional[list] = None) -> None:
+                            richieste: Optional[list] = None, aggancio: bool = True) -> None:
     """A7 — comandi dal canale locale desktop: STESSO _dispatch della coda tennis
     (greenup incluso: hedge calcolato dalle esposizioni fresche). Il comando viene poi
     REGISTRATO nella coda DB (status done/error) per storico/audit. Il drain
@@ -1602,6 +1785,15 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str,
                     ch.respond(req, hit[1], hit[2],
                                error=None if hit[1] else "comando già eseguito (dedup)")
                     continue
+            # 09/10: place dal desktop su una partita non seguita -> aggancio al
+            # volo (parcheggio) o rifiuto del tetto; le regole sopra si rifanno
+            # quando esce dall'attesa (``_avanza_locali_in_aggancio``)
+            ag = _aggancio_desktop(session) if aggancio else None
+            mid_req = str(cmd.get("market_id") or "")
+            if (ag is not None and action in _AZIONI_LOCALI_CON_AGGANCIO and mid_req
+                    and _parcheggia_o_rifiuta(ch, req, ag, mid_req,
+                                              flumine_ok=flumine is not None)):
+                continue
             sid = next(_LOCAL_SID)
             cust_ref = ("awtq" + str(sid))[:32]
             if _t_tempi is not None: _TEMPI.nuovo(  # noqa: E701 - F0 misura (solo RAM)
@@ -1719,10 +1911,15 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
     # i comandi del canale 47332 ricevono SUBITO il rifiuto (niente accumulo in
     # RAM che partirebbe tutto al disarmo), salvo gli annulli.
     if _gt.guardia_blocca():
+        # 09/10: anche i /order in attesa dell'aggancio ricevono SUBITO il motivo
+        from .. import local_channel as _lc_g
+        _scadi_locali_in_aggancio(_lc_g.get_channel(), motivo_forzato=_gt.MOTIVO_GUARDIA_LOCALE)
         _rispondi_comandi_locali_in_guardia(flumine, session, runner_mode_l)
         return
     # 04/10: i place-and-trim del green-up in corso, un passo per giro
     _avanza_uscite_esatte(flumine)
+    # 09/10: i /order del desktop in attesa dell'aggancio al volo, PRIMA dei nuovi
+    _avanza_locali_in_aggancio(flumine, session, runner_mode_l)
     # A7: drain dei comandi desktop PRIMA della coda DB (stesso path _dispatch)
     _process_local_requests(flumine, session, runner_mode_l)
     now_m = time.monotonic()

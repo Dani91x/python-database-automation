@@ -150,3 +150,35 @@ describe('ObiettivoHero', () => {
         expect(s.getByTestId('cr-giornata')).toBeTruthy();
     });
 });
+
+// 09/10 (ordine dell'utente): l'interruttore nasconde tutto quello che sta
+// sotto la barra (composizione, sito, prova); la barra resta; la scelta resta.
+describe('ObiettivoHero - interruttore della composizione', () => {
+    const monta = () => render(
+        <ObiettivoHero
+            dayBar={dayBar()}
+            composizione={composizioneVuota}
+            manualeSito={{ pnlOggi: null, fonte: 'non-disponibile' }}
+            onSalvaObiettivo={vi.fn()}
+        />,
+    );
+
+    it('visibile di default; il clic nasconde voci, sito e prova ma non la barra; sopravvive al rimontaggio', () => {
+        window.localStorage.removeItem('vista.cr.composizione');
+        const s = monta();
+        expect(s.getByTestId('cr-composizione-omega')).toBeTruthy();
+        expect(s.getByTestId('cr-composizione-prova')).toBeTruthy();
+        fireEvent.click(s.getByTestId('cr-composizione-interruttore'));
+        expect(s.queryByTestId('cr-composizione-omega')).toBeNull();
+        expect(s.queryByTestId('cr-composizione-prova')).toBeNull();
+        expect(s.queryByTestId('cr-manuale-sito-assente')).toBeNull();
+        expect(s.getByTestId('cr-giornata')).toBeTruthy();
+        expect(s.getByTestId('cr-composizione-interruttore').getAttribute('aria-expanded')).toBe('false');
+        s.unmount();
+        const s2 = monta();
+        expect(s2.queryByTestId('cr-composizione-omega')).toBeNull();
+        fireEvent.click(s2.getByTestId('cr-composizione-interruttore'));
+        expect(s2.getByTestId('cr-composizione-omega')).toBeTruthy();
+        window.localStorage.removeItem('vista.cr.composizione');
+    });
+});
