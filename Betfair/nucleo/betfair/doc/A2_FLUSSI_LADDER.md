@@ -91,6 +91,8 @@ token a mano; le chiamate di scommessa sono trappole. Book: registrazioni vere `
 `ARCHITETTURA_2026-10/ondata1/W1-A2/misura_ladder.py` (tempo della registrazione, `pt`): pubblicazioni e attesa
 "arrivo del book -> pubblicazione" del ladder nuovo (20 ms) contro il worker di oggi (200 ms). Numeri nel referto par. 4.
 Dal vivo: la sonda `ladder_pub_pt_ms` della Salute (T0A), in ombra.
+`ARCHITETTURA_2026-10/ondata1/W1-A2/misura_cpu_ladder.py`: CPU del thread del ladder nuovo contro recorder +
+worker di oggi, con N partite contemporanee (copie della registrazione 35797769). Numeri nel referto par. 10.
 
 ## 10. Voci di `PROCESSO_STANDARD_BOT.md`
 
@@ -99,3 +101,36 @@ ladder che la UI legge, stesse chiavi), 6.6 (connessioni e limiti Betfair), 6.7 
 falsificazione), 6.8 (comandi esatti, versioni), par. 7 n. 9, 17 (sospeso/chiuso nel ladder), 19 (stato perso alla
 caduta: ripresa con clk), 20 (battito vivo != dati: `vivo` per mercato solo con un book), 27 (finti con le chiavi vere),
 29, 30, 33, 35. ⊘ con causa nel referto par. 7.
+
+
+## 11. Dopo la revisione indipendente (09/10)
+
+Correzioni (dettaglio, file:riga, test e mutazioni nel referto par. 10):
+
+- **Ordini non confermati**: a fine immagine di SOTTOSCRIZIONE (`SUB_IMAGE` intera o `SEG_END`, anche vuota), di
+  MERCATO o di RUNNER, ogni EXECUTABLE noto non riportato passa a `confermato=False` (riconsegnato ai consumatori) e in
+  `ordini_non_confermati()`; torna confermato alla prima notizia dallo stream.
+- **Posizioni**: una `fullImage` di mercato SOSTITUISCE le posizioni del mercato (base del P&L del comparto C).
+- **Importi assenti**: None (mai 0) e dichiarati in `OrdineDalContoEsteso.campi_assenti`.
+- **Backoff** azzerato dopo una connessione sana (ocm/mcm ricevuti o su oltre `VIVA_DOPO_S` = 60 s), nei due moduli:
+  DIVERGENZA MIGLIORATIVA dichiarata rispetto a `frammenti_mercato.py` di oggi (che non lo azzera mai).
+- **Watchdog** nei due moduli: connessione su senza NESSUN messaggio oltre 3 heartbeat (`BATTITI_WATCHDOG`, la soglia
+  del "muto" dell'app; Betfair dice 2 = "forse disconnesso") -> socket chiuso, ripresa con `initialClk`/`clk`; evento
+  `flusso_muto` nel gestore dei prezzi.
+- **Ladder**: un errore di pubblicazione o di `marca_canale` rimette il SOLO mercato in attesa (gli altri del lotto
+  escono); meta assente = attesa con riprova ogni `RIPROVA_META_S` (0,2 s, nessun giro a vuoto); invii SALTATI dal canale
+  (`saltati`, contatore di `local_channel.statistiche()`) = ripubblicazione di tutti i mercati al massimo ogni
+  `RIPARO_MIN_S` (0,5 s); la chiusura del calcio marca l'ULTIMO book ricevuto (anche se fuso), come il recorder di oggi.
+- **Concorrenza del gestore**: nessuna rete sotto i lock della consegna (consumatori letti da una lista sostituita per
+  intero; risottoscrizioni fuori dal lock del gestore; connessione e autenticazione fuori dal lock della connessione).
+- **Eventi** del contratto nel gestore dei prezzi: `aggiungi_osservatore(cb)` con `mercato_chiuso`, `flusso_muto`,
+  `capacita_cambiata`.
+- **Slot di connessione** (stream ordini): con `disponibili()` <= riserva (1) NON apre e lo dice (`slot="in_attesa"`);
+  un rifiuto di Betfair mette in pausa 300 s (`slot="negato"`). Default prudente; la scelta resta all'utente (referto 8.1).
+- **Sessione**: `SessioneConSegnalazione.segnala_sessione_morta(motivo)` (estensione proposta) se c'e', altrimenti
+  `rinnova_se_serve()`; nei due moduli.
+- **Potatura**: ordini EXECUTION_COMPLETE oltre `TETTO_COMPLETATI` (5000); book dei mercati non piu' sottoscritti.
+- **Valuta**: la conversione GBP->EUR del gestore non si spegne piu' dal costruttore (`converti_valuta` tolto).
+- Orologio MONOTONO per vivo/muto dello stream ordini; ASCII; codice morto tolto.
+
+Test nuovi: `tests/test_a2_ordini_revisione.py`, `tests/test_a2_flusso_ladder_revisione.py`.

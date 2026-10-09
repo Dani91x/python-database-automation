@@ -54,6 +54,12 @@ INTERVALLO_MIN_MS = 20
 #: il thread del ladder si sveglia almeno cosi' spesso per accorgersi di un
 #: canale che torna ad avere client (oggi: il giro di 200 ms del worker)
 CONTROLLO_CANALE_S = 0.2
+#: un mercato con il book ma ancora senza metadati (evento non ancora noto alla
+#: sessione) resta in attesa e si riprova ogni tanto: mai perso, mai un giro a vuoto
+RIPROVA_META_S = 0.2
+#: dopo un invio SALTATO dal canale (``local_channel``: tetto di 64 invii in volo per
+#: client) tutti i mercati si ripubblicano, al massimo una volta ogni tanto
+RIPARO_MIN_S = 0.5
 TOPIC_LADDER = "ladder"
 
 Sport = Literal["calcio", "tennis"]
@@ -209,9 +215,11 @@ def libro_chiuso(profilo: ProfiloLadder, libro: Any,
                  ultimo: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Il book serializzato dopo un CLOSED, come oggi per lo sport del profilo.
 
-    calcio: l'ultimo book noto con ``status`` = quello del book (``recorder.py:220-225``),
-    nessuno se non ce n'era uno. tennis: il book chiuso serializzato e marcato CLOSED,
-    l'ultimo noto se non serializzabile (``tennis_runner.py:433-458``)."""
+    calcio: l'ultimo book RICEVUTO prima della chiusura (``ultimo``, serializzato
+    da chi chiama: il recorder di oggi serializza ogni book, ``recorder.py:189-207``)
+    con ``status`` = quello del book (``recorder.py:220-225``), nessuno se non ce
+    n'era uno. tennis: il book chiuso serializzato e marcato CLOSED, l'ultimo noto
+    se non serializzabile (``tennis_runner.py:433-458``)."""
     if profilo.chiusura == "marca_ultimo":
         if ultimo is None:
             return None
@@ -233,6 +241,8 @@ def libro_chiuso(profilo: ProfiloLadder, libro: Any,
 @dataclass
 class _Mercato:
     libro: Any = None                      # ultimo MarketBook ricevuto (consumatore)
+    ultimo_aperto: Any = None              # ultimo MarketBook NON chiuso ricevuto
+    riprova_dal: Optional[float] = None    # in attesa (meta assente, errore) fino a
     libro_serializzato_da: Any = None      # il MarketBook da cui viene ``serializzato``
     serializzato: Optional[Dict[str, Any]] = None
     firma_canale: Optional[str] = None
@@ -253,6 +263,7 @@ class LadderEvento:
                  scrivi_db: Optional[Callable[[Dict[str, Any]], None]] = None,
                  marca_canale: Optional[Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]] = None,
                  intervallo_min_ms: int = INTERVALLO_MIN_MS,
+                 saltati: Optional[Callable[[], int]] = None,
                  orologio: Callable[[], float] = time.monotonic,
                  topic: str = TOPIC_LADDER) -> None:
         self.profilo = profilo
@@ -265,6 +276,11 @@ class LadderEvento:
         self._intervallo = max(0, int(intervallo_min_ms)) / 1000.0
         self._ora = orologio
         self._topic = topic
+        # invii saltati dal canale (``local_channel.statistiche()``: ``saltati`` +
+        # ``saltati_client``): se crescono, il ladder ripara ripubblicando tutto
+        self._saltati = saltati
+        self._saltati_visti: Optional[int] = None
+        self._ultimo_riparo: Optional[float] = None
         self._cond = threading.Condition()
         self._mercati: Dict[str, _Mercato] = {}
         self._sporchi: Set[str] = set()
@@ -278,7 +294,7 @@ class LadderEvento:
         self._thread_db: Optional[threading.Thread] = None
         self.conti: Dict[str, float] = {
             "push": 0, "pubblicati": 0, "invariati": 0, "fusi": 0, "senza_client": 0,
-            "errori": 0, "db_scritti": 0, "db_errori": 0,
+            "errori": 0, "db_scritti": 0, "db_errori": 0, "senza_meta": 0, "ripari": 0,
             "attesa_ms_somma": 0.0, "attesa_ms_max": 0.0,
         }
 
@@ -289,7 +305,10 @@ class LadderEvento:
         if not mid:
             return
         with self._cond:
-            self._voce(mid).libro = libro
+            voce = self._voce(mid)
+            voce.libro = libro
+            if getattr(libro, "status", None) != "CLOSED":
+                voce.ultimo_aperto = libro
         self.push_a_ogni_cambio(mid)
 
     def push_a_ogni_cambio(self, market_id: str) -> None:
@@ -338,9 +357,22 @@ class LadderEvento:
                 self.conti["senza_client"] += len(self._sporchi)
                 self._sporchi.clear()
                 return None
+            self._ripara_se_saltati(ora)
             pronti, prossima = self._scaduti(ora)
+        rimandati: List[Tuple[str, float]] = []
         for mid in pronti:
-            self._pubblica_mercato(mid, ora)
+            quando = self._pubblica_mercato(mid, ora)
+            if quando is not None:
+                rimandati.append((mid, quando))
+        if rimandati:
+            with self._cond:
+                for mid, quando in rimandati:
+                    voce = self._mercati.get(mid)
+                    if voce is None:
+                        continue
+                    voce.riprova_dal = quando
+                    self._sporchi.add(mid)
+                    prossima = quando if prossima is None else min(prossima, quando)
         return prossima
 
     def esegui_db(self, adesso: Optional[float] = None) -> int:  # noqa: ARG002 - firma simmetrica
@@ -439,6 +471,31 @@ class LadderEvento:
             self._mercati[mid] = voce
         return voce
 
+    def _ripara_se_saltati(self, ora: float) -> None:
+        """Sotto ``_cond``: se il canale ha SALTATO invii dall'ultimo giro (un client
+        indietro perde il fotogramma: ``local_channel.py`` ``publish``), la firma
+        "gia' pubblicato" non e' piu' vera per tutti: ogni mercato si ripubblica (al
+        massimo ogni ``RIPARO_MIN_S``), come un fotogramma chiave."""
+        if self._saltati is None:
+            return
+        try:
+            n = int(self._saltati())
+        except Exception as e:  # noqa: BLE001 - contatore illeggibile: nessun riparo
+            logger.warning("[ladder] contatore dei saltati illeggibile: %s", e)
+            return
+        if self._saltati_visti is not None and n > self._saltati_visti and (
+                self._ultimo_riparo is None or ora - self._ultimo_riparo >= RIPARO_MIN_S):
+            self._ultimo_riparo = ora
+            self.conti["ripari"] += 1
+            for mid, voce in self._mercati.items():
+                voce.firma_canale = None
+                if mid not in self._sporchi:
+                    self._sporchi.add(mid)
+                    voce.sporco_dal = ora
+        elif self._saltati_visti is not None and n > self._saltati_visti:
+            return                    # riparo gia' fatto da poco: il prossimo giro conta ancora
+        self._saltati_visti = n
+
     def _scaduti(self, ora: float) -> Tuple[List[str], Optional[float]]:
         """(mercati da pubblicare adesso, prossima scadenza). Sotto ``_cond``."""
         pronti: List[str] = []
@@ -448,6 +505,8 @@ class LadderEvento:
             if voce is None:
                 continue
             dovuto = ora if voce.ultima_pub is None else voce.ultima_pub + self._intervallo
+            if voce.riprova_dal is not None:
+                dovuto = max(dovuto, voce.riprova_dal)
             if dovuto <= ora + 1e-9:
                 pronti.append(mid)
             else:
@@ -456,24 +515,36 @@ class LadderEvento:
             self._sporchi.discard(mid)
         return pronti, prossima
 
-    def _pubblica_mercato(self, mid: str, ora: float) -> None:
-        try:
-            v = self._versione(mid)
-        except Exception as e:  # noqa: BLE001 - un mercato malformato non blocca gli altri
-            self.conti["errori"] += 1
-            logger.warning("[ladder] costruzione KO %s: %s", mid, e)
-            return
+    def _pubblica_mercato(self, mid: str, ora: float) -> Optional[float]:
+        """Pubblica UN mercato. Ritorna None (fatto, o niente da fare) o l'istante in
+        cui riprovare: meta ancora assente, errore di costruzione o di invio. Un
+        errore su un mercato non tocca gli altri del lotto."""
         voce = self._mercati.get(mid)
-        if v is None or voce is None:
-            return
-        sig, _payload, riga = v
-        if voce.firma_canale == sig:
-            self.conti["invariati"] += 1
-            return
-        uscita = riga
-        if self._marca is not None and voce.serializzato is not None:
-            uscita = self._marca(riga, voce.serializzato)
-        self._pubblica(self._topic, uscita)
+        if voce is None:
+            return None
+        try:
+            if self._meta(mid) is None:
+                if self._libro_corrente(mid, voce) is None:
+                    return None
+                self.conti["senza_meta"] += 1
+                return ora + RIPROVA_META_S       # il book c'e': si aspetta il meta
+            v = self._versione(mid)
+            if v is None:
+                return None
+            sig, _payload, riga = v
+            if voce.firma_canale == sig:
+                self.conti["invariati"] += 1
+                voce.riprova_dal = None
+                return None
+            uscita = riga
+            if self._marca is not None and voce.serializzato is not None:
+                uscita = self._marca(riga, voce.serializzato)
+            self._pubblica(self._topic, uscita)
+        except Exception as e:  # noqa: BLE001 - un mercato non blocca gli altri del lotto
+            self.conti["errori"] += 1
+            logger.warning("[ladder] pubblicazione KO %s (si riprova): %s", mid, e)
+            return ora + max(self._intervallo, RIPROVA_META_S)
+        voce.riprova_dal = None
         voce.firma_canale = sig
         voce.ultima_pub = ora
         if voce.sporco_dal is not None:
@@ -482,6 +553,7 @@ class LadderEvento:
             self.conti["attesa_ms_max"] = max(self.conti["attesa_ms_max"], attesa)
             voce.sporco_dal = None
         self.conti["pubblicati"] += 1
+        return None
 
     def _libro_corrente(self, mid: str, voce: _Mercato) -> Any:
         if self._sorgente is not None:
@@ -495,8 +567,14 @@ class LadderEvento:
         if libro is None or libro is voce.libro_serializzato_da:
             return voce.serializzato
         if getattr(libro, "status", None) == "CLOSED":
-            nuovo = libro_chiuso(self.profilo, libro, voce.serializzato)
+            # l'ULTIMO book ricevuto prima della chiusura (anche se fuso e mai
+            # pubblicato), come il recorder di oggi che li serializza tutti
+            base = voce.serializzato
+            if voce.ultimo_aperto is not None and voce.ultimo_aperto is not voce.libro_serializzato_da:
+                base = serialize_book(voce.ultimo_aperto, self.profilo.profondita)
+            nuovo = libro_chiuso(self.profilo, libro, base)
         else:
+            voce.ultimo_aperto = libro
             nuovo = serialize_book(libro, self.profilo.profondita)
         voce.libro_serializzato_da = libro
         voce.serializzato = nuovo

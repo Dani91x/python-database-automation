@@ -18,7 +18,7 @@ cambia nessun valore: ``conflateMs`` e ``heartbeatMs`` restano quelli di oggi
 (decisioni U-01, U-02, U-03 dell'utente: nessun cambio senza replay).
 
 Due interpretazioni dichiarate (referto W1-A2, par. 2):
-* ``ladder_levels = 0`` vuol dire «non inviato» (oggi la sessione scalper usa il
+* ``ladder_levels = 0`` vuol dire "non inviato" (oggi la sessione scalper usa il
   filtro di serie di flumine, senza ``ladderLevels``): il contratto lo tipizza
   ``int``; ``filtro_dati`` qui sotto lo traduce in ``None``.
 * ``riserva_connessioni = 0`` per tennis, scanner e scalper: oggi solo il calcio

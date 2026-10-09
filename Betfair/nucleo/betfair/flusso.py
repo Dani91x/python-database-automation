@@ -63,6 +63,7 @@ from Betfair.stream import stream_muto as _SM
 from Betfair.stream import valuta as _valuta
 
 from .contratto import ProfiloFlusso, Sessione, StatoFlusso
+from .flusso_ordini_conto import segnala_sessione
 from .profili import LIMITE_BETFAIR_CONNESSIONI, LIMITE_BETFAIR_MERCATI, filtro_dati
 
 logger = logging.getLogger(__name__)
@@ -75,13 +76,21 @@ PAUSA_RIFIUTO_S = 300.0
 #: una connessione senza NESSUN messaggio da tanto, con un'altra viva, si chiude
 #: e i suoi mercati si ripiazzano (s) (``frammenti_mercato.py:98``)
 MUTO_S = 180.0
-#: codici Betfair = «connessione non concessa» (``frammenti_mercato.py:101-102``)
+#: codici Betfair = "connessione non concessa" (``frammenti_mercato.py:101-102``)
 CODICI_RIFIUTO = frozenset({"MAX_CONNECTION_LIMIT_EXCEEDED", "TOO_MANY_REQUESTS",
                             "SUBSCRIPTION_LIMIT_EXCEEDED"})
 CODICI_SESSIONE = frozenset({"NO_SESSION", "INVALID_SESSION_INFORMATION", "NOT_AUTHORIZED"})
 CODICE_CLK_NON_VALIDO = "INVALID_CLOCK"
 BACKOFF_MIN_S = 2.0
 BACKOFF_MAX_S = 60.0
+#: una connessione rimasta su oltre tanto (o che ha ricevuto mcm) azzera il backoff.
+#: DIVERGENZA MIGLIORATIVA dichiarata: ``FrammentoMarketStream.run`` di oggi
+#: (``frammenti_mercato.py:203-217``) non azzera mai il tentativo: dopo qualche caduta
+#: anche una connessione sana aspetta 60 s a ogni ripresa.
+VIVA_DOPO_S = 60.0
+#: battiti senza messaggi oltre i quali il watchdog chiude e riprende con clk: 3 come il
+#: "muto" di ``stream_muto`` (Betfair dice 2 = "forse disconnesso"; un battito di margine)
+BATTITI_WATCHDOG = _SM.BATTITI_PER_SOGLIA
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +193,7 @@ class ListenerFlusso(StreamListener):
         self.connessioni_lette_mono = 0.0
         self.heartbeat_ms_server: Optional[int] = None
         self.errore_elaborazione = False
+        self.mcm = 0
         #: mercati con almeno un book sulla sottoscrizione CORRENTE
         self.serviti: Set[str] = set()
 
@@ -223,6 +233,7 @@ class ListenerFlusso(StreamListener):
                 logger.warning("[flusso] Betfair FAILURE %s: %s", self.ultimo_errore,
                                str(d.get("errorMessage") or "")[:160])
         elif op == "mcm":
+            self.mcm += 1
             hb = d.get("heartbeatMs")
             if isinstance(hb, int) and not isinstance(hb, bool) and hb > 0:
                 self.heartbeat_ms_server = hb
@@ -237,7 +248,11 @@ def _crea_stream_libreria(client: Any, unique_id: int, listener: StreamListener)
 # ---------------------------------------------------------------------------
 class _Connessione:
     """Una connessione Stream API con UNA sottoscrizione di mercato, il suo thread
-    di lettura e la sua ripresa. La governa ``GestoreFlussi``."""
+    di lettura e la sua ripresa. La governa ``GestoreFlussi``.
+
+    Concorrenza: ``_lock`` protegge SOLO lo stato (mercati, versione, stream) e non
+    si tiene mai durante la rete; gli invii delle sottoscrizioni sono in fila su
+    ``_invio`` (mai tenuto da chi consegna i book)."""
 
     def __init__(self, gestore: "GestoreFlussi", numero: int, mercati: Set[str]) -> None:
         self.g = gestore
@@ -249,9 +264,13 @@ class _Connessione:
         self.rifiutata = False
         self.riconnessioni = 0
         self.aperta_mono = gestore._ora()
+        self.sottoscritta_mono: Optional[float] = None
         self.id_sottoscrizione = numero * 10000
         self._forza_immagine = False
+        self._versione = 0
+        self._mcm_alla_sottoscrizione = 0
         self._lock = threading.Lock()
+        self._invio = threading.Lock()
         self._pausa = threading.Event()
         self.thread = threading.Thread(target=self._ciclo, name="flusso-%s-%d" % (
             gestore.profilo.nome, numero), daemon=True)
@@ -266,6 +285,11 @@ class _Connessione:
     def chiudi(self) -> None:
         self.chiusa = True
         self._pausa.set()
+        self.ferma_lettura()
+
+    def ferma_lettura(self) -> None:
+        """Chiude il socket (anche dal watchdog): se la connessione non e' chiusa il
+        suo ciclo la riapre con ripresa."""
         s = self.stream
         if s is not None:
             try:
@@ -281,18 +305,22 @@ class _Connessione:
             raise ValueError("sottoscrizione vuota rifiutata")
         with self._lock:
             self.mercati = set(mercati)
+            self._versione += 1
             s = self.stream
             if s is None or not getattr(s, "running", False):
                 self._forza_immagine = True
                 return False
+        with self._invio:                      # rete FUORI da ``_lock``
             self._sottoscrivi(s, ripresa=False)
-            return True
+        return True
 
     def _sottoscrivi(self, s: Any, ripresa: bool) -> None:
         li = self.listener
         p = self.g.profilo
+        with self._lock:
+            ids = sorted(self.mercati)
         self.id_sottoscrizione = int(s.subscribe_to_markets(
-            market_filter=streaming_market_filter(market_ids=sorted(self.mercati)),
+            market_filter=streaming_market_filter(market_ids=ids),
             market_data_filter=filtro_dati(p),
             initial_clk=li.initial_clk if ripresa else None,
             clk=li.clk if ripresa else None,
@@ -300,6 +328,15 @@ class _Connessione:
             heartbeat_ms=p.heartbeat_ms,
             segmentation_enabled=True,
         ))
+        self.sottoscritta_mono = self.g._ora()
+        self._mcm_alla_sottoscrizione = li.mcm
+
+    def _sana(self) -> bool:
+        """Ha lavorato prima di cadere: mcm ricevuti o su oltre ``VIVA_DOPO_S``."""
+        if self.sottoscritta_mono is None:
+            return False
+        return (self.listener.mcm > self._mcm_alla_sottoscrizione
+                or self.g._ora() - self.sottoscritta_mono > VIVA_DOPO_S)
 
     def _ciclo(self) -> None:
         tentativo = 0
@@ -314,6 +351,9 @@ class _Connessione:
                     break
                 if self._dopo_errore(e):
                     break
+                if self._sana():
+                    tentativo = 0
+                self.sottoscritta_mono = None
                 tentativo += 1
                 attesa = max(BACKOFF_MIN_S, min(BACKOFF_MAX_S, float(2 ** tentativo)))
                 logger.warning("[flusso] connessione %d (%s) KO (%s): nuovo tentativo fra %.1f s",
@@ -326,11 +366,17 @@ class _Connessione:
         with self._lock:
             if self.chiusa:
                 return
-            s = self.g._crea_stream(client, self.id_sottoscrizione, li)
-            self.stream = s
+            versione = self._versione
             ripresa = bool(li.initial_clk and li.clk) and not self._forza_immagine
+        s = self.g._crea_stream(client, self.id_sottoscrizione, li)
+        with self._invio:                      # connessione e autenticazione: rete, senza _lock
+            self.stream = s
             self._sottoscrivi(s, ripresa)
-            self._forza_immagine = False
+            with self._lock:
+                cambiata = self._versione != versione
+                self._forza_immagine = False
+            if cambiata:                       # mercati cambiati mentre ci si collegava
+                self._sottoscrivi(s, ripresa=False)
         if ripresa:
             self.g.conti["riprese_con_clk"] += 1
         if self.chiusa:
@@ -351,7 +397,7 @@ class _Connessione:
             return True
         if codice in CODICI_SESSIONE:
             try:
-                self.g._sessione.rinnova_se_serve()
+                segnala_sessione(self.g._sessione, codice)
             except Exception as ex:  # noqa: BLE001
                 logger.warning("[flusso] rinnovo della sessione KO: %s", ex)
         li.autenticato = False
@@ -361,28 +407,37 @@ class _Connessione:
 # ---------------------------------------------------------------------------
 # il gestore
 # ---------------------------------------------------------------------------
+#: nomi degli eventi esposti (contratto: mercato_chiuso, flusso_muto, capacita_cambiata)
+EVENTO_MERCATO_CHIUSO = "mercato_chiuso"
+EVENTO_FLUSSO_MUTO = "flusso_muto"
+EVENTO_CAPACITA_CAMBIATA = "capacita_cambiata"
+
+
 class GestoreFlussi:
-    """Implementa ``contratto.FlussoMercato`` per UN profilo."""
+    """Implementa ``contratto.FlussoMercato`` per UN profilo.
+
+    Concorrenza: ``_lock`` (piano, aperture, chiusure) non si tiene MAI durante la
+    rete e non serve alla consegna dei book (che legge i consumatori da una lista
+    sostituita per intero): una connessione lenta non ferma i book delle altre."""
 
     def __init__(self, sessione: Sessione, profilo: ProfiloFlusso, *,
                  crea_stream: Callable[[Any, int, StreamListener], Any] = _crea_stream_libreria,
                  orologio: Callable[[], float] = time.monotonic,
                  trasforma: Optional[Callable[[Any], Any]] = None,
                  cambio: Optional[Any] = None,
-                 converti_valuta: bool = True,
                  limite_mercati: int = LIMITE_BETFAIR_MERCATI) -> None:
         self.profilo = profilo
         # K1 (26/09): lo stream dei mercati e' SEMPRE in GBP, il conto in EUR. Come lo
         # scanner (``safe_strategy/stream.py`` ``drain``) ogni book si converte ALLA FONTE
         # con l'unica funzione ``valuta.converti_libro`` (cambio di processo
-        # ``valuta.CAMBIO``, congelato per mercato) prima di ogni consumatore.
+        # ``valuta.CAMBIO``, congelato per mercato) prima di ogni consumatore. Non si
+        # spegne dal costruttore: la guardia K1 deve vedere una sola strada.
         self._cambio = cambio
-        self._converti = bool(converti_valuta)
         self._sessione = sessione
         self._crea_stream = crea_stream
         self._ora = orologio
         self._trasforma = trasforma
-        # MAI oltre il limite Betfair per sottoscrizione (contratto: «mai > 200»)
+        # MAI oltre il limite Betfair per sottoscrizione (contratto: "mai > 200")
         self.per_conn = max(1, min(int(profilo.mercati_per_connessione), int(limite_mercati)))
         if self.per_conn < profilo.mercati_per_connessione:
             logger.warning("[flusso] %s: %d mercati per connessione nel profilo, limitati a %d",
@@ -393,27 +448,34 @@ class GestoreFlussi:
         self._connessioni: List[_Connessione] = []
         self._numero = 0
         self._libri: Dict[str, Any] = {}
+        self._chiusi: Set[str] = set()
         self._consumatori: List[Tuple[Callable[[Any], None], Optional[Set[str]]]] = []
+        self._osservatori: List[Callable[[str, Any], None]] = []
         self._coda: "queue.Queue[Optional[List[Any]]]" = queue.Queue()
         self._fermo = threading.Event()
         self._consegna_thread: Optional[threading.Thread] = None
+        self._watchdog_thread: Optional[threading.Thread] = None
         self._rifiuto_mono: Optional[float] = None
+        self._ultima_capacita: Optional[int] = None
         self.ultimo_rifiuto: Optional[str] = None
         self.motivo_limite: Optional[str] = None
         self.ultimo_evento: Optional[str] = None
         self.conti: Dict[str, int] = {"aperture": 0, "chiusure": 0, "rifiuti": 0, "muti": 0,
                                       "risottoscrizioni": 0, "riprese_con_clk": 0,
-                                      "book": 0, "errori_consumatori": 0}
+                                      "book": 0, "errori_consumatori": 0, "riavvii_watchdog": 0,
+                                      "libri_potati": 0, "errori_osservatori": 0}
 
     # ------------------------------------------------------------ contratto
     def imposta_mercati(self, mercati: Iterable[str]) -> Set[str]:
         """Porta le connessioni a ``mercati``. Ritorna i mercati voluti che NON
         sono su nessuna connessione (capacita' o budget): il chiamante decide chi
-        lasciare fuori (l'auto-follow di oggi pianifica sulla ``capacita()``)."""
+        lasciare fuori (l'auto-follow di oggi pianifica sulla ``capacita()``).
+        Il piano si fa sotto ``_lock``; le risottoscrizioni (rete) DOPO."""
         voluti = {str(m) for m in mercati if m}
         if not voluti:
             raise ValueError("sottoscrizione vuota rifiutata")
         self.avvia()
+        da_mandare: List[Tuple[_Connessione, Set[str]]] = []
         with self._lock:
             self.manutenzione()
             conn = self._vive()
@@ -426,18 +488,29 @@ class GestoreFlussi:
                 if not bersaglio and i > 0:
                     self._chiudi(c, "nessun mercato da seguire")
                     continue
-                c.risottoscrivi(bersaglio)
+                da_mandare.append((c, bersaglio))
                 self.conti["risottoscrizioni"] += 1
             for blocco in piano.nuovi:
                 self._apri(blocco)
+        for c, bersaglio in da_mandare:
+            c.risottoscrivi(bersaglio)
+        with self._lock:
             coperti = set().union(*(c.mercati for c in self._vive())) if self._vive() else set()
-            return voluti - coperti
+            self._pota_libri(coperti)
+        return voluti - coperti
 
     def aggiungi_consumatore(self, cb: Callable[[Any], None], *,
                              mercati: Optional[Set[str]] = None) -> None:
         filtro = {str(m) for m in mercati} if mercati is not None else None
         with self._lock:
             self._consumatori = list(self._consumatori) + [(cb, filtro)]
+
+    def aggiungi_osservatore(self, cb: Callable[[str, Any], None]) -> None:
+        """``cb(evento, dato)`` per gli eventi del contratto: ``mercato_chiuso``
+        (market_id), ``flusso_muto`` (numero della connessione), ``capacita_cambiata``
+        (mercati sottoscrivibili). Estensione additiva."""
+        with self._lock:
+            self._osservatori = list(self._osservatori) + [cb]
 
     def book(self, market_id: str) -> Any:
         return self._libri.get(str(market_id))
@@ -481,6 +554,8 @@ class GestoreFlussi:
             "ultimo_evento": self.ultimo_evento,
             "battito_eta_s": min((r["eta_msg_s"] for r in righe if r["eta_msg_s"] is not None),
                                  default=None),
+            "soglia_watchdog_s": max((self._soglia_s(c) for c in self._vive()), default=None),
+            "mercati_chiusi": sorted(self._chiusi)[:50],
             "conti": dict(self.conti),
             "frammenti": righe,
         }
@@ -495,6 +570,9 @@ class GestoreFlussi:
             len(self._vive()), self.max_conn, self.riserva, self.per_conn,
             self._disponibili(), self._in_pausa(), self.ultimo_rifiuto,
             nome_env=_NOMI_ENV.get(self.profilo.nome, "profilo %s" % self.profilo.nome))
+        if self._ultima_capacita is not None and n != self._ultima_capacita:
+            self._evento(EVENTO_CAPACITA_CAMBIATA, n * self.per_conn)
+        self._ultima_capacita = n
         return n
 
     def manutenzione(self) -> Set[str]:
@@ -523,9 +601,32 @@ class GestoreFlussi:
                                           "heartbeat)" % (ora - ultimo))
         return persi
 
+    def veglia(self) -> List[int]:
+        """Un giro del watchdog: ogni connessione SU e sottoscritta senza NESSUN
+        messaggio (neanche heartbeat) oltre ``BATTITI_WATCHDOG`` heartbeat si chiude
+        al socket; il suo ciclo la riapre con ripresa (``initialClk``/``clk``).
+        Ritorna i numeri delle connessioni riavviate."""
+        riavviate: List[int] = []
+        ora = self._ora()
+        for c in self._vive():
+            dal = c.sottoscritta_mono
+            if dal is None or not c.connessa():
+                continue
+            muto = ora - max(c.listener.ultimo_msg_mono or 0.0, dal)
+            if muto > self._soglia_s(c):
+                self.conti["riavvii_watchdog"] += 1
+                logger.warning("[flusso] %s: connessione %d MUTA da %.1f s (soglia %.1f s): "
+                               "chiudo e riprendo", self.profilo.nome, c.numero, muto,
+                               self._soglia_s(c))
+                c.sottoscritta_mono = None
+                c.ferma_lettura()
+                riavviate.append(c.numero)
+                self._evento(EVENTO_FLUSSO_MUTO, c.numero)
+        return riavviate
+
     # ------------------------------------------------------------ vita
     def avvia(self) -> None:
-        """Il thread di consegna dei book (le connessioni nascono con i mercati)."""
+        """Consegna dei book e watchdog (le connessioni nascono con i mercati)."""
         with self._lock:
             if self._consegna_thread is not None:
                 return
@@ -533,6 +634,10 @@ class GestoreFlussi:
             self._consegna_thread = threading.Thread(
                 target=self._consegna, name="flusso-%s-consegna" % self.profilo.nome, daemon=True)
             self._consegna_thread.start()
+            self._watchdog_thread = threading.Thread(
+                target=self._ciclo_watchdog, name="flusso-%s-watchdog" % self.profilo.nome,
+                daemon=True)
+            self._watchdog_thread.start()
 
     def ferma(self, attesa_s: float = 5.0) -> None:
         """Chiude tutte le connessioni: nessuna riconnessione dopo."""
@@ -548,10 +653,11 @@ class GestoreFlussi:
                     break
                 c.thread.join(timeout=0.1)
         self._coda.put(None)
-        t = self._consegna_thread
-        if t is not None:
-            t.join(timeout=max(0.1, fine - time.monotonic()))
+        for t in (self._consegna_thread, self._watchdog_thread):
+            if t is not None:
+                t.join(timeout=max(0.1, fine - time.monotonic()))
         self._consegna_thread = None
+        self._watchdog_thread = None
 
     # ------------------------------------------------------------ interni
     def _vive(self) -> List[_Connessione]:
@@ -574,15 +680,17 @@ class GestoreFlussi:
         u = c.listener.ultimo_msg_mono
         return u > 0.0 and ora - u <= MUTO_S
 
+    def _soglia_s(self, c: _Connessione) -> float:
+        hb = c.listener.heartbeat_ms_server or self.profilo.heartbeat_ms or _SM.HEARTBEAT_MS_RICHIESTO
+        return BATTITI_WATCHDOG * float(hb) / 1000.0
+
     def _verdetto(self, c: _Connessione) -> Dict[str, Any]:
         li = c.listener
-        hb = li.heartbeat_ms_server or self.profilo.heartbeat_ms or _SM.HEARTBEAT_MS_RICHIESTO
-        soglia = _SM.BATTITI_PER_SOGLIA * float(hb) / 1000.0
         latente = li.status is not None and li.status != 200
         return _SM.stato_da_battiti(
             li.ultimo_msg_mono * 1000.0 if li.ultimo_msg_mono else None, None,
-            adesso_ms=self._ora() * 1000.0, soglia_s=soglia, mercati=sorted(c.mercati) or ["-"],
-            latente=latente)
+            adesso_ms=self._ora() * 1000.0, soglia_s=self._soglia_s(c),
+            mercati=sorted(c.mercati) or ["-"], latente=latente)
 
     def _apri(self, mercati: Set[str]) -> _Connessione:
         self._numero += 1
@@ -605,6 +713,32 @@ class GestoreFlussi:
                        self.profilo.nome, c.numero, len(persi), motivo)
         return persi
 
+    def _pota_libri(self, coperti: Set[str]) -> None:
+        """Sotto ``_lock``: i book dei mercati non piu' sottoscritti escono da ``book()``."""
+        via = [m for m in list(self._libri) if m not in coperti]
+        for m in via:
+            self._libri.pop(m, None)
+        self.conti["libri_potati"] += len(via)
+
+    def _evento(self, nome: str, dato: Any) -> None:
+        for cb in self._osservatori:
+            try:
+                cb(nome, dato)
+            except Exception as e:  # noqa: BLE001 - un osservatore non ferma il flusso
+                self.conti["errori_osservatori"] += 1
+                logger.error("[flusso] osservatore %r KO su %s: %s", getattr(cb, "__name__", cb), nome, e)
+
+    def _ciclo_watchdog(self) -> None:
+        while not self._fermo.wait(self._passo_watchdog()):
+            try:
+                self.veglia()
+            except Exception as e:  # noqa: BLE001 - il watchdog non muore
+                logger.warning("[flusso] giro del watchdog KO: %s", e)
+
+    def _passo_watchdog(self) -> float:
+        soglie = [self._soglia_s(c) for c in self._vive()]
+        return max(0.05, min(1.0, min(soglie) / 4.0)) if soglie else 1.0
+
     def _inoltra(self, libri: List[Any]) -> None:
         """Nel thread del socket: accoda i book del messaggio (consegna altrove)."""
         if libri:
@@ -615,16 +749,14 @@ class GestoreFlussi:
             libri = self._coda.get()
             if libri is None:
                 return
-            with self._lock:
-                consumatori = list(self._consumatori)
+            consumatori = self._consumatori      # lista sostituita per intero: nessun lock
             for b in libri:
-                if self._converti:
-                    try:
-                        b = _valuta.converti_libro(b, self._cambio or _valuta.CAMBIO)
-                    except Exception as e:  # noqa: BLE001 - un book in GBP non si consegna mai
-                        logger.error("[flusso] conversione GBP->EUR KO su %s: book NON consegnato (%s)",
-                                     getattr(b, "market_id", "?"), e)
-                        continue
+                try:
+                    b = _valuta.converti_libro(b, self._cambio or _valuta.CAMBIO)
+                except Exception as e:  # noqa: BLE001 - un book in GBP non si consegna mai
+                    logger.error("[flusso] conversione GBP->EUR KO su %s: book NON consegnato (%s)",
+                                 getattr(b, "market_id", "?"), e)
+                    continue
                 if self._trasforma is not None:
                     try:
                         b = self._trasforma(b)
@@ -635,6 +767,9 @@ class GestoreFlussi:
                 mid = str(b.market_id)
                 self._libri[mid] = b
                 self.conti["book"] += 1
+                if getattr(b, "status", None) == "CLOSED" and mid not in self._chiusi:
+                    self._chiusi.add(mid)
+                    self._evento(EVENTO_MERCATO_CHIUSO, mid)
                 for cb, mercati in consumatori:
                     if mercati is not None and mid not in mercati:
                         continue

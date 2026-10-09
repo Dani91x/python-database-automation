@@ -263,7 +263,10 @@ class _Orologio:
         return self.t
 
 
-def test_salute_vivo_muto_assente_e_503(server_stream):
+def test_salute_vivo_muto_assente_e_503(server_stream, monkeypatch):
+    """La DIAGNOSI (vivo/muto/assente, 503); il watchdog che riapre ha i suoi test
+    ed e' spento qui (l'orologio finto salta)."""
+    monkeypatch.setattr(F.GestoreFlussi, "veglia", lambda self: [])
     orologio = _Orologio()
     manca = "1.000003"
     srv = server_stream(lambda n, m, k: [immagine(m["marketFilter"]["marketIds"], k,
@@ -284,7 +287,10 @@ def test_salute_vivo_muto_assente_e_503(server_stream):
         g.ferma()
 
 
-def test_manutenzione_chiude_la_connessione_muta_e_ripiazza(server_stream):
+def test_manutenzione_chiude_la_connessione_muta_e_ripiazza(server_stream, monkeypatch):
+    """La seconda linea di difesa (180 s): il watchdog (prima linea, 3 heartbeat) qui e'
+    spento perche' l'orologio finto salta di 200 s; il watchdog ha i suoi test."""
+    monkeypatch.setattr(F.GestoreFlussi, "veglia", lambda self: [])
     orologio = _Orologio()
     srv = server_stream(_risposta_immagine)
     g = _gestore(orologio=orologio)

@@ -112,13 +112,14 @@ def test_tutte_le_chiavi_ocm_arrivano_in_ordine_dal_conto():
     li.on_data(ocm([mercato(MID, [runner(2542448, [grezzo], full=True)], full=True)],
                    ct="SUB_IMAGE", clk="AAA", initial="III"))
     (o,) = r.lotti[0]
-    assert o == OrdineDalConto(
+    assert o == FOC.OrdineDalContoEsteso(
         bet_id="228302937743", market_id=MID, selection_id=2542448, handicap=0.0, lato="lay",
         prezzo=1.83, importo=12.5, stato="EXECUTABLE", persistenza="PERSIST", tipo="LIMIT",
         piazzato_ms=1782831947123, abbinato_ms=1782831950999, abbinato=2.5, residuo=10.0,
         scaduto=0.0, annullato=0.0, annullato_da_betfair=0.0, prezzo_medio=1.82,
         customer_order_ref="m-abc-001", customer_strategy_ref="mike_live",
-        regulator_code="REG_GGC", ricevuto_ms=1782831952500)
+        regulator_code="REG_GGC", ricevuto_ms=1782831952500, campi_assenti=(), confermato=True)
+    assert isinstance(o, OrdineDalConto)
     assert (li.initial_clk, li.clk) == ("III", "AAA")
 
 
@@ -195,7 +196,9 @@ def test_ordine_BSP_senza_prezzo_ne_size_resta_con_valori_assenti():
     u = r.ultimi
     assert set(u) == {"BSP1", "NORMALE"}
     assert (u["BSP1"].prezzo, u["BSP1"].importo, u["BSP1"].tipo) == (None, None, "MARKET_ON_CLOSE")
-    assert u["BSP1"].annullato == 0.0
+    assert u["BSP1"].annullato is None                  # assente, mai 0 (PSB 7 n.21)
+    assert set(u["BSP1"].campi_assenti) == {"p", "s", "sc"}
+    assert u["NORMALE"].campi_assenti == ()
 
 
 def test_ordine_non_applicabile_si_scarta_e_si_segnala_il_resto_passa():
@@ -431,23 +434,28 @@ def test_sessione_scaduta_rinnova_e_riprova(server_stream, backoff_breve):
         f.ferma()
 
 
-def test_vivo_poi_muto_poi_latente_503(server_stream):
-    ora = {"ms": 1.0e12}
+def test_vivo_latente_503_poi_muto_su_orologio_monotono(server_stream):
+    """vivo/muto su orologio MONOTONO (mai l'ora del PC, che puo' saltare)."""
+    ora = {"s": 5000.0}
     srv = server_stream(lambda n, m, k: [_immagine(1)])
-    f = FOC.FlussoOrdiniContoBetfair(SessioneFinta(), orologio_ms=lambda: ora["ms"])
+    f = FOC.FlussoOrdiniContoBetfair(SessioneFinta(), orologio_mono=lambda: ora["s"],
+                                     orologio_ms=lambda: 1.0e12)
     assert f.stato()["stato"] == "assente"
     f.avvia()
     try:
         assert attendi(lambda: len(f.ordini()) == 2)
         assert f.stato()["stato"] == "vivo"
-        ora["ms"] += 15_001                    # piu' di 3 heartbeat da 5000 ms
-        st = f.stato()
-        assert (st["stato"], st["motivo"]) == ("muto", "flusso_interrotto")
         srv.manda(1, {"op": "ocm", "clk": "CLK-9", "pt": PT0 + 99, "ct": "HEARTBEAT",
                       "status": 503})
         assert attendi(lambda: f.stato()["latente"])
         st = f.stato()
         assert (st["stato"], st["motivo"]) == ("muto", "stream_latente")
+        srv.manda(1, {"op": "ocm", "clk": "CLK-10", "pt": PT0 + 100, "ct": "HEARTBEAT"})
+        assert attendi(lambda: not f.stato()["latente"])
+        assert f.stato()["stato"] == "vivo"
+        ora["s"] += 15.001                     # piu' di 3 heartbeat da 5000 ms
+        st = f.stato()
+        assert (st["stato"], st["motivo"]) == ("muto", "flusso_interrotto")
     finally:
         f.ferma()
 
