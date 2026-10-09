@@ -259,18 +259,29 @@ def test_freno_tetto_dei_login_riusciti_al_minuto(finto):
     s.client()
     assert [_forza_relogin(s, finto) for _ in range(5)] == [True, True, False, False, False]
     assert finto.conta("login") == 3                      # il 4o e il 5o non sono partiti
-    assert s.stato()["freno"]["rifiuti"] == 3 and s.stato()["contatori"]["login_frenati"] == 3
+    # il 4o e' fermato dal freno; dopo, il custode e' in backoff e il 5o non arriva nemmeno al freno
+    assert s.stato()["freno"]["rifiuti"] == 1 and s.stato()["contatori"]["login_frenati"] == 1
+    assert s.stato()["in_backoff"] is True
     finto.ora.avanza(61)
     assert _forza_relogin(s, finto) is True and finto.conta("login") == 4
 
 
 def test_freno_tetto_dei_tentativi_al_minuto(finto):
+    """Il primo login (``client()``) non ha il backoff del custode: con credenziali
+    rifiutate un chiamante che insiste e' fermato dal tetto dei TENTATIVI."""
+    from Betfair.stream import auth
+
     s = _sessione(finto, freno=S.FrenoLogin(tetto_riusciti_al_minuto=10, tetto_tentativi_al_minuto=3,
                                             ora=finto.ora))
-    s.client()
-    finto.guasta("login", "rete", "rete", "rete", "rete")
-    assert [_forza_relogin(s, finto) for _ in range(4)] == [False, False, False, False]
-    assert finto.conta("login") == 3                      # 1 riuscito + 2 falliti, poi frenato
+    finto.guasta("login", *(["INVALID_USERNAME_OR_PASSWORD"] * 6))
+    esiti = []
+    for _ in range(5):
+        try:
+            s.client()
+        except (auth.BetfairStreamAuthError, S.LoginFrenato) as e:
+            esiti.append(type(e).__name__)
+    assert esiti == ["BetfairStreamAuthError"] * 3 + ["LoginFrenato"] * 2
+    assert finto.conta("login") == 3
 
 
 def test_freno_di_serie_mai_il_ban_di_betfair_anche_in_un_ciclo_impazzito(finto):
@@ -298,9 +309,11 @@ def test_ban_di_betfair_ferma_i_login_per_20_minuti(finto):
         assert _forza_relogin(s, finto) is False
         assert s.rinnova() in (None, "ko")
     assert finto.conta("login") == n                       # nessun tentativo durante il ban
-    assert s.stato()["freno"]["ban_per_altri_s"] == pytest.approx(60.0)
+    assert s.stato()["freno"]["ban_per_altri_s"] == pytest.approx(60.0 + S.MARGINE_BAN_S)
     assert s.stato()["contatori"]["ban_login"] == 1
     finto.ora.avanza(60)
+    assert _forza_relogin(s, finto) is False               # ancora nel margine di 30 s
+    finto.ora.avanza(60)                                   # fine del margine E del backoff del custode
     assert _forza_relogin(s, finto) is True
 
 
@@ -361,7 +374,7 @@ def test_stato_senza_token_con_tutte_le_chiavi(finto):
     _forza_relogin(s, finto)
     st = s.stato()
     assert set(st) == {"nome", "connessa", "generazione", "periodo_keepalive_s", "vita_s", "ultimo_esito",
-                       "custode", "freno", "contatori", "thread_custode"}
+                       "custode", "freno", "in_backoff", "contatori", "thread_custode"}
     assert "TOKSEGRETO" not in repr(st)
     assert st["vita_s"] == 1200.0 and st["periodo_keepalive_s"] == S.PERIODO_KEEPALIVE_DI_SERIE_S == 480.0
     assert st["contatori"]["login"] == 2 and st["contatori"]["relogin"] == 1

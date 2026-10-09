@@ -21,7 +21,13 @@ Qui:
     accettato). Come ``omega_market.call_mutating`` (``omega_market.py:89-112``),
     ripetuta UNA volta solo se Betfair dichiara la sessione non valida (la
     richiesta e' stata rifiutata prima di arrivare all'exchange) e il relogin
-    riesce; ``rifai_mutazione_su_sessione=False`` toglie anche questa;
+    riesce; il rifiuto si legge SOLO dal testo dell'errore e dalla sua causa
+    esplicita (``__cause__``), MAI dal ``__context__``: una mutazione chiamata dentro
+    un ``except`` per un errore di sessione che cade per un timeout NON e' un rifiuto
+    (``rifiuto_di_sessione``). La ripetizione manda gli STESSI parametri (quindi lo
+    stesso ``customer_ref`` se il chiamante lo passa: non lo impongo, la richiesta
+    rifiutata non e' arrivata all'exchange). ``rifai_mutazione_su_sessione=False``
+    toglie anche questa ripetizione;
   * suddivisione automatica di ``listMarketBook`` e ``listMarketProfitAndLoss``
     in blocchi che non superano 200 punti (``limiti.blocchi_per_peso``) con la
     proiezione chiesta; risultati concatenati nell'ordine dei ``market_ids``;
@@ -122,6 +128,26 @@ def classifica_errore(exc: BaseException) -> ClasseErrore:
     return "rete"
 
 
+def rifiuto_di_sessione(exc: BaseException) -> bool:
+    """True se Betfair ha RIFIUTATO la richiesta per sessione non valida, letto dal
+    testo dell'errore e dalla sua causa esplicita. Mai dal ``__context__`` (la
+    catena implicita di un ``except`` del chiamante): e' la regola delle mutazioni,
+    come ``omega_market._is_session_error`` che guarda solo ``str(ex)``."""
+    from Betfair.stream.auth import _ERRORI_DI_SESSIONE
+
+    for anello in (exc, exc.__cause__):
+        if anello is None:
+            continue
+        try:
+            testo = str(anello).upper()
+        except Exception as e:  # noqa: BLE001 - __str__ esotici: non e' un rifiuto leggibile
+            logger.debug("[rest-a1] testo di %s illeggibile (%s)", type(anello).__name__, type(e).__name__)
+            continue
+        if any(k in testo for k in _ERRORI_DI_SESSIONE):
+            return True
+    return False
+
+
 def descrivi_errore(exc: BaseException) -> str:
     """Tipo e codice, MAI il testo intero (puo' contenere il token): quella di
     ``auth`` piu' il codice di limite se c'e'."""
@@ -131,7 +157,8 @@ def descrivi_errore(exc: BaseException) -> str:
     base = _descrivi_errore(exc)
     try:
         testo = str(exc).upper()
-    except Exception:  # noqa: BLE001 - __str__ esotici
+    except Exception as e:  # noqa: BLE001 - __str__ esotici
+        logger.debug("[rest-a1] testo di %s illeggibile (%s)", type(exc).__name__, type(e).__name__)
         testo = ""
     for k in LIMIT_MARKERS:
         if k in testo:
@@ -219,10 +246,21 @@ class ClienteRestBetfair:
             raise ValueError(f"{metodo} cambia stato sul conto: si chiama con mutazione()")
         if metodo not in LETTURE:
             raise ValueError(f"metodo REST sconosciuto: {metodo}")
+        if isinstance(kwargs.get("market_ids"), str):
+            # un solo id passato come stringa: mai una lista di caratteri
+            kwargs = {**kwargs, "market_ids": [kwargs["market_ids"]]}
         peso = limiti.peso_richiesta(metodo, kwargs)
         if peso is None or "market_ids" not in kwargs:
             return self._lettura_ritentata(metodo, kwargs)
-        blocchi = limiti.blocchi_per_peso(kwargs["market_ids"], peso, self._blocco_massimo.get(metodo))
+        if peso > limiti.PESO_MASSIMO_RICHIESTA:
+            # nemmeno UN mercato entra nei 200 punti secondo la NOSTRA stima (prudente):
+            # un mercato per richiesta e risponde Betfair (al peggio TOO_MUCH_DATA ->
+            # BetfairLimitHit), come oggi; nessun rifiuto inventato in locale
+            logger.warning("[rest-a1] %s: peso stimato %s per mercato oltre %d: un mercato per richiesta",
+                           metodo, peso, limiti.PESO_MASSIMO_RICHIESTA)
+            blocchi = [[m] for m in kwargs["market_ids"]]
+        else:
+            blocchi = limiti.blocchi_per_peso(kwargs["market_ids"], peso, self._blocco_massimo.get(metodo))
         risultati: List[Any] = []
         for i, blocco in enumerate(blocchi):
             if i and self._pausa_blocchi > 0:
@@ -243,7 +281,7 @@ class ClienteRestBetfair:
         try:
             return self._chiama(metodo, kwargs, MUTAZIONI)
         except Exception as e:
-            if not self._rifai_mutazione or classifica_errore(e) != "sessione":
+            if not self._rifai_mutazione or not rifiuto_di_sessione(e):
                 raise
             if not self._sessione.rifai_login(e, self._generazione_usata()):
                 raise

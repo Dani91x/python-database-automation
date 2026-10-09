@@ -46,7 +46,11 @@ VITA_SESSIONE_FINTO_S = 1200.0
 
 
 def peso_finto(price_projection: Optional[dict]) -> float:
-    """Peso per mercato secondo il finto (con bestPricesDepth: x profondita'/3)."""
+    """Peso per mercato secondo il finto. Per ``bestPricesDepth`` il finto usa la
+    lettura LETTERALE e piu' generosa della riga ufficiale ("peso x profondita'/3"),
+    DIVERSA da quella prudente di ``limiti.py`` (niente prova circolare): il fattore
+    scala solo la quota delle migliori offerte (5 punti, anche dentro la
+    combinazione con EX_TRADED: 15 + 5 x d/3) e scende sotto 1 per d < 3."""
     pp = price_projection or {}
     voci = set(pp.get("priceData") or [])
     if "EX_ALL_OFFERS" in voci:
@@ -56,9 +60,9 @@ def peso_finto(price_projection: Optional[dict]) -> float:
     if "EX_ALL_OFFERS" in voci:
         peso += _PESI_FINTO["EX_ALL_OFFERS+EX_TRADED" if tr else "EX_ALL_OFFERS"]
     elif "EX_BEST_OFFERS" in voci:
-        base = _PESI_FINTO["EX_BEST_OFFERS+EX_TRADED" if tr else "EX_BEST_OFFERS"]
         d = (pp.get("exBestOffersOverrides") or {}).get("bestPricesDepth")
-        peso += base * (d / 3.0) if d else base
+        migliori = _PESI_FINTO["EX_BEST_OFFERS"] * (d / 3.0 if d else 1.0)
+        peso += migliori + (_PESI_FINTO["EX_BEST_OFFERS+EX_TRADED"] - _PESI_FINTO["EX_BEST_OFFERS"] if tr else 0)
     elif tr:
         peso += _PESI_FINTO["EX_TRADED"]
     for sp in ("SP_AVAILABLE", "SP_TRADED"):

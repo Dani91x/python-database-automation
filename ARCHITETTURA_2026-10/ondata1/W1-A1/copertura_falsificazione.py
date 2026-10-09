@@ -12,6 +12,8 @@ for x in d:
 rossi = set()
 for x in d:
     for r in x.get("rossi", []):
+        if "::" not in r:
+            continue
         rossi.add(re.sub(r"\[.*", "", r.split("::", 1)[1]))
 out = subprocess.run([sys.executable, "-m", "pytest", "Betfair/nucleo/betfair/tests/", "-q", "-p", "no:cacheprovider",
                       "--collect-only"], capture_output=True, text=True).stdout
@@ -19,6 +21,6 @@ tutti = {re.sub(r"\[.*", "", l.split("::", 1)[1]) for l in out.splitlines() if "
 print(len(tutti), "funzioni;", len(tutti & rossi), "viste rosse")
 print("MAI ROSSE:", sorted(tutti - rossi))
 casi = {l.split("::", 1)[1] for l in out.splitlines() if "::" in l}
-rc = {r.split("::", 1)[1] for x in d for r in x.get("rossi", [])}
+rc = {r.split("::", 1)[1] for x in d for r in x.get("rossi", []) if "::" in r}
 print(len(casi), "casi;", len(casi & rc), "casi visti rossi")
 print("CASI MAI ROSSI:", sorted(casi - rc))

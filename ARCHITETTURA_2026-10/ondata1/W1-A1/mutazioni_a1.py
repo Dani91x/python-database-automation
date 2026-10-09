@@ -21,7 +21,7 @@ M = [
      '    if "EX_ALL_OFFERS" in voci and "EX_BEST_OFFERS" not in voci:\n        chiavi.append(', "ALL non prevale su BEST"),
     ("L03", B + "limiti.py", 'chiavi.append("EX_BEST_OFFERS+EX_TRADED" if traded else "EX_BEST_OFFERS")',
      'chiavi.extend(["EX_BEST_OFFERS", "EX_TRADED"] if traded else ["EX_BEST_OFFERS"])', "combinazione sommata"),
-    ("L04", B + "limiti.py", "base = base * Fraction(d, 3)", "base = base", "profondita' ignorata"),
+    ("L04", B + "limiti.py", "base = base * max(Fraction(1), Fraction(profondita, 3))", "base = base", "profondita' ignorata"),
     ("L05", B + "limiti.py", "n = math.floor(Fraction(PESO_MASSIMO_RICHIESTA) / p)",
      "n = math.ceil(Fraction(PESO_MASSIMO_RICHIESTA) / p)", "arrotondamento per eccesso"),
     ("L06", B + "limiti.py", "        n = min(n, int(blocco_massimo))", "        pass", "blocco_massimo ignorato"),
@@ -55,7 +55,7 @@ M = [
      "nessun controllo di generazione"),
     ("S04", B + "sessione.py", "        for _ in range(n):\n            for cb in consumatori:",
      "        for _ in range(0):\n            for cb in consumatori:", "sessione_rifatta mai notificata"),
-    ("S05", B + "sessione.py", "            relogin = self.generazione > 1", "            relogin = self.generazione >= 1",
+    ("S05", B + "sessione.py", "            relogin = self._custode is not None", "            relogin = True",
      "notifica anche al primo login"),
     ("S06", B + "sessione.py", "        if _SESSIONE_DI_PROCESSO is None:\n            _SESSIONE_DI_PROCESSO = SessioneBetfair(**opzioni)",
      "        if True:\n            _SESSIONE_DI_PROCESSO = SessioneBetfair(**opzioni)", "nuova sessione a ogni chiamata"),
@@ -72,9 +72,9 @@ M = [
      '                "nome": self.nome + str(getattr(self._client, "session_token", "")),', "token nello stato"),
     ("S13", B + "sessione.py", '        self.salute.evento_sessione("login")\n', "", "login non contato"),
     ("S14", B + "sessione.py", "            auth.safe_logout(client)", "            pass", "nessun logout alla chiusura"),
-    ("S15", B + "sessione.py", "            if self.generazione == 0:\n                self._primo_login()",
+    ("S15", B + "sessione.py", "            if self._custode is None:\n                self._primo_login()",
      "            if True:\n                self._primo_login()", "login a ogni client()"),
-    ("S16", B + "sessione.py", "            return bool(self._custode.segnala_errore(exc))", "            return True", "segnala accetta tutto"),
+    ("S16", B + "sessione.py", "        return bool(custode.segnala_errore(exc))", "        return True", "segnala accetta tutto"),
     ("S17", B + "sessione.py", "TETTO_LOGIN_RIUSCITI_DI_SERIE = limiti.tetto_login_per_processo(10)",
      "TETTO_LOGIN_RIUSCITI_DI_SERIE = 100", "tetto di serie = tutto il conto"),
     ("S18", B + "sessione.py", "    return limiti.CODICE_BAN_LOGIN in _testo_catena(exc)", "    return False", "ban non riconosciuto"),
@@ -83,16 +83,16 @@ M = [
      "", "tetto oltre il conto accettato"),
     ("S20", B + "sessione.py", "            elif len(self._tentativi) >= self.tetto_tentativi:", "            elif False:",
      "tetto dei tentativi spento"),
-    ("S21", B + "sessione.py", "        self.freno.registra_tentativo(adesso)\n", "", "tentativi non registrati"),
+    ("S21", B + "sessione.py", "        freno.registra_tentativo(adesso)\n", "", "tentativi non registrati"),
     ("S22", B + "sessione.py", '            self.salute.evento_sessione("keepalive_falliti")\n', "", "keepAlive falliti non contati"),
     ("S23", B + "sessione.py", "            esito = self._custode.tick(adesso)", "            esito = None", "rinnova non rinnova"),
     ("S24", B + "sessione.py", '                "periodo_keepalive_s": self.periodo_keepalive_s,\n', "", "stato senza periodo"),
     ("S25", B + "sessione.py", "        except LoginFrenato as e:\n            self.salute.evento_sessione(\"login_frenati\")",
      "        except LoginFrenato as e:\n            self.salute.evento_sessione(\"login\")", "frenati contati come login"),
     # ---------------- rest.py
-    ("R01", B + "rest.py", "            if not self._rifai_mutazione or classifica_errore(e) != \"sessione\":\n                raise",
+    ("R01", B + "rest.py", "            if not self._rifai_mutazione or not rifiuto_di_sessione(e):\n                raise",
      "            if False:\n                raise", "MUTAZIONE RITENTATA su qualunque errore"),
-    ("R02", B + "rest.py", "            if not self._rifai_mutazione or classifica_errore(e)", "            if classifica_errore(e)",
+    ("R02", B + "rest.py", "            if not self._rifai_mutazione or not rifiuto_di_sessione(e)", "            if not rifiuto_di_sessione(e)",
      "interruttore della ripetizione ignorato"),
     ("R03", B + "rest.py", '                if classe == "limite":\n', '                if classe == "limitex":\n', "limite ritentato"),
     ("R04", B + "rest.py", '                if classe == "permanente" or tentativo', '                if tentativo', "permanente ritentato"),
@@ -143,6 +143,33 @@ M = [
     ("L19", B + "limiti.py", 'METODI_CONTESI: Tuple[str, ...] = ("listCurrentOrders", "listMarketProfitAndLoss")',
      'METODI_CONTESI: Tuple[str, ...] = ("listCurrentOrders",)', "P&L non conteso"),
     ("L20", B + "limiti.py", 'return parametri.get("order_projection") is not None or', 'return parametri.get("order_projection") is None or', "conteso senza ordini"),
+    # ---------------- correzioni dopo la revisione indipendente
+    ("R28", B + "rest.py", "    for anello in (exc, exc.__cause__):", "    for anello in (exc, exc.__cause__, exc.__context__):",
+     "ALTA-1: rifiuto letto anche dal __context__"),
+    ("R29", B + "rest.py", "            if not self._rifai_mutazione or not rifiuto_di_sessione(e)",
+     "            if not self._rifai_mutazione or classifica_errore(e) != \"sessione\"", "ALTA-1: mutazione classificata come le letture"),
+    ("R30", B + "rest.py", "            if not self._rifai_mutazione or not rifiuto_di_sessione(e)", "            if not self._rifai_mutazione",
+     "mutazione ripetuta su qualunque errore dopo un relogin di altri (mutazione sopravvissuta)"),
+    ("R31", B + "rest.py", '        if isinstance(kwargs.get("market_ids"), str):', '        if False:', "market_ids stringa spezzata"),
+    ("R32", B + "rest.py", "        if peso > limiti.PESO_MASSIMO_RICHIESTA:", "        if False:", "un mercato oltre 200: ValueError locale"),
+    ("S27", B + "sessione.py", "            if self.in_backoff():\n", "            if False:\n", "ALTA-2: backoff scavalcato"),
+    ("S28", B + "sessione.py", "        return freno_del_conto(self.conto, self._ora)", "        return FrenoLogin(ora=self._ora)", "MEDIA-5: freno per istanza"),
+    ("S29", B + "sessione.py", "        if client is not None and self._custode is not None:\n            return client",
+     "        if False:\n            return client", "MEDIA-3: niente via veloce"),
+    ("S30", B + "sessione.py", "        if not 0 < float(periodo_keepalive_s) <= PERIODO_KEEPALIVE_MASSIMO_S:", "        if False:", "periodo non validato"),
+    ("S31", B + "sessione.py", "            loggata, self._custode = self._custode is not None, None",
+     "            loggata, self._custode = self._custode is not None, None\n            self.generazione = 0", "generazione azzerata da chiudi"),
+    ("S32", B + "sessione.py", "MARGINE_BAN_S = 30.0", "MARGINE_BAN_S = 0.0", "ban senza margine"),
+    ("S33", B + "sessione.py", "        if custode is None or custode.fallimenti <= 0:\n            return False\n        return not custode.dovuto(adesso)",
+     "        return False", "in_backoff sempre falso"),
+    ("L21", B + "limiti.py", "max(Fraction(1), Fraction(profondita, 3))", "Fraction(profondita, 3)", "profondita' < 3 sotto il peso base"),
+    ("L22", B + "limiti.py", "if isinstance(profondita, bool) or not isinstance(profondita, int) or profondita < 1:",
+     "if profondita < 1:", "profondita' bool/decimale accettata"),
+    ("S34", B + "sessione.py", "        if not 0 < float(periodo_keepalive_s) <= PERIODO_KEEPALIVE_MASSIMO_S:",
+     "        if not 0 < float(periodo_keepalive_s) < PERIODO_KEEPALIVE_MASSIMO_S:", "bordo del periodo escluso"),
+    ("R33", B + "rest.py", "        if any(k in testo for k in _ERRORI_DI_SESSIONE):\n            return True",
+     "        if False:\n            return True", "rifiuto di sessione mai riconosciuto"),
+    ("R34", B + "rest.py", "    return False\n\n\ndef descrivi_errore", "    return True\n\n\ndef descrivi_errore", "ogni errore e' un rifiuto di sessione"),
     # ---------------- il finto (le sue prove devono saper diventare rosse)
     ("F01", T + "test_a1_finto_betfair.py", '"Content-Encoding": "gzip",', '"Content-Encoding": "identity",', "finto senza gzip dichiarato"),
     ("F02", T + "test_a1_finto_betfair.py", "            if peso_finto(params.get(\"priceProjection\")) * len(ids) > 200:", "            if False:",
@@ -162,9 +189,16 @@ def sha(p):
 
 
 def gira():
+    try:
+        return _gira()
+    except subprocess.TimeoutExpired:
+        return ["TIMEOUT (test bloccato: la mutazione e' vista)"], "timeout"
+
+
+def _gira():
     r = subprocess.run([sys.executable, "-P", "-m", "pytest", os.path.join(SB, T), "-q", "-p", "no:cacheprovider",
                         "--tb=no", "-rf"],
-                       env={**os.environ, "PYTHONPATH": SB}, capture_output=True, text=True, timeout=600)
+                       env={**os.environ, "PYTHONPATH": SB}, capture_output=True, text=True, timeout=300)
     rossi = sorted(set(re.findall(r"^FAILED (\S+)", r.stdout, re.M)) | set(re.findall(r"^ERROR (\S+)", r.stdout, re.M)))
     righe = [l for l in r.stdout.splitlines() if l.strip()]
     return rossi, (righe[-1] if righe else r.stderr[-300:])

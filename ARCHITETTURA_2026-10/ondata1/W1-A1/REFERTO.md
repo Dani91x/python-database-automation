@@ -7,11 +7,11 @@ Documento del comparto: `Betfair/nucleo/betfair/doc/A1_SESSIONE_REST.md`.
 
 | File | Righe | Punti chiave |
 |---|---|---|
-| `Betfair/nucleo/betfair/limiti.py` | ~225 | tabella dei pesi `PESI_LIST_MARKET_BOOK` (:51), `peso_list_market_book` (:136, regole ufficiali: combinazioni con `EX_TRADED` a peso proprio, ALL prevale su BEST, `bestPricesDepth` x d/3), `mercati_massimi_per_richiesta`, `blocchi_per_peso` (:180), `e_metodo_conteso` (:204), endpoint .it, limiti di login/ban/istruzioni |
-| `Betfair/nucleo/betfair/salute.py` | ~145 | `SaluteBetfair`: login/keepAlive/relogin/frenati/ban, esiti per metodo e classe, ritenti, attese sul tetto, latenze p50/p99 con `Betfair.monitor.registro.Istogramma` (riusato); inoltro facoltativo al modulo Salute con gruppi propri |
-| `Betfair/nucleo/betfair/sessione.py` | ~455 | `FrenoLogin` (:84), `_ClientCustodito` (:170: il client visto da `auth.CustodeSessione`), `SessioneBetfair` (`client`, `rinnova_se_serve`, `stato`, `rifai_login` :293 col contatore di generazione, `_primo_login` :354, `_login_frenato` :370, `avvia/ferma/chiudi`), `sessione_del_processo` (:431) |
-| `Betfair/nucleo/betfair/rest.py` | ~315 | `LETTURE`/`MUTAZIONI` (:63/:78), `classifica_errore` (:109, funzioni di oggi importate), `tetto_del_conto` (:150), `ClienteRestBetfair.lettura` (:211, suddivisione per peso), `mutazione` (:234), `_lettura_ritentata` (:255), `_chiama` (:287: semaforo del conto, latenza, esito) |
-| `Betfair/nucleo/betfair/tests/test_a1_*.py` | 4 file | finto Betfair a livello di trasporto + 172 casi (65 funzioni) |
+| `Betfair/nucleo/betfair/limiti.py` | 228 | tabella dei pesi `PESI_LIST_MARKET_BOOK` (:54), `peso_list_market_book` (:139, regole ufficiali: combinazioni con `EX_TRADED` a peso proprio, ALL prevale su BEST, `bestPricesDepth` x max(1, d/3)), `mercati_massimi_per_richiesta`, `blocchi_per_peso` (:182), `e_metodo_conteso` (:206), endpoint .it, limiti di login/ban/istruzioni |
+| `Betfair/nucleo/betfair/salute.py` | 144 | `SaluteBetfair`: login/keepAlive/relogin/frenati/ban, esiti per metodo e classe, ritenti, attese sul tetto, latenze p50/p99 con `Betfair.monitor.registro.Istogramma` (riusato); inoltro facoltativo al modulo Salute con gruppi propri |
+| `Betfair/nucleo/betfair/sessione.py` | 522 | `FrenoLogin` (:98), `freno_del_conto` (:184, un freno per conto nel processo), `_ClientCustodito` (:205: il client visto da `auth.CustodeSessione`), `SessioneBetfair` (`client` :271 con via veloce senza lucchetto, `in_backoff` :322, `rifai_login` :357 col contatore di generazione e il backoff del custode, `_primo_login` :421, `_login_frenato` :437, `avvia/ferma/chiudi`), `sessione_del_processo` (:499) |
+| `Betfair/nucleo/betfair/rest.py` | 352 | `LETTURE`/`MUTAZIONI` (:69/:84), `classifica_errore` (:115, funzioni di oggi importate), `rifiuto_di_sessione` (:131, solo per le mutazioni: `str(e)` e `__cause__`), `tetto_del_conto` (:177), `ClienteRestBetfair.lettura` (:238, suddivisione per peso), `mutazione` (:272), `_lettura_ritentata` (:293), `_chiama` (:325: semaforo del conto, latenza, esito) |
+| `Betfair/nucleo/betfair/tests/test_a1_*.py` | 6 file | finto Betfair a livello di trasporto, prove mie, prove del revisore (`test_a1_rest_revisore.py`), prove delle correzioni (`test_a1_correzioni.py`) |
 
 Riuso (import, nessuna copia): `auth.build_client(login=False)` (il client di oggi: locale `italy`, certificati,
 `requests.Session`), `auth.CustodeSessione` (periodo, backoff 15/30/60, relogin al 90% della vita), `auth.e_errore_di_sessione`,
@@ -47,7 +47,7 @@ finto applica le regole di Betfair con una tabella SUA (non importa `limiti.py`)
 | `auth.build_client` (:33-85) endpoint, cert, locale, sessione HTTP | `SessioneBetfair.client()` | `test_endpoint_e_certificati_come_oggi` | identici (certlogin `identitysso-cert.betfair.it`, keepAlive `identitysso.betfair.it`, API `api.betfair.com`, cert tuple, 1200 s) |
 | `auth.build_client(login=True)` errore di login | `client()` | `test_primo_login_fallito_stesso_errore_di_build_client` | stesso tipo, stesso messaggio, stessa causa |
 | `auth.CustodeSessione.tick` (:226-249) | `SessioneBetfair.rinnova` | `test_parita_custode_di_oggi_stesso_copione` (39 passi: ok, ko di rete con backoff 15/30/60, relogin al 90%, NO_SESSION -> login, login fallito, errore segnalato) | esiti, richieste HTTP e `stato()` del custode identici |
-| `omega_market.call_mutating` (:89-112) | `mutazione` | `test_parita_mutazioni_con_call_mutating` (8 guasti) | identico su rete, timeout, UNEXPECTED_ERROR, TOO_MANY_REQUESTS (1 invio), INVALID_SESSION_INFORMATION, NO_SESSION (2 invii); **divergenza** NO_APP_KEY/INVALID_APP_KEY: oggi 2 invii, nuovo 1 (par. 9) |
+| `omega_market.call_mutating` (:89-112) | `mutazione` | `test_parita_mutazioni_con_call_mutating` (8 guasti), `test_a1_rest_revisore::test_parita_con_call_mutating_dentro_un_except_di_sessione`, `..._mutazione_chiamata_dentro_un_except_di_sessione_...` (4), `test_a1_correzioni::test_rifiuto_di_sessione_mai_dal_contesto` (6) | identico su rete, timeout, UNEXPECTED_ERROR, TOO_MANY_REQUESTS (1 invio), INVALID_SESSION_INFORMATION, NO_SESSION (2 invii) e, DOPO LA CORREZIONE ALTA-1, anche su una mutazione chiamata dentro un `except` per un errore di sessione che cade per un timeout (1 invio, come oggi: prima della correzione il nuovo ne mandava 2). Il rifiuto si legge come oggi da `str(e)` (piu' la sola causa esplicita `__cause__`). **Divergenza** NO_APP_KEY/INVALID_APP_KEY: oggi 2 invii, nuovo 1 (par. 9). **La parita' dichiarata nella prima consegna era sbagliata sul caso `__context__`.** |
 | `odds_refresh._with_client` (:78-91) | `lettura` | `test_parita_letture_con_odds_refresh_with_client` | stesso esito e stesse chiamate; su errore di RETE oggi 2 login, nuovo 1 (miglioria misurata) |
 | `odds_refresh._is_limit`, `auth.e_errore_di_sessione` | `classifica_errore` | `test_classificazione_coincide_con_le_funzioni_di_oggi` (10 casi) | coincide |
 | `safe_strategy/service.py:1672-1689` `poll_books` (blocchi 25) | `lettura("listMarketBook")` | `test_list_market_book_parita_col_ripiego_dello_scanner` (73 mercati) | stessi book, stesso ordine, best back/lay identici per runner; 2 richieste invece di 3 |
@@ -66,16 +66,19 @@ finto applica le regole di Betfair con una tabella SUA (non importa `limiti.py`)
 
 ## 5. Test e falsificazioni
 
-- Test W1-A1: **172 verdi** (finto 5, limiti 30, sessione 22, rest 115) in ~5 s.
-- Falsificazione (rilancio FINALE sui file del commit): **86 mutazioni, 86 rosse**, ripristino con sha256 identico per
-  tutte (e copia di prova identica al repo dopo i ripristini); **65/65 funzioni di test** e **172/172 casi** visti rossi
-  almeno una volta. La mutazione chiesta dal brief, **R01 «mutazione ritentata su qualunque errore» -> rosso**
-  (`test_mutazione_mai_ritentata`); R02 (interruttore della ripetizione ignorato) rosso. Elenco, test rossi e sha256 per
-  mutazione: `falsificazione.json`; script: `mutazioni_a1.py` (gira su una COPIA del repo:
+- Test W1-A1 (seconda consegna): **218 verdi** (finto 5, limiti 31, sessione 22, rest 115, revisore 28, correzioni 17).
+- Falsificazione (rilancio FINALE sui file del commit di correzione): **103 mutazioni, 103 rosse** (le 86 della prima
+  consegna, con le stringhe aggiornate dove il codice e' cambiato, piu' 17 sulle correzioni: R28-R34, S27-S34, L21-L22),
+  ripristino con sha256 identico per tutte (copia di prova identica al repo dopo i ripristini); **84/84 funzioni di test**
+  e **218/218 casi** visti rossi almeno una volta. La mutazione chiesta dal brief, **R01 «mutazione ritentata su qualunque
+  errore» -> rosso** (21 test); la mutazione che prima sopravviveva (R30: ripetere dopo il relogin di un altro thread senza
+  guardare l'errore) -> rosso (20 test, compresi i 16 casi del revisore); ALTA-1 (R28 `__context__`, R29) -> rosso.
+  Elenco, test rossi e sha256 per mutazione: `falsificazione.json`; script: `mutazioni_a1.py` (gira su una COPIA del repo:
   `python3 -P mutazioni_a1.py <copia> <uscita.json>`); copertura: `python3 copertura_falsificazione.py falsificazione.json`.
-- sha256 dei file consegnati: `limiti.py` cb0c1e66...1933, `rest.py` 85e4ed5e...d33b, `salute.py` 281c6a4c...d372,
-  `sessione.py` a1955815...4c18, `test_a1_finto_betfair.py` f2c40473...1437, `test_a1_limiti.py` 042b6a57...aba,
-  `test_a1_rest.py` 3413cd5c...e634, `test_a1_sessione.py` ab504ce6...2d0f (valori interi in `falsificazione.json`).
+- sha256 dei file consegnati (seconda consegna): `limiti.py` fd18da7f...b049bca3, `rest.py` 7e835cb5...e2ae38e2,
+  `salute.py` 281c6a4c...56c4d372, `sessione.py` 973b9891...a4f8d31b; test: `correzioni` d65e019e...0d42fe6c, `finto`
+  f830363a...60654c9f, `limiti` e17222f4...6a6e8fd3, `rest` 3413cd5c...507ae634, `rest_revisore` 69802c90...33f66b40,
+  `sessione` 641a3b12...e223a2e1 (valori interi in `falsificazione.json`).
 - Una mutazione equivalente trovata e tolta: `voci.discard("EX_BEST_OFFERS")` in `limiti.py` era codice morto (la precedenza
   di ALL su BEST la fa l'ordine dei rami); rimosso, e la mutazione L02 riscritta sulla precedenza vera.
 - Difetto trovato DAI TEST di parita' e corretto prima della consegna: la generazione della sessione era letta prima del primo
@@ -87,6 +90,40 @@ finto applica le regole di Betfair con una tabella SUA (non importa `limiti.py`)
 Un solo giro valido (il primo e' andato perso, par. 9 punto 11), a fine lavoro sul ramo con questo codice:
 **11.742 verdi, 0 rossi, 87 saltati, 6 xfail** in 637 s (= 11.571 della cima integrata del 09/10 + 171 test W1-A1: il 172o,
 `test_reperto_keepalive_di_omega...`, e' stato aggiunto mentre la suite girava; e' verde da solo e nella falsificazione).
+
+Seconda consegna (dopo le correzioni), un giro: **11.788 verdi, 1 rosso, 87 saltati, 6 xfail** in 660 s (= 11.571 + 218 test
+W1-A1 - 1). Il rosso e' `Betfair/stream/tests/test_motore_ordini_2026_09_24.py::test_latenza_logica_comando_place_sotto_20_ms`,
+una MISURA di tempo (p95 < 20 ms) del motore ordini di oggi: rosso anche da solo in questo momento (p95 = 23,97 ms con load
+average 12 su 4 CPU, macchina condivisa da 7 agenti), verde nel giro della prima consegna. Non importa nulla del nucleo e
+nessun file fuori da `Betfair/nucleo/betfair/` e da questa cartella e' cambiato sul ramo (diff contro `559a96df` vuoto su
+`Betfair/stream`, `Betfair/omega`, `Betfair/monitor`): e' carico della macchina, non una regressione. Da rilanciare a macchina
+scarica.
+
+## 5-ter. Correzioni dopo la revisione indipendente (seconda consegna)
+
+La revisione del coordinatore su `241d0299` ha dato DA CORREGGERE. Le prove del revisore sono nel comparto come
+`Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py` (28 casi, tenuti com'erano: 9 erano rossi, ora tutti verdi; i 16
+casi «generazione cambiata + errore generico» restano verdi e coprono la mutazione R30, che prima sopravviveva); le mie
+prove sulle correzioni in `test_a1_correzioni.py` (17 casi). Unica modifica al file del revisore: in
+`test_misura_una_mutazione_aspetta_il_keepalive_in_volo` l'attesa del keepAlive in volo era un ciclo senza fine (con la
+mutazione S08 il test si BLOCCAVA invece di diventare rosso): ora attende al massimo 5 s e poi asserisce; il caso e'
+identico. Lo script di falsificazione conta come vista anche una mutazione che blocca i test (timeout 300 s).
+
+| Voce | Difetto | Correzione | Prova (mutazione rossa) |
+|---|---|---|---|
+| ALTA-1 (soldi) | `mutazione` classificava il rifiuto di sessione con `auth.e_errore_di_sessione`, che segue `__cause__ or __context__`: una mutazione chiamata dentro un `except` per un errore di sessione e caduta per timeout veniva RIPETUTA (possibile ordine doppio) | `rest.rifiuto_di_sessione(e)`: solo `str(e)` e `__cause__`, mai `__context__`; codici da `auth._ERRORI_DI_SESSIONE` (riuso) | revisore `..._dentro_un_except_di_sessione_...` x4, parita' con `call_mutating`; R28, R29, R30 |
+| ALTA-2 | `rifai_login` scavalcava il backoff del custode: credenziali rifiutate, 30 letture = 19 login FALLITI verso Betfair | `SessioneBetfair.in_backoff()` (pubblico, anche in `stato()`): con fallimenti e backoff non scaduto `rifai_login` risponde False senza login; ora 30 letture = 1 login fallito | revisore `test_login_fallito_il_backoff_...`, `test_rifai_login_rifiutato_durante_il_backoff_poi_permesso`; S27, S33 |
+| MEDIA-3 | `client()` prendeva il lucchetto unico che `rinnova` tiene durante l'HTTP: una cancellazione aspettava il keepAlive (fino a 16 s) | via veloce senza lucchetto quando la sessione c'e'; lucchetto del custode (`_lock_custode`: keepAlive e login) separato da quello dei campi (`_lock`, mai durante l'HTTP) | revisore `test_misura_una_mutazione_aspetta_il_keepalive_in_volo` (attesa < 0,5 s con keepAlive di 1 s in volo); S29 |
+| MEDIA-4 | `call_mutating` chiama `_segnala_saldo("ordine")` dopo ogni mutazione tornata | obbligo dell'adattatore nell'aggancio (par. 8.2) | - (aggancio) |
+| MEDIA-5 | freno e ban nell'istanza: chiudi e riapri = ban dimenticato | `freno_del_conto(conto, ora)`: UN freno per conto nel processo (chiave anche sull'orologio: in produzione e' sempre `time.monotonic`), come i semafori; dichiarati i limiti (par. 9 punto 12) | revisore `test_ban_ricordato_dopo_chiudi_e_riapri_...`, `test_freno_del_conto_condiviso_...`; S28 |
+| MEDIA-6 | fattore d/3 sotto il peso base per d<3; un mercato oltre 200 = `ValueError` locale; finto con la stessa formula (prova circolare) | fattore `max(1, d/3)`; oltre 200 punti stimati: un mercato per richiesta e decide Betfair (`BetfairLimitHit` se rifiuta); finto con la lettura LETTERALE e piu' generosa (solo la quota delle migliori offerte scala, anche sotto 1) | `test_un_mercato_oltre_200_punti_...`, `test_profondita_sotto_3_...`; L21, R32 |
+| BASSE | `market_ids` stringa spezzata in caratteri; periodo non validato; profondita' bool/decimale accettata; ban senza margine; `chiudi` azzerava la generazione; `customerRef` della ripetizione non dichiarato; testi illeggibili inghiottiti senza log | stringa -> `[stringa]`; `0 < periodo <= 1080 s` (`ValueError`); profondita' solo intera >= 1; ban 1200 + 30 s; generazione che non riparte mai (connessa = custode presente); ripetizione con gli STESSI parametri (stesso `customerRef` se passato; non imposto: la richiesta rifiutata non e' arrivata all'exchange) e test; `logger.debug` col motivo | revisore `test_misura_market_ids_stringa_...`, `test_periodo_keepalive_oltre_...`; `test_a1_correzioni`; R31, S30, S31, S32, L22 |
+
+Conseguenza sul comportamento (dichiarata): dopo un login fallito del custode, per 15/30/60 s NESSUN relogin parte, nemmeno
+su richiesta del REST: le letture e le mutazioni in quel tempo falliscono con l'errore di sessione invece di tentare un login
+(oggi `odds_refresh`/`call` rifarebbero subito il login a ogni chiamata). E' il backoff del custode di oggi applicato a tutti.
+Il primo login (`client()`) non ha backoff, come `build_client` oggi: lo limita il tetto dei TENTATIVI del freno
+(`test_freno_tetto_dei_tentativi_al_minuto`).
 
 ## 6. Funzionalita' di `01_FUNZIONALITA.md`
 
@@ -130,7 +167,7 @@ Interruttore `ARCH_SESSIONE=vecchio|ombra|nuovo` (di serie `vecchio`), letto UNA
 | Punto | `nuovo` |
 |---|---|
 | `Betfair/stream/runner.py:2710-2711` (sessione `rest`, il REPERTO) | `ClienteRestBetfair(sessione_del_processo())`; `fetch_event_markets` (`runner.py:138-171`) -> `lettura("listMarketCatalogue", filter=..., max_results=1000, market_projection=[...], lightweight=True)` (stesso dict del JSON-RPC) |
-| `Betfair/odds_refresh.py:66` (sessione condivisa di Omega, Mike, Safe, `order_exec`) | `get_shared_client()` restituisce un adattatore SOTTILE con l'API di `BetfairClient` (`betting_rpc`, `account_rpc`, `list_market_book`, `place_orders`...) sopra `ClienteRestBetfair` con `lightweight=True`: le mutazioni (`placeOrders`...) passano da `mutazione`, il resto da `lettura`. `call`/`call_mutating`/`_with_client`/`order_exec._call` restano ma non rifanno piu' il login da soli (lo fa la sessione) |
+| `Betfair/odds_refresh.py:66` (sessione condivisa di Omega, Mike, Safe, `order_exec`) | `get_shared_client()` restituisce un adattatore SOTTILE con l'API di `BetfairClient` (`betting_rpc`, `account_rpc`, `list_market_book`, `place_orders`...) sopra `ClienteRestBetfair` con `lightweight=True`: le mutazioni (`placeOrders`...) passano da `mutazione`, il resto da `lettura`. `call`/`call_mutating`/`_with_client`/`order_exec._call` restano ma non rifanno piu' il login da soli (lo fa la sessione). **Obbligo dell'adattatore (MEDIA-4)**: dopo OGNI mutazione tornata da Betfair (riuscita o rifiutata con risposta) chiama `omega_market._segnala_saldo("ordine")` come oggi `call_mutating` (`omega_market.py:106-109`), fuori dal percorso d'ordine e senza mai sollevare; test di parita' dell'aggancio: stesso numero di segnalazioni del saldo, vecchio contro nuovo |
 | `Betfair/betfair_report_manager.py:68`, `betfair_full_odds.py:146`, `betfair_tennis_odds.py:307`, `import_betfair_operations.py:393` | lo stesso adattatore (job e script) |
 
 Ripieghi REST: `safe_strategy/service.py:1672-1689` (`poll_books`) e `stream/board_worker.py:387` (`_poll_books_rest`) ->
@@ -192,8 +229,11 @@ lucchetto (`msvcrt.locking`) in `_logs/`.
 6. **Peso del catalogo**: il runner chiede `listMarketCatalogue` con `maxResults=1000` e `MARKET_DESCRIPTION` (peso 1): con la
    formula letta in 02 sarebbero 1000 punti, eppure oggi funziona. Non applico limiti al catalogo (solo il dato); da chiarire
    sulla documentazione.
-7. **`bestPricesDepth`**: ho applicato il fattore d/3 a tutto il peso della proiezione con le migliori offerte, anche alla
-   combinazione con `EX_TRADED` (scelta prudente: blocchi piu' piccoli, mai `TOO_MUCH_DATA`).
+7. **`bestPricesDepth`** (fonte: 02 par. 3.2, B-WEIGHT: «con `exBestOffersOverrides` peso x (profondita'/3)», senza dire
+   nulla della combinazione con `EX_TRADED` ne' di profondita' < 3): il fattore si applica a tutto il peso della proiezione
+   con le migliori offerte, anche alla combinazione, e non scende mai sotto 1 (d = 1-2 = peso base). Scelta prudente:
+   blocchi piu' piccoli, mai `TOO_MUCH_DATA`. Se la NOSTRA stima di UN mercato supera 200 punti (es. BEST+TRADED con
+   profondita' 33 = 220) non rifiuto in locale: un mercato per richiesta e decide Betfair (oggi la richiesta partirebbe).
 8. **Blocchi da 40 invece di 25/20**: cambia il numero di richieste (meno), non i dati; `blocco_massimo` riproduce oggi.
 9. **Letture e rete**: oggi `odds_refresh`/`call` rifanno il login anche su un errore di RETE; il nuovo no (un login in meno).
 10. Rischi: i nomi privati riusati (`auth._descrivi_errore`, `odds_refresh._is_limit`) sono fragili a un rinomino (i test lo
@@ -202,3 +242,11 @@ lucchetto (`msvcrt.locking`) in `_logs/`.
 11. Il primo giro della suite intera e' andato perso: il file d'uscita era nella cartella di lavoro CONDIVISA con gli altri
     agenti e risultava troncato (anche il mio script di mutazioni li' e' stato sovrascritto da un altro agente: rifatto in una
     sottocartella mia). La suite e' stata rilanciata una seconda volta, a fine lavoro (par. 5-bis).
+12. **Freno dei login (MEDIA-5)**: il freno e' per CONTO dentro UN processo (10 riusciti e 20 tentativi al minuto di
+    serie). Con N processi che fanno login, il tetto del conto (100/min) e' rispettato solo se N <= 10: oggi i processi che
+    fanno login sono runner calcio, runner tennis, scanner, servizi dei bot e una sessione per ogni scalper; con piu' di 10
+    processi attivi insieme la somma potrebbe superare 100 (in pratica ogni processo fa 1 login ogni ~18 minuti, i 10/min
+    servono solo per i cicli impazziti). I login del codice VECCHIO (`build_client(login=True)`, `BetfairClient`,
+    `odds_refresh`) NON passano dal freno: in ombra il freno non li vede e non li conta. La soluzione vera e' la sessione
+    unica dell'app (par. 8.5).
+13. **Backoff esteso al REST (ALTA-2)**: vedi par. 5-ter, «Conseguenza sul comportamento».

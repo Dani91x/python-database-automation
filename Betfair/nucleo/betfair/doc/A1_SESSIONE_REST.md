@@ -10,13 +10,17 @@ regole del .it:
 
 - `sessione.py` - `SessioneBetfair` (implementa `contratto.Sessione`): un login, un custode (quello di oggi,
   `auth.CustodeSessione`, riusato), keepAlive .it entro i 20 minuti (`identitysso.betfair.it/api/keepAlive`), backoff
-  15/30/60 s, relogin su `INVALID_SESSION_INFORMATION`/`NO_SESSION` o al 90% della vita, FRENO dei login (per processo
-  10 riusciti e 20 tentativi al minuto di serie; ban di Betfair = 20 minuti senza tentativi), un solo relogin anche se
-  piu' thread vedono lo stesso errore (contatore di generazione), evento `sessione_rifatta`, thread del custode solo con
-  `avvia()`. `sessione_del_processo()` = l'istanza unica del processo.
+  15/30/60 s, relogin su `INVALID_SESSION_INFORMATION`/`NO_SESSION` o al 90% della vita, FRENO dei login per conto a
+  livello di processo (`freno_del_conto`: 10 riusciti e 20 tentativi al minuto di serie; ban di Betfair = 20 minuti + 30 s
+  senza tentativi, ricordato anche se la sessione si chiude e si riapre), un solo relogin anche se piu' thread vedono lo
+  stesso errore (contatore di generazione che non riparte mai), nessun relogin durante il backoff del custode
+  (`in_backoff()`), evento `sessione_rifatta`, thread del custode solo con `avvia()`. Due lucchetti: `client()` con la
+  sessione gia' fatta non ne prende nessuno (una cancellazione non aspetta un keepAlive in volo).
+  `sessione_del_processo()` = l'istanza unica del processo.
 - `rest.py` - `ClienteRestBetfair` (implementa `contratto.ClienteRest`): `lettura` ritentabile con la classificazione
   degli errori di oggi; `mutazione` (place/cancel/replace/update) MAI ritentata su errore generico (parita' con
-  `omega_market.call_mutating`: una ripetizione solo dopo un rifiuto di sessione dichiarato e un relogin riuscito);
+  `omega_market.call_mutating`: una ripetizione, con gli stessi parametri, solo dopo un rifiuto di sessione dichiarato e
+  un relogin riuscito; il rifiuto si legge da `str(e)` e `__cause__`, MAI dal `__context__`: `rifiuto_di_sessione`);
   suddivisione automatica di `listMarketBook`/`listMarketProfitAndLoss` sotto i 200 punti con la proiezione chiesta; al
   massimo 3 richieste concorrenti per conto sui metodi contesi; keep-alive e gzip di betfairlightweight su UNA
   `requests.Session`.
@@ -30,7 +34,7 @@ regole del .it:
 - Orologio monotono (iniettabile), parametri: `periodo_keepalive_s` (480), `ritenti_s` (15/30/60), `FrenoLogin`,
   `PoliticaLettura` (2 tentativi, pausa 1 s), `concorrenti_per_conto` (3), `attesa_tetto_s` (30), `pausa_tra_blocchi_s` (0),
   `blocco_massimo` ({metodo: n}), `rifai_mutazione_su_sessione` (True).
-- Chiamate: `lettura(metodo, **kwargs)` / `mutazione(metodo, **kwargs)` con i nomi Betfair (`listMarketBook`...) e i
+- Chiamate: `lettura(metodo, **kwargs)` (un `market_ids` stringa vale come lista di un id) / `mutazione(metodo, **kwargs)` con i nomi Betfair (`listMarketBook`...) e i
   parametri di betfairlightweight (`market_ids`, `price_projection`, `lightweight`...).
 - Errori visti altrove (stream): `segnala_errore(exc)`.
 
@@ -65,7 +69,7 @@ al caricamento).
 | A-006 | logout | `test_una_sessione_per_processo_un_login_con_dieci_thread` |
 | A-007/A-008 | login e RPC con ritenti (oggi `client.py`) | sostituiti da A-001 + `lettura`: `test_lettura_errore_di_rete_un_ritento_con_pausa`, `test_lettura_due_errori_di_rete_rilancia`, `test_reperto_rest_del_runner_muore_a_20_minuti` |
 | A-009..A-011 | `listEvents`, `listMarketCatalogue`, `listMarketBook` | `test_list_market_book_parita_col_ripiego_dello_scanner`, `test_letture_non_suddivise_passano_intere`, griglia di suddivisione |
-| A-012 | `placeOrders` [$] | `test_mutazione_mai_ritentata`, `test_mutazione_riuscita_una_richiesta_esito_vero`, `test_parita_mutazioni_con_call_mutating` |
+| A-012 | `placeOrders` [$] | `test_mutazione_mai_ritentata`, `test_mutazione_riuscita_una_richiesta_esito_vero`, `test_parita_mutazioni_con_call_mutating`, `test_a1_rest_revisore` (relogin di un altro thread, `except` di sessione), `test_a1_correzioni::test_rifiuto_di_sessione_mai_dal_contesto` |
 | A-013/A-014 | `listCurrentOrders`/`listClearedOrders` (senza paginazione: resta al chiamante) | `test_tre_concorrenti_per_conto_sui_metodi_contesi` |
 | A-015 | Account API | `test_letture_non_suddivise_passano_intere` (`getAccountFunds`) |
 | A-016 | sessione REST condivisa per processo, relogin, stop pulito al limite | `test_una_sessione_per_processo_un_login_con_dieci_thread`, `test_lettura_limite_stop_pulito_mai_ritentata`, `test_parita_letture_con_odds_refresh_with_client` |
@@ -95,6 +99,8 @@ Betfair le applica con una tabella sua.
 - Login: oggi uno per `build_client(login=True)` (12 punti) + uno per `BetfairClient` (6 punti) + relogin di
   `odds_refresh` anche sugli errori di RETE; domani uno per processo, relogin solo su errore di sessione (misura:
   `test_parita_letture_con_odds_refresh_with_client`, rete: 2 login -> 1).
+- Login falliti con credenziali rifiutate: 30 letture = 1 login fallito (prima della correzione ALTA-2: 19).
+- Attesa di una cancellazione con un keepAlive di 1 s in volo: < 0,5 s (via veloce di `client()`).
 - Richieste `listMarketBook` EX_BEST_OFFERS: blocchi da 40 invece di 25 (scanner) o 20 (`odds_refresh`): 73 mercati in 2
   richieste invece di 3 (`test_list_market_book_parita_col_ripiego_dello_scanner`); i blocchi di oggi restano
   riproducibili con `blocco_massimo`.

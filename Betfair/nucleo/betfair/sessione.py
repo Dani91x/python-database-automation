@@ -15,12 +15,21 @@ UNA sessione per processo:
     riusato tale e quale; la Sessione gli passa un client "custodito" il cui
     ``login`` passa dal FRENO e il cui ``keep_alive`` e' contato;
   * il FRENO dei login (nuovo): al massimo N login riusciti e M tentativi al
-    minuto PER PROCESSO (di serie 10 e 20: il conto ne ammette 100 al minuto in
-    tutto, poi ban di 20 minuti) e, se Betfair risponde
-    ``TEMPORARY_BAN_TOO_MANY_REQUESTS``, nessun tentativo per 20 minuti;
+    minuto PER PROCESSO E PER CONTO (di serie 10 e 20: il conto ne ammette 100 al
+    minuto in tutto, poi ban di 20 minuti) e, se Betfair risponde
+    ``TEMPORARY_BAN_TOO_MANY_REQUESTS``, nessun tentativo per 20 minuti (+30 s di
+    margine). Il freno vive a livello di PROCESSO (``freno_del_conto``): chiudere e
+    riaprire la sessione non dimentica ne' il ban ne' i login dell'ultimo minuto.
+    I login del codice VECCHIO (``build_client(login=True)``, ``BetfairClient``) non
+    passano di qui: in ombra il freno non li vede;
   * ``INVALID_SESSION_INFORMATION``/``NO_SESSION`` visti dal REST o dallo stream:
     ``rifai_login(errore, generazione_vista)`` rifa' il login UNA volta anche se
-    piu' thread vedono lo stesso errore insieme (contatore di generazione);
+    piu' thread vedono lo stesso errore insieme (contatore di generazione, che
+    non riparte mai) e MAI durante il backoff del custode dopo un fallimento
+    (credenziali rifiutate: nessuna raffica di login falliti verso Betfair);
+  * due lucchetti: ``client()`` con la sessione gia' fatta non prende lucchetti
+    (una cancellazione non aspetta un keepAlive in volo); il lucchetto del custode
+    serializza keepAlive e login, quello di stato protegge solo i campi;
   * ``sessione_rifatta``: i consumatori (lo stream) si registrano con
     ``alla_sessione_rifatta(cb)`` e sono chiamati dopo ogni relogin.
 
@@ -56,6 +65,10 @@ PERIODO_KEEPALIVE_DI_SERIE_S = 480.0
 #: quota di serie dei 100 login/minuto del conto per UN processo (10 processi)
 TETTO_LOGIN_RIUSCITI_DI_SERIE = limiti.tetto_login_per_processo(10)
 TETTO_TENTATIVI_LOGIN_DI_SERIE = 2 * TETTO_LOGIN_RIUSCITI_DI_SERIE
+#: margine sul ban di Betfair (20 minuti): orologi diversi, risposta in ritardo
+MARGINE_BAN_S = 30.0
+#: il keepAlive deve arrivare prima del relogin al 90% della vita (.it 1200 s)
+PERIODO_KEEPALIVE_MASSIMO_S = 0.9 * limiti.VITA_SESSIONE_ITALIA_S
 
 
 class LoginFrenato(RuntimeError):
@@ -70,7 +83,8 @@ def _testo_catena(exc: Optional[BaseException], profondita: int = 6) -> str:
     while cur is not None and len(parti) < profondita:
         try:
             parti.append(str(cur).upper())
-        except Exception:  # noqa: BLE001 - __str__ esotici: si salta l'anello
+        except Exception as e:  # noqa: BLE001 - __str__ esotici: si salta l'anello
+            logger.debug("[sessione-a1] testo di %s illeggibile (%s)", type(cur).__name__, type(e).__name__)
             parti.append("")
         cur = cur.__cause__ or cur.__context__
     return " | ".join(parti)
@@ -90,7 +104,7 @@ class FrenoLogin:
 
     def __init__(self, *, tetto_riusciti_al_minuto: int = TETTO_LOGIN_RIUSCITI_DI_SERIE,
                  tetto_tentativi_al_minuto: int = TETTO_TENTATIVI_LOGIN_DI_SERIE,
-                 finestra_s: float = 60.0, ban_s: float = float(limiti.DURATA_BAN_LOGIN_S),
+                 finestra_s: float = 60.0, ban_s: float = float(limiti.DURATA_BAN_LOGIN_S) + MARGINE_BAN_S,
                  ora: Optional[Callable[[], float]] = None) -> None:
         if tetto_riusciti_al_minuto < 1 or tetto_tentativi_al_minuto < 1:
             raise ValueError("i tetti del freno devono essere >= 1")
@@ -160,6 +174,27 @@ class FrenoLogin:
             }
 
 
+# ---------------------------------------------------------------------------
+# UN freno per conto nel processo (stato di processo DICHIARATO)
+# ---------------------------------------------------------------------------
+_FRENI_PER_CONTO: Dict[tuple, FrenoLogin] = {}
+_LOCK_FRENI = threading.Lock()
+
+
+def freno_del_conto(conto: str, ora: Optional[Callable[[], float]] = None) -> FrenoLogin:
+    """Il freno dei login del conto per il processo (tetti di serie). La chiave
+    comprende l'orologio: in produzione e' sempre ``time.monotonic`` (un freno per
+    conto); nei test ogni orologio finto ha il suo. Il freno tiene un riferimento
+    all'orologio, quindi la chiave non puo' essere riusata da un altro oggetto."""
+    orologio = ora or time.monotonic
+    chiave = (str(conto), id(orologio))
+    with _LOCK_FRENI:
+        freno = _FRENI_PER_CONTO.get(chiave)
+        if freno is None:
+            freno = _FRENI_PER_CONTO[chiave] = FrenoLogin(ora=orologio)
+        return freno
+
+
 def _fabbrica_di_oggi() -> Any:
     """Il client di oggi, NON loggato: ``auth.build_client(login=False)``."""
     from Betfair.stream import auth  # import pigro: config.py legge .env all'import
@@ -206,22 +241,29 @@ class SessioneBetfair:
                  salute: Optional[SaluteBetfair] = None,
                  ora: Optional[Callable[[], float]] = None,
                  nome: str = "betfair") -> None:
+        if not 0 < float(periodo_keepalive_s) <= PERIODO_KEEPALIVE_MASSIMO_S:
+            raise ValueError(f"periodo_keepalive_s fuori da (0, {PERIODO_KEEPALIVE_MASSIMO_S:.0f}]: "
+                             f"{periodo_keepalive_s!r}")
         self._fabbrica = fabbrica_client or _fabbrica_di_oggi
         self.periodo_keepalive_s = float(periodo_keepalive_s)
         self._ritenti_s = None if ritenti_s is None else tuple(float(x) for x in ritenti_s)
         self._ora: Callable[[], float] = ora or time.monotonic
-        self.freno = freno or FrenoLogin(ora=self._ora)
+        self._freno_esplicito = freno
         self.salute = salute or SaluteBetfair()
         self.nome = nome
         self._client: Any = None
         self._custode: Any = None
         self._custodito = _ClientCustodito(self)
-        #: quanti login riusciti dalla nascita (0 = mai loggata)
+        #: quanti login riusciti dalla nascita dell'oggetto: NON riparte mai (nemmeno
+        #: con ``chiudi``), cosi' una generazione vecchia non coincide con una nuova
         self.generazione = 0
         self.ultimo_esito: Optional[str] = None
         self._da_notificare = 0
         self._consumatori: List[Callable[[], None]] = []
+        #: campi (client, consumatori, thread): tenuto solo per tempi brevi, mai durante l'HTTP
         self._lock = threading.RLock()
+        #: custode: serializza keepAlive e login (anche durante l'HTTP)
+        self._lock_custode = threading.RLock()
         self._thread: Optional[threading.Thread] = None
         self._ferma = threading.Event()
 
@@ -232,10 +274,14 @@ class SessioneBetfair:
         :raises BetfairStreamAuthError: login fallito (come ``build_client``).
         :raises LoginFrenato: il freno ha rifiutato il login.
         """
-        with self._lock:
-            if self._client is None:
-                self._client = self._fabbrica()
-            if self.generazione == 0:
+        client = self._client
+        if client is not None and self._custode is not None:
+            return client                       # via veloce: nessun lucchetto
+        with self._lock_custode:
+            with self._lock:
+                if self._client is None:
+                    self._client = self._fabbrica()
+            if self._custode is None:
                 self._primo_login()
             client = self._client
         self._notifica()
@@ -251,18 +297,36 @@ class SessioneBetfair:
             custode = None if self._custode is None else self._custode.stato()
             return {
                 "nome": self.nome,
-                "connessa": self.generazione > 0,
+                "connessa": self._custode is not None,
                 "generazione": self.generazione,
                 "periodo_keepalive_s": self.periodo_keepalive_s,
                 "vita_s": None if self._custode is None else self._custode.vita_s(),
                 "ultimo_esito": self.ultimo_esito,
                 "custode": custode,
-                "freno": self.freno.stato(),
+                # senza client il conto non e' noto: il freno di processo si legge dopo il primo uso
+                "freno": (None if self._freno_esplicito is None and self._client is None
+                          else self.freno.stato()),
+                "in_backoff": self.in_backoff(),
                 "contatori": dict(self.salute.stato()["sessione"]),
                 "thread_custode": self._thread is not None and self._thread.is_alive(),
             }
 
     # ------------------------------------------------------------ estensioni
+    @property
+    def freno(self) -> FrenoLogin:
+        """Il freno esplicito, o quello del conto nel processo (``freno_del_conto``)."""
+        if self._freno_esplicito is not None:
+            return self._freno_esplicito
+        return freno_del_conto(self.conto, self._ora)
+
+    def in_backoff(self, adesso: Optional[float] = None) -> bool:
+        """True se il custode ha fallito e il suo backoff non e' ancora scaduto:
+        in quel tempo nessun login parte (ne' dal custode ne' da ``rifai_login``)."""
+        custode = self._custode
+        if custode is None or custode.fallimenti <= 0:
+            return False
+        return not custode.dovuto(adesso)
+
     @property
     def conto(self) -> str:
         """Il conto (username) del client, per il tetto delle concorrenti."""
@@ -273,7 +337,7 @@ class SessioneBetfair:
 
     def rinnova(self, adesso: Optional[float] = None) -> Optional[str]:
         """Un giro del custode: None (non e' ora / mai loggata), "ok", "relogin", "ko"."""
-        with self._lock:
+        with self._lock_custode:
             if self._custode is None:
                 return None
             esito = self._custode.tick(adesso)
@@ -285,20 +349,24 @@ class SessioneBetfair:
     def segnala_errore(self, exc: BaseException) -> bool:
         """Un errore visto altrove (stream): se e' di sessione il prossimo giro
         rifa' il login. True se preso in carico."""
-        with self._lock:
-            if self._custode is None:
-                return False
-            return bool(self._custode.segnala_errore(exc))
+        custode = self._custode
+        if custode is None:
+            return False
+        return bool(custode.segnala_errore(exc))
 
     def rifai_login(self, exc: BaseException, generazione_vista: int) -> bool:
         """Errore di SESSIONE su una chiamata fatta con la ``generazione_vista``:
         rifa' il login ADESSO (una volta sola anche con piu' thread). True se la
         sessione e' nuova (rifatta ora o da un altro thread nel frattempo)."""
-        with self._lock:
+        with self._lock_custode:
             if self._custode is None:
                 return False
             if self.generazione != generazione_vista:
                 return True
+            if self.in_backoff():
+                logger.warning("[sessione-a1] %s: relogin chiesto durante il backoff del custode: rifiutato",
+                               self.nome)
+                return False
             if not self._custode.segnala_errore(exc):
                 return False
             esito = self._custode.tick()
@@ -334,10 +402,9 @@ class SessioneBetfair:
     def chiudi(self) -> None:
         """Ferma il custode e fa il logout (best-effort, come ``auth.safe_logout``)."""
         self.ferma()
-        with self._lock:
-            client, self._client, self._custode = self._client, None, None
-            loggata = self.generazione > 0
-            self.generazione = 0
+        with self._lock_custode, self._lock:
+            client, self._client = self._client, None
+            loggata, self._custode = self._custode is not None, None
         if client is not None and loggata:
             from Betfair.stream import auth
 
@@ -370,27 +437,28 @@ class SessioneBetfair:
     def _login_frenato(self) -> Any:
         """UN login che passa dal freno; eccezioni grezze (le descrive il custode)."""
         adesso = float(self._ora())
+        freno = self.freno
         try:
-            self.freno.verifica(adesso)
+            freno.verifica(adesso)
         except LoginFrenato as e:
             self.salute.evento_sessione("login_frenati")
             logger.warning("[sessione-a1] %s: login frenato (%s)", self.nome, e)
             raise
-        self.freno.registra_tentativo(adesso)
+        freno.registra_tentativo(adesso)
         try:
             esito = self._client.login()
         except Exception as e:
             self.salute.evento_sessione("login_falliti")
             if e_ban_login(e):
-                self.freno.registra_ban(adesso)
+                freno.registra_ban(adesso)
                 self.salute.evento_sessione("ban_login")
                 logger.critical("[sessione-a1] %s: Betfair ha bloccato i login per %.0fs",
-                                self.nome, self.freno.ban_s)
+                                self.nome, freno.ban_s)
             raise
-        self.freno.registra_riuscito(adesso)
+        freno.registra_riuscito(adesso)
         with self._lock:
             self.generazione += 1
-            relogin = self.generazione > 1
+            relogin = self._custode is not None
             if relogin:
                 self._da_notificare += 1
         self.salute.evento_sessione("login")

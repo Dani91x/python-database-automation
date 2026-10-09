@@ -52,7 +52,7 @@ def test_tabella_dei_pesi_identica_al_documento():
     assert L.URL_CERTLOGIN_ITALIA == "https://identitysso-cert.betfair.it/api/certlogin"
 
 
-@pytest.mark.parametrize("profondita,peso,massimo", [(1, Fraction(5, 3), 120), (3, 5, 40), (5, Fraction(25, 3), 24),
+@pytest.mark.parametrize("profondita,peso,massimo", [(1, 5, 40), (2, 5, 40), (3, 5, 40), (5, Fraction(25, 3), 24),
                                                      (10, Fraction(50, 3), 12)])
 def test_profondita_moltiplica_il_peso(profondita, peso, massimo):
     pp = {"priceData": ["EX_BEST_OFFERS"], "exBestOffersOverrides": {"bestPricesDepth": profondita}}
@@ -70,8 +70,9 @@ def test_profondita_non_tocca_all_offers_e_scelta_prudente_sulla_combinazione():
 def test_proiezioni_sconosciute_e_pesi_non_validi_rifiutati():
     with pytest.raises(ValueError):
         L.peso_list_market_book({"priceData": ["EX_TUTTO"]})
-    with pytest.raises(ValueError):
-        L.peso_list_market_book({"priceData": ["EX_BEST_OFFERS"], "exBestOffersOverrides": {"bestPricesDepth": 0}})
+    for cattiva in (0, -1, True, 2.5, "3"):
+        with pytest.raises(ValueError):
+            L.peso_list_market_book({"priceData": ["EX_BEST_OFFERS"], "exBestOffersOverrides": {"bestPricesDepth": cattiva}})
     with pytest.raises(ValueError):
         L.mercati_massimi_per_richiesta(0)
     with pytest.raises(ValueError):

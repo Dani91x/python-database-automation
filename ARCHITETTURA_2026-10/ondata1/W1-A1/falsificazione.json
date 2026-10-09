@@ -16,9 +16,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data7]"
   ],
   "n_rossi": 10,
-  "riepilogo": "10 failed, 162 passed in 8.72s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "10 failed, 208 passed in 15.14s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -32,9 +32,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data7]"
   ],
   "n_rossi": 4,
-  "riepilogo": "4 failed, 168 passed in 8.27s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "4 failed, 214 passed in 14.74s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -42,15 +42,17 @@
   "file": "Betfair/nucleo/betfair/limiti.py",
   "descr": "combinazione sommata",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_profondita_sotto_3_non_abbassa_il_peso_e_il_finto_resta_indipendente",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_un_mercato_oltre_200_punti_stimati_parte_da_solo_e_decide_betfair",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_pesi_list_market_book_dal_documento[price_data6-20-10]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_non_tocca_all_offers_e_scelta_prudente_sulla_combinazione",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[201-price_data4]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[40-price_data4]"
   ],
-  "n_rossi": 4,
-  "riepilogo": "4 failed, 168 passed in 8.57s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "n_rossi": 6,
+  "riepilogo": "6 failed, 212 passed in 15.26s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -58,16 +60,17 @@
   "file": "Betfair/nucleo/betfair/limiti.py",
   "descr": "profondita' ignorata",
   "rossi": [
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[1-peso0-120]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[10-peso3-12]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[5-peso2-24]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_profondita_sotto_3_non_abbassa_il_peso_e_il_finto_resta_indipendente",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_un_mercato_oltre_200_punti_stimati_parte_da_solo_e_decide_betfair",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[10-peso4-12]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[5-peso3-24]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_non_tocca_all_offers_e_scelta_prudente_sulla_combinazione",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_profondita_e_profit_and_loss_suddivisi"
   ],
-  "n_rossi": 5,
-  "riepilogo": "5 failed, 167 passed in 8.13s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "n_rossi": 6,
+  "riepilogo": "6 failed, 212 passed in 15.04s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -96,12 +99,13 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data2]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data3]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data5]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data7]"
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data7]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_blocco_massimo_piu_largo_del_peso_non_supera_mai_i_200_punti"
   ],
-  "n_rossi": 22,
-  "riepilogo": "22 failed, 150 passed in 8.95s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "n_rossi": 23,
+  "riepilogo": "23 failed, 195 passed in 14.62s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -113,9 +117,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_blocco_massimo_e_pausa_fra_blocchi"
   ],
   "n_rossi": 2,
-  "riepilogo": "2 failed, 170 passed in 7.34s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "2 failed, 216 passed in 14.99s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -128,9 +132,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_tre_concorrenti_per_conto_sui_metodi_contesi"
   ],
   "n_rossi": 3,
-  "riepilogo": "3 failed, 169 passed in 6.80s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "3 failed, 215 passed in 14.37s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -141,9 +145,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_istruzioni_e_quote_di_login"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 8.64s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "1 failed, 217 passed in 14.76s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -155,9 +159,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_di_serie_mai_il_ban_di_betfair_anche_in_un_ciclo_impazzito"
   ],
   "n_rossi": 2,
-  "riepilogo": "2 failed, 170 passed in 7.74s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "2 failed, 216 passed in 15.38s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -165,12 +169,13 @@
   "file": "Betfair/nucleo/betfair/limiti.py",
   "descr": "peso catalogo",
   "rossi": [
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_peso_richiesta_e_catalogo"
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_peso_richiesta_e_catalogo",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_keepalive_regolare_sotto_carico"
   ],
-  "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 8.08s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "n_rossi": 2,
+  "riepilogo": "2 failed, 216 passed in 16.36s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -181,9 +186,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_proiezioni_sconosciute_e_pesi_non_validi_rifiutati"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.09s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "1 failed, 217 passed in 16.64s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -196,9 +201,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_profondita_e_profit_and_loss_suddivisi"
   ],
   "n_rossi": 3,
-  "riepilogo": "3 failed, 169 passed in 7.42s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "3 failed, 215 passed in 16.34s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -210,9 +215,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_endpoint_e_certificati_come_oggi"
   ],
   "n_rossi": 2,
-  "riepilogo": "2 failed, 170 passed in 6.68s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "2 failed, 216 passed in 16.36s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -223,9 +228,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_proiezioni_sconosciute_e_pesi_non_validi_rifiutati"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 6.49s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "1 failed, 217 passed in 16.26s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -236,7 +241,7 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_salute_latenze_p50_p99_come_il_monitor"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.87s",
+  "riepilogo": "1 failed, 217 passed in 15.66s",
   "sha_prima": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "sha_dopo": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "ripristino_ok": true
@@ -249,7 +254,7 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_salute_inoltro_al_registro_del_monitor_con_nomi_propri"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.74s",
+  "riepilogo": "1 failed, 217 passed in 15.46s",
   "sha_prima": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "sha_dopo": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "ripristino_ok": true
@@ -262,7 +267,7 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_salute_inoltro_rotto_non_rompe_la_chiamata"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 6.48s",
+  "riepilogo": "1 failed, 217 passed in 16.46s",
   "sha_prima": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "sha_dopo": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "ripristino_ok": true
@@ -279,7 +284,7 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_errore_di_rete_un_ritento_con_pausa[timeout]"
   ],
   "n_rossi": 5,
-  "riepilogo": "5 failed, 167 passed in 7.48s",
+  "riepilogo": "5 failed, 213 passed in 16.18s",
   "sha_prima": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "sha_dopo": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "ripristino_ok": true
@@ -292,7 +297,7 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_tre_concorrenti_per_conto_sui_metodi_contesi"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 6.80s",
+  "riepilogo": "1 failed, 217 passed in 15.36s",
   "sha_prima": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "sha_dopo": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "ripristino_ok": true
@@ -305,7 +310,7 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_salute_inoltro_rotto_non_rompe_la_chiamata"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 6.45s",
+  "riepilogo": "1 failed, 217 passed in 15.67s",
   "sha_prima": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "sha_dopo": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "ripristino_ok": true
@@ -319,7 +324,7 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_limite_stop_pulito_mai_ritentata[TOO_MUCH_DATA]"
   ],
   "n_rossi": 2,
-  "riepilogo": "2 failed, 170 passed in 6.88s",
+  "riepilogo": "2 failed, 216 passed in 15.88s",
   "sha_prima": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "sha_dopo": "281c6a4cc22c792e865c8f317eba08dc51d17a345f7e1ebc7cd9c3ae56c4d372",
   "ripristino_ok": true
@@ -330,16 +335,17 @@
   "descr": "freno spento",
   "rossi": [
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_relogin_frenato_nessuna_ripetizione",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_ban_ricordato_dopo_chiudi_e_riapri_la_sessione_del_processo",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_ban_di_betfair_ferma_i_login_per_20_minuti",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_di_serie_mai_il_ban_di_betfair_anche_in_un_ciclo_impazzito",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_tetto_dei_login_riusciti_al_minuto",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_tetto_dei_tentativi_al_minuto",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_primo_login_frenato_non_parte_e_lo_dice"
   ],
-  "n_rossi": 6,
-  "riepilogo": "6 failed, 166 passed in 8.81s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 7,
+  "riepilogo": "7 failed, 211 passed in 14.93s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -347,13 +353,14 @@
   "file": "Betfair/nucleo/betfair/sessione.py",
   "descr": "ban ignorato",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_ban_ricordato_dopo_chiudi_e_riapri_la_sessione_del_processo",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_ban_di_betfair_ferma_i_login_per_20_minuti",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_primo_login_frenato_non_parte_e_lo_dice"
   ],
-  "n_rossi": 2,
-  "riepilogo": "2 failed, 170 passed in 6.93s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 3,
+  "riepilogo": "3 failed, 215 passed in 16.15s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -361,13 +368,14 @@
   "file": "Betfair/nucleo/betfair/sessione.py",
   "descr": "nessun controllo di generazione",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_generazione_non_riparte_dopo_chiudi",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_sessione_scaduta_vista_da_sei_thread_un_solo_relogin",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_errore_di_sessione_da_otto_thread_un_solo_relogin"
   ],
-  "n_rossi": 2,
-  "riepilogo": "2 failed, 170 passed in 5.76s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 3,
+  "riepilogo": "3 failed, 215 passed in 17.10s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -378,9 +386,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_sessione_rifatta_notificata_a_ogni_relogin_mai_al_primo"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.69s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 16.15s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -388,16 +396,17 @@
   "file": "Betfair/nucleo/betfair/sessione.py",
   "descr": "notifica anche al primo login",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_generazione_non_riparte_dopo_chiudi",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_sessione_scaduta_relogin_e_ritento",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_salute_inoltro_al_registro_del_monitor_con_nomi_propri",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_contatori_della_salute_seguono_il_copione",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_sessione_rifatta_notificata_a_ogni_relogin_mai_al_primo",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_stato_senza_token_con_tutte_le_chiavi"
   ],
-  "n_rossi": 5,
-  "riepilogo": "5 failed, 167 passed in 6.66s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 6,
+  "riepilogo": "6 failed, 212 passed in 15.73s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -408,9 +417,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_una_sessione_per_processo_un_login_con_dieci_thread"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 6.73s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 16.52s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -418,12 +427,13 @@
   "file": "Betfair/nucleo/betfair/sessione.py",
   "descr": "errore del primo login grezzo",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_tetto_dei_tentativi_al_minuto",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_primo_login_fallito_stesso_errore_di_build_client"
   ],
-  "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.07s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 2,
+  "riepilogo": "2 failed, 216 passed in 17.62s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -431,16 +441,18 @@
   "file": "Betfair/nucleo/betfair/sessione.py",
   "descr": "keepAlive sostituito dal login",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_keepalive_regolare_sotto_carico",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_una_mutazione_aspetta_il_keepalive_in_volo",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_contatori_della_salute_seguono_il_copione",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_custode_tiene_viva_la_sessione_oltre_i_20_minuti",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_parita_custode_di_oggi_stesso_copione",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_sessione_rifatta_notificata_a_ogni_relogin_mai_al_primo",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_thread_del_custode_solo_con_avvia_e_si_ferma"
   ],
-  "n_rossi": 5,
-  "riepilogo": "5 failed, 167 passed in 11.97s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 7,
+  "riepilogo": "7 failed, 211 passed in 26.19s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -448,13 +460,14 @@
   "file": "Betfair/nucleo/betfair/sessione.py",
   "descr": "periodo di serie diverso da oggi",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_una_mutazione_aspetta_il_keepalive_in_volo",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_sessione_rifatta_notificata_a_ogni_relogin_mai_al_primo",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_stato_senza_token_con_tutte_le_chiavi"
   ],
-  "n_rossi": 2,
-  "riepilogo": "2 failed, 170 passed in 7.29s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 3,
+  "riepilogo": "3 failed, 215 passed in 20.48s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -462,12 +475,13 @@
   "file": "Betfair/nucleo/betfair/sessione.py",
   "descr": "avvia non avvia",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_keepalive_regolare_sotto_carico",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_thread_del_custode_solo_con_avvia_e_si_ferma"
   ],
-  "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 7.30s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 2,
+  "riepilogo": "2 failed, 216 passed in 16.48s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -475,12 +489,13 @@
   "file": "Betfair/nucleo/betfair/sessione.py",
   "descr": "ferma non ferma",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_keepalive_regolare_sotto_carico",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_thread_del_custode_solo_con_avvia_e_si_ferma"
   ],
-  "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 12.56s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 2,
+  "riepilogo": "2 failed, 216 passed in 21.95s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -491,9 +506,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_stato_senza_token_con_tutte_le_chiavi"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 7.08s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 17.05s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -506,9 +521,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_stato_senza_token_con_tutte_le_chiavi"
   ],
   "n_rossi": 3,
-  "riepilogo": "3 failed, 169 passed in 6.06s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "3 failed, 215 passed in 16.91s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -519,9 +534,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_una_sessione_per_processo_un_login_con_dieci_thread"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 6.01s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 17.97s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -529,58 +544,12 @@
   "file": "Betfair/nucleo/betfair/sessione.py",
   "descr": "login a ogni client()",
   "rossi": [
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_keep_alive_gzip_e_una_sola_sessione_http",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_errore_di_rete_un_ritento_con_pausa[SERVICE_BUSY]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_errore_di_rete_un_ritento_con_pausa[UNEXPECTED_ERROR]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_errore_di_rete_un_ritento_con_pausa[http503]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_errore_di_rete_un_ritento_con_pausa[rete]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_errore_di_rete_un_ritento_con_pausa[timeout]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_limite_stop_pulito_mai_ritentata[TOO_MANY_REQUESTS]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_limite_stop_pulito_mai_ritentata[TOO_MUCH_DATA]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_sessione_scaduta_relogin_e_ritento",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[SERVICE_BUSY-cancelOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[SERVICE_BUSY-placeOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[SERVICE_BUSY-replaceOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[SERVICE_BUSY-updateOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[TOO_MANY_REQUESTS-cancelOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[TOO_MANY_REQUESTS-placeOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[TOO_MANY_REQUESTS-replaceOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[TOO_MANY_REQUESTS-updateOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[UNEXPECTED_ERROR-cancelOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[UNEXPECTED_ERROR-placeOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[UNEXPECTED_ERROR-replaceOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[UNEXPECTED_ERROR-updateOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[http503-cancelOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[http503-placeOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[http503-replaceOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[http503-updateOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[rete-cancelOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[rete-placeOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[rete-replaceOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[rete-updateOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[timeout-cancelOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[timeout-placeOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[timeout-replaceOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_mai_ritentata[timeout-updateOrders]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_relogin_frenato_nessuna_ripetizione",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_sessione_non_valida_una_ripetizione_dopo_relogin",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_parita_letture_con_odds_refresh_with_client",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_salute_inoltro_al_registro_del_monitor_con_nomi_propri",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_sessione_scaduta_vista_da_sei_thread_un_solo_relogin",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[201-price_data2]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[201-price_data3]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[201-price_data4]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[201-price_data5]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[201-price_data6]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[201-price_data7]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_costruire_non_tocca_rete_ne_thread",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_sessione_it_scade_senza_keepalive_e_si_rifa",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_una_sessione_per_processo_un_login_con_dieci_thread"
   ],
-  "n_rossi": 47,
-  "riepilogo": "47 failed, 125 passed in 7.24s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 1,
+  "riepilogo": "1 failed, 217 passed in 16.24s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -592,9 +561,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_rifai_login_ignora_errori_non_di_sessione"
   ],
   "n_rossi": 2,
-  "riepilogo": "2 failed, 170 passed in 6.46s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "2 failed, 216 passed in 17.22s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -605,9 +574,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_di_serie_mai_il_ban_di_betfair_anche_in_un_ciclo_impazzito"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 10.26s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 18.33s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -615,13 +584,14 @@
   "file": "Betfair/nucleo/betfair/sessione.py",
   "descr": "ban non riconosciuto",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_ban_ricordato_dopo_chiudi_e_riapri_la_sessione_del_processo",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_ban_di_betfair_ferma_i_login_per_20_minuti",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_rifiuta_tetti_oltre_il_conto"
   ],
-  "n_rossi": 2,
-  "riepilogo": "2 failed, 170 passed in 8.28s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 3,
+  "riepilogo": "3 failed, 215 passed in 17.32s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -632,9 +602,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_rifiuta_tetti_oltre_il_conto"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 7.48s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 17.70s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -645,9 +615,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_tetto_dei_tentativi_al_minuto"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 7.13s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 17.60s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -658,9 +628,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_tetto_dei_tentativi_al_minuto"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 6.82s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 17.37s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -671,9 +641,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_contatori_della_salute_seguono_il_copione"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 6.33s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 17.21s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -681,16 +651,18 @@
   "file": "Betfair/nucleo/betfair/sessione.py",
   "descr": "rinnova non rinnova",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_keepalive_regolare_sotto_carico",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_una_mutazione_aspetta_il_keepalive_in_volo",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_contatori_della_salute_seguono_il_copione",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_custode_tiene_viva_la_sessione_oltre_i_20_minuti",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_parita_custode_di_oggi_stesso_copione",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_sessione_rifatta_notificata_a_ogni_relogin_mai_al_primo",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_thread_del_custode_solo_con_avvia_e_si_ferma"
   ],
-  "n_rossi": 5,
-  "riepilogo": "5 failed, 167 passed in 11.31s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "n_rossi": 7,
+  "riepilogo": "7 failed, 211 passed in 26.93s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -701,9 +673,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_stato_senza_token_con_tutte_le_chiavi"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.34s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 17.63s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -714,9 +686,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_tetto_dei_login_riusciti_al_minuto"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.91s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 15.78s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -724,12 +696,32 @@
   "file": "Betfair/nucleo/betfair/rest.py",
   "descr": "MUTAZIONE RITENTATA su qualunque errore",
   "rossi": [
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_sessione_non_valida_una_ripetizione_dopo_relogin"
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_sessione_non_valida_una_ripetizione_dopo_relogin",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[UNEXPECTED_ERROR]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[http503]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[rete]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[timeout]"
   ],
-  "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 7.16s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "n_rossi": 21,
+  "riepilogo": "21 failed, 197 passed in 22.93s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -740,9 +732,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_sessione_non_valida_una_ripetizione_dopo_relogin"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.93s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 18.73s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -750,14 +742,15 @@
   "file": "Betfair/nucleo/betfair/rest.py",
   "descr": "limite ritentato",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_un_mercato_oltre_200_punti_stimati_parte_da_solo_e_decide_betfair",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_limite_stop_pulito_mai_ritentata[TOO_MANY_REQUESTS]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_limite_stop_pulito_mai_ritentata[TOO_MUCH_DATA]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_parita_letture_con_odds_refresh_with_client"
   ],
-  "n_rossi": 3,
-  "riepilogo": "3 failed, 169 passed in 6.72s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "n_rossi": 4,
+  "riepilogo": "4 failed, 214 passed in 17.24s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -768,9 +761,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_errore_permanente_non_ritentata"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 4.81s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 16.41s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -786,9 +779,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_errore_di_rete_un_ritento_con_pausa[timeout]"
   ],
   "n_rossi": 6,
-  "riepilogo": "6 failed, 166 passed in 4.52s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "6 failed, 212 passed in 17.30s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -801,9 +794,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_sessione_scaduta_vista_da_sei_thread_un_solo_relogin"
   ],
   "n_rossi": 3,
-  "riepilogo": "3 failed, 169 passed in 4.71s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "3 failed, 215 passed in 17.48s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -811,6 +804,7 @@
   "file": "Betfair/nucleo/betfair/rest.py",
   "descr": "nessuna suddivisione per peso",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_un_mercato_oltre_200_punti_stimati_parte_da_solo_e_decide_betfair",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_blocco_massimo_e_pausa_fra_blocchi",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_keep_alive_gzip_e_una_sola_sessione_http",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_list_market_book_parita_col_ripiego_dello_scanner",
@@ -837,12 +831,13 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data4]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data5]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data6]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data7]"
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data7]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_blocco_massimo_piu_largo_del_peso_non_supera_mai_i_200_punti"
   ],
-  "n_rossi": 27,
-  "riepilogo": "27 failed, 145 passed in 5.42s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "n_rossi": 29,
+  "riepilogo": "29 failed, 189 passed in 16.61s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -855,9 +850,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_tre_concorrenti_per_conto_sui_metodi_contesi"
   ],
   "n_rossi": 3,
-  "riepilogo": "3 failed, 169 passed in 4.99s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "3 failed, 215 passed in 16.95s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -869,9 +864,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_due_clienti_dello_stesso_conto_condividono_il_tetto"
   ],
   "n_rossi": 2,
-  "riepilogo": "2 failed, 170 passed in 5.50s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "2 failed, 216 passed in 16.99s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -882,9 +877,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_metodi_sbagliati_rifiutati_senza_rete"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 6.12s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 19.11s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -897,9 +892,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_errore_permanente_non_ritentata"
   ],
   "n_rossi": 3,
-  "riepilogo": "3 failed, 169 passed in 5.39s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "3 failed, 215 passed in 17.97s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -910,9 +905,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_classificazione_coincide_con_le_funzioni_di_oggi[<lambda>-rete3]"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 4.34s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 15.98s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -923,9 +918,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_sessione_scaduta_vista_da_sei_thread_un_solo_relogin"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 4.32s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 15.50s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -933,6 +928,7 @@
   "file": "Betfair/nucleo/betfair/rest.py",
   "descr": "ordine dei blocchi perso",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_un_mercato_oltre_200_punti_stimati_parte_da_solo_e_decide_betfair",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_list_market_book_parita_col_ripiego_dello_scanner",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[11-price_data4]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[11-price_data5]",
@@ -958,10 +954,10 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data6]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data7]"
   ],
-  "n_rossi": 24,
-  "riepilogo": "24 failed, 148 passed in 4.35s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "n_rossi": 25,
+  "riepilogo": "25 failed, 193 passed in 16.02s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -972,9 +968,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_blocco_massimo_e_pausa_fra_blocchi"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 4.84s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 15.67s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -985,9 +981,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_coda_del_conto_piena_oltre_l_attesa"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.36s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 16.17s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1000,9 +996,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_salute_inoltro_al_registro_del_monitor_con_nomi_propri"
   ],
   "n_rossi": 3,
-  "riepilogo": "3 failed, 169 passed in 4.98s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "3 failed, 215 passed in 16.58s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1013,9 +1009,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_due_errori_di_rete_rilancia"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.05s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 16.40s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1023,16 +1019,17 @@
   "file": "Betfair/nucleo/betfair/rest.py",
   "descr": "limite non riconosciuto",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_un_mercato_oltre_200_punti_stimati_parte_da_solo_e_decide_betfair",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_classificazione_coincide_con_le_funzioni_di_oggi[<lambda>-limite0]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_classificazione_coincide_con_le_funzioni_di_oggi[<lambda>-limite1]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_limite_stop_pulito_mai_ritentata[TOO_MANY_REQUESTS]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_limite_stop_pulito_mai_ritentata[TOO_MUCH_DATA]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_parita_letture_con_odds_refresh_with_client"
   ],
-  "n_rossi": 5,
-  "riepilogo": "5 failed, 167 passed in 4.28s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "n_rossi": 6,
+  "riepilogo": "6 failed, 212 passed in 17.35s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1043,9 +1040,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_metodi_sbagliati_rifiutati_senza_rete"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 4.17s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 17.02s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1056,9 +1053,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_metodi_sbagliati_rifiutati_senza_rete"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 3.76s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 18.01s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1069,9 +1066,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_salute_latenze_p50_p99_come_il_monitor"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 4.60s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 16.44s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1082,9 +1079,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_due_clienti_dello_stesso_conto_condividono_il_tetto"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.11s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 16.98s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1095,9 +1092,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_tre_concorrenti_per_conto_sui_metodi_contesi"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 4.72s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 16.32s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1111,9 +1108,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_tre_concorrenti_per_conto_sui_metodi_contesi"
   ],
   "n_rossi": 4,
-  "riepilogo": "4 failed, 168 passed in 3.96s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "4 failed, 214 passed in 16.80s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -1128,9 +1125,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_sessione_scaduta_vista_da_sei_thread_un_solo_relogin"
   ],
   "n_rossi": 5,
-  "riepilogo": "5 failed, 167 passed in 3.99s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "5 failed, 213 passed in 17.39s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -1144,9 +1141,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[201-price_data0]"
   ],
   "n_rossi": 4,
-  "riepilogo": "4 failed, 168 passed in 3.68s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "4 failed, 214 passed in 18.13s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -1154,13 +1151,15 @@
   "file": "Betfair/nucleo/betfair/limiti.py",
   "descr": "peso EX_BEST_OFFERS",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_profondita_sotto_3_non_abbassa_il_peso_e_il_finto_resta_indipendente",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_blocco_massimo_riproduce_i_blocchi_di_oggi",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_pesi_list_market_book_dal_documento[price_data3-5-40]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_pesi_list_market_book_dal_documento[price_data9-8-25]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[1-peso0-120]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[10-peso3-12]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[1-5-40]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[10-peso4-12]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[2-5-40]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[3-5-40]",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[5-peso2-24]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[5-peso3-24]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_tabella_dei_pesi_identica_al_documento",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_keep_alive_gzip_e_una_sola_sessione_http",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_list_market_book_parita_col_ripiego_dello_scanner",
@@ -1168,10 +1167,10 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[201-price_data1]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[41-price_data1]"
   ],
-  "n_rossi": 13,
-  "riepilogo": "13 failed, 159 passed in 3.65s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "n_rossi": 15,
+  "riepilogo": "15 failed, 203 passed in 16.13s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -1182,15 +1181,13 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_classificazione_coincide_con_le_funzioni_di_oggi[<lambda>-sessione0]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_classificazione_coincide_con_le_funzioni_di_oggi[<lambda>-sessione1]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_lettura_sessione_scaduta_relogin_e_ritento",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_sessione_non_valida_una_ripetizione_dopo_relogin",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_parita_letture_con_odds_refresh_with_client",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_parita_mutazioni_con_call_mutating",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_sessione_scaduta_vista_da_sei_thread_un_solo_relogin"
   ],
-  "n_rossi": 7,
-  "riepilogo": "7 failed, 165 passed in 5.36s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "n_rossi": 5,
+  "riepilogo": "5 failed, 213 passed in 16.79s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1212,9 +1209,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_salute_inoltro_al_registro_del_monitor_con_nomi_propri"
   ],
   "n_rossi": 12,
-  "riepilogo": "12 failed, 160 passed in 6.65s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "12 failed, 206 passed in 16.15s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1225,9 +1222,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_implementa_il_contratto_cliente_rest"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 3.36s",
-  "sha_prima": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
-  "sha_dopo": "85e4ed5ec19b3acdef51051337d6c649e6d9b53ef5ddbf01a50a7894008ad33b",
+  "riepilogo": "1 failed, 217 passed in 15.72s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  },
  {
@@ -1238,9 +1235,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_implementa_il_contratto_sessione"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 4.79s",
-  "sha_prima": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
-  "sha_dopo": "a19558151fd32463d9dcfb442d0d923e1c9798c6c73c01c4f6bfa31a19be4c18",
+  "riepilogo": "1 failed, 217 passed in 16.84s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
   "ripristino_ok": true
  },
  {
@@ -1252,9 +1249,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_tre_concorrenti_per_conto_sui_metodi_contesi"
   ],
   "n_rossi": 2,
-  "riepilogo": "2 failed, 170 passed in 4.21s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "2 failed, 216 passed in 15.25s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -1269,9 +1266,229 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_tre_concorrenti_per_conto_sui_metodi_contesi"
   ],
   "n_rossi": 5,
-  "riepilogo": "5 failed, 167 passed in 4.14s",
-  "sha_prima": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
-  "sha_dopo": "cb0c1e66098a231e4af3fcf84ad96fd6055a7d03066b3a9220d1d2f704e01933",
+  "riepilogo": "5 failed, 213 passed in 15.77s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "ripristino_ok": true
+ },
+ {
+  "id": "R28",
+  "file": "Betfair/nucleo/betfair/rest.py",
+  "descr": "ALTA-1: rifiuto letto anche dal __context__",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifiuto_di_sessione_mai_dal_contesto[<lambda>-False1]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifiuto_di_sessione_mai_dal_contesto[<lambda>-False2]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[UNEXPECTED_ERROR]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[http503]"
+  ],
+  "n_rossi": 4,
+  "riepilogo": "4 failed, 214 passed in 14.87s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "ripristino_ok": true
+ },
+ {
+  "id": "R29",
+  "file": "Betfair/nucleo/betfair/rest.py",
+  "descr": "ALTA-1: mutazione classificata come le letture",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[UNEXPECTED_ERROR]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[http503]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[rete]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[timeout]"
+  ],
+  "n_rossi": 4,
+  "riepilogo": "4 failed, 214 passed in 16.01s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "ripristino_ok": true
+ },
+ {
+  "id": "R30",
+  "file": "Betfair/nucleo/betfair/rest.py",
+  "descr": "mutazione ripetuta su qualunque errore dopo un relogin di altri (mutazione sopravvissuta)",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[UNEXPECTED_ERROR]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[http503]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[rete]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[timeout]"
+  ],
+  "n_rossi": 20,
+  "riepilogo": "20 failed, 198 passed in 21.76s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "ripristino_ok": true
+ },
+ {
+  "id": "R31",
+  "file": "Betfair/nucleo/betfair/rest.py",
+  "descr": "market_ids stringa spezzata",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_market_ids_stringa_diventa_lista_di_caratteri"
+  ],
+  "n_rossi": 1,
+  "riepilogo": "1 failed, 217 passed in 15.35s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "ripristino_ok": true
+ },
+ {
+  "id": "R32",
+  "file": "Betfair/nucleo/betfair/rest.py",
+  "descr": "un mercato oltre 200: ValueError locale",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_un_mercato_oltre_200_punti_stimati_parte_da_solo_e_decide_betfair"
+  ],
+  "n_rossi": 1,
+  "riepilogo": "1 failed, 217 passed in 15.83s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "ripristino_ok": true
+ },
+ {
+  "id": "S27",
+  "file": "Betfair/nucleo/betfair/sessione.py",
+  "descr": "ALTA-2: backoff scavalcato",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifai_login_rifiutato_durante_il_backoff_poi_permesso",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_login_fallito_il_backoff_del_custode_non_viene_aggirato_dalle_letture",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_tetto_dei_login_riusciti_al_minuto"
+  ],
+  "n_rossi": 3,
+  "riepilogo": "3 failed, 215 passed in 16.15s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "ripristino_ok": true
+ },
+ {
+  "id": "S28",
+  "file": "Betfair/nucleo/betfair/sessione.py",
+  "descr": "MEDIA-5: freno per istanza",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_freno_del_conto_condiviso_dalle_sessioni_dello_stesso_processo",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_ban_ricordato_dopo_chiudi_e_riapri_la_sessione_del_processo",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_ban_di_betfair_ferma_i_login_per_20_minuti",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_di_serie_mai_il_ban_di_betfair_anche_in_un_ciclo_impazzito"
+  ],
+  "n_rossi": 4,
+  "riepilogo": "4 failed, 214 passed in 15.36s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "ripristino_ok": true
+ },
+ {
+  "id": "S29",
+  "file": "Betfair/nucleo/betfair/sessione.py",
+  "descr": "MEDIA-3: niente via veloce",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_una_mutazione_aspetta_il_keepalive_in_volo"
+  ],
+  "n_rossi": 1,
+  "riepilogo": "1 failed, 217 passed in 15.92s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "ripristino_ok": true
+ },
+ {
+  "id": "S30",
+  "file": "Betfair/nucleo/betfair/sessione.py",
+  "descr": "periodo non validato",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_periodo_keepalive_fuori_campo_rifiutato[-1]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_periodo_keepalive_fuori_campo_rifiutato[0]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_periodo_keepalive_fuori_campo_rifiutato[1081]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_periodo_keepalive_fuori_campo_rifiutato[1200]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_periodo_keepalive_oltre_la_vita_della_sessione_va_rifiutato"
+  ],
+  "n_rossi": 5,
+  "riepilogo": "5 failed, 213 passed in 14.69s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "ripristino_ok": true
+ },
+ {
+  "id": "S31",
+  "file": "Betfair/nucleo/betfair/sessione.py",
+  "descr": "generazione azzerata da chiudi",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_generazione_non_riparte_dopo_chiudi"
+  ],
+  "n_rossi": 1,
+  "riepilogo": "1 failed, 217 passed in 15.55s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "ripristino_ok": true
+ },
+ {
+  "id": "S32",
+  "file": "Betfair/nucleo/betfair/sessione.py",
+  "descr": "ban senza margine",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_ban_di_betfair_ferma_i_login_per_20_minuti"
+  ],
+  "n_rossi": 1,
+  "riepilogo": "1 failed, 217 passed in 15.71s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "ripristino_ok": true
+ },
+ {
+  "id": "S33",
+  "file": "Betfair/nucleo/betfair/sessione.py",
+  "descr": "in_backoff sempre falso",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifai_login_rifiutato_durante_il_backoff_poi_permesso",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_login_fallito_il_backoff_del_custode_non_viene_aggirato_dalle_letture",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_tetto_dei_login_riusciti_al_minuto"
+  ],
+  "n_rossi": 3,
+  "riepilogo": "3 failed, 215 passed in 15.94s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "ripristino_ok": true
+ },
+ {
+  "id": "L21",
+  "file": "Betfair/nucleo/betfair/limiti.py",
+  "descr": "profondita' < 3 sotto il peso base",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_profondita_sotto_3_non_abbassa_il_peso_e_il_finto_resta_indipendente",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[1-5-40]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_profondita_moltiplica_il_peso[2-5-40]"
+  ],
+  "n_rossi": 3,
+  "riepilogo": "3 failed, 215 passed in 14.73s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "ripristino_ok": true
+ },
+ {
+  "id": "L22",
+  "file": "Betfair/nucleo/betfair/limiti.py",
+  "descr": "profondita' bool/decimale accettata",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_limiti.py::test_proiezioni_sconosciute_e_pesi_non_validi_rifiutati"
+  ],
+  "n_rossi": 1,
+  "riepilogo": "1 failed, 217 passed in 17.25s",
+  "sha_prima": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
+  "sha_dopo": "fd18da7fcc407610ca2ce59a7a19dadd2742bfdbaf03fe840fa8a81cb049bca3",
   "ripristino_ok": true
  },
  {
@@ -1279,6 +1496,11 @@
   "file": "Betfair/nucleo/betfair/tests/test_a1_finto_betfair.py",
   "descr": "finto senza gzip dichiarato",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_freno_del_conto_condiviso_dalle_sessioni_dello_stesso_processo",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_generazione_non_riparte_dopo_chiudi",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_mutazione_con_rifiuto_di_sessione_ripete_stessi_parametri_e_customer_ref",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifai_login_rifiutato_durante_il_backoff_poi_permesso",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_un_mercato_oltre_200_punti_stimati_parte_da_solo_e_decide_betfair",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_finto_betfair.py::test_finto_ban_dei_login_oltre_100_al_minuto",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_finto_betfair.py::test_finto_gzip_decompresso_da_requests",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_finto_betfair.py::test_finto_json_diventano_oggetti_veri",
@@ -1387,6 +1609,33 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[6-price_data6]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_suddivisione_per_peso_su_griglia_mai_too_much_data[6-price_data7]",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_tre_concorrenti_per_conto_sui_metodi_contesi",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_ban_ricordato_dopo_chiudi_e_riapri_la_sessione_del_processo",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_blocco_massimo_piu_largo_del_peso_non_supera_mai_i_200_punti",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_login_fallito_il_backoff_del_custode_non_viene_aggirato_dalle_letture",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_keepalive_regolare_sotto_carico",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_market_ids_stringa_diventa_lista_di_caratteri",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_misura_una_mutazione_aspetta_il_keepalive_in_volo",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[UNEXPECTED_ERROR]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[http503]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[rete]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[timeout]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_parita_con_call_mutating_dentro_un_except_di_sessione",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_ban_di_betfair_ferma_i_login_per_20_minuti",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_contatori_della_salute_seguono_il_copione",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_costruire_non_tocca_rete_ne_thread",
@@ -1395,7 +1644,6 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_errore_di_sessione_da_otto_thread_un_solo_relogin",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_di_serie_mai_il_ban_di_betfair_anche_in_un_ciclo_impazzito",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_tetto_dei_login_riusciti_al_minuto",
-   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_tetto_dei_tentativi_al_minuto",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_parita_custode_di_oggi_stesso_copione",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_primo_login_fallito_stesso_errore_di_build_client",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_reperto_keepalive_di_omega_con_list_event_types_non_rinnova",
@@ -1407,10 +1655,10 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_thread_del_custode_solo_con_avvia_e_si_ferma",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_una_sessione_per_processo_un_login_con_dieci_thread"
   ],
-  "n_rossi": 127,
-  "riepilogo": "127 failed, 45 passed, 10 warnings in 2.73s",
-  "sha_prima": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
-  "sha_dopo": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
+  "n_rossi": 158,
+  "riepilogo": "158 failed, 60 passed, 10 warnings in 5.00s",
+  "sha_prima": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
+  "sha_dopo": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
   "ripristino_ok": true
  },
  {
@@ -1418,12 +1666,13 @@
   "file": "Betfair/nucleo/betfair/tests/test_a1_finto_betfair.py",
   "descr": "finto senza TOO_MUCH_DATA",
   "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_un_mercato_oltre_200_punti_stimati_parte_da_solo_e_decide_betfair",
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_finto_betfair.py::test_finto_regole_peso_e_sessione"
   ],
-  "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 3.78s",
-  "sha_prima": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
-  "sha_dopo": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
+  "n_rossi": 2,
+  "riepilogo": "2 failed, 216 passed in 16.59s",
+  "sha_prima": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
+  "sha_dopo": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
   "ripristino_ok": true
  },
  {
@@ -1438,9 +1687,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_sessione_it_scade_senza_keepalive_e_si_rifa"
   ],
   "n_rossi": 5,
-  "riepilogo": "5 failed, 167 passed in 3.66s",
-  "sha_prima": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
-  "sha_dopo": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
+  "riepilogo": "5 failed, 213 passed in 17.02s",
+  "sha_prima": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
+  "sha_dopo": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
   "ripristino_ok": true
  },
  {
@@ -1451,9 +1700,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_finto_betfair.py::test_finto_ban_dei_login_oltre_100_al_minuto"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 5.68s",
-  "sha_prima": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
-  "sha_dopo": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
+  "riepilogo": "1 failed, 217 passed in 18.35s",
+  "sha_prima": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
+  "sha_dopo": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
   "ripristino_ok": true
  },
  {
@@ -1464,9 +1713,9 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_finto_betfair.py::test_finto_json_diventano_oggetti_veri"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 4.55s",
-  "sha_prima": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
-  "sha_dopo": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
+  "riepilogo": "1 failed, 217 passed in 17.91s",
+  "sha_prima": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
+  "sha_dopo": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
   "ripristino_ok": true
  },
  {
@@ -1477,9 +1726,75 @@
    "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_finto_betfair.py::test_finto_quarta_richiesta_contesa_too_many_requests"
   ],
   "n_rossi": 1,
-  "riepilogo": "1 failed, 171 passed in 4.24s",
-  "sha_prima": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
-  "sha_dopo": "f2c404736d3a52ef6414740250044b217dd800bf27b7d830e229d2d91d991437",
+  "riepilogo": "1 failed, 217 passed in 18.34s",
+  "sha_prima": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
+  "sha_dopo": "f830363adde1d757eb2df612ca8131d34f57309ac87652352e1eae1860654c9f",
+  "ripristino_ok": true
+ },
+ {
+  "id": "S34",
+  "file": "Betfair/nucleo/betfair/sessione.py",
+  "descr": "bordo del periodo escluso",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_periodo_keepalive_al_bordo_accettato"
+  ],
+  "n_rossi": 1,
+  "riepilogo": "1 failed, 217 passed in 18.02s",
+  "sha_prima": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "sha_dopo": "973b989101ef75c7c12d7d812a03d823210c40d6c9d1c6e7be179370a4f8d31b",
+  "ripristino_ok": true
+ },
+ {
+  "id": "R33",
+  "file": "Betfair/nucleo/betfair/rest.py",
+  "descr": "rifiuto di sessione mai riconosciuto",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_mutazione_con_rifiuto_di_sessione_ripete_stessi_parametri_e_customer_ref",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifiuto_di_sessione_mai_dal_contesto[<lambda>-True0]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifiuto_di_sessione_mai_dal_contesto[<lambda>-True1]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifiuto_di_sessione_mai_dal_contesto[<lambda>-True2]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_mutazione_sessione_non_valida_una_ripetizione_dopo_relogin",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest.py::test_parita_mutazioni_con_call_mutating"
+  ],
+  "n_rossi": 6,
+  "riepilogo": "6 failed, 212 passed in 16.90s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "ripristino_ok": true
+ },
+ {
+  "id": "R34",
+  "file": "Betfair/nucleo/betfair/rest.py",
+  "descr": "ogni errore e' un rifiuto di sessione",
+  "rossi": [
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifiuto_di_sessione_mai_dal_contesto[<lambda>-False0]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifiuto_di_sessione_mai_dal_contesto[<lambda>-False1]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifiuto_di_sessione_mai_dal_contesto[<lambda>-False2]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[UNEXPECTED_ERROR-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[http503-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[rete-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-cancelOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-placeOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-replaceOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_errore_generico_con_relogin_di_un_altro_thread_non_rimanda_la_mutazione[timeout-updateOrders]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[UNEXPECTED_ERROR]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[http503]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[rete]",
+   "../../../../../../tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1a1/mut/Betfair/nucleo/betfair/tests/test_a1_rest_revisore.py::test_mutazione_chiamata_dentro_un_except_di_sessione_non_si_ripete_su_errore_generico[timeout]"
+  ],
+  "n_rossi": 23,
+  "riepilogo": "23 failed, 195 passed in 23.74s",
+  "sha_prima": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
+  "sha_dopo": "7e835cb569a8dadadd2eea30e678655d1d7c1f25ef8d705d97f4efd1e2ae38e2",
   "ripristino_ok": true
  }
 ]

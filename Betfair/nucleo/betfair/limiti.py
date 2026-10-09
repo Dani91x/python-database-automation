@@ -27,10 +27,13 @@ Regole lette dalla documentazione ufficiale e tenute come tali:
   * ``EX_ALL_OFFERS`` prevale su ``EX_BEST_OFFERS`` se ci sono entrambi (doc
     PriceProjection: "EX_ALL_OFFERS trumps EX_BEST_OFFERS");
   * con ``exBestOffersOverrides.bestPricesDepth`` il peso va moltiplicato per
-    (profondita' / 3). Scelta PRUDENTE dichiarata nel referto: il fattore si
-    applica all'intero peso della proiezione che contiene le migliori offerte
-    (anche alla combinazione con ``EX_TRADED``): sovrastimare il peso fa solo
-    blocchi piu' piccoli, mai un ``TOO_MUCH_DATA``.
+    (profondita' / 3) (02 par. 3.2, fonte B-WEIGHT: la riga non dice come si
+    tratta la combinazione con ``EX_TRADED`` ne' le profondita' sotto 3). Scelte
+    PRUDENTI dichiarate nel referto par. 9: il fattore si applica all'intero peso
+    della proiezione che contiene le migliori offerte (anche alla combinazione con
+    ``EX_TRADED``) e non scende MAI sotto 1 (profondita' 1-2 = peso base):
+    sovrastimare il peso fa solo blocchi piu' piccoli, mai un ``TOO_MUCH_DATA``.
+    La profondita' deve essere un intero >= 1 (non bool, non 2.5).
 
 ASCII-only; commenti in italiano.
 """
@@ -148,10 +151,9 @@ def peso_list_market_book(price_projection: Optional[Mapping[str, Any]] = None) 
         if "BEST_OFFERS" in k and "ALL_OFFERS" not in k:
             profondita = (pp.get("exBestOffersOverrides") or {}).get("bestPricesDepth")
             if profondita is not None:
-                d = int(profondita)
-                if d <= 0:
+                if isinstance(profondita, bool) or not isinstance(profondita, int) or profondita < 1:
                     raise ValueError(f"bestPricesDepth non valido: {profondita!r}")
-                base = base * Fraction(d, 3)
+                base = base * max(Fraction(1), Fraction(profondita, 3))
         peso += base
     return peso
 
