@@ -28,37 +28,24 @@ Nel secondo tempo, quando la squadra favorita per quota è in vantaggio e domina
 | Punteggio richiesto | **1-0 · 2-1 · 2-0** |
 | Quota favorita (pre-match) | **1.40–1.80** |
 | Quota sfavorita (pre-match) | **4–8** |
-| Quota di entrata (live) | **1.20–1.34** — ⚠️ **su QUALE selezione: vedi il riquadro qui sotto** |
+| Quota di banca (live) della squadra che perde | **20–34**, estremi inclusi — **decisione dell'utente del 25/09/2026 (Q1)**, dal corso «4. STRATEGIA/2. Entrata a mercato» @69.8–93.0: *«le quote ideali per entrare a mercato vanno dal 20 al 34, a dir tanto»*. Il filtro sulla quota live della favorita 1,20–1,34 (Lettura A del 14/09) è **tolto**: `engine.py` usa `dogLayMin`/`dogLayMax`, `favLiveMin`/`favLiveMax` sono deprecate e ignorate anche se restano sul DB |
 | Condizione extra | la **favorita** deve avere il **controllo del gioco** |
 
-> ### ⚠️ PUNTO AMBIGUO NEL MANUALE — «quota di entrata 1.20–1.34» riferita a chi?
+> ### Storia del punto «quota di entrata» (CHIUSO il 25/09/2026)
 >
-> **Il manuale originale non lo dice**, e i suoi stessi numeri si contraddicono. Segnalato da
-> `admin-fa` il 14/09 con la prova aritmetica; la mia prima trascrizione diceva «sulla selezione
-> bancata» — **era una mia interpretazione, non il testo**, ed è stata tolta.
+> Il manuale originale scriveva «quota di entrata 1.20–1.34» senza dire di chi, e il suo esempio (*«banchi la
+> Squadra Sud a quota 1.28 con €100 di responsabilità → profitto max ≈ €28»*) è aritmeticamente una PUNTATA,
+> non una banca (segnalato da `admin-fa` il 14/09). Dal 14/09 al 25/09 è valsa la «Lettura A»: 1,20–1,34 = quota
+> live della favorita, usata come filtro d'ingresso. Il 25/09 il referto di fedeltà sulle 57 trascrizioni del corso
+> (`AUDIT_2026-09-25/FEDELTA_SAFE_TRASCRIZIONI.md`) ha trovato che «1,28» non compare in nessuna trascrizione e che
+> la Base del corso banca la squadra che perde a quota 20–34 («4. STRATEGIA/2. Entrata a mercato» @93.0; «11. Uscita
+> emergenza» @67.7: *«bancato con 200 € di responsabilità a quota 20 → profitto 10,52 €»*).
 >
-> L'esempio del manuale dice: *«Banchi la Squadra Sud a quota **1.28** con €100 di responsabilità →
-> profitto max ≈ **€28**»*. I due numeri non possono stare insieme:
-> - bancando a 1.28 con 100 € di responsabilità la puntata sarebbe 357,14 € e il **profitto massimo
->   357,14 €**, non 28;
-> - un profitto di 28 € con 100 € di responsabilità corrisponde a una banca a quota **4,57** —
->   che cade dentro la banda «quota sfavorita **4–8**» dello stesso manuale;
-> - 28 € di profitto su 100 € è invece **esattamente una PUNTATA di 100 € a 1.28**: l'autore ha
->   calcolato come se puntasse, e ha scritto «banchi».
->
-> **Argomento decisivo, e non è aritmetico:** una squadra che sta **perdendo** 0-1 al 60′ non quota
-> mai 1.28. 1.20–1.34 è il prezzo di chi sta **vincendo**.
->
-> **LETTURA A (quella che il codice già implementa, `favLive`)** — 1.20–1.34 è la quota **live della
-> FAVORITA**, usata come filtro di ingresso: entro solo se il mercato conferma che la favorita è
-> davvero in controllo. La banca avviene poi sulla squadra che perde, al suo prezzo di mercato.
->
-> **LETTURA B** — 1.20–1.34 è il prezzo a cui si banca. Incompatibile con il fatto che la selezione
-> bancata sta perdendo, e incompatibile con la banda 4–8 dello stesso manuale.
->
-> **DECISIONE OPERATIVA: vale la LETTURA A** finché l'utente non dice il contrario. Certificare
-> contro la Lettura B dichiarerebbe non conforme un codice corretto e renderebbe la strategia
-> inattivabile. → portato all'utente come punto aperto.
+> **DECISIONE DELL'UTENTE (Q1, 25/09, `CRONOSTORIA.md` h15:50): la Base banca la perdente a quota di banca 20–34,
+> via il filtro favorita 1,20–1,34.** Il codice lo fa: `Betfair/safe_strategy/engine.py` (`dogLayMin`/`dogLayMax`,
+> prezzo = miglior LAY disponibile della sfavorita, senza un LAY reale nessun ingresso) e il controllo di certificazione
+> `Betfair/safe_strategy/certificazione.py` (`SPEC_BASE["dogLay"]`). Lo stake resta fisso: la scala per quota del foglio
+> `Operazioni.xlsx` del corso (≤26 → 4 % cassa, 27–33 → 3 %, ≥34 → 2 %) NON si applica (vedi eccezioni in fondo).
 
 **Uscita in profitto**
 - La favorita segna il **2° gol** → cashout, quasi massimo profitto.
@@ -164,13 +151,14 @@ sicurezza sul pareggio.
 ## ECCEZIONI GIÀ DECISE DALL'UTENTE (non sono difformità)
 
 - **Minuti di ingresso «a partire da»** (vedi regola trasversale in testa).
-- **Quota di entrata 1.20–1.34 = quota LIVE DELLA FAVORITA** (Lettura A), decisione dell'utente del
-  14/09. È quello che il codice già fa (`favLive`). **Punto chiuso.**
-- **QUOTA DI BANCA: NESSUN LIMITE.** Decisione dell'utente del 14/09, presa **avendo davanti il numero**
-  (trade `base` bancato a 24,0: 46 € di responsabilità per 2 € di profitto, rapporto 23:1 contro il
-  3,6:1 dell'esempio del manuale) e **confermando** la stessa decisione del 13/09. La banda 4–8 del
-  manuale resta un **profilo descrittivo della sfavorita, non un filtro d'ingresso**.
-  **Non è una difformità: è una scelta. ARGOMENTO CHIUSO, non va riaperto.**
+- **Quota di entrata = QUOTA DI BANCA della squadra che perde, 20–34 estremi inclusi** (decisione dell'utente
+  del 25/09, Q1). Sostituisce la Lettura A del 14/09 (1,20–1,34 = quota live della favorita), che non è più un
+  filtro: `favLiveMin`/`favLiveMax` deprecate. **Punto chiuso.**
+- **QUOTA DI BANCA: banda 20–34 dal 25/09** (Q1). Dal 13-14/09 al 25/09 valeva «nessun limite», decisione presa
+  **avendo davanti il numero** (trade `base` bancato a 24,0: 46 € di responsabilità per 2 € di profitto, rapporto
+  23:1 contro il 3,6:1 dell'esempio del manuale); la banda 20–34 del corso la sostituisce. La banda 4–8 del manuale
+  resta un **profilo descrittivo della sfavorita pre-match, non un filtro d'ingresso live**.
+  **Non è una difformità: è una scelta dell'utente. ARGOMENTO CHIUSO, non va riaperto.**
 - **STAKE FISSO, non responsabilità fissa.** Decisione dell'utente del 14/09, presa **avendo davanti il
   numero** (responsabilità reale da 46 € a 128 € per gli stessi 2 € di stake) e **confermando** la
   stessa decisione del 13/09. Conseguenza da accettare consapevolmente e da **non** trattare come bug:
