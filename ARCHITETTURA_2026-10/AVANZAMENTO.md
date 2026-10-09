@@ -46,14 +46,14 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
 
 | Tappa | Contenuto | Chi | Stato |
 |---|---|---|---|
-| T0A | Modulo «Salute» + misure mancanti + referto 24 h | cloud (codice) + PC (migrazione `monitor_metrics`, 24 h app accesa) | parte cloud fatta (`e44032a9`, `6d02e578`, `bd9e37cc`, 09/10); da fare PC: migrazione, `MONITOR_SALUTE=1`, 24 h, 30 ordini paper, referto (`tappa0/T0A_SALUTE/REFERTO.md` §5) |
+| T0A | Modulo «Salute» + misure mancanti + referto 24 h | cloud (codice) + PC (migrazione `monitor_metrics`, 24 h app accesa) | parte cloud fatta (`e44032a9`, `6d02e578`, `bd9e37cc`, 09/10); **verificata e FIRMATA dal PC** (09/10, `tappa0/VERIFICA_PC_2026-10-09/`): additiva sotto `MONITOR_SALUTE`, Mike/Safe identici, suite verde; ramo `tappa0-salute-su-master` pronto (solo i 67 file di T0A su `979aac18`, pytest 11.533/0, build ok). Prima dell'ingresso: decisione dell'utente su R-5 (voce di menu visibile a monitor spento); prima della migrazione: R-4 (14 -> 7 giorni). Poi: migrazione, `MONITOR_SALUTE=1`, 24 h, 30 ordini paper, referto (§5) |
 | T0B (1)-(3) | Cantieri 15, 11, 7 del banco | cloud | fatta (fusi su master entro il 09/10, `CRONOSTORIA.md` 08/10) |
-| T0B (4) | Finto di Omega con la firma del vero (`aggregates(..., mode)`), referto prima/dopo | cloud | fatta (`07115d13`, 09/10; referto `tappa0/T0B4_FINTO_OMEGA/`) |
-| T0B (5) | 3-5 partite tennis in `registrazioni_banco/` (U-44) + registrazioni calcio COMPLETE aggiuntive per Mike (U-27) | PC | da fare (PC) |
-| T0B (6) | Commit dei 4 documenti (U-37) + testo della Base allineato al 25/09 | PC | da fare (PC) |
-| U-62 | Ora di Windows, niente sospensione, avvio al login (app spenta o bot flat) | PC + utente | da fare (PC) |
-| U-60 | Misura dei 120 ms delle letture REST del banco | PC | da fare (PC) |
-| T0C strumenti | Cassetta, ombra (`--ombra`), `TOLLERANZE.md`, `congela`, determinismo, impronte | cloud | fatta (`cd41b2f1`, 09/10; referto `tappa0/T0C_STRUMENTI/`) |
+| T0B (4) | Finto di Omega con la firma del vero (`aggregates(..., mode)`), referto prima/dopo | cloud | fatta (`07115d13`, 09/10; referto `tappa0/T0B4_FINTO_OMEGA/`); **FIRMATA dal PC** (09/10: firme identiche al vero, 28/28, mutazione rossa) |
+| T0B (5) | 3-5 partite tennis in `registrazioni_banco/` (U-44) + registrazioni calcio COMPLETE aggiuntive per Mike (U-27) | PC | fatta (`695a62cd`, 09/10): tennis in `registrazioni_banco/tennis/<giorno>/<id>/` (albero del recorder, `TENNIS_RECORD_DIR`): 35790089, 35794049 (COMPLETE), 35795993 (PARTIAL 65,7%), 35797566 senza raw del Match Odds (inutilizzabile, dichiarato); calcio per Mike 35777617, 35768365, 35774000 (stati D11: seconda entrata e re-ingresso; scoperti PRE_LAST_ENTRY_PENDING, SKIPPED, ERROR); sha256 verificati dal coordinatore; fixture della barra di Match Replay generate per le 3 calcio (`6247fbd0`, standard del 07/10: ogni calcio in `registrazioni_banco/` ha la sua fixture); referto `tappa0/T0B5_REGISTRAZIONI/`. Reperti: `validate_recordings` da' COMPLETE 100% a 36006953 ferma al 44'; il feed ri-emette le righe-evento dopo una riconnessione (35774000, gol del 16' ripetuto 6 minuti dopo): il verificatore le dedupe, il test ora conta come lui |
+| T0B (6) | Commit dei 4 documenti (U-37) + testo della Base allineato al 25/09 | PC | 4 documenti versionati byte per byte (`143a60d6`, 09/10); allineamento della Base (quota di banca 20-34, Q1 del 25/09) approvato dall'utente sul diff e committato (`7c92904c`) |
+| U-62 | Ora di Windows, niente sospensione, avvio al login (app spenta o bot flat) | PC + utente | fatta (PC, 09/10 18:05, app spenta): w32time Automatico/Running su time.windows.com, risincronizzato (scarto residuo -0,16 s su 5 campioni); sospensione/ibernazione a rete mai; riavvio automatico di Windows Update bloccato con utente connesso (`NoAutoRebootWithLoggedOnUsers=1`, ore attive 6-24); avvio al login = collegamento nella cartella Esecuzione automatica dell'utente all'avviatore esistente `desktop/release/AlphaScore Trading 1.1.0.exe` (attivita' pianificata rifiutata senza amministratore). Niente ricompilato |
+| U-60 | Misura dei 120 ms delle letture REST del banco | PC | misurata (`e7eee8bd`, 09/10, app spenta): letture DB a connessione viva p50 111 / p90 148 / p99 493 ms, a connessione nuova p50 228 ms; non misurate le letture verso Betfair. Decisione sul valore: utente (proposta: 120 ms confermati con incertezza 110-150) |
+| T0C strumenti | Cassetta, ombra (`--ombra`), `TOLLERANZE.md`, `congela`, determinismo, impronte | cloud | fatta (`cd41b2f1`, 09/10; referto `tappa0/T0C_STRUMENTI/`); **FIRMATA dal PC** (09/10: senza flag = corpo di prima, 39 verdi, mutazione rossa); R-3 (lista della tolleranza 3 non bloccata dai test) da chiudere nel cloud PRIMA del congelamento |
 | T0C congelamento | Baseline (due giri ciascuna) e `MANIFEST.json` | PC (sulla macchina dell'ombra) | da fare: dopo T0B (5)-(6), U-62, U-60 e le decisioni tecniche qui sotto; comandi in `tappa0/T0C_STRUMENTI/REFERTO.md` §10 |
 | T1..T26 | Come in 05 §2 | | da fare |
 
@@ -98,6 +98,15 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
 - 09/10 — Separazione dei rami (ordine dell'utente: «l'architettura e' un argomento a se'»): tutto il lavoro della tappa 0 e'
   sul ramo `claude/architettura-tappa0` (cima `66c19c7d` prima di questa riga). Su master va SOLO `a7cf9fdd` del ramo
   `claude/sweet-hypatia-t4bmna` (Programma del giorno + Control Room). Regola dei rami scritta in testa a questo file.
+
+- 09/10 (PC, 18:05-18:20) - U-62 FATTA ad app spenta (vedi tabella); T0B (6): 4 documenti versionati (`143a60d6`), diff della Base mostrato all'utente. B2 (registrazioni), B4 (misura REST U-60) e B5 (verifica PC di T0A/T0B4/T0C) in corso con tre delegati; esiti nelle righe seguenti.
+
+- 09/10 (PC, 18:05-19:10) - B1-B5 FATTI. U-62 (ora, PC sveglio, avvio al login), T0B (5) registrazioni (`695a62cd`, `6247fbd0`), T0B (6) documenti
+  (`143a60d6`, `7c92904c`), U-60 misura (`e7eee8bd`), verifica del PC di T0A/T0B4/T0C (`fe531f51`: tutte firmate, R-1..R-9). Correzioni
+  del PC ai test: `salute.test.ts` CRLF (`be660b93`), test della barra con ri-emissioni del feed (`6247fbd0`). DECISIONI DELL'UTENTE: ok al diff
+  della Base; T0A su master SPENTA solo se firmata (si'), con il solo perimetro di T0A e test/build verdi. In attesa dell'utente: R-5 (voce
+  di menu «Salute» visibile a monitor spento: entra cosi' o si aspetta un interruttore?). Da fare nel cloud: R-3 prima del congelamento, R-4
+  (7 giorni) prima della migrazione, R-6, R-9; poi le decisioni tecniche (a)-(e) e lo scenario «modalita-mista».
 
 ## Punto di ripresa
 
