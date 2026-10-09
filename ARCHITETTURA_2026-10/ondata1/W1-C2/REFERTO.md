@@ -11,7 +11,7 @@ dominio C2. Doc del comparto: `Betfair/nucleo/ordini/doc/C2_LIBRO_RICONCILIAZION
 | `Betfair/nucleo/ordini/libro_conto.py` (383) | `OrdineInProva` `:61` + `SorgenteOrdiniProva` `:71` (protocollo paper); `ordine_da_riga_conto` `:97` / `ordine_da_corrente` `:137` (grafia di `listCurrentOrders`, campo essenziale mancante = `ValueError`); `fase_dell_ordine` `:150` (riuso `motore_ordini.fase_da_riga`); `componi_ordine_conto` `:161`; `LibroConto` `:184` (chiave `(modo, bet_id)`, `RLock`, messaggio piu' vecchio ignorato `:244`, tetto che dimentica solo i terminali `:276`, consumatori fuori dal lucchetto `:312`); `comandi_ammessi` `:378` (proposta) |
 | `Betfair/nucleo/ordini/pnl_mercato.py` (198) | `esposizioni_per_selezione` `:87` (CHIAMA `flumine.utils.calculate_matched_exposure`); `pnl_se_vince` `:107` (`pnlSeVince` del ladder riga per riga); `pnl_bloccato` `:122` (`lockedPnlAt`); `calcola` `:151` (totale e per autore, abbinato e prezzo medio per lato con `flumine.utils.wap`, esposizione massima, mercati a linee) |
 | `Betfair/nucleo/ordini/riconciliazione.py` (383) | `in_volo_dal_diario` `:136` (regole di R2); `RiconciliatoreOmbra.giro` `:204`; `_conto_contro_specchio` `:244` e `_specchio_contro_conto` `:289` (regole di R1, giri consecutivi come `_MISSING_SEEN`); `_blotter_contro_conto` `:321`; `_posizioni` `:364` |
-| test `Betfair/nucleo/ordini/tests/test_c2_{aiuti,attribuzione,libro_conto,pnl_mercato,riconciliazione}.py` | 164 test |
+| test `Betfair/nucleo/ordini/tests/test_c2_{aiuti,attribuzione,libro_conto,pnl_mercato,riconciliazione,revisione}.py` | 197 test (dopo la revisione, par. 10) |
 
 NON fa: nessuna rete, DB, file o thread propri; non piazza ne' annulla; non scrive lo specchio ne' gli alert (l'ombra
 NON SCRIVE: provato anche sul sorgente); non legge il DB per gli indizi (li riceve come dati: la lettura resta
@@ -37,7 +37,7 @@ Estensioni proposte (tipi miei, additivi, da portare nel contratto se il coordin
 
 | Funzione di oggi (file:riga) | Nuova | Test | Esito |
 |---|---|---|---|
-| `esposizione_fuori_bot.motivo_bot_da_riferimenti` `:171` + `bot_di` `:226` (W2/W3a) | `attribuisci_riferimenti` | `test_c2_attribuzione.py::test_parita_con_la_classificazione_di_oggi` (43 riferimenti GENERATI dal codice di produzione, tabella sotto) | uguale su 35; 8 divergenze in elenco chiuso D1 (2), D2 (4), D3 (1), D5 (1) (par. 9) |
+| `esposizione_fuori_bot.motivo_bot_da_riferimenti` `:171` + `bot_di` `:226` (W2/W3a) | `attribuisci_riferimenti` | `test_c2_attribuzione.py::test_parita_con_la_classificazione_di_oggi` (48 riferimenti GENERATI dal codice di produzione, compresi i runner standalone, tabella sotto) | uguale su 39; 9 divergenze in elenco chiuso D1 (2), D2 (4), D3 (1), D9 (1), D5+D9 (1) (par. 9) |
 | `reconcile_worker._classify_cleared_order` `:670` (R1 storico) | idem | idem | idem |
 | `esposizione_fuori_bot.proprietari_bot` `:85` + `motivo_bot_da_coda` `:191` (client supabase VERO, MockTransport) | `indizio_da_motivo` + `attribuisci` | `::test_indizi_dai_motivi_della_lettura_di_oggi_sul_client_vero` | stesso bot di `bot_di` sui 4 motivi |
 | `reconcile_worker._proprietari` `:842` (riga `role='utente'` di Mike resta dell'utente) | `indizio_da_riga_bot` | `::test_indizi_tabella_vince_e_il_conflitto_si_scrive` | uguale |
@@ -59,8 +59,8 @@ e' `name_hash-<id>` di `Order.customer_order_ref`):
 
 | origine (codice di oggi che lo scrive) | customerStrategyRef | customerOrderRef | autore | W2 (fuori_bot + bot_di) | R1 storico | div. |
 |---|---|---|---|---|---|---|
-| runner calcio coda/desktop | `live` | `<name_hash>-<id>` (flumine) | **desktop** | utente | manual_app |  |
-| runner tennis coda/desktop | `tennis` | `<name_hash>-<id>` (flumine) | **desktop** | tennis | manual_app | D5 |
+| runner calcio coda/desktop | `live` | `<name_hash>-<id>` (flumine) | **sconosciuto** | utente | manual_app | D9 |
+| runner tennis coda/desktop | `tennis` | `<name_hash>-<id>` (flumine) | **sconosciuto** | tennis | manual_app | D5+D9 |
 | motore calcio attore desktop | `desktop` | `<name_hash>-<id>` (flumine) | **desktop** | desktop | ours | D1 |
 | motore tennis attore desktop | `desktop` | `<name_hash>-<id>` (flumine) | **desktop** | desktop | ours | D1 |
 | motore calcio attore mike | `mike` | `<name_hash>-<id>` (flumine) | **mike** | mike | ours |  |
@@ -100,6 +100,11 @@ e' `name_hash-<id>` di `Order.customer_order_ref`):
 | bot tennis tennis_pro in flumine | `TennisProStrate` | `<name_hash>-<id>` (flumine) | **tennis_pro** | tennisprostrate | ours |  |
 | bot tennis tennis_scalper in flumine | `TennisScalperSt` | `<name_hash>-<id>` (flumine) | **tennis_scalper** | tennisscalperst | ours |  |
 | bot tennis tennis_swing in flumine | `TennisSwingStra` | `<name_hash>-<id>` (flumine) | **tennis_swing** | tennisswingstra | ours |  |
+| standalone run_scalper.py ScalperStrategy | `ScalperStrategy` | `<name_hash>-<id>` (flumine) | **scalper** | scalperstrategy | ours |  |
+| standalone run_scalper_live.py ScalperStrategy | `ScalperStrategy` | `<name_hash>-<id>` (flumine) | **scalper** | scalperstrategy | ours |  |
+| standalone run_theta.py ThetaStrategy | `ThetaStrategy` | `<name_hash>-<id>` (flumine) | **scalper** | thetastrategy | ours |  |
+| standalone run_tennis_pro.py TennisProStrategy | `TennisProStrate` | `<name_hash>-<id>` (flumine) | **tennis_pro** | tennisprostrate | ours |  |
+| standalone run_tennis_scalper.py TennisScalperStrategy | `TennisScalperSt` | `<name_hash>-<id>` (flumine) | **tennis_scalper** | tennisscalperst | ours |  |
 | terminale vecchio order_exec | `watchlist` | - | **sconosciuto** | watchlist | ours | D3 |
 | sito Betfair | - | - | **sito** | utente | manual |  |
 
@@ -117,7 +122,7 @@ topic `conto` senza autore ne' P&L di mercato). Costi misurati (macchina condivi
 
 ## 5. Test e falsificazioni
 
-- Test W1-C2: **164 verdi** (`python -m pytest Betfair/nucleo/ordini/tests/ -q -p no:cacheprovider`).
+- Test W1-C2 (prima della revisione): **164 verdi**; dopo la revisione **197 verdi** (par. 10) (`python -m pytest Betfair/nucleo/ordini/tests/ -q -p no:cacheprovider`).
 - Falsificazione: **43 mutazioni, 43 rosse** (11 attribuzione, 10 libro, 10 P&L, 12 riconciliazione), una alla volta su
   una copia (`scratchpad/w1c2/mutazioni_c2.py`), ripristino con sha256 uguale. Al primo giro 6 sopravvissute (M05 precedenza
   degli indizi, M17 lucchetto, M30 prezzo medio non > 1, M31 esposizione positiva, M38 righe `ripresa`, M41 app scambiata
@@ -158,7 +163,7 @@ Restano al vecchio: C-052, C-054, D-046, D-054, F-009, ogni scrittura (specchio,
 | 6.4 bet delay, place-and-trim, FOK | ⊘: il libro LEGGE ordini, non li piazza (porta: W1-C1) |
 | 6.5 campi che la UI mostra (chiesto, abbinato, residuo, prezzo medio, stato, aggiornamento) | sollecitata: `OrdineConto` |
 | 6.6 concorrenza | sollecitata: 4 scrittori + 2 lettori con switch interval 1 us, piu' prova deterministica del lucchetto (M17 rossa) |
-| 6.7 scenari e falsificazione | sollecitata: 7 scenari obbligatori + 43 mutazioni |
+| 6.7 scenari e falsificazione | sollecitata: 7 scenari obbligatori + 63 mutazioni (par. 10) |
 | 6.8 referto riproducibile | comandi par. 5 |
 | 6.1/6.2/6.3/6.9 | ⊘: nessun replay in questa ondata (brief comune par. 2) |
 | 7 n.1 grafia delle chiavi | sollecitata: chiavi camelCase di Betfair, snake_case non letto (`::test_conversione_rifiuta_i_campi_mancanti`) |
@@ -168,7 +173,7 @@ Restano al vecchio: C-052, C-054, D-046, D-054, F-009, ogni scrittura (specchio,
 | 7 n.21 paper e live sommati, zero al posto di assente | sollecitata: chiave `(modo, bet_id)`, `ValueError` se mescolati (M13, M14, M23 rosse); prezzo medio assente = `None` |
 | 7 n.27 finti con chiavi diverse dal vero | sollecitata: JSON di Betfair + classi vere; supabase vero su MockTransport |
 | 7 n.29 test a vuoto | sollecitata: `ATTESI_R1`, caso fisso del blotter, copertura di tutti gli autori |
-| 7 n.35 test mai visto rosso | sollecitata: 43/43 |
+| 7 n.35 test mai visto rosso | sollecitata: 63/63 dopo la revisione; i test nuovi visti rossi sul codice di `5b958ba7` |
 | 7 n.36 consapevolezza (cio' che il bot crede vs il mercato) | sollecitata in parte: l'ombra confronta specchio/blotter/diario col conto; il confronto con R4/R5/R6 dei bot e' ondata 2 |
 | 7 n.2, 5, 8-20, 22-26, 28, 30-34, 37 | ⊘: riguardano piazzamento, banco, strategie, DB dei bot o UI, fuori da questo comparto |
 
@@ -233,3 +238,63 @@ Restano al vecchio: C-052, C-054, D-046, D-054, F-009, ogni scrittura (specchio,
 - Mercati a linee (handicap): `se_vince` vuoto, esposizione prudente; la UI deve dirlo, non mostrare zero.
 - `regole_di_oggi()` importa ~3,6 s di codice di oggi: mai nel percorso caldo.
 - Nessun ordine reale del conto nelle registrazioni: la prova sul campo e' l'ombra di T11.
+
+## 10. Correzioni dopo la revisione (09/10, revisione indipendente di `5b958ba7`: «DA CORREGGERE»)
+
+Tutto sul ramo `architettura/w1-c2`, nessun file esistente toccato, contratti invariati. I test proposti dal revisore
+(`scratchpad/rev/test_rev_{pnl,libro,tol}.py`) sono incorporati con nomi miei; ogni test nuovo e' stato eseguito sul codice
+di `5b958ba7` ed e' ROSSO (uscita in `scratchpad/w1c2/rossi_su_vecchio.txt`), verde sul codice corretto.
+
+| Reperto | Correzione (file:riga) | Test (rosso prima, verde dopo) |
+|---|---|---|
+| **G1** ordini dei bot e del risk dalla CODA del runner (`live` + ref di flumine) visti come `desktop` e annullabili | `attribuzione.py:282`: il ref manuale (`live`, `tennis`) senza evidenza da' `sconosciuto` PROVVISORIO (`Attribuzione.provvisoria`), quindi `comandi_ammessi` = `()`; `desktop` solo con evidenza POSITIVA: indizio `utente` dalla riga di coda non di un bot (`indizi_da_riga_coda`) o dagli ack del desktop (`indizio_ack_desktop` `:351`); un indizio di un bot vince sempre sull'evidenza dell'utente | `test_c2_attribuzione.py::test_rev_g1_ordine_di_bot_dalla_coda_non_e_desktop_ne_annullabile`, `::test_indizi_coda_risk_attore_source`, tabella generata (D9) |
+| **G2** esposizione massima con l'esito fittizio «vince un runner senza ordini» (tennis back 10@2,2 su A e B -> -20 invece di 0) | `pnl_mercato.py:194` `calcola`: con l'elenco dei runner l'esposizione e' esatta; senza, `CalcoloPosizione.esposizione_massima` = `None` (`NaN` nel float del contratto) e motivo `runner_ignoti`; il libro prende runner, tipo e vincitori dal book (`LibroConto.imposta_mercato` `:492`) | `test_c2_pnl_mercato.py::test_rev_g2_tennis_back_su_entrambi_esposizione_zero_non_meno_venti`, `::test_rev_g2_dutch_su_tutti_i_runner`, `::test_esposizione_massima_con_e_senza_elenco_dei_runner` |
+| **G3** dopo una sottoscrizione nuova lo stream non porta gli EXECUTION_COMPLETE (doc Betfair, `AUDIT_2026-10-02/_fonti_betfair/bf_2687396.txt:941`): «se vince» sottostimato in silenzio | `libro_conto.py:191` `SorgenteOrdiniCorrenti` (protocollo; la REST vera e' di A1) + `semina` `:276` (all'avvio da `collega_live(..., correnti=)` e in `riconnesso(con_ripresa=False)` `:308`), con `ordine_da_corrente`; `seme_fatto()`; senza seme la posizione dichiara `seme_non_fatto`; `verifica_abbinato` `:508` confronta `mb`/`ml` dell'`OrderRunnerChange` con l'abbinato noto e dichiara `abbinato_mancante` (WARNING); l'ombra con `conto_completo=False` (`riconciliazione.py:210`) NON emette `specchio_senza_conto` (i giri non avanzano) e un R2 «non trovato» diventa `in_volo_da_verificare` | `test_c2_revisione.py::test_g3_*` (5 test) |
+| **M1** un seme REST piu' vecchio consegnato dopo faceva regredire l'ordine | `libro_conto.py:357` `_regressione`: abbinato che cala (salvo `sizeVoided`) o completo che torna eseguibile = rifiutato, WARNING, contatore `regressioni` | `test_c2_revisione.py::test_m1_*` (3 test) |
+| **M2** il tetto dimenticava ordini terminali di mercati APERTI cambiando il P&L in silenzio | `libro_conto.py:413` `_rispetta_tetto`: prima i mercati chiusi (`imposta_mercato(..., chiuso=True)`); per gli aperti l'abbinato resta nel P&L come riassunto per (selezione, handicap, lato, autore) (`_riassumi` `:442`), WARNING, motivo `ordini_riassunti` | `test_c2_revisione.py::test_m2_*` (2 test) |
+| **M3** `_indizi` senza limite e mai liberato | niente duplicati; indizi di bet_id mai arrivati potati oltre `max_indizi` (`_pota_indizi` `:351`); tolti con l'ordine (`_togli`) e con `dimentica_mercato` | `test_c2_revisione.py::test_m3_indizi_senza_duplicati_ne_crescita` |
+| **M4** asiatico con la sola linea 0,0 trattato come vincitore unico | `pnl_mercato.py:72` `TIPI_UN_VINCITORE = {"ODDS"}`, `_non_supportato` `:179`: tipo assente o non `ODDS`, piu' vincitori o handicap -> non supportato (se vince VUOTO, stima prudente, motivi); `CalcoloPosizione.solo_abbinato` dichiara che i non abbinati non entrano nell'esposizione (da mostrare nella UI) | `test_c2_pnl_mercato.py::test_rev_m4_asiatico_con_sola_linea_zero_non_supportato` |
+| **M5** runner standalone (`run_scalper.py:85`, `run_scalper_live.py:271`, `run_theta.py:127`) senza `name` -> nome della classe -> `sconosciuto` | `attribuzione.py:177` `_classi_scalper`: le 4 classi dello scalper calcio importate nelle regole; la tabella generata include ogni `run_*.py` che crea una strategia senza `name` (AST) | `test_c2_attribuzione.py::test_rev_m5_runner_standalone_senza_name` + 5 righe nuove della tabella |
+| **Basso** notifiche ai consumatori fuori ordine | `libro_conto.py:546` `_avvisa`: consegna SERIALIZZATA (lucchetto di consegna) dello stato PIU' RECENTE dell'ordine | `test_c2_revisione.py::test_consegna_ai_consumatori_mai_una_versione_vecchia_dopo_una_nuova` (deterministico) |
+| **Basso** `TOLLERANZA_ABBINATO` 0,01 -> 0,5 sopravviveva | test oltre il centesimo (2,98 contro 3,00 = divergenza; 2,995 no) | `test_c2_revisione.py::test_tolleranza_abbinato_oltre_un_centesimo_e_divergenza` (M61 rossa) |
+
+Verifica fatta io: rilanciato il rischio del revisore sul formato reale dello stream: `rfo=""`/`rfs=""` (ordine del
+sito) -> `sito` (`test_rev_sito_vero_dallo_stream_con_rfo_rfs_vuoti`); `uo` SENZA `rfo`/`rfs` (esempio della
+documentazione Betfair, `bf_2687396.txt:1108`) -> `TypeError` nella cache di betfairlightweight 2.23.2
+(`test_rev_rischio_ocm_senza_rfo_rfs_nella_libreria`: il rischio per W1-A2 resta, ora provato da un test).
+
+Falsificazione dopo la revisione: **63 mutazioni, 63 rosse** (le 43 di prima, con le stringhe aggiornate dove il codice e'
+cambiato, piu' 20 nuove M44-M63 sulle correzioni); giro completo `scratchpad/w1c2/mutazioni_c2_rev.txt` (62/63: M41 era
+sopravvissuta perche' l'unico ordine `desktop` del test era diventato provvisorio; aggiunto un ordine confermato da
+indizio, poi rilancio di M32-M43 e M61-M63 in `mutazioni_c2_rev_ric.txt`: 15/15). sha256 dopo ogni ripristino = file
+committati: `attribuzione.py` 92e306c569961b70198029d299ec8ee5e42e62c18a745198d873c536183e898e,
+`libro_conto.py` c49e540b8005929068d555728ab2274645827c58f48b4daec3834817caf3c54d,
+`pnl_mercato.py` 6c609783f489b35e231d5a1dc931724d8ad794a51b7e06bcd62bbc0b1524c7fe,
+`riconciliazione.py` c65da0decef50ef8606f8649a92275e824b068d37a3c6269bef0a09b2a594bbd.
+
+Test W1-C2 dopo la revisione: **197 verdi**. Suite intera (una volta, alla fine): <<SUITE3>>
+
+**Divergenza nuova per l'utente — D9**: un ordine col ref del terminale manuale (`live`/`tennis`) e il
+customerOrderRef di flumine, senza riga di coda ne' ack, oggi e' «dell'utente» per W2 e per R1; qui e' `sconosciuto`
+PROVVISORIO (nessun comando sul ladder) perche' gli ordini dei bot e del risk dalla coda sono indistinguibili dai
+riferimenti. Scelta prudente (mai annullare un ordine di un bot credendolo dell'utente); da confermare con l'utente.
+
+**Aggancio aggiornato (ondata 2)**, in aggiunta al par. 8:
+- G1: il runner tiene in memoria gli ack dei comandi del desktop (`order`/comando `desktop`: `motore_ordini` diario
+  `inviato`+`ordine`) e li passa al libro come `indizio_ack_desktop`; per gli ordini col ref manuale ancora
+  provvisori si RILEGGE la riga di `betfair_live_order_requests` con quel `bet_id` (stessa lettura di
+  `esposizione_fuori_bot.proprietari_bot`, una per bet_id nuovo, fuori dal percorso degli ordini) finche' la riga
+  non ha il `bet_id`, poi `indizi_da_riga_coda`. Finche' resta provvisorio: nessun comando, autore mostrato «da
+  confermare».
+- G3: `LibroConto.collega_live(flusso, correnti=<ClienteRest di A1 che fa listCurrentOrders paginato>)`;
+  `riconnesso(con_ripresa=...)` dal `FlussoOrdiniConto` di A2 (proposta di estensione: un evento di riconnessione con
+  l'indicazione della ripresa, e `mb`/`ml` per runner -> `verifica_abbinato`); `RiconciliatoreOmbra.giro(...,
+  conto_completo=libro.seme_fatto())`.
+- G2/M4: `imposta_mercato(market_id, runner=..., tipo_scommessa=marketDefinition.bettingType,
+  vincitori=marketDefinition.numberOfWinners, chiuso=status=="CLOSED")` dal book di A2 a ogni marketDefinition.
+- Schema UI del topic `libro_conto` (par. 8) con in piu': per ordine `"provvisoria"`; per la posizione `"supportato"`,
+  `"motivi"`, `"esposizione_massima": null` quando non calcolabile, `"solo_abbinato": true` (la UI scrive che gli
+  ordini non abbinati non sono nell'esposizione).
+
+Estensioni del contratto proposte (in piu' del par. 2): `PosizioneMercato.esposizione_massima: Optional[float]` (oggi
+float: uso `NaN`); `FlussoOrdiniConto` con riconnessione/ripresa e `mb`/`ml`; `OrdineDalConto.event_type_id` (D8).

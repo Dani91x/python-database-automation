@@ -24,11 +24,15 @@ COMMISSIONE: NON applicata. Le viste di oggi per lo stesso numero (ladder
 commissione per ordine e' una regola del regolato (``reconcile_worker.
 commissioni_per_ordine``, F-009) e resta li' (scheda F, nessuna regola cambiata).
 
-Mercati con HANDICAP (linee asiatiche: un ordine con ``handicap != 0``): il
-modello "un solo vincitore" non vale (mezze vincite, push). Per quei mercati
+QUANDO IL MODELLO "UN SOLO VINCITORE" VALE (revisione 09/10, G2 e M4): il tipo
+del mercato dal book (``marketDefinition.bettingType`` = ``ODDS``), un solo
+vincitore (``numberOfWinners`` = 1) e nessun handicap. Altrimenti (tipo assente,
+asiatico anche con la sola linea 0,0, ``LINE``, piu' vincitori, handicap != 0)
 ``se_vince`` e ``se_vince_per_autore`` restano VUOTI e ``esposizione_massima``
 e' la somma, linea per linea, della peggiore fra (se vince, se perde) di flumine
-(stima prudente, dichiarata): mai un numero inventato.
+(stima prudente, dichiarata nei ``motivi``). Senza l'elenco dei runner
+l'esposizione NON si calcola (``None``; ``NaN`` nella posizione del contratto):
+mai l'esito fittizio "vince un runner senza ordini". Mai un numero inventato.
 
 Entrate: ``OrdineConto`` (dal libro). Uscite: ``PosizioneMercato`` e, come
 estensione dichiarata, ``EsposizioneSelezione`` (se vince / se perde della
@@ -41,6 +45,7 @@ ASCII-only; commenti in italiano.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -61,14 +66,37 @@ class EsposizioneSelezione:
     se_perde: float
 
 
+#: ``marketDefinition.bettingType`` per cui vale il modello "un solo vincitore"
+#: (revisione 09/10, M4): ``ODDS``. ``LINE``, ``RANGE``, ``ASIAN_HANDICAP_*``
+#: (anche con la sola linea 0,0: push e mezze vincite) NON sono supportati.
+TIPI_UN_VINCITORE = frozenset({"ODDS"})
+
+
 @dataclass(frozen=True)
 class CalcoloPosizione:
-    """La posizione e gli ordini che il calcolo ha dovuto lasciare fuori
-    (abbinato senza prezzo medio > 1: mai un prezzo inventato, PSB par. 7 n.3)."""
+    """La posizione e cio' che il calcolo dichiara (estensione W1-C2):
+
+    * ``scartati``: abbinato senza prezzo medio > 1 (mai un prezzo inventato,
+      PSB par. 7 n.3);
+    * ``supportato``: il modello "un solo vincitore" vale (tipo ``ODDS``, un
+      vincitore, nessun handicap); se no ``se_vince`` e' VUOTO e
+      ``esposizione_massima`` e' la stima prudente linea per linea;
+    * ``esposizione_massima``: ``None`` se non calcolabile (elenco dei runner
+      ignoto: nella ``PosizioneMercato`` del contratto, che vuole un float, e'
+      ``NaN``) -- revisione 09/10, G2: mai un numero fittizio;
+    * ``motivi``: perche' non e' completa/supportata (tipo_ignoto, handicap,
+      runner_ignoti, abbinato_mancante, ...);
+    * ``solo_abbinato``: sempre True -- gli ordini NON abbinati non entrano
+      nell'esposizione (la UI lo deve dire)."""
 
     posizione: PosizioneMercato
     scartati: Tuple[str, ...]
     a_linee: bool
+    supportato: bool = True
+    esposizione_massima: Optional[float] = None
+    runner_noti: bool = False
+    motivi: Tuple[str, ...] = ()
+    solo_abbinato: bool = True
 
 
 def _abbinati_validi(ordini: Sequence[OrdineConto]) -> Tuple[List[OrdineConto], List[str]]:
@@ -148,16 +176,39 @@ def _controlla(market_id: str, modo: Modo, ordini: Sequence[OrdineConto]) -> Non
             raise ValueError(f"ordine {o.bet_id} in {o.modo}: paper e live mai sommati")
 
 
+def _non_supportato(tipo_scommessa: Optional[str], vincitori: Optional[int],
+                    a_linee: bool) -> List[str]:
+    """Perche' il modello "un solo vincitore" non vale (vuoto = vale)."""
+    motivi: List[str] = []
+    if tipo_scommessa is None:
+        motivi.append("tipo_ignoto")
+    elif str(tipo_scommessa).upper() not in TIPI_UN_VINCITORE:
+        motivi.append(f"tipo_non_supportato:{tipo_scommessa}")
+    if vincitori is not None and int(vincitori) != 1:
+        motivi.append(f"vincitori:{int(vincitori)}")
+    if a_linee:
+        motivi.append("handicap")
+    return motivi
+
+
 def calcola(market_id: str, modo: Modo, ordini: Iterable[OrdineConto], *,
-            runner: Optional[Iterable[int]] = None) -> CalcoloPosizione:
-    """La ``PosizioneMercato`` del mercato. ``runner`` = l'elenco delle selezioni
-    del mercato (dal book): chi non ha ordini ha comunque il suo "se vince";
-    senza l'elenco, l'esito "vince un runner senza ordini" entra solo
-    nell'``esposizione_massima`` (prudente, dichiarato)."""
+            runner: Optional[Iterable[int]] = None,
+            tipo_scommessa: Optional[str] = None,
+            vincitori: Optional[int] = None) -> CalcoloPosizione:
+    """La ``PosizioneMercato`` del mercato. Dal book (``marketDefinition``):
+    ``runner`` = l'elenco delle selezioni, ``tipo_scommessa`` = ``bettingType``,
+    ``vincitori`` = ``numberOfWinners``.
+
+    * modello non supportato (tipo assente o non ``ODDS``, piu' vincitori,
+      handicap): ``se_vince`` VUOTO, esposizione prudente linea per linea;
+    * supportato ma ``runner`` ignoto: ``se_vince`` delle selezioni con ordini,
+      esposizione NON calcolabile (``None``; ``NaN`` nella posizione del
+      contratto): mai l'esito fittizio "vince un runner senza ordini"."""
     tutti = list(ordini)
     _controlla(market_id, modo, tutti)
     buoni, scartati = _abbinati_validi(tutti)
     a_linee = any(abs(float(o.handicap)) > 1e-9 for o in tutti)
+    motivi = _non_supportato(tipo_scommessa, vincitori, a_linee)
     back: Dict[int, List[Tuple[float, float]]] = {}
     lay: Dict[int, List[Tuple[float, float]]] = {}
     for o in buoni:
@@ -168,31 +219,43 @@ def calcola(market_id: str, modo: Modo, ordini: Iterable[OrdineConto], *,
     abb_lay = {s: round(float(sum(x[1] for x in lay.get(s, []))), 2) for s in selezioni}
     pm_back = {s: _media_pesata(back.get(s, [])) for s in selezioni}
     pm_lay = {s: _media_pesata(lay.get(s, [])) for s in selezioni}
-    if a_linee:
+    runner_noti = runner is not None
+    if motivi:
+        # stima prudente: per ogni esito, sum_i min(se vince_i, se perde_i) <= P&L
         espo = esposizioni_per_selezione(buoni)
-        peggio = sum(min(0.0, e.se_vince, e.se_perde) for e in espo.values())
+        peggio = round(sum(min(0.0, e.se_vince, e.se_perde) for e in espo.values()), 2)
         pos = PosizioneMercato(market_id=str(market_id), modo=modo, se_vince={},
                                se_vince_per_autore={}, abbinato_back=abb_back,
                                abbinato_lay=abb_lay, prezzo_medio_back=pm_back,
-                               prezzo_medio_lay=pm_lay, esposizione_massima=round(peggio, 2))
-        return CalcoloPosizione(pos, tuple(scartati), True)
+                               prezzo_medio_lay=pm_lay, esposizione_massima=peggio)
+        return CalcoloPosizione(pos, tuple(scartati), a_linee, supportato=False,
+                                esposizione_massima=peggio, runner_noti=runner_noti,
+                                motivi=tuple(motivi + ["stima_prudente"]))
     se_vince = {s: round(pnl_se_vince(buoni, s), 2) for s in selezioni}
     per_autore: Dict[str, Mapping[int, float]] = {}
     for autore in sorted({o.autore for o in buoni}):
         suoi = [o for o in buoni if o.autore == autore]
         per_autore[autore] = {s: round(pnl_se_vince(suoi, s), 2) for s in selezioni}
-    esiti = list(se_vince.values())
-    if runner is None and buoni:
-        esiti.append(round(pnl_se_vince(buoni, None), 2))
-    peggiore = min([0.0] + esiti)
+    esposizione: Optional[float] = None
+    if runner_noti:
+        esposizione = round(min([0.0] + list(se_vince.values())), 2)
+    else:
+        motivi.append("runner_ignoti")
     pos = PosizioneMercato(market_id=str(market_id), modo=modo, se_vince=se_vince,
                            se_vince_per_autore=per_autore, abbinato_back=abb_back,
                            abbinato_lay=abb_lay, prezzo_medio_back=pm_back,
-                           prezzo_medio_lay=pm_lay, esposizione_massima=round(peggiore, 2))
-    return CalcoloPosizione(pos, tuple(scartati), False)
+                           prezzo_medio_lay=pm_lay,
+                           esposizione_massima=esposizione if esposizione is not None
+                           else math.nan)
+    return CalcoloPosizione(pos, tuple(scartati), False, supportato=True,
+                            esposizione_massima=esposizione, runner_noti=runner_noti,
+                            motivi=tuple(motivi))
 
 
 def posizione_mercato(market_id: str, modo: Modo, ordini: Iterable[OrdineConto], *,
-                      runner: Optional[Iterable[int]] = None) -> PosizioneMercato:
+                      runner: Optional[Iterable[int]] = None,
+                      tipo_scommessa: Optional[str] = None,
+                      vincitori: Optional[int] = None) -> PosizioneMercato:
     """Solo la posizione (vedi ``calcola``)."""
-    return calcola(market_id, modo, ordini, runner=runner).posizione
+    return calcola(market_id, modo, ordini, runner=runner, tipo_scommessa=tipo_scommessa,
+                   vincitori=vincitori).posizione

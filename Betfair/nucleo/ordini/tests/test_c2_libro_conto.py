@@ -49,8 +49,9 @@ def test_ogni_ordine_con_autore_abbinato_residuo_prezzo_medio_stato():
     assert (per_bet["1"].autore, per_bet["1"].abbinato, per_bet["1"].residuo,
             per_bet["1"].prezzo_medio, per_bet["1"].stato) == ("mike", 2.0, 1.0, 3.0,
                                                                "abbinato_parziale")
+    # ref manuale 'live' senza indizi: PROVVISORIO (revisione 09/10, G1)
     assert (per_bet["2"].autore, per_bet["2"].stato, per_bet["2"].prezzo_medio) == (
-        "desktop", "accettato_betfair", None)
+        "sconosciuto", "accettato_betfair", None)
     assert (per_bet["3"].autore, per_bet["3"].stato) == ("sito", "abbinato")
     assert all(o.modo == "live" for o in per_bet.values())
     assert lib.ordini("1.999") == ()
@@ -110,6 +111,7 @@ def test_paper_e_live_mai_sommati():
     lib.ricevi_prova(L.OrdineInProva(dal_conto(ordine_json("1", "LAY", 4.0, 3.0)), "omega"))
     assert [o.modo for o in lib.ordini(MKT)] == ["live", "paper"]
     assert [o.autore for o in lib.ordini(MKT, "paper")] == ["omega"]
+    lib.imposta_mercato(MKT, runner=[HOME], tipo_scommessa="ODDS", vincitori=1)
     pl = lib.posizione(MKT, "live")
     pp = lib.posizione(MKT, "paper")
     assert pl.se_vince == {HOME: 10.0} and pl.modo == "live"
@@ -171,11 +173,11 @@ def test_indizi_riattribuiscono_e_avvisano():
     visti: List[OrdineConto] = []
     lib.aggiungi_consumatore(visti.append)
     lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 2.0, 2.0, csr="live", cor="h-1")))
-    assert lib.ordine("1", "live").autore == "desktop"
+    assert lib.ordine("1", "live").autore == "sconosciuto"
     lib.aggiungi_indizi("1", A.indizi_da_riga_coda({"client_ref": "risk3s", "params": {}}))
     assert lib.ordine("1", "live").autore == "risk"
     assert lib.attribuzione("1", "live").fonte == "indizio"
-    assert [o.autore for o in visti] == ["desktop", "risk"]
+    assert [o.autore for o in visti] == ["sconosciuto", "risk"]
     # indizio PRIMA dell'ordine: si ricorda
     lib.aggiungi_indizi("2", [A.Indizio("tabella", "omega_trades")])
     lib.ricevi_live(dal_conto(ordine_json("2", "BACK", 2.0, 2.0, csr="live")))

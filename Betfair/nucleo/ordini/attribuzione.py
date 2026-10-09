@@ -31,6 +31,13 @@ Due livelli, come oggi (W2/W3a, ``esposizione_fuori_bot`` docstring):
      riferimenti (la tabella non mente: Safe ha piazzato via REST col ref di
      Omega); se i riferimenti dicevano un ALTRO bot il conflitto si scrive.
 
+REVISIONE 09/10 (G1): il ``customerStrategyRef`` del terminale manuale (``live``
+calcio, ``tennis``) lo portano ANCHE gli ordini dei bot e del risk engine passati
+dalla CODA del runner (customerOrderRef di flumine). Da solo NON basta a dire
+``desktop``: l'attribuzione e' PROVVISORIA (``sconosciuto``, nessun comando sul
+ladder) finche' un indizio non dice un bot o non da' un'evidenza POSITIVA
+dell'utente (riga di coda non di un bot, ack di un comando del desktop).
+
 Entrate: ``OrdineDalConto`` (o i soli ``csr``/``cor``), indizi opzionali,
 regole (di serie quelle di oggi). Uscite: ``Attribuzione`` (autore, motivo,
 fonte, conflitto). NON fa: nessuna lettura del DB, nessuna rete, nessun file;
@@ -140,6 +147,12 @@ def _costruisci_regole() -> RegoleAttribuzione:
     classi: Dict[str, str] = {}
     for chiave, voce in tennis_runner._BOT_REGISTRY.items():
         classi[str(voce[0].__name__)[:15].lower()] = str(chiave)
+    # revisione 09/10 (M5): i runner STANDALONE dello scalper calcio
+    # (``run_scalper.py:85``, ``run_scalper_live.py:271``, ``run_theta.py:127``)
+    # creano la strategia SENZA ``name``: il customerStrategyRef e' il nome della
+    # CLASSE tagliato a 15 (``flumine/markets/market.py``)
+    for cls in _classi_scalper():
+        classi[str(cls.__name__)[:15].lower()] = SCALPER
     prefissi: List[Tuple[str, str]] = []
     for p in efb.prefissi_ref_bot():
         prefissi.append((str(p), efb.bot_di(f"ref:{p}")))
@@ -161,28 +174,46 @@ def _costruisci_regole() -> RegoleAttribuzione:
     )
 
 
+def _classi_scalper() -> Tuple[type, ...]:
+    """Le strategie flumine dello scalper calcio (sessione e runner standalone)."""
+    from Betfair.stream.scalper.media_under_bot import MediaUnderStrategy
+    from Betfair.stream.scalper.scalper_bot import ScalperStrategy
+    from Betfair.stream.scalper.sniper_bot import SniperStrategy
+    from Betfair.stream.scalper.theta_bot import ThetaStrategy
+
+    return (ScalperStrategy, SniperStrategy, ThetaStrategy, MediaUnderStrategy)
+
+
 @dataclass(frozen=True)
 class Attribuzione:
     """L'esito: ``autore`` del contratto, ``motivo`` leggibile (nel vocabolario dei
     motivi di oggi: ``strategia:<csr>``, ``ref:<cor>``, ``tabella:<t>``...),
     ``fonte`` (riferimenti, indizio o autore dichiarato dalla sorgente in prova),
-    ``conflitto`` se due fonti dicevano due bot diversi (mai nascosto)."""
+    ``conflitto`` se due fonti dicevano due bot diversi (mai nascosto).
+
+    ``provvisoria`` (revisione 09/10, G1): il ref del terminale manuale (``live``,
+    ``tennis``) lo scrivono ANCHE gli ordini dei bot e del risk engine passati
+    dalla CODA del runner (``safe_strategy/execution.py`` enqueue_place,
+    ``risk_engine_worker._enqueue``): senza un'evidenza positiva l'autore e'
+    ``sconosciuto`` provvisorio (nessun comando sul ladder), mai ``desktop``."""
 
     autore: str
     motivo: str
     fonte: FonteAttribuzione
     conflitto: Optional[str] = None
+    provvisoria: bool = False
 
     @property
     def dell_utente(self) -> bool:
         return self.autore in AUTORI_UTENTE
 
 
-TipoIndizio = Literal["tabella", "coda", "specchio", "specchio_tennis", "adottato"]
+TipoIndizio = Literal["tabella", "coda", "specchio", "specchio_tennis", "adottato", "utente"]
 #: forza degli indizi (minore = piu' forte): la tabella del bot non mente
-#: (``esposizione_fuori_bot.bot_di``), poi la riga di coda, poi lo specchio
+#: (``esposizione_fuori_bot.bot_di``), poi la riga di coda, poi lo specchio;
+#: gli indizi dell'UTENTE contano solo se nessun indizio dice un bot
 _FORZA: Mapping[str, int] = {"tabella": 0, "coda": 1, "specchio": 2, "specchio_tennis": 2,
-                             "adottato": 3}
+                             "adottato": 3, "utente": 4}
 
 
 @dataclass(frozen=True)
@@ -194,7 +225,10 @@ class Indizio:
     ``motivo_bot_da_coda`` o ``rischio:<client_ref>``), ``specchio`` /
     ``specchio_tennis`` (``source`` della riga), ``adottato`` (riga
     ``role='utente'`` di ``mike_trades``: l'ordine resta dell'utente,
-    ``reconcile_worker._proprietari``)."""
+    ``reconcile_worker._proprietari``), ``utente`` (EVIDENZA POSITIVA che e'
+    dell'utente dall'app: la riga di coda con quel bet_id NON e' di un bot ne'
+    del risk engine -- ``indizi_da_riga_coda`` -- o il bet_id e' fra gli ack dei
+    comandi del desktop -- ``indizio_ack_desktop``)."""
 
     tipo: TipoIndizio
     valore: str
@@ -241,7 +275,11 @@ def attribuisci_riferimenti(csr: Optional[str], cor: Optional[str],
         bot = _autore_da_prefisso(o, r) if o else None
         if bot is not None:
             return Attribuzione(bot, f"ref:{o}", "riferimenti")
-        return Attribuzione(DESKTOP, f"strategia_manuale:{s}", "riferimenti")
+        # revisione 09/10 (G1): il solo ref manuale NON basta (bot e risk dalla
+        # coda del runner lo portano uguale): provvisorio finche' un indizio non
+        # dice di chi e'; nessun comando sul ladder nel frattempo
+        return Attribuzione(SCONOSCIUTO, f"strategia_manuale_da_confermare:{s}", "riferimenti",
+                            provvisoria=True)
     if sl in r.rif_attori:
         return _da_attore(s, sl, o, r)
     if sl in r.rif_classi_flumine:
@@ -293,8 +331,10 @@ def indizio_da_motivo(motivo: str) -> Optional[Indizio]:
 def indizi_da_riga_coda(riga: Mapping[str, Any],
                         regole: Optional[RegoleAttribuzione] = None) -> Tuple[Indizio, ...]:
     """Una riga di ``betfair_live_order_requests`` (chiavi della tabella:
-    ``client_ref``, ``params``): il motivo di oggi (``motivo_bot_da_coda``) o,
-    se e' del risk engine, ``rischio:<client_ref>``. Vuota = nessun bot."""
+    ``client_ref``, ``params``) con QUEL bet_id: il motivo di oggi
+    (``motivo_bot_da_coda``), ``rischio:<client_ref>`` se e' del risk engine,
+    altrimenti un indizio ``utente`` (la riga esiste e non e' di un bot: e' un
+    comando dell'app, ``local<id>``/``ft...``)."""
     from Betfair.stream.trading.esposizione_fuori_bot import motivo_bot_da_coda
 
     r = regole or regole_di_oggi()
@@ -305,7 +345,13 @@ def indizi_da_riga_coda(riga: Mapping[str, Any],
     cref = _testo(riga.get("client_ref"))
     if cref.startswith(r.prefisso_coda_rischio):
         return (Indizio("coda", f"rischio:{cref}"),)
-    return ()
+    return (Indizio("utente", f"coda:{cref}"),)
+
+
+def indizio_ack_desktop(bet_id: str) -> Indizio:
+    """Il bet_id e' fra gli esiti dei comandi mandati DAL DESKTOP (ack del canale
+    ``order`` o del comando con attore ``desktop``): evidenza positiva."""
+    return Indizio("utente", f"ack_desktop:{_testo(bet_id)}")
 
 
 def indizio_da_riga_bot(tabella: str, riga: Mapping[str, Any]) -> Indizio:
@@ -321,7 +367,7 @@ def _autore_di_indizio(ind: Indizio, csr: str, cor: str,
                        r: RegoleAttribuzione) -> Optional[str]:
     """L'autore che un indizio dice (``None`` = l'indizio non dice un bot)."""
     v = ind.valore
-    if ind.tipo == "adottato":
+    if ind.tipo in ("adottato", "utente"):
         return None
     if ind.tipo == "tabella":
         autore = r.tabelle_bot.get(v)
@@ -352,6 +398,8 @@ def _autore_di_indizio(ind: Indizio, csr: str, cor: str,
         return SCALPER
     if src.startswith("bot:"):
         a = attribuisci_riferimenti(src[4:], None, r)
+        if a.provvisoria:
+            return None                      # "bot:tennis" di R1: non dice nulla di piu'
         return a.autore if not a.dell_utente else SCONOSCIUTO
     return src if src in AUTORI else SCONOSCIUTO
 
@@ -359,12 +407,15 @@ def _autore_di_indizio(ind: Indizio, csr: str, cor: str,
 def attribuisci(ordine: OrdineDalConto, indizi: Iterable[Indizio] = (),
                 regole: Optional[RegoleAttribuzione] = None) -> Attribuzione:
     """Riferimenti dell'ordine, poi gli indizi (il piu' forte che dice un bot
-    vince). Un indizio ``adottato`` non sposta mai un ordine dell'utente."""
+    vince). Un indizio ``adottato`` non sposta mai un ordine dell'utente. Un
+    ordine col ref manuale resta PROVVISORIO (``sconosciuto``) finche' un
+    indizio non dice un bot o non da' un'evidenza positiva dell'utente."""
     r = regole or regole_di_oggi()
     csr = _testo(ordine.customer_strategy_ref)
     cor = _testo(ordine.customer_order_ref)
     base = attribuisci_riferimenti(csr, cor, r)
-    for ind in sorted(indizi, key=lambda i: (_FORZA.get(i.tipo, 9), i.valore)):
+    ordinati = sorted(set(indizi), key=lambda i: (_FORZA.get(i.tipo, 9), i.valore))
+    for ind in ordinati:
         autore = _autore_di_indizio(ind, csr, cor, r)
         if autore is None:
             continue
@@ -375,6 +426,10 @@ def attribuisci(ordine: OrdineDalConto, indizi: Iterable[Indizio] = (),
         if base.autore not in AUTORI_UTENTE and base.autore != SCONOSCIUTO:
             conflitto = f"riferimenti dicono {base.autore} ({base.motivo})"
         return Attribuzione(autore, motivo, "indizio", conflitto)
+    if base.provvisoria:
+        for ind in ordinati:
+            if ind.tipo in ("utente", "adottato"):
+                return Attribuzione(DESKTOP, f"{ind.tipo}:{ind.valore}", "indizio")
     return base
 
 

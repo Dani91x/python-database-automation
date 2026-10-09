@@ -95,8 +95,29 @@ def riferimenti_di_oggi() -> List[Tuple[str, Optional[str], Optional[str]]]:
         nome = voce[0].__name__
         out.append((f"bot tennis {chiave} in flumine", _csr_flumine_senza_nome(nome),
                     _cor_flumine(nome)))
+    for file, classe in _strategie_standalone_senza_nome():
+        out.append((f"standalone {file} {classe}", _csr_flumine_senza_nome(classe),
+                    _cor_flumine(classe)))
     out.append(("terminale vecchio order_exec", "watchlist", None))
     out.append(("sito Betfair", None, None))
+    return out
+
+
+def _strategie_standalone_senza_nome() -> List[Tuple[str, str]]:
+    """Revisione 09/10 (M5): i runner STANDALONE (``Betfair/stream/**/run_*.py``,
+    fuori dal banco) che creano una strategia flumine SENZA ``name``: il
+    customerStrategyRef e' il nome della classe. Generati dai sorgenti (AST)."""
+    out: List[Tuple[str, str]] = []
+    for f in sorted((RADICE / "Betfair/stream").rglob("run_*.py")):
+        if "/backtest/" in str(f):
+            continue
+        for n in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+            if not isinstance(n, ast.Call):
+                continue
+            nome = n.func.id if isinstance(n.func, ast.Name) else getattr(n.func, "attr", None)
+            if (nome and nome.endswith("Strategy") and nome != "BaseStrategy"
+                    and "name" not in [k.arg for k in n.keywords]):
+                out.append((f.name, nome))
     return out
 
 
@@ -104,7 +125,14 @@ def riferimenti_di_oggi() -> List[Tuple[str, Optional[str], Optional[str]]]:
 #: e' sotto)
 def _atteso(origine: str) -> str:
     if origine.startswith(("runner calcio", "runner tennis")):
-        return "desktop"
+        # revisione 09/10 (G1): il ref manuale lo portano anche bot e risk dalla
+        # coda: senza indizi e' PROVVISORIO (sconosciuto, nessun comando)
+        return "sconosciuto"
+    if origine.startswith("standalone "):
+        classe = origine.split()[2]
+        tennis = {"TennisScalperStrategy": "tennis_scalper", "TennisProStrategy": "tennis_pro",
+                  "TennisFLBStrategy": "tennis_flb", "TennisSwingStrategy": "tennis_swing"}
+        return tennis.get(classe, "scalper")
     if origine.startswith(("motore calcio attore ", "motore tennis attore ")):
         return origine.rsplit(" ", 1)[1]
     if origine.startswith(("omega REST",)):
@@ -144,8 +172,13 @@ DIVERGENZE_ATTESE: Dict[str, str] = {
     # D5: il terminale manuale TENNIS ("tennis"): la regola calcio di W2
     # (motivo_bot_da_riferimenti, che ammette solo "live") lo dice di un bot;
     # il tennis W3b (ordini_esterni.classifica, rif_manuali) e R1 dicono utente.
-    # Qui: desktop (come W3b e R1). Divergenza GIA' presente fra due funzioni di oggi.
-    "runner tennis coda/desktop": "D5",
+    # Divergenza GIA' presente fra due funzioni di oggi. Dopo la revisione (G1)
+    # qui e' PROVVISORIO: vedi D9.
+    "runner tennis coda/desktop": "D5+D9",
+    # D9 (revisione 09/10, G1): ref manuale "live" senza indizi -> provvisorio
+    # (sconosciuto, nessun comando); oggi W2 e R1 lo dicono dell'utente, ma lo
+    # stesso ref lo portano gli ordini dei bot e del risk passati dalla coda
+    "runner calcio coda/desktop": "D9",
 }
 
 
@@ -200,6 +233,7 @@ def test_autore_di_ogni_riferimento_di_oggi(origine, csr, cor):
     a = A.attribuisci_riferimenti(csr, cor)
     assert a.autore == _atteso(origine), (origine, csr, cor, a)
     assert a.conflitto is None
+    assert a.provvisoria == origine.startswith("runner ")
 
 
 @pytest.mark.parametrize("origine,csr,cor", riferimenti_di_oggi())
@@ -288,15 +322,88 @@ def test_prefisso_del_risk_engine_ricavato_dai_sorgenti():
 
 def test_indizi_coda_risk_attore_source():
     o = dal_conto(ordine_json("5", "LAY", 2.0, 3.0, csr="live", cor="abc-1"))
-    assert A.attribuisci(o).autore == "desktop"
+    senza = A.attribuisci(o)
+    assert (senza.autore, senza.provvisoria) == ("sconosciuto", True)
     assert A.attribuisci(o, A.indizi_da_riga_coda({"client_ref": "risk12s", "params": {}})).autore == "risk"
     assert A.attribuisci(o, A.indizi_da_riga_coda(
         {"client_ref": "local3", "params": {"comando": {"attore": "omega"}}})).autore == "omega"
     assert A.attribuisci(o, A.indizi_da_riga_coda(
         {"client_ref": "local3", "params": {"source": "scalper"}})).autore == "scalper"
     assert A.attribuisci(o, A.indizi_da_riga_coda({"client_ref": "mike-t4", "params": {}})).autore == "mike"
-    assert A.indizi_da_riga_coda({"client_ref": "local3", "params": {}}) == ()
-    assert A.indizi_da_riga_coda({"client_ref": "ft3m1.2r0", "params": {}}) == ()
+    # la riga di coda c'e' e NON e' di un bot: evidenza positiva dell'utente
+    assert A.indizi_da_riga_coda({"client_ref": "local3", "params": {}}) == (
+        A.Indizio("utente", "coda:local3"),)
+    assert A.indizi_da_riga_coda({"client_ref": "ft3m1.2r0", "params": {}}) == (
+        A.Indizio("utente", "coda:ft3m1.2r0"),)
+    a = A.attribuisci(o, A.indizi_da_riga_coda({"client_ref": "local3", "params": {}}))
+    assert (a.autore, a.provvisoria, a.fonte) == ("desktop", False, "indizio")
+    assert A.attribuisci(o, [A.indizio_ack_desktop("5")]).autore == "desktop"
+    # un indizio di un bot vince sull'evidenza dell'utente (mai annullare un bot)
+    assert A.attribuisci(o, [A.indizio_ack_desktop("5"),
+                             A.Indizio("tabella", "omega_trades")]).autore == "omega"
+
+
+def test_rev_g1_ordine_di_bot_dalla_coda_non_e_desktop_ne_annullabile():
+    """G1 (revisione): Safe/Omega/Mike e il risk dalla CODA del runner escono con
+    customerStrategyRef 'live' e il customerOrderRef di flumine: senza indizi NON
+    sono del desktop e il ladder non offre annulla/sposta."""
+    from Betfair.nucleo.ordini import libro_conto as L
+
+    o = dal_conto(ordine_json("100", "BACK", 0.0, 2.0, csr="live", cor="a1b2c3d4e5f60-77",
+                              residuo=5.0))
+    lib = L.LibroConto()
+    lib.ricevi_live(o)
+    oc = lib.ordine("100", "live")
+    assert oc.autore == "sconosciuto" and lib.attribuzione("100", "live").provvisoria
+    assert L.comandi_ammessi(oc) == ()
+    lib.aggiungi_indizi("100", [A.Indizio("coda", "coda:safe-t7")])
+    assert lib.ordine("100", "live").autore == "safe"
+    assert L.comandi_ammessi(lib.ordine("100", "live")) == ()
+    lib.ricevi_live(dal_conto(ordine_json("101", "BACK", 0.0, 2.0, csr="live",
+                                          cor="a1b2c3d4e5f60-78", residuo=5.0)))
+    lib.aggiungi_indizi("101", A.indizi_da_riga_coda({"client_ref": "local9", "params": {}}))
+    assert L.comandi_ammessi(lib.ordine("101", "live")) == ("annulla", "sposta")
+
+
+def test_rev_sito_vero_dallo_stream_con_rfo_rfs_vuoti():
+    """Del revisore: il formato reale dello stream per il sito porta rfo="" rfs=""."""
+    from betfairlightweight.streaming.cache import OrderBookCache
+
+    from Betfair.nucleo.ordini import libro_conto as L
+    from Betfair.nucleo.ordini.tests.test_c2_aiuti import HOME, MKT
+
+    cache = OrderBookCache(MKT, 1, lightweight=False)
+    u = {"id": "9", "p": 2, "s": 2, "side": "B", "status": "E", "pt": "L", "ot": "L",
+         "pd": 1740062508000, "sm": 0, "sr": 2, "sl": 0, "sc": 0, "sv": 0, "rac": "",
+         "rc": "REG_GGC", "rfo": "", "rfs": ""}
+    cache.update_cache({"id": MKT, "orc": [{"id": HOME, "fullImage": True, "uo": [u]}]}, 1)
+    co = list(cache.create_resource(1, snap=True).orders)[0]
+    assert A.attribuisci(L.ordine_da_corrente(co, ricevuto_ms=1)).autore == "sito"
+
+
+def test_rev_rischio_ocm_senza_rfo_rfs_nella_libreria():
+    """Rischio per W1-A2 (referto par. 9): l'esempio della documentazione Betfair
+    (bf_2687396.txt:1108) non ha rfo/rfs e la cache di betfairlightweight 2.23.2
+    solleva. Se questo test diventa rosso la libreria e' cambiata: aggiornare."""
+    from betfairlightweight.streaming.cache import OrderBookCache
+
+    from Betfair.nucleo.ordini.tests.test_c2_aiuti import HOME, MKT
+
+    cache = OrderBookCache(MKT, 1, lightweight=False)
+    u = {"id": "9", "p": 2, "s": 2, "side": "B", "status": "E", "pt": "L", "ot": "L",
+         "pd": 1740062508000, "sm": 0, "sr": 2, "sl": 0, "sc": 0, "sv": 0, "rac": "",
+         "rc": "REG_GGC"}
+    with pytest.raises(TypeError, match="rfo"):
+        cache.update_cache({"id": MKT, "orc": [{"id": HOME, "fullImage": True, "uo": [u]}]}, 1)
+
+
+def test_rev_m5_runner_standalone_senza_name():
+    righe = _strategie_standalone_senza_nome()
+    assert {c for _f, c in righe} >= {"ScalperStrategy", "ThetaStrategy",
+                                       "TennisProStrategy", "TennisScalperStrategy"}
+    assert A.attribuisci_riferimenti("ScalperStrategy", "a1b2c3d4e5f60-1").autore == "scalper"
+    assert A.attribuisci_riferimenti("ThetaStrategy", None).autore == "scalper"
+    assert A.attribuisci_riferimenti("MediaUnderStrat", None).autore == "scalper"
 
 
 def test_indizi_tabella_vince_e_il_conflitto_si_scrive():
@@ -373,7 +480,9 @@ def test_casi_limite_riferimenti():
     a = A.attribuisci_riferimenti("mike", "safe-t3")
     assert a.autore == "mike" and a.conflitto
     # maiuscole: Betfair restituisce il ref come scritto (confronto senza maiuscole)
-    assert A.attribuisci_riferimenti("LIVE", None).autore == "desktop"
+    maiu = A.attribuisci_riferimenti("LIVE", None)
+    assert (maiu.autore, maiu.provvisoria) == ("sconosciuto", True)
+    assert maiu.motivo == "strategia_manuale_da_confermare:LIVE"
     assert A.attribuisci_riferimenti("scm12a", None).autore == "sconosciuto"
 
 

@@ -59,6 +59,8 @@ TipoDivergenza = Literal[
     "in_volo_perso_paper",       # R2: ordine simulato perso col riavvio
     "in_volo_senza_place",       # R2: nessuna riga 'ordine' (cancel/replace: esito ignoto)
     "attribuzione_in_conflitto",  # due fonti dicono due bot diversi
+    "seme_non_fatto",           # conto senza i completi di prima: niente specchio_senza_conto
+    "in_volo_da_verificare",    # R2 non trovato ma il conto e' senza seme: non si sa
 ]
 Gravita = Literal["info", "avviso", "grave"]
 
@@ -205,10 +207,16 @@ class RiconciliatoreOmbra:
              blotter: Optional[Iterable[Any]] = None,
              diario: Optional[Iterable[Mapping[str, Any]]] = None,
              indizi: Optional[Mapping[str, Sequence[attr.Indizio]]] = None,
-             istante_ms: int = 0) -> RefertoOmbra:
+             istante_ms: int = 0, conto_completo: bool = True) -> RefertoOmbra:
         """UN confronto. ``conto`` = TUTTI gli ordini del conto del modo (lo
         stream o ``listCurrentOrders``); ``specchio`` = righe con le colonne di
-        ``betfair_live_orders`` (si tengono solo quelle con ``mode`` = modo)."""
+        ``betfair_live_orders`` (si tengono solo quelle con ``mode`` = modo).
+
+        ``conto_completo=False`` (revisione 09/10, G3: libro senza seme, cioe'
+        ``not LibroConto.seme_fatto()``): lo stream non ha gli ordini gia'
+        completi di prima della sottoscrizione, quindi NIENTE
+        ``specchio_senza_conto`` (e i giri consecutivi non avanzano) e un R2
+        "non trovato" diventa ``in_volo_da_verificare``."""
         regole = self._regole or attr.regole_di_oggi()
         per_bet = {str(o.bet_id): o for o in conto}
         righe = [r for r in specchio if _testo(r.get("mode")) == self.modo]
@@ -219,13 +227,19 @@ class RiconciliatoreOmbra:
         with self._lock:
             self._giro += 1
             giro = self._giro
-            div += self._specchio_contro_conto(per_bet, righe)
+            if conto_completo:
+                div += self._specchio_contro_conto(per_bet, righe)
+            else:
+                div.append(Divergenza("seme_non_fatto", "info", None, None,
+                                      "conto senza seme da listCurrentOrders: lo specchio "
+                                      "non si confronta con le assenze dal conto",
+                                      {"righe_specchio": len(righe)}))
         if blotter is not None:
             div += _blotter_contro_conto(per_bet, blotter)
         cor = {_testo(o.customer_order_ref): o for o in per_bet.values()
                if _testo(o.customer_order_ref)}
         volo = in_volo_dal_diario(diario or (), cor)
-        div += [_divergenza_in_volo(v) for v in volo]
+        div += [_divergenza_in_volo(v, conto_completo) for v in volo]
         for b, a in sorted(attribuzioni.items()):
             if a.conflitto:
                 div.append(Divergenza("attribuzione_in_conflitto", "avviso", b,
@@ -343,11 +357,15 @@ def _blotter_contro_conto(per_bet: Mapping[str, OrdineDalConto],
     return out
 
 
-def _divergenza_in_volo(v: InVolo) -> Divergenza:
+def _divergenza_in_volo(v: InVolo, conto_completo: bool = True) -> Divergenza:
     if v.esito == "ritrovato":
         return Divergenza("in_volo_ritrovato", "info", v.bet_ids[0] if v.bet_ids else None,
                           v.ref, "comando in volo: l'ordine e' sul conto",
                           {"cors": list(v.cors), "bet_ids": list(v.bet_ids)})
+    if v.esito == "non_trovato" and not conto_completo:
+        return Divergenza("in_volo_da_verificare", "avviso", None, v.ref,
+                          "ordine inviato non visto: il conto e' senza seme, serve "
+                          "listCurrentOrders", {"cors": list(v.cors)})
     if v.esito == "non_trovato":
         return Divergenza("in_volo_non_trovato", "grave", None, v.ref,
                           "esito IGNOTO: ordine inviato ma assente dal conto",

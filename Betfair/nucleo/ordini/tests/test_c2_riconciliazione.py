@@ -22,6 +22,7 @@ from flumine import BaseStrategy
 from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
 
+from Betfair.nucleo.ordini import attribuzione as A
 from Betfair.nucleo.ordini import riconciliazione as R
 from Betfair.nucleo.ordini.libro_conto import ordine_da_corrente
 from Betfair.nucleo.ordini.tests.test_c2_aiuti import (AWAY, MKT, Registro,
@@ -247,10 +248,13 @@ def test_scenario_esterno_dal_sito_con_autore():
 def test_scenario_conto_senza_specchio_dice_chi():
     js = [ordine_json("3", "LAY", 1.0, 3.0, csr="TennisProStrate", cor="h-1"),
           ordine_json("4", "LAY", 1.0, 3.0, csr="live", cor="h-2"),
-          ordine_json("5", "BACK", 2.0, 2.0, csr="mike", cor="mike-t5")]
-    ref = _ombra(R.RiconciliatoreOmbra(modo="live"), js, [])
+          ordine_json("5", "BACK", 2.0, 2.0, csr="mike", cor="mike-t5"),
+          ordine_json("6", "LAY", 1.0, 3.0, csr="live", cor="h-3")]
+    # 6: ref manuale CONFERMATO dalla riga di coda dell'app -> desktop
+    ref = _ombra(R.RiconciliatoreOmbra(modo="live"), js, [],
+                 indizi={"6": [A.Indizio("utente", "coda:local6")]})
     assert {d.bet_id: d.dettagli["autore"] for d in ref.per_tipo("conto_senza_specchio")} == {
-        "3": "tennis_pro", "4": "desktop"}
+        "3": "tennis_pro", "4": "sconosciuto", "6": "desktop"}  # 4: provvisorio (G1)
     assert ref.per_tipo("esterno_dal_sito") == ()     # il terminale dell'app non e' il sito
     assert {d.bet_id for d in ref.per_tipo("bot_con_tabella")} == {"5"}
 

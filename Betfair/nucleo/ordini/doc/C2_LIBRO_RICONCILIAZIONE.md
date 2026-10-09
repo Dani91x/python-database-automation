@@ -24,12 +24,21 @@ confronta conto, specchio, blotter e diario e scrive le divergenze, senza toccar
   -> `OrdineInProva(ordine, attore)`; la grafia e' quella di `listCurrentOrders` (`esiti_ordini_canale.ordine_paper_del_conto`).
 - Indizi di attribuzione come DATI (righe gia' lette altrove: tabelle dei bot, specchio, coda del runner).
 - Riconciliazione: conto (`OrdineDalConto`, dal libro o da `listCurrentOrders` con `ordine_da_corrente`), righe di
-  `betfair_live_orders` con `mode`, ordini del blotter flumine (oggetti veri), righe del diario del motore.
+  `betfair_live_orders` con `mode`, ordini del blotter flumine (oggetti veri), righe del diario del motore;
+  `conto_completo` = il libro ha fatto il seme.
+- Revisione 09/10: il SEME da `listCurrentOrders` (`SorgenteOrdiniCorrenti`, REST di A1) all'avvio e a ogni
+  riconnessione senza ripresa (lo stream non rimanda gli EXECUTION_COMPLETE); `mb`/`ml` dello stream per
+  `verifica_abbinato`; dal book `imposta_mercato` (runner, `bettingType`, `numberOfWinners`, chiuso).
 
 ## 3. Uscite
 
 - `LibroConto.ordini(market_id, modo)` -> `OrdineConto` (autore, abbinato, residuo, prezzo medio, stato = fase del motore).
-- `LibroConto.posizione(market_id, modo)` -> `PosizioneMercato` (UN modo: paper e live mai sommati).
+  Un ordine col solo ref del terminale manuale (`live`/`tennis`) e' `sconosciuto` PROVVISORIO finche' un indizio non dice
+  di chi e' (`LibroConto.attribuzione(...).provvisoria`): nessun comando sul ladder nel frattempo.
+- `LibroConto.posizione(market_id, modo)` -> `PosizioneMercato` (UN modo: paper e live mai sommati);
+  `calcolo_posizione` -> `CalcoloPosizione` (supportato, esposizione `None` se i runner non sono noti, motivi:
+  `tipo_ignoto`, `runner_ignoti`, `seme_non_fatto`, `abbinato_mancante`, `ordini_riassunti`...; `solo_abbinato`: gli
+  ordini non abbinati NON entrano nell'esposizione, la UI lo dice).
 - `LibroConto.aggiungi_consumatore(cb)`: avviso a ogni ordine cambiato (aggancio al ladder in ondata 2).
 - `RefertoOmbra`: divergenze tipizzate con gravita' e motivo; `StatoOrdine` per bet_id; `PosizioneConto` per selezione.
 
@@ -75,7 +84,7 @@ Cambiare la regola di attribuzione = cambiare `attribuzione.py` e la tabella `DI
 
 ## 8. Come si prova da solo
 
-`python -m pytest Betfair/nucleo/ordini/tests/test_c2_*.py -q -p no:cacheprovider` (164 test, ~15-30 s). Nessuna rete,
+`python -m pytest Betfair/nucleo/ordini/tests/test_c2_*.py -q -p no:cacheprovider` (197 test dopo la revisione del 09/10, ~15-30 s). Nessuna rete,
 nessun DB (il client supabase e' vero su `httpx.MockTransport`), nessun file fuori da `tmp_path`.
 
 ## 9. Misure (macchina condivisa, carico ~8, Python 3.13)

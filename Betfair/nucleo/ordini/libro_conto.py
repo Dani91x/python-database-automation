@@ -16,17 +16,29 @@ Entrate:
     ondata 2 dai motori paper): ordini ``OrdineInProva`` con l'attore del
     comando quando la sorgente lo conosce. Entrano con ``modo='paper'``;
   * indizi di attribuzione letti altrove (``aggiungi_indizi``): DB e specchio
-    restano fuori da qui, il libro riceve solo dati.
+    restano fuori da qui, il libro riceve solo dati;
+  * il SEME da ``listCurrentOrders`` (``SorgenteOrdiniCorrenti``, REST di A1)
+    all'avvio e a ogni riconnessione SENZA ripresa: lo stream non rimanda gli
+    ordini gia' completamente abbinati (revisione 09/10, G3); la verifica con
+    ``mb``/``ml`` dello stream segnala l'abbinato che manca;
+  * dal book: runner, ``bettingType``, ``numberOfWinners``, chiuso
+    (``imposta_mercato``).
 
 Uscite: ``ordini(market_id, modo)`` -> ``OrdineConto``; ``posizione(market_id,
-modo)`` -> ``PosizioneMercato``; consumatori avvisati a ogni ordine cambiato
+modo)`` -> ``PosizioneMercato``; ``calcolo_posizione`` (estensione: cosa la
+posizione dichiara); consumatori avvisati a ogni ordine cambiato
 (``aggiungi_consumatore``: l'aggancio al ladder in ondata 2).
 
 Regole: paper e live MAI sommati (la chiave e' ``(modo, bet_id)``; ogni lettura
 chiede il modo; una posizione e' sempre di UN modo, PSB par. 7 n.21). Un
 messaggio piu' vecchio di quello gia' tenuto (``ricevuto_ms`` minore) non
-sovrascrive (si conta). Thread-safe: un ``RLock``; i consumatori sono chiamati
-FUORI dal lucchetto e un loro errore si logga, mai propagato a chi alimenta.
+sovrascrive (si conta); uno piu' nuovo che fa REGREDIRE l'ordine (abbinato che
+cala, completo che torna eseguibile: un seme REST letto prima e consegnato dopo)
+si rifiuta e si dice a WARNING. Il tetto di memoria dimentica prima i mercati
+chiusi; l'abbinato degli ordini dimenticati di mercati aperti resta nel P&L
+(riassunto). Thread-safe: un ``RLock``; i consumatori sono chiamati FUORI dal
+lucchetto, uno alla volta e sempre con lo stato PIU' RECENTE dell'ordine; un
+loro errore si logga, mai propagato a chi alimenta.
 
 NON fa: nessuna rete, nessun DB, nessun file, nessun thread proprio (gira nel
 thread di chi lo alimenta); non piazza ne' annulla; non decide se un comando
@@ -36,12 +48,14 @@ ASCII-only; commenti in italiano.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import (Any, Callable, Dict, Iterable, List, Mapping, Optional, Protocol,
-                    Set, Tuple)
+                    Sequence, Set, Tuple)
 
 from Betfair.nucleo.betfair.contratto import FlussoOrdiniConto, OrdineDalConto
 from Betfair.nucleo.comuni import Modo
@@ -174,6 +188,17 @@ def componi_ordine_conto(modo: str, o: OrdineDalConto, a: attr.Attribuzione) -> 
 # ---------------------------------------------------------------------------
 # il libro
 # ---------------------------------------------------------------------------
+class SorgenteOrdiniCorrenti(Protocol):
+    """La lettura REST ``listCurrentOrders`` del conto (comparto A1: ``ClienteRest.
+    lettura``), paginata: ``CurrentOrder`` VERI di betfairlightweight. Serve per
+    il SEME (revisione 09/10, G3): una sottoscrizione nuova dello stream ordini
+    porta solo gli ordini EXECUTABLE; gli EXECUTION_COMPLETE arrivano "only when
+    transitioning" (documentazione Betfair, Exchange Stream API, "Unmatched
+    Orders"; copia in ``AUDIT_2026-10-02/_fonti_betfair/bf_2687396.txt:941``)."""
+
+    def ordini_correnti(self, market_ids: Optional[Sequence[str]] = None) -> Iterable[Any]: ...
+
+
 @dataclass
 class _Voce:
     ordine: OrdineDalConto
@@ -181,36 +206,120 @@ class _Voce:
     attore_dichiarato: Optional[str]
 
 
+@dataclass
+class _InfoMercato:
+    runner: Optional[Tuple[int, ...]] = None
+    tipo_scommessa: Optional[str] = None
+    vincitori: Optional[int] = None
+    chiuso: bool = False
+
+
+#: tetto degli indizi tenuti per bet_id non (ancora) nel libro
+MAX_INDIZI_SENZA_ORDINE = 5000
+#: tolleranza sull'abbinato (centesimo) per la verifica con mb/ml dello stream
+EPS_ABBINATO = 0.01
+
+
+def _ora_ms() -> int:
+    return int(time.time() * 1000)
+
+
 class LibroConto:
     """Implementazione di ``LibroOrdiniConto`` (vedi il docstring del modulo)."""
 
     def __init__(self, *, regole: Optional[attr.RegoleAttribuzione] = None,
-                 max_ordini: int = MAX_ORDINI_DEFAULT) -> None:
+                 max_ordini: int = MAX_ORDINI_DEFAULT,
+                 max_indizi: int = MAX_INDIZI_SENZA_ORDINE) -> None:
         self._regole = regole
         self._max = int(max_ordini)
+        self._max_indizi = int(max_indizi)
         self._lock = threading.RLock()
+        # consegna ai consumatori SERIALIZZATA e sempre dello stato piu' recente
+        # (revisione 09/10: mai una versione vecchia dopo una nuova)
+        self._consegna = threading.RLock()
         self._voci: Dict[Tuple[str, str], _Voce] = {}
         self._per_mercato: Dict[Tuple[str, str], Set[str]] = {}
         self._indizi: Dict[str, Tuple[attr.Indizio, ...]] = {}
         self._consumatori: List[Callable[[OrdineConto], None]] = []
         self._attribuzioni: Dict[Tuple[str, str], attr.Attribuzione] = {}
         self._quanti: Dict[str, int] = {m: 0 for m in MODI}
-        self.conti: Dict[str, int] = {"ricevuti": 0, "fuori_ordine": 0, "scartati": 0,
-                                      "dimenticati": 0, "consumatori_ko": 0}
+        self._mercati: Dict[str, _InfoMercato] = {}
+        # ordini terminali dimenticati dal tetto su mercati APERTI: accumulati
+        # per (selezione, handicap, lato, autore) -> [abbinato, abbinato*prezzo]
+        self._riassunti: Dict[Tuple[str, str], Dict[Tuple[int, float, str, str], List[float]]] = {}
+        self._mancanze: Dict[Tuple[str, str, int, float], Dict[str, float]] = {}
+        # il live parte SENZA seme: lo stream non porta gli ordini gia' completi
+        self._seme: Dict[str, bool] = {"live": False, "paper": True}
+        self.conti: Dict[str, int] = {"ricevuti": 0, "fuori_ordine": 0, "regressioni": 0,
+                                      "scartati": 0, "dimenticati": 0,
+                                      "dimenticati_aperti": 0, "consumatori_ko": 0,
+                                      "semi": 0, "semi_ko": 0}
 
     # ------------------------------------------------------------ alimentazione
-    def collega_live(self, flusso: FlussoOrdiniConto) -> None:
-        """Iscrive il libro allo stream degli ordini del conto e prende la sua
-        fotografia attuale (``ordini()``)."""
+    def collega_live(self, flusso: FlussoOrdiniConto, *,
+                     correnti: Optional[SorgenteOrdiniCorrenti] = None) -> None:
+        """Iscrive il libro allo stream degli ordini del conto, prende la sua
+        fotografia (``ordini()``) e, se c'e' la sorgente REST, fa il SEME."""
         flusso.aggiungi_consumatore(self.ricevi_live)
         for o in flusso.ordini():
             self.ricevi_live(o)
+        if correnti is not None:
+            self.semina(correnti)
 
     def collega_prova(self, sorgente: SorgenteOrdiniProva) -> None:
-        """Iscrive il libro alla sorgente degli ordini in prova."""
+        """Iscrive il libro alla sorgente degli ordini in prova (la sua
+        fotografia e' il blotter paper intero: niente seme da fare)."""
         sorgente.aggiungi_consumatore(self.ricevi_prova)
         for o in sorgente.ordini():
             self.ricevi_prova(o)
+
+    def semina(self, correnti: SorgenteOrdiniCorrenti, *,
+               market_ids: Optional[Sequence[str]] = None,
+               ricevuto_ms: Optional[int] = None) -> int:
+        """Il SEME del live da ``listCurrentOrders`` (all'avvio e a ogni
+        riconnessione SENZA ripresa): porta gli ordini gia' completamente
+        abbinati che lo stream non rimanda. Ritorna gli ordini letti, ``-1`` se
+        la lettura fallisce (il seme resta NON fatto e si dice)."""
+        istante = int(ricevuto_ms) if ricevuto_ms is not None else _ora_ms()
+        try:
+            letti = list(correnti.ordini_correnti(market_ids))
+        except Exception:  # noqa: BLE001 - REST KO: il seme resta da fare, mai finto
+            with self._lock:
+                self._seme["live"] = False
+                self.conti["semi_ko"] += 1
+            logger.warning("[libro] seme da listCurrentOrders KO: ordini gia' abbinati "
+                           "possono mancare (P&L incompleto)", exc_info=True)
+            return -1
+        for co in letti:
+            try:
+                o = ordine_da_corrente(co, ricevuto_ms=istante)
+            except Exception:  # noqa: BLE001 - un ordine illeggibile non ferma il seme
+                with self._lock:
+                    self.conti["scartati"] += 1
+                logger.exception("[libro] seme: ordine %s illeggibile",
+                                 getattr(co, "bet_id", None))
+                continue
+            self._ricevi("live", o, None)
+        with self._lock:
+            self._seme["live"] = True
+            self.conti["semi"] += 1
+        return len(letti)
+
+    def riconnesso(self, *, con_ripresa: bool,
+                   correnti: Optional[SorgenteOrdiniCorrenti] = None) -> None:
+        """Lo stream ordini si e' riconnesso. Senza ripresa (``initialClk``/``clk``)
+        l'immagine nuova non ha gli EXECUTION_COMPLETE: il seme torna da fare."""
+        if con_ripresa:
+            return
+        with self._lock:
+            self._seme["live"] = False
+        logger.warning("[libro] stream ordini riconnesso SENZA ripresa: seme da rifare")
+        if correnti is not None:
+            self.semina(correnti)
+
+    def seme_fatto(self, modo: Modo = "live") -> bool:
+        with self._lock:
+            return bool(self._seme.get(modo, False))
 
     def ricevi_live(self, o: OrdineDalConto) -> None:
         self._ricevi("live", o, None)
@@ -219,33 +328,61 @@ class LibroConto:
         self._ricevi("paper", o.ordine, o.attore)
 
     def aggiungi_indizi(self, bet_id: str, indizi: Iterable[attr.Indizio]) -> Optional[OrdineConto]:
-        """Indizi (DB, specchio, coda) su un ordine LIVE: si ricordano e
-        l'ordine, se c'e', si riattribuisce. Ritorna l'ordine aggiornato."""
+        """Indizi (DB, specchio, coda) su un ordine LIVE: si ricordano SENZA
+        duplicati e l'ordine, se c'e', si riattribuisce."""
         nuovo: Optional[OrdineConto] = None
         bid = str(bet_id)
         with self._lock:
-            self._indizi[bid] = tuple(self._indizi.get(bid, ())) + tuple(indizi)
+            tenuti = list(self._indizi.get(bid, ()))
+            for ind in indizi:
+                if ind not in tenuti:
+                    tenuti.append(ind)
+            self._indizi[bid] = tuple(tenuti)
             voce = self._voci.get(("live", bid))
             if voce is not None:
                 nuovo = self._componi("live", voce.ordine, None)
                 voce.conto = nuovo
+            else:
+                self._pota_indizi()
         if nuovo is not None:
-            self._avvisa(nuovo)
+            self._avvisa(("live", bid))
         return nuovo
+
+    def _pota_indizi(self) -> None:
+        """Gli indizi di bet_id mai arrivati non crescono senza limite."""
+        orfani = [b for b in self._indizi if ("live", b) not in self._voci]
+        for b in orfani[:max(0, len(orfani) - self._max_indizi)]:
+            self._indizi.pop(b, None)
+
+    def _regressione(self, vecchio: OrdineDalConto, nuovo: OrdineDalConto) -> Optional[str]:
+        """Revisione 09/10 (M1): l'abbinato non cala (salvo annulli di Betfair,
+        ``sv``) e un ordine completo non torna eseguibile."""
+        if vecchio.stato == "EXECUTION_COMPLETE" and nuovo.stato == "EXECUTABLE":
+            return "EXECUTION_COMPLETE -> EXECUTABLE"
+        annullati = max(0.0, float(nuovo.annullato_da_betfair) - float(vecchio.annullato_da_betfair))
+        if float(nuovo.abbinato) < float(vecchio.abbinato) - annullati - 1e-9:
+            return f"abbinato {vecchio.abbinato} -> {nuovo.abbinato}"
+        return None
 
     def _ricevi(self, modo: str, o: OrdineDalConto, attore: Optional[str]) -> None:
         if modo not in MODI:
             raise ValueError(f"modo non ammesso: {modo!r}")
-        conto: Optional[OrdineConto] = None
+        chiave = (modo, str(o.bet_id))
         with self._lock:
             self.conti["ricevuti"] += 1
-            chiave = (modo, str(o.bet_id))
             voce = self._voci.get(chiave)
             if voce is not None and int(o.ricevuto_ms) < int(voce.ordine.ricevuto_ms):
                 self.conti["fuori_ordine"] += 1
                 logger.debug("[libro] %s %s: messaggio piu' vecchio di quello tenuto, ignorato",
                              modo, o.bet_id)
                 return
+            if voce is not None:
+                regr = self._regressione(voce.ordine, o)
+                if regr is not None:
+                    self.conti["regressioni"] += 1
+                    logger.warning("[libro] %s %s: regressione rifiutata (%s): tenuto lo "
+                                   "stato piu' avanzato", modo, o.bet_id, regr)
+                    return
             try:
                 conto = self._componi(modo, o, attore)
             except Exception:  # noqa: BLE001 - un ordine illeggibile non ferma il libro
@@ -257,7 +394,7 @@ class LibroConto:
             self._voci[chiave] = _Voce(o, conto, attore)
             self._per_mercato.setdefault((modo, str(o.market_id)), set()).add(str(o.bet_id))
             self._rispetta_tetto(modo)
-        self._avvisa(conto)
+        self._avvisa(chiave)
 
     def _componi(self, modo: str, o: OrdineDalConto, attore: Optional[str]) -> OrdineConto:
         regole = self._regole_attive()
@@ -274,20 +411,60 @@ class LibroConto:
         return self._regole
 
     def _rispetta_tetto(self, modo: str) -> None:
-        """Oltre il tetto si dimenticano gli ordini TERMINALI piu' vecchi (mai un
-        ordine vivo: e' denaro sul mercato)."""
+        """Oltre il tetto si dimenticano gli ordini TERMINALI (mai un ordine vivo:
+        e' denaro sul mercato): PRIMA quelli dei mercati chiusi, poi i piu'
+        vecchi dei mercati aperti, il cui abbinato resta nel P&L come riassunto
+        (revisione 09/10, M2) e si dice a WARNING."""
         if self._quanti[modo] <= self._max:
             return
-        chiavi = [k for k in self._voci if k[0] == modo]
-        terminali = sorted((self._voci[k].ordine.ricevuto_ms, k) for k in chiavi
-                           if self._voci[k].ordine.stato == "EXECUTION_COMPLETE")
-        for _ms, k in terminali[:len(chiavi) - self._max]:
+        da_togliere = self._quanti[modo] - self._max
+        candidati = []
+        for k, v in self._voci.items():
+            if k[0] != modo or v.ordine.stato != "EXECUTION_COMPLETE":
+                continue
+            info = self._mercati.get(str(v.ordine.market_id))
+            aperto = 0 if (info is not None and info.chiuso) else 1
+            candidati.append((aperto, v.ordine.ricevuto_ms, k))
+        candidati.sort()
+        aperti = 0
+        for aperto, _ms, k in candidati[:da_togliere]:
+            if aperto:
+                self._riassumi(k)
+                aperti += 1
             self._togli(k)
             self.conti["dimenticati"] += 1
+        if aperti:
+            self.conti["dimenticati_aperti"] += aperti
+            logger.warning("[libro] tetto di %d ordini %s: %d ordini terminali di mercati "
+                           "APERTI tolti dall'elenco, il loro abbinato resta nel P&L",
+                           self._max, modo, aperti)
+
+    def _riassumi(self, chiave: Tuple[str, str]) -> None:
+        c = self._voci[chiave].conto
+        if c.abbinato <= 0 or c.prezzo_medio is None or not c.prezzo_medio > 1.0:
+            return
+        acc = self._riassunti.setdefault((chiave[0], str(c.market_id)), {})
+        voce = acc.setdefault((int(c.selection_id), float(c.handicap), c.lato, c.autore), [0.0, 0.0])
+        voce[0] += float(c.abbinato)
+        voce[1] += float(c.abbinato) * float(c.prezzo_medio)
+
+    def _ordini_riassunti(self, market_id: str, modo: str) -> List[OrdineConto]:
+        out: List[OrdineConto] = []
+        for (sid, hc, lato, autore), (abb, somma) in sorted(
+                self._riassunti.get((modo, str(market_id)), {}).items()):
+            out.append(OrdineConto(
+                bet_id=f"riassunto:{sid}:{hc}:{lato}:{autore}", market_id=str(market_id),
+                selection_id=sid, handicap=hc, lato=lato, prezzo=somma / abb,  # type: ignore[arg-type]
+                importo=abb, abbinato=abb, residuo=0.0, prezzo_medio=somma / abb,
+                stato="riassunto", autore=autore, ref=None, modo=modo,  # type: ignore[arg-type]
+                aggiornato_ms=0))
+        return out
 
     def _togli(self, chiave: Tuple[str, str]) -> None:
         voce = self._voci.pop(chiave, None)
         self._attribuzioni.pop(chiave, None)
+        if chiave[0] == "live":
+            self._indizi.pop(chiave[1], None)
         if voce is not None:
             self._quanti[chiave[0]] -= 1
             ids = self._per_mercato.get((chiave[0], str(voce.ordine.market_id)))
@@ -295,42 +472,106 @@ class LibroConto:
                 ids.discard(chiave[1])
 
     def dimentica_mercato(self, market_id: str, modo: Optional[Modo] = None) -> int:
-        """Mercato chiuso: toglie i suoi ordini (di un modo o di entrambi)."""
+        """Mercato chiuso e regolato: toglie i suoi ordini (di un modo o di
+        entrambi), i riassunti, le mancanze e gli indizi."""
         n = 0
+        mid = str(market_id)
         with self._lock:
             for m in ((modo,) if modo else MODI):
-                for bid in list(self._per_mercato.pop((m, str(market_id)), set())):
+                for bid in list(self._per_mercato.pop((m, mid), set())):
                     self._togli((m, bid))
                     n += 1
+                self._riassunti.pop((m, mid), None)
+                for k in [k for k in self._mancanze if k[0] == m and k[1] == mid]:
+                    self._mancanze.pop(k, None)
+            if modo is None:
+                self._mercati.pop(mid, None)
         return n
+
+    # ------------------------------------------------------------ il mercato
+    def imposta_mercato(self, market_id: str, *, runner: Optional[Iterable[int]] = None,
+                        tipo_scommessa: Optional[str] = None, vincitori: Optional[int] = None,
+                        chiuso: Optional[bool] = None) -> None:
+        """Dal book (``marketDefinition``): elenco dei runner, ``bettingType``,
+        ``numberOfWinners``, stato chiuso. Solo i valori dati cambiano."""
+        with self._lock:
+            info = self._mercati.setdefault(str(market_id), _InfoMercato())
+            if runner is not None:
+                info.runner = tuple(int(r) for r in runner)
+            if tipo_scommessa is not None:
+                info.tipo_scommessa = str(tipo_scommessa)
+            if vincitori is not None:
+                info.vincitori = int(vincitori)
+            if chiuso is not None:
+                info.chiuso = bool(chiuso)
+
+    def verifica_abbinato(self, market_id: str, selection_id: int, handicap: float,
+                          mb: Optional[Sequence[Sequence[float]]],
+                          ml: Optional[Sequence[Sequence[float]]],
+                          modo: Modo = "live") -> Optional[Mapping[str, float]]:
+        """Revisione 09/10 (G3): ``mb``/``ml`` dell'``OrderRunnerChange`` dello
+        stream (abbinato del CONTO per prezzo, tutti gli ordini, anche i completi
+        di prima della sottoscrizione) contro l'abbinato che il libro conosce. Se
+        il libro ha MENO, la mancanza si ricorda (il P&L dichiara
+        ``abbinato_mancante``) e si dice a WARNING. ``None`` = nessuna mancanza."""
+        sid, hc = int(selection_id), float(handicap)
+        with self._lock:
+            noto = {"back": 0.0, "lay": 0.0}
+            for c in self._ordini_del_mercato(str(market_id), modo):
+                if int(c.selection_id) == sid and abs(float(c.handicap) - hc) <= 1e-9:
+                    noto[c.lato] += float(c.abbinato)
+            mancanza: Dict[str, float] = {}
+            for lato, coppie in (("back", mb), ("lay", ml)):
+                if coppie is None:
+                    continue
+                stream = sum(float(s) for _p, s in coppie)
+                if stream - noto[lato] > EPS_ABBINATO:
+                    mancanza[lato] = round(stream - noto[lato], 2)
+            chiave = (modo, str(market_id), sid, hc)
+            if mancanza:
+                self._mancanze[chiave] = mancanza
+            else:
+                self._mancanze.pop(chiave, None)
+        if mancanza:
+            logger.warning("[libro] %s %s sel %s: abbinato dello stream oltre quello degli "
+                           "ordini noti %s (seme mancante?)", modo, market_id, sid, mancanza)
+            return mancanza
+        return None
 
     # ------------------------------------------------------------ consumatori
     def aggiungi_consumatore(self, cb: Callable[[OrdineConto], None]) -> None:
         with self._lock:
             self._consumatori.append(cb)
 
-    def _avvisa(self, o: Optional[OrdineConto]) -> None:
-        if o is None:
-            return
-        with self._lock:
-            cbs = list(self._consumatori)
-        for cb in cbs:
-            try:
-                cb(o)
-            except Exception:  # noqa: BLE001 - un consumatore rotto non ferma il libro
-                with self._lock:
-                    self.conti["consumatori_ko"] += 1
-                logger.exception("[libro] consumatore KO sull'ordine %s", o.bet_id)
+    def _avvisa(self, chiave: Tuple[str, str]) -> None:
+        """Consegna serializzata dello stato PIU' RECENTE dell'ordine."""
+        with self._consegna:
+            with self._lock:
+                voce = self._voci.get(chiave)
+                if voce is None:
+                    return
+                o = voce.conto
+                cbs = list(self._consumatori)
+            for cb in cbs:
+                try:
+                    cb(o)
+                except Exception:  # noqa: BLE001 - un consumatore rotto non ferma il libro
+                    with self._lock:
+                        self.conti["consumatori_ko"] += 1
+                    logger.exception("[libro] consumatore KO sull'ordine %s", o.bet_id)
 
     # ------------------------------------------------------------ letture
+    def _ordini_del_mercato(self, market_id: str, modo: str) -> List[OrdineConto]:
+        return [self._voci[(modo, bid)].conto
+                for bid in self._per_mercato.get((modo, market_id), ())]
+
     def ordini(self, market_id: str, modo: Optional[Modo] = None) -> Tuple[OrdineConto, ...]:
         """Gli ordini del mercato. ``modo=None`` restituisce entrambi i modi come
         ELENCO (ogni ordine porta il suo ``modo``): nessuna somma qui."""
         with self._lock:
             out: List[OrdineConto] = []
             for m in ((modo,) if modo else MODI):
-                for bid in self._per_mercato.get((m, str(market_id)), ()):
-                    out.append(self._voci[(m, bid)].conto)
+                out.extend(self._ordini_del_mercato(str(market_id), m))
         return tuple(sorted(out, key=lambda x: (x.modo, x.aggiornato_ms, x.bet_id)))
 
     def ordine(self, bet_id: str, modo: Modo) -> Optional[OrdineConto]:
@@ -339,7 +580,7 @@ class LibroConto:
             return voce.conto if voce is not None else None
 
     def attribuzione(self, bet_id: str, modo: Modo) -> Optional[attr.Attribuzione]:
-        """Il perche' dell'autore (motivo, fonte, conflitto) di un ordine."""
+        """Il perche' dell'autore (motivo, fonte, conflitto, provvisoria)."""
         with self._lock:
             return self._attribuzioni.get((modo, str(bet_id)))
 
@@ -348,24 +589,52 @@ class LibroConto:
             return tuple(sorted(mid for (m, mid), ids in self._per_mercato.items()
                                 if m == modo and ids))
 
-    def posizione(self, market_id: str, modo: Modo,
-                  runner: Optional[Iterable[int]] = None) -> PosizioneMercato:
-        """P&L di mercato "se vince" su TUTTI gli ordini abbinati del mercato di
-        UN modo (``pnl_mercato.calcola``). Gli ordini scartati dal calcolo
-        (abbinato senza prezzo medio) si loggano."""
+    def calcolo_posizione(self, market_id: str, modo: Modo, *,
+                          runner: Optional[Iterable[int]] = None,
+                          tipo_scommessa: Optional[str] = None,
+                          vincitori: Optional[int] = None) -> pnl_mercato.CalcoloPosizione:
+        """La posizione con cio' che dichiara (estensione W1-C2): runner, tipo e
+        vincitori dal book (``imposta_mercato``) se non dati; i riassunti del
+        tetto dentro il P&L; motivi ``seme_non_fatto``, ``abbinato_mancante``,
+        ``ordini_riassunti`` quando valgono."""
         if modo not in MODI:
             raise ValueError(f"modo non ammesso: {modo!r}")
-        calcolo = pnl_mercato.calcola(market_id, modo, self.ordini(market_id, modo),
-                                      runner=runner)
+        mid = str(market_id)
+        with self._lock:
+            info = self._mercati.get(mid) or _InfoMercato()
+            ordini = self._ordini_del_mercato(mid, modo) + self._ordini_riassunti(mid, modo)
+            extra: List[str] = []
+            if not self._seme.get(modo, False):
+                extra.append("seme_non_fatto")
+            if any(k[0] == modo and k[1] == mid for k in self._mancanze):
+                extra.append("abbinato_mancante")
+            if self._riassunti.get((modo, mid)):
+                extra.append("ordini_riassunti")
+        calcolo = pnl_mercato.calcola(
+            mid, modo, ordini,
+            runner=runner if runner is not None else info.runner,
+            tipo_scommessa=tipo_scommessa if tipo_scommessa is not None else info.tipo_scommessa,
+            vincitori=vincitori if vincitori is not None else info.vincitori)
         for bid in calcolo.scartati:
             logger.warning("[libro] %s %s: abbinato senza prezzo medio, fuori dal P&L",
                            modo, bid)
-        return calcolo.posizione
+        if extra:
+            calcolo = dataclasses.replace(calcolo, motivi=tuple(calcolo.motivi) + tuple(extra))
+        return calcolo
+
+    def posizione(self, market_id: str, modo: Modo,
+                  runner: Optional[Iterable[int]] = None) -> PosizioneMercato:
+        """P&L di mercato "se vince" su TUTTI gli ordini abbinati del mercato di
+        UN modo (contratto ``LibroOrdiniConto``; i dettagli in
+        ``calcolo_posizione``)."""
+        return self.calcolo_posizione(market_id, modo, runner=runner).posizione
 
     def stato(self) -> Mapping[str, object]:
         with self._lock:
             return {"ordini": dict(self._quanti), "conti": dict(self.conti),
-                    "consumatori": len(self._consumatori)}
+                    "consumatori": len(self._consumatori), "seme": dict(self._seme),
+                    "mancanze": len(self._mancanze), "indizi": len(self._indizi)}
+
 
 
 #: i comandi che il ladder puo' offrire su un ordine. PROPOSTA per l'ondata 2
