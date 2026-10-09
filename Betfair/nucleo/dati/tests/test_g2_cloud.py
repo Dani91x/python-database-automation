@@ -282,6 +282,16 @@ def test_rpc_di_lettura_ritentate_scriventi_mai(server):
     assert not c.rpc_ritentabile("set_live_kill_switch") and not c.rpc_ritentabile("omega_request")
     with pytest.raises(ValueError, match="cache_s"):
         c.rpc("mike_stop", {}, cache_s=10)
+    # una RPC registrata come scrivente non si ritenta anche se il nome sembra di lettura
+    from Betfair.nucleo.dati import registro as R
+    reg = R.RegistroTabelle(R.REGISTRO.voci(), list(R.REGISTRO.rpc_scriventi().values()) +
+                            [R.RpcScrivente("get_e_scrive", ("mike_control",), "migrations/x.sql:1")])
+    assert _cliente().rpc_ritentabile("get_e_scrive")
+    assert not _cliente(registro=reg).rpc_ritentabile("get_e_scrive")
+    server.copione[("POST", "/rpc/get_e_scrive")] = [html_520, None]
+    with pytest.raises(APIError):
+        _cliente(registro=reg).rpc("get_e_scrive", {})
+    assert server.conta("POST", "/rpc/get_e_scrive") == 1
 
 
 # ---------------------------------------------------------------------------

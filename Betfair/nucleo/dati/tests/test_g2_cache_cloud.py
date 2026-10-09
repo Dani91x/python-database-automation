@@ -100,9 +100,10 @@ FIXTURE = {
           "db_json_analisi": {"inputs": "non un dict", "markets": {"over_3_5": {"False": 0.6}}},
           "home_team_id": 11, "away_team_id": 12},
 }
-LIVE_FOLLOW = {"ev1": 101, "ev2": None, "ev4": 104, "ev5": 105, "ev7": "abc", "ev8": 108}
-OMEGA_EVENTS = {"ev2": 102, "ev3": 103, "ev6": None, "ev7": 107, "ev9": 106}
-EVENTI = ("ev1", "ev2", "ev3", "ev4", "ev5", "ev6", "ev7", "ev8", "ev9", "ev10")
+LIVE_FOLLOW = {"ev1": 101, "ev2": None, "ev4": 104, "ev5": 105, "ev7": "abc", "ev8": 108, "ev11": 103}
+OMEGA_EVENTS = {"ev2": 102, "ev3": 103, "ev6": None, "ev7": 107, "ev9": 106, "ev11": 106}
+#: ev11 e' in ENTRAMBE le tabelle con fixture diverse: vince live_follow (ordine di mike.db)
+EVENTI = ("ev1", "ev2", "ev3", "ev4", "ev5", "ev6", "ev7", "ev8", "ev9", "ev10", "ev11")
 
 
 class CloudFinto:
@@ -441,6 +442,7 @@ def test_dossier_uguale_a_mike_db_per_ogni_evento(cloud):
         assert d.fixture_lambdas(fid) == mike_db.fixture_lambdas(fid), ev
         assert d.fixture_analysis(fid) == mike_db.fixture_analysis(fid), ev
     assert d.statistiche()["ripieghi"] == 0
+    assert d.fixture_id_for_event("ev11") == mike_db.fixture_id_for_event("ev11") == 103
     n_vecchio = cloud.conta() - n
     for ev in EVENTI:                                                     # le chiavi del contratto T7
         v, nn = dossier.build_prematch(ev, mike_db), dossier.build_prematch(ev, d)
