@@ -83,6 +83,8 @@ export const PAGINE: Pagina[] = [
     { nome: 'analytics', url: '/analytics', sessione: true },
     { nome: 'match-replay', url: '/match-replay', sessione: true },
     { nome: 'select-sport', url: '/select-sport', sessione: true },
+    // 09/10 (T0A): la pagina «Salute» (monitor dei servizi, sola lettura)
+    { nome: 'salute', url: '/salute', sessione: true },
     // fuori dal guscio, sempre
     { nome: 'ladder-popout', url: '/ladder-popout?market=1.250000001&event=34000001&name=Match%20Odds', sessione: true },
     { nome: 'landing', url: '/', sessione: false },
@@ -112,6 +114,7 @@ export const LISTA_BIANCA_GUSCIO: readonly string[] = [
     'shell-voce-multi-ladder', 'shell-voce-ladder-popout', 'shell-voce-market-watch', 'shell-voce-live-pnl',
     'shell-voce-watchlist',
     'shell-voce-match-replay', 'shell-voce-analytics', 'shell-voce-report-personale', 'shell-voce-trade-journal',
+    'shell-voce-salute',
     'shell-voce-select-sport', 'shell-voce-esci',
     'shell-comprimi',
     // guscio v2: testata globale (sola lettura + ritorno alla grafica attuale)
