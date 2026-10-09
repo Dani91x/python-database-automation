@@ -478,7 +478,29 @@ def non_esercitabili_di_tutti(referti: List[Any]) -> Dict[str, str]:
 
 def _lavora(compito: tuple) -> Any:
     """UN replay, in un processo suo. Deve stare a livello di modulo per essere
-    inviabile a un processo figlio (su Windows la pool usa `spawn`)."""
+    inviabile a un processo figlio (su Windows la pool usa `spawn`).
+
+    T0C (09/10): con la CASSETTA accesa (``$BANCO_CASSETTA_DIR``, la mettono
+    ``--cassetta``/``--ombra``/``--congela``) il replay e' lo stesso, osservato
+    dagli agganci di ``cassetta.py`` per il tempo del replay; spenta (il caso di
+    sempre) si passa dritti al replay di sempre."""
+    from . import cassetta as _CAS
+
+    if not _CAS.accesa():
+        return _lavora_di_sempre(compito)
+    scheda = REG.bot(str(compito[0]))
+    # il replay del bot si importa PRIMA degli agganci (i finti DB degli
+    # adattatori si avvolgono solo se il loro modulo c'e' gia')
+    scheda.funzione_replay()
+    with _CAS.compito(compito, scheda.modulo_controlli()) as reg:
+        r, mem = _lavora_di_sempre(compito)
+        if reg is not None:
+            reg.voce_referto(r)
+    return r, mem
+
+
+def _lavora_di_sempre(compito: tuple) -> Any:
+    """Il replay di sempre (fino al 09/10 si chiamava `_lavora`)."""
     bot, ev, data_dir, scenario, ogni_ms, campioni_diff = compito[:6]
     # 25/09 (F4): il TRASPORTO dell'ordine (``--trasporto``). None = nessun
     # contesto: il replay di sempre, riga per riga.
@@ -907,7 +929,40 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--diario", default=None,
                    help="file in cui scrivere il referto DOPO OGNI partita: senza, "
                         "un run lungo resta cieco fino alla fine")
+    # T0C (09/10): la CASSETTA, l'OMBRA e il CONGELAMENTO. Sono flag IN PIU':
+    # senza, `certifica` e' quello di prima (stesso percorso, nessun aggancio)
+    p.add_argument("--cassetta", default=None, metavar="FILE",
+                   help="T0C - scrive la CASSETTA del giro (JSON Lines canonico, i 6 "
+                        "livelli: decisione, ordine, fill, conto, riga_db, referto)")
+    p.add_argument("--ombra", default=None, metavar="CASSETTA",
+                   help="T0C - confronta il giro con una cassetta di riferimento "
+                        "(congelata): exit code != 0 a qualunque divergenza non "
+                        "coperta dalle 3 tolleranze di TOLLERANZE.md")
+    p.add_argument("--congela", action="store_true",
+                   help="T0C - congela cassetta e referto del giro nel manifesto (solo "
+                        "aggiunta); vuole --ombra <cassetta del primo giro> a 0 "
+                        "divergenze (determinismo)")
+    p.add_argument("--verifica-congelati", action="store_true",
+                   help="T0C - ricalcola gli hash del manifesto dei riferimenti "
+                        "congelati ed esce != 0 se una voce e' cambiata")
+    p.add_argument("--congelati", default=None, metavar="DIR",
+                   help="T0C - cartella dei riferimenti congelati (di serie "
+                        "ARCHITETTURA_2026-10/riferimenti_congelati)")
     a = p.parse_args(argv)
+    if a.verifica_congelati:
+        from . import congela as _CON
+
+        return _CON.verifica_e_stampa(a.congelati)
+    if a.cassetta or a.ombra or a.congela:
+        from . import ombra as _OMB
+
+        return _OMB.certifica_con_cassetta(a, _certifica, argv)
+    return _certifica(a)
+
+
+def _certifica(a: Any) -> int:
+    """Il corpo di `main` dopo la lettura degli argomenti (fino al 09/10 stava
+    dentro `main`): identico, riga per riga."""
     # CANTIERE V2 (29/09): il cronometro della certificazione intera
     t_inizio = time.perf_counter()
 
