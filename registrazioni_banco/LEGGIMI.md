@@ -25,6 +25,11 @@ sull'originale e sulla copia decompressa).
 | 35795993 | tennis | Donski - Gueymard Wayenbu (07/07), set 2-1 | PARTIAL (65,7%) | raw, score | `35bceb13cd1d393b2d3f8cb7f8c0800ae2bf21123a8b7dd2dd1e0aaa67dadd9b` | bot tennis, Match Odds (registrazione parziale, dichiarata) |
 | 35797566 | tennis | Tenti - Mejia (07/07), registrata solo una parte | Match Odds: NO_RAW; Set Betting: PARTIAL (6,8%) | score; `setbetting_20260707/` raw e score | `9931ac405dc9f206741773cfd0cc104ac60b8c9479fb6f13465f086c7a4a81cc` (Set Betting) | NON usabile dai bot tennis (lavorano sul Match Odds, mai registrato): il banco risponde ERROR, come nel referto del 08/10 |
 
+Le copie calcio stanno in `registrazioni_banco/<id>/`; le copie tennis in `registrazioni_banco/tennis/<giorno>/<id>/`
+(stesso albero del recorder tennis, `TENNIS_RECORD_DIR/<giorno>/<id>/`), cosi' il test della barra di Match Replay
+(`frontend/src/lib/replayVerificaBarra.partite.test.ts`), che scopre da solo ogni cartella calcio di primo livello e
+pretende la fixture `frontend/src/lib/__fixtures__/replay_barra_<id>.json` (`python tools/replay_barra_fixture.py <id>`),
+non le confonde con partite di calcio. OGNI registrazione calcio nuova qui dentro richiede la sua fixture.
 I nomi sono quelli (troncati) del sidecar dei punteggi. Il tennis usa il sidecar `<id>.score.jsonl` (singolare); il calcio `<id>.scores.jsonl` (plurale)
 piu' `<id>.timeline.jsonl` (non compresso).
 
@@ -45,8 +50,6 @@ python - <<'PY'
 import gzip, os, shutil
 CALCIO = "_live_raw"                                                    # cartella del banco calcio (DATA_DIR)
 TENNIS = os.path.join(os.path.expanduser("~"), "tennis_rec_banco")      # radice tennis (TENNIS_RECORD_DIR)
-GIORNO = "20260707"
-TENNIS_IDS = ("35790089", "35794049", "35795993", "35797566")
 SRC = "registrazioni_banco"
 
 def copia(da, a):
@@ -60,20 +63,20 @@ def copia(da, a):
     else:
         shutil.copyfile(da, a)
 
+# calcio: registrazioni_banco/<id>/ -> _live_raw/<id>/
 for ev in sorted(os.listdir(SRC)):
     cartella = os.path.join(SRC, ev)
     if not (ev.isdigit() and os.path.isdir(cartella)):
         continue
-    for radice, _dirs, files in os.walk(cartella):
-        sotto = os.path.relpath(radice, cartella)           # "." oppure "setbetting_20260707"
-        for nome in files:
-            fuori = nome[:-3] if nome.endswith(".gz") else nome
-            if ev in TENNIS_IDS:
-                giorno = GIORNO if sotto == "." else sotto
-                dst = os.path.join(TENNIS, giorno, ev, fuori)
-            else:
-                dst = os.path.join(CALCIO, ev, fuori)
-            copia(os.path.join(radice, nome), dst)
+    for nome in os.listdir(cartella):
+        fuori = nome[:-3] if nome.endswith(".gz") else nome
+        copia(os.path.join(cartella, nome), os.path.join(CALCIO, ev, fuori))
+# tennis: registrazioni_banco/tennis/<giorno>/<id>/ -> TENNIS/<giorno>/<id>/ (stesso albero del recorder)
+for radice, _dirs, files in os.walk(os.path.join(SRC, "tennis")):
+    for nome in files:
+        fuori = nome[:-3] if nome.endswith(".gz") else nome
+        rel = os.path.relpath(radice, os.path.join(SRC, "tennis"))   # "<giorno>/<id>"
+        copia(os.path.join(radice, nome), os.path.join(TENNIS, rel, fuori))
 PY
 ```
 

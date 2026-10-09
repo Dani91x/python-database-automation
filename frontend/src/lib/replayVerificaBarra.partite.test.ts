@@ -36,6 +36,26 @@ import { punteggioAlTsD1, buildSnapshotsD2, timelineEventMarkersD3D4 } from './_
 
 const EVENTI = eventiRegistrati();
 
+// stessa chiave di dedup del verificatore (replayTimelineEvents.ts): kind|minuto|team
+const chiaveEvento = (r: ScoreEvent): string => `${kindDiTipo(r.event_type) ?? ''}|${r.minute ?? '?'}|${r.payload?.team ?? ''}`;
+// quante righe gol/giallo/rosso il verificatore deve disegnare: una per chiave, piu' le
+// ripetizioni con ts entro 120 s dalla prima (doppietta vera nello stesso minuto); una
+// ripetizione piu' lontana e' una RI-EMISSIONE del feed e non si conta
+const RIEMISSIONE_MS = 120_000;
+function contaEventiDistinti(righe: ScoreEvent[]): number {
+    const primaVista = new Map<string, number>();
+    let n = 0;
+    for (const r of righe) {
+        if (!['goal', 'yellow', 'red'].includes(kindDiTipo(r.event_type) ?? '')) continue;
+        const k = chiaveEvento(r);
+        const t = Date.parse(r.ts);
+        const prima = primaVista.get(k);
+        if (prima == null) { primaVista.set(k, t); n += 1; continue; }
+        if (Math.abs(t - prima) <= RIEMISSIONE_MS) n += 1;
+    }
+    return n;
+}
+
 const codici = (e: EsitoVerificaBarra): string[] => e.incoerenze.map(r => r.codice);
 const verifica = (replay: ReplayData, estremi: EstremiRegistrazione | null, extra: OpzioniVerificaCalcio = {}) =>
     verificaBarraReplayCalcio(replay, { estremi, ...extra });
@@ -74,7 +94,11 @@ describe.each(EVENTI)('partita %s (registrazioni_banco)', (ev) => {
     it('i simboli verificati sono davvero quelli della partita (il verificatore non gira a vuoto)', () => {
         const { replay, estremi } = caricaPartita(ev);
         const e = verifica(replay, estremi);
-        const attesi = replay.score_timeline.filter(r => ['goal', 'yellow', 'red'].includes(kindDiTipo(r.event_type) ?? '')).length;
+        // 09/10 (35774000): il feed RI-EMETTE le righe-evento dopo una riconnessione (stesso
+        // kind|minuto|team, ts di minuti dopo): il verificatore le disegna una volta sola
+        // (replayTimelineEvents.ts, `seen`); qui si contano allo stesso modo. Una doppietta
+        // VERA nello stesso minuto ha ts vicini e resta contata due volte.
+        const attesi = contaEventiDistinti(replay.score_timeline);
         const visti = (e.conteggi.simboli.goal ?? 0) + (e.conteggi.simboli.yellow ?? 0) + (e.conteggi.simboli.red ?? 0);
         expect(visti).toBe(attesi);
         expect(e.conteggi.righePunteggio).toBe(replay.score_timeline.filter(r => r.score_home != null && r.score_away != null).length);
@@ -151,7 +175,13 @@ describe.each(eventiConFixture())('falsificazione sulla partita %s', (ev) => {
             expect(true, 'partita senza gol: D4 non si applica').toBe(true);
             return;
         }
-        const senza: ReplayData = { ...replay, score_timeline: replay.score_timeline.filter(r => r !== primoGoal) };
+        // via ANCHE le ri-emissioni dello stesso gol (35774000: il feed lo ripete dopo una
+        // riconnessione), altrimenti il simbolo resta e il difetto non si vede
+        const chiaveGoal = chiaveEvento(primoGoal);
+        const senza: ReplayData = {
+            ...replay,
+            score_timeline: replay.score_timeline.filter(r => r !== primoGoal && !(r.event_type && chiaveEvento(r) === chiaveGoal)),
+        };
         const bene = verifica(senza, estremi);
         expect(bene.incoerenze, `\n${formattaReferto(ev, bene)}\n`).toEqual([]);
         const male = verifica(senza, estremi, { funzioni: { timelineEventMarkers: timelineEventMarkersD3D4 } });
