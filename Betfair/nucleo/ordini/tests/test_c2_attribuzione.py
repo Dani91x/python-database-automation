@@ -319,6 +319,13 @@ def test_indizi_tabella_vince_e_il_conflitto_si_scrive():
     assert A.attribuisci(u, [A.Indizio("specchio", "bot:TennisProStrate")]).autore == "tennis_pro"
     assert A.attribuisci(u, [A.Indizio("specchio_tennis", "tennis_flb")]).autore == "tennis_flb"
     assert A.attribuisci(u, [A.Indizio("specchio_tennis", "manual")]).autore == "sito"
+    # piu' indizi discordi: vince il piu' forte (tabella > coda > specchio), in
+    # qualunque ordine arrivino
+    tre = [A.Indizio("specchio", "scalper"), A.Indizio("coda", "coda_attore:mike"),
+           A.Indizio("tabella", "omega_trades")]
+    assert A.attribuisci(u, tre).autore == "omega"
+    assert A.attribuisci(u, list(reversed(tre))).autore == "omega"
+    assert A.attribuisci(u, tre[:2]).autore == "mike"
 
 
 def test_indizi_dai_motivi_della_lettura_di_oggi_sul_client_vero():

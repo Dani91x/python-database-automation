@@ -183,7 +183,8 @@ def _r2_vero(tmp_path, righe: List[dict], conto_json: List[dict]) -> Dict[str, s
                 "moreAvailable": False}
 
     assert MotoreOrdini.riprendi_da_diario(finto_self, lista_ordini) is True
-    return {r["ref"]: r["esito"] for r in diario.leggi(["2026-10-09"]) if r.get("tipo") == "ripresa"}
+    scritte = diario.leggi(["2026-10-09"])[len(righe):]      # solo le righe che R2 ha SCRITTO
+    return {r["ref"]: r["esito"] for r in scritte if r.get("tipo") == "ripresa"}
 
 
 def test_parita_con_r2_riavvio_con_ordini_in_volo(tmp_path):
@@ -211,6 +212,13 @@ def test_parita_con_r2_riavvio_con_ordini_in_volo(tmp_path):
     ombra = {v.ref: v.esito for v in R.in_volo_dal_diario(righe, cor)}
     assert ombra == vero == {"omega-t1": "ritrovato", "omega-t2": "non_trovato",
                              "omega-c9": "mai_inviato_place", "safe-t3": "perso_paper"}
+    # secondo riavvio: R2 ha scritto le righe 'ripresa', niente e' piu' in volo
+    from Betfair.stream.motore_ordini import Diario
+
+    tutte = Diario(str(tmp_path), giorno=lambda: "2026-10-09").leggi(["2026-10-09"])
+    assert sum(1 for r in tutte if r.get("tipo") == "ripresa") == 4
+    assert _r2_vero(tmp_path / "secondo", tutte, conto) == {}
+    assert R.in_volo_dal_diario(tutte, cor) == ()
 
 
 def test_scenario_riavvio_con_ordine_in_volo_e_esito_ignoto():
@@ -239,10 +247,12 @@ def test_scenario_esterno_dal_sito_con_autore():
 
 def test_scenario_conto_senza_specchio_dice_chi():
     js = [ordine_json("3", "LAY", 1.0, 3.0, csr="TennisProStrate", cor="h-1"),
+          ordine_json("4", "LAY", 1.0, 3.0, csr="live", cor="h-2"),
           ordine_json("5", "BACK", 2.0, 2.0, csr="mike", cor="mike-t5")]
     ref = _ombra(R.RiconciliatoreOmbra(modo="live"), js, [])
     assert {d.bet_id: d.dettagli["autore"] for d in ref.per_tipo("conto_senza_specchio")} == {
-        "3": "tennis_pro"}
+        "3": "tennis_pro", "4": "desktop"}
+    assert ref.per_tipo("esterno_dal_sito") == ()     # il terminale dell'app non e' il sito
     assert {d.bet_id for d in ref.per_tipo("bot_con_tabella")} == {"5"}
 
 

@@ -216,6 +216,19 @@ def test_dimentica_mercato_e_mercati():
 
 
 def test_concorrenza_piu_thread_che_alimentano_e_leggono():
+    import sys
+
+    # cambi di thread fittissimi: senza il lucchetto la lettura di un mercato
+    # mentre un altro thread lo riempie solleva (insieme cambiato durante il giro)
+    vecchio = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        _concorrenza()
+    finally:
+        sys.setswitchinterval(vecchio)
+
+
+def _concorrenza():
     lib = L.LibroConto()
     A.regole_di_oggi()
     L.fase_dell_ordine(dal_conto(ordine_json("x", "BACK", 1.0, 2.0)))   # import pigri fuori dai thread
@@ -232,9 +245,10 @@ def test_concorrenza_piu_thread_che_alimentano_e_leggono():
 
     def leggi():
         try:
-            for _ in range(200):
+            for _ in range(400):
                 lib.posizione(MKT, "live")
                 lib.ordini(MKT)
+                lib.stato()
         except BaseException as ex:  # noqa: BLE001
             errori.append(ex)
 

@@ -193,6 +193,11 @@ def test_esposizione_massima_con_e_senza_elenco_dei_runner():
     assert con.esposizione_massima == -10.0
     vuoto = P.posizione_mercato(MKT, "live", [])
     assert (vuoto.se_vince, vuoto.esposizione_massima) == ({}, 0.0)
+    # verde su ogni esito: l'esposizione massima e' zero, mai positiva
+    verde = P.posizione_mercato(MKT, "live", [oc("1", HOME, "back", 10.0, 3.0),
+                                              oc("2", HOME, "lay", 12.0, 2.0)], runner=[HOME, AWAY])
+    assert verde.se_vince == {HOME: 8.0, AWAY: 2.0}
+    assert verde.esposizione_massima == 0.0
 
 
 def test_paper_e_live_mai_sommati_e_mercato_sbagliato():
@@ -204,8 +209,9 @@ def test_paper_e_live_mai_sommati_e_mercato_sbagliato():
 
 
 def test_abbinato_senza_prezzo_medio_fuori_e_dichiarato():
-    c = P.calcola(MKT, "live", [oc("1", HOME, "back", 2.0, None), oc("2", HOME, "back", 2.0, 3.0)])
-    assert c.scartati == ("1",)
+    c = P.calcola(MKT, "live", [oc("1", HOME, "back", 2.0, None), oc("2", HOME, "back", 2.0, 3.0),
+                                oc("3", HOME, "back", 2.0, 1.0)])
+    assert c.scartati == ("1", "3")                    # nessun prezzo medio, o non > 1
     assert c.posizione.se_vince == {HOME: 4.0}
 
 
