@@ -92,6 +92,9 @@ TITOLO_RINVII_RETE = "RINVIATE PER GATEWAY/RETE"
 # oggi DOPO il catchup, per cui tenere la quota API. Lo imposta seasons_catchup.yml solo quando
 # gira nella catena (inputs.catena == 'true'). Vedi riserva_da_catena.
 RISERVA_PER_ENV = "CATCHUP_RISERVA_PER"
+# 09/10/2026 (ordine definitivo): parola riservata = nessuna action che chiama API-Football gira
+# dopo il catchup (dopo vengono Retrain, Post-Calibration, Weekly Poisson) -> riserva = sola residua.
+RISERVA_PER_NESSUNA = "nessuna"
 
 
 def _env_int(nome: str, default: int, env: Optional[Dict[str, str]] = None) -> int:
@@ -267,9 +270,14 @@ class ControlloConcorrenza:
 def riserva_da_catena(env: Optional[Dict[str, str]] = None) -> Tuple[int, str]:
     """Riserva di quota API per la run di oggi (09/10/2026, catena notturna, nessun cron).
 
-    Nella catena il catchup gira DOPO Daily e Today Predictions (le loro chiamate sono gia'
-    nel contatore `current`) e PRIMA di Predictions Results: la quota va tenuta SOLO per chi
-    deve ancora girare. CATCHUP_RISERVA_PER = elenco separato da virgole dei workflow che
+    La quota va tenuta SOLO per chi deve ancora girare oggi dopo il catchup e chiama
+    API-Football. Ordine definitivo della catena (09/10/2026): Daily, Today Predictions e
+    Predictions Results girano PRIMA (le loro chiamate sono gia' nel contatore `current`), dopo
+    vengono solo Retrain, Post-Calibration e Weekly Poisson, che non chiamano API-Football: il
+    workflow nella catena mette CATCHUP_RISERVA_PER = 'nessuna' (RISERVA_PER_NESSUNA) ->
+    riserva = sola residua (API_FOOTBALL_RISERVA_RESIDUA). 'nessuna' insieme ad altre voci =
+    voce non valida (riserva piena con AVVISO).
+    Altrimenti CATCHUP_RISERVA_PER = elenco separato da virgole dei workflow che
     devono ANCORA girare oggi dopo il catchup, ognuno `file.yml` o `file.yml=N`:
       - `file.yml=N`: N chiamate per quel workflow;
       - `file.yml`: la sua parte della riserva piena = ceil(piena / 3) (la piena,
@@ -288,6 +296,12 @@ def riserva_da_catena(env: Optional[Dict[str, str]] = None) -> Tuple[int, str]:
     voci = [v.strip() for v in grezzo.split(",") if v.strip()]
     if not voci:
         return piena, f"AVVISO: {RISERVA_PER_ENV} senza voci ({grezzo!r}): riserva piena {piena}"
+    if RISERVA_PER_NESSUNA in voci:
+        if voci == [RISERVA_PER_NESSUNA]:
+            return residua, (f"{RISERVA_PER_ENV}={RISERVA_PER_NESSUNA}: nessuna action che chiama "
+                             f"API-Football gira oggi dopo il catchup: riserva solo residua {residua}")
+        return piena, (f"AVVISO: {RISERVA_PER_ENV} non valida ({RISERVA_PER_NESSUNA!r} insieme ad "
+                       f"altre voci: {grezzo!r}): riserva piena {piena}")
     parte_default = math.ceil(piena / len(ACTION_GIORNALIERE))
     totale = residua
     dettaglio: List[str] = []

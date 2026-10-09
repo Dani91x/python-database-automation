@@ -274,6 +274,23 @@ def test_riserva_per_voce_non_valida_riserva_piena_con_avviso():
         assert r == 3000 and nota.startswith("AVVISO"), (v, nota)
 
 
+def test_riserva_per_nessuna_solo_residua():
+    """Ordine definitivo (09/10/2026): dopo il catchup nessuno chiama API-Football."""
+    r, nota = sc.riserva_da_catena({"CATCHUP_RISERVA_PER": "nessuna"})
+    assert r == 300 and "solo residua 300" in nota and not nota.startswith("AVVISO"), nota
+    assert sc.riserva_da_catena({"CATCHUP_RISERVA_PER": " nessuna "})[0] == 300
+    env = {"CATCHUP_RISERVA_PER": "nessuna", "API_FOOTBALL_RISERVA_GIORNALIERA": "6000",
+           "API_FOOTBALL_RISERVA_RESIDUA": "500"}
+    assert sc.riserva_da_catena(env)[0] == 500
+
+
+def test_riserva_per_nessuna_refusi_riserva_piena_con_avviso():
+    for v in ("nesuna", "Nessuna", "NESSUNA", "nessuna=0",
+              f"nessuna,{RES}", f"{RES},nessuna", "nessuna,nessuna"):
+        r, nota = sc.riserva_da_catena({"CATCHUP_RISERVA_PER": v})
+        assert r == 3000 and nota.startswith("AVVISO"), (v, r, nota)
+
+
 def test_riserva_per_segue_piena_e_residua_da_env():
     env = {"CATCHUP_RISERVA_PER": RES, "API_FOOTBALL_RISERVA_GIORNALIERA": "6000",
            "API_FOOTBALL_RISERVA_RESIDUA": "500"}

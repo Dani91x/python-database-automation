@@ -1,12 +1,16 @@
 name: Predictions Results Backfill
 
 on:
-  # 09/10/2026: tolto il cron (23 3 * * *, partiva con 5-6 h di ritardo). OTTAVO anello
-  # della catena notturna: lo lancia Seasons Catchup (passa-testimone).
-  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine del 09/10/2026:
-  # 1 Daily Yesterday Backfill -> 2 Retrain ML -> 3 ML Post-Calibration ->
-  # 4 Today Predictions Backfill -> 5 Hazard Atlas -> 6 Leagues Mapping ->
-  # 7 Seasons Catchup -> 8 Predictions Results Backfill -> 9 Weekly Poisson (solo lunedi').
+  # 09/10/2026: tolto il cron (23 3 * * *, partiva con 5-6 h di ritardo). QUARTO anello
+  # della catena notturna: lo lancia Today Predictions (passa-testimone).
+  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine DEFINITIVO del 09/10/2026:
+  # 1 Daily Yesterday Backfill -> 2 Leagues Mapping -> 3 Today Predictions Backfill ->
+  # 4 Predictions Results Backfill -> 5 Hazard Atlas -> 6 Seasons Catchup ->
+  # 7 Retrain ML -> 8 ML Post-Calibration -> 9 Weekly Poisson (solo lunedi').
+  # Perche': Today legge api_coverage_by_season (la scrive il mapper); Hazard e Catchup
+  # leggono i dati del Daily; il Retrain allena anche sulle partite chiuse dal Catchup;
+  # Weekly Poisson legge gli esiti scritti da Results. monte_ok (esito del Daily) viaggia
+  # di anello in anello fino al Retrain. Dopo il Catchup nessuno chiama API-Football.
   # Il primo anello lo lancia l'orologio pg_cron (00:12 UTC); ogni anello lancia il
   # successivo con il job passa-testimone (in fondo al file). Nessun cron GitHub.
   workflow_dispatch:
@@ -26,6 +30,10 @@ on:
         type: choice
         options: ["false", "true"]
         default: "false"
+      monte_ok:
+        description: "USO INTERNO (catena): esito del Daily a monte, inoltrato di anello in anello fino al Retrain ('false' = Daily NON success: il Retrain salta il training). A mano lascia 'true'."
+        type: string
+        default: "true"
 
 concurrency:
   group: predictions-results-backfill
@@ -227,7 +235,7 @@ jobs:
   # mettono l'orologio pg_cron e l'anello precedente; un lancio a mano parte con
   # catena=false e NON trascina gli anelli a valle).
   # Il gate errori nascosti puo' rendere ROSSA questa run: il testimone passa lo stesso
-  # (come prima, quando Weekly Poisson aveva un cron indipendente).
+  # (regola di tutti gli anelli: solo un annullamento ferma la catena).
   passa-testimone:
     needs: [run-results-backfill]
     if: ${{ !cancelled() && inputs.catena == 'true' }}
@@ -242,8 +250,10 @@ jobs:
         with:
           sparse-checkout: .github/scripts
 
-      - name: Passa il testimone a weekly_poisson_calibration.yml
+      - name: Passa il testimone a hazard_atlas.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PROSSIMO_ANELLO: weekly_poisson_calibration.yml
-        run: bash .github/scripts/passa_testimone.sh "$PROSSIMO_ANELLO"
+          PROSSIMO_ANELLO: hazard_atlas.yml
+          # esito del Daily, inoltrato fino al Retrain (7o anello)
+          MONTE_OK: ${{ inputs.monte_ok || 'true' }}
+        run: bash .github/scripts/passa_testimone.sh "$PROSSIMO_ANELLO" monte_ok="$MONTE_OK"

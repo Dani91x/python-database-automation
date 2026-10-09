@@ -47,16 +47,21 @@ on:
   # 09/10/2026 (cantiere orologio notturno): tolti l'aggancio workflow_run al Daily e
   # il fallback giornaliero su cron (19 8 * * *). GitHub non esegue piu' di tre livelli
   # di workflow_run in fila e il suo cron partiva con 5-6 h di ritardo: ora il Retrain
-  # e' il SECONDO anello della catena notturna e lo lancia il Daily (job
-  # passa-testimone) con catena=true e monte_ok=true/false. Regola invariata: il
+  # e' il SETTIMO anello della catena notturna e lo lancia Seasons Catchup (job
+  # passa-testimone) con catena=true e monte_ok=true/false (esito del Daily, inoltrato
+  # da ogni anello), cosi' allena anche sulle partite chiuse dal Catchup. Regola invariata: il
   # training parte solo se il Daily e' success (monte_ok), il gate interno "lavoro
   # vero" (planner) resta. Il fallback su cron non serve piu': la staffetta non si
   # perde come un evento workflow_run e, se fallisce, la run e' rossa e la verifica
   # delle 07:30 UTC lo scrive in live_alerts.
-  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine del 09/10/2026:
-  # 1 Daily Yesterday Backfill -> 2 Retrain ML -> 3 ML Post-Calibration ->
-  # 4 Today Predictions Backfill -> 5 Hazard Atlas -> 6 Leagues Mapping ->
-  # 7 Seasons Catchup -> 8 Predictions Results Backfill -> 9 Weekly Poisson (solo lunedi').
+  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine DEFINITIVO del 09/10/2026:
+  # 1 Daily Yesterday Backfill -> 2 Leagues Mapping -> 3 Today Predictions Backfill ->
+  # 4 Predictions Results Backfill -> 5 Hazard Atlas -> 6 Seasons Catchup ->
+  # 7 Retrain ML -> 8 ML Post-Calibration -> 9 Weekly Poisson (solo lunedi').
+  # Perche': Today legge api_coverage_by_season (la scrive il mapper); Hazard e Catchup
+  # leggono i dati del Daily; il Retrain allena anche sulle partite chiuse dal Catchup;
+  # Weekly Poisson legge gli esiti scritti da Results. monte_ok (esito del Daily) viaggia
+  # di anello in anello fino al Retrain. Dopo il Catchup nessuno chiama API-Football.
   # Il primo anello lo lancia l'orologio pg_cron (00:12 UTC); ogni anello lancia il
   # successivo con il job passa-testimone (in fondo al file). Nessun cron GitHub.
   workflow_dispatch:
@@ -480,4 +485,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PROSSIMO_ANELLO: ml_calibration.yml
           RETRAIN_ESEGUITO: ${{ needs.plan.result == 'skipped' && 'false' || 'true' }}
-        run: bash .github/scripts/passa_testimone.sh "$PROSSIMO_ANELLO" retrain_eseguito="$RETRAIN_ESEGUITO"
+          # esito del Daily, inoltrato (Post-Cal e Weekly lo dichiarano e lo passano avanti)
+          MONTE_OK: ${{ inputs.monte_ok || 'true' }}
+        run: bash .github/scripts/passa_testimone.sh "$PROSSIMO_ANELLO" retrain_eseguito="$RETRAIN_ESEGUITO" monte_ok="$MONTE_OK"
