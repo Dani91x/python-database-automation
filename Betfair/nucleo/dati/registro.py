@@ -62,6 +62,12 @@ RPC_SOLA_LETTURA_DICHIARATE: Mapping[str, str] = {
     "monitor_salute_stato": "migrations/monitor_metrics_2026-10-09.sql:73, solo SELECT (T0A)",
     "monitor_vitalita_raccoglitori": "migrations/monitor_metrics_2026-10-09.sql:127, solo SELECT (T0A)",
     "omega_eventi_chiusi_dall_utente": "migrations/omega_chiuso_dall_utente_2026-09-16.sql:104, solo SELECT",
+    # integrazione W1-G1 (09/10): le due RPC di lettura del postino. Definizioni lette: STABLE, un solo
+    # EXECUTE di un SELECT (jsonb_agg sulle righe della tabella, o conteggi vera/ombra), nessun DML
+    "postino_impronte": "migrations/architettura_uid_ombra_2026-10-09.sql:427, STABLE, solo SELECT "
+                        "(coppie [chiave, versione] per la riconciliazione notturna, riconcilia.py:142)",
+    "postino_confronta_ombra": "migrations/architettura_uid_ombra_2026-10-09.sql:491, STABLE, solo SELECT "
+                               "(conteggi per giorno vera contro ombra, criterio di T8, riconcilia.py:160)",
 }
 
 #: nomi che il controllo DML delle migrazioni trova dopo INSERT/UPDATE/DELETE/TRUNCATE e che NON
@@ -75,6 +81,11 @@ ECCEZIONI_DML: Mapping[str, str] = {
     "senza": "parola di un commento dentro reset_personal_report (personal_tracking_rpc.sql)",
     "sicurezza_bk": "schema PRIVATO di fotografia dei permessi (sicurezza_db_2026-09-24_BLOCCO_*): "
                     "una tantum per il rollback, fuori da public",
+    "public": "nome dello SCHEMA, non una tabella: falso positivo degli EXECUTE dinamici "
+              "format('INSERT INTO public.%I ...', p_tabella) di postino_consegna e "
+              "format('CREATE TABLE ... public.%I', ...) di _postino_crea_ombra "
+              "(architettura_uid_ombra_2026-10-09.sql:113,377-392): le tabelle vere raggiunte sono quelle "
+              "del registro passate in p_tabella (e le loro <tabella>_ombra), vedi RPC postino_consegna",
 }
 
 #: bucket dello Storage di Supabase scritti o letti dal codice (non sono tabelle: file dei modelli)
@@ -455,6 +466,11 @@ RPC_SCRIVENTI_ELENCO: Tuple[RpcScrivente, ...] = (
        "refresh_analytics_bets_range_v2_2026-09-24.sql:277",
        "delega a refresh_analytics_bets_range_diag (stesso file): book_odds_cache e "
        "book_odds_cache_fonte NON erano nell'elenco delle 6 di g_copertura"),
+    _r("postino_consegna", ("postino_versioni",), "architettura_uid_ombra_2026-10-09.sql:245",
+       "porta generica del postino (W1-G1): scrive postino_versioni e, con EXECUTE dinamico, la tabella "
+       "p_tabella (o <p_tabella>_ombra in ombra): SOLO tabelle del registro, perche' il postino consegna "
+       "solo voci di tabelle che l'archivio riconosce (postino.py:306-309, archivio.spec) e il client "
+       "rifiuta le altre; il nome 'public' che la scansione vede e' in ECCEZIONI_DML"),
     _r("request_backtest", ("live_backtest_requests",), "live_backtest_rpc.sql:23"),
     _r("request_betfair_live_order", ("betfair_live_order_requests",), "betfair_live_order_queue.sql:201"),
     _r("request_betfair_order", ("betfair_order_requests",), "betfair_order_queue.sql:50"),
@@ -815,6 +831,13 @@ _VOCI: Tuple[VoceRegistro, ...] = (
     _v("omega_build_jobs", "EXTRA", "STA", "cloud", "CLOUD", NON_APPLICABILE, ("job",), rev=_UA,
        origine="mondo_sql", fuori="costruzione a passi della tabella per minuto (omega_models_v3.sql:93, "
        "omega_models_v4.sql:166), lanciata a mano", domani="invariato (SQL)", verifica=V_CLOUD),
+    # --- EXTRA dall'integrazione W1-G1 (09/10): tabella tecnica della migrazione dell'architettura
+    _v("postino_versioni", "EXTRA", "STA", "cloud", "CLOUD", NON_APPLICABILE, ("tabella", "chiave", "origine"),
+       origine="nuova", domani="invariato: la scrive SOLO la RPC postino_consegna, nel cloud (mai il postino "
+       "direttamente)", verifica="pulizia dentro la RPC: righe piu' vecchie di 90 giorni, al massimo 100 per "
+       "chiamata (architettura_uid_ombra_2026-10-09.sql:210-213,327-330)",
+       note="NUOVA (W1-G1, 09/10): versione locale piu' alta applicata per (tabella, chiave, origine), R1; "
+       "PRIMARY KEY (tabella, chiave, origine) architettura_uid_ombra_2026-10-09.sql:214-221"),
     _v("lanci_action", "EXTRA", "ARC", "cloud", "CLOUD", NON_APPLICABILE, ("giorno", "workflow_file"),
        origine="mondo_sql", fuori="pg_cron orologio_daily/orologio_verifica_* (orologio_action_notturne_2026-10-09.sql"
        ":208-355,525-533)", domani="invariato (pg_cron)", verifica=V_CLOUD),
@@ -955,7 +978,9 @@ def _controlla_rpc(registro: RegistroTabelle, scansione: Scansione, sola_lettura
         if fuori:
             errori.append(f"RPC {nome}: tabelle non registrate {sorted(fuori)}")
         if nome in scansione.rpc_definite:
-            dml = set(scansione.dml_rpc.get(nome, frozenset()))
+            # i nomi di ECCEZIONI_DML non sono tabelle (motivo per ciascuno): valgono anche qui, come
+            # in _controlla_migrazioni; nessun'altra tabella trovata nella definizione si ignora
+            dml = set(scansione.dml_rpc.get(nome, frozenset())) - set(ECCEZIONI_DML)
             mancano = dml - set(r.tabelle)
             if mancano:
                 errori.append(f"RPC {nome}: la definizione SQL scrive anche {sorted(mancano)} (registro: "

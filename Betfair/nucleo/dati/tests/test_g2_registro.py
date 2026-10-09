@@ -271,11 +271,13 @@ def test_le_89_dell_inventario_e_le_6_da_rpc_sono_registrate():
                      "analytics_riepilogo_segnali", "analytics_riepilogo_decisioni", "analytics_riepilogo_meta",
                      "analytics_prob_staging", "omega_ht_ft_transitions_raw", "omega_minute_transitions_raw",
                      "omega_transitions_league_counts", "omega_transitions_ledger", "omega_transitions_runs",
-                     "omega_transitions_state", "omega_minute_league_counts", "omega_build_jobs", "lanci_action"}
+                     "omega_transitions_state", "omega_minute_league_counts", "omega_build_jobs", "lanci_action",
+                     # integrazione W1-G1 (09/10): versione per origine della RPC postino_consegna
+                     "postino_versioni"}
 
 
 def test_una_voce_per_tabella_e_spec_del_contratto():
-    assert len(R.REGISTRO.tabelle()) == len(set(R.REGISTRO.tabelle())) == 121
+    assert len(R.REGISTRO.tabelle()) == len(set(R.REGISTRO.tabelle())) == 122
     for t in R.REGISTRO.tabelle():
         s = R.REGISTRO.spec(t)
         assert isinstance(s, SpecTabella) and s.nome == t
@@ -322,7 +324,9 @@ def test_rpc_registrate_coincidono_con_le_definizioni_sql():
     sc = scansione_di_oggi()
     for nome, r in R.REGISTRO.rpc_scriventi().items():
         assert nome in sc.rpc_definite, f"{nome}: definizione non trovata in migrations/"
-        assert set(r.tabelle) == set(sc.dml_rpc[nome]), (nome, r.tabelle, sorted(sc.dml_rpc[nome]))
+        # i nomi di ECCEZIONI_DML non sono tabelle (es. "public" degli EXECUTE dinamici di postino_consegna)
+        assert set(r.tabelle) == set(sc.dml_rpc[nome]) - set(R.ECCEZIONI_DML), (nome, r.tabelle,
+                                                                                 sorted(sc.dml_rpc[nome]))
         f, riga = r.definizione.rsplit(":", 1)
         assert re.search(rf"function\s+(public\.)?{nome}\s*\(",
                          (RADICE / f).read_text(encoding="utf-8").splitlines()[int(riga) - 1], re.I), r
@@ -670,20 +674,46 @@ def test_golden_regime_ritardo_chiave_di_g_43():
         s = R.REGISTRO.spec(t)
         assert (s.regime, s.ritardo_max_s, s.coalesce, s.chiave_naturale) == atteso, t
     restanti = [v.spec for v in R.REGISTRO.voci() if v.spec.nome not in GOLDEN_G43]
-    assert len(restanti) == 68
+    assert len(restanti) == 69
     for s in restanti:                         # tutte le altre restano nel cloud (G par. 4.3 T14-T17, extra)
         assert (s.regime, s.ritardo_max_s, s.coalesce) == ("cloud", R.NON_APPLICABILE, False), s.nome
 
 
+#: integrazione W1-G1 (09/10): le 10 tabelle di LOG che la migrazione di G1 dota di ``uid uuid`` con
+#: indice UNICO (architettura_uid_ombra_2026-10-09.sql:57-72, ciclo DO con EXECUTE dinamico): da li'
+#: hanno DUE chiavi vere, l'``id`` seriale di oggi e ``uid`` (U-50). Trascritte a mano e confrontate
+#: con il ciclo della migrazione (``_tabelle_con_uid_di_g1``)
+LOG_CON_UID_DI_G1: FrozenSet[str] = frozenset({
+    "mike_activity", "omega_activity", "safe_strategy_activity", "scalper_activity", "tennis_bot_activity",
+    "live_alerts", "betfair_live_journal", "betfair_live_audit", "signal_history", "theta_confirm_requests"})
+MIGRAZIONE_G1 = RADICE / "migrations" / "architettura_uid_ombra_2026-10-09.sql"
+
+
+def _tabelle_con_uid_di_g1() -> FrozenSet[str]:
+    """Le tabelle del ciclo ``FOREACH ... ARRAY[...]`` che aggiunge ``uid`` e il suo indice unico."""
+    testo = MIGRAZIONE_G1.read_text(encoding="utf-8")
+    m = re.search(r"FOREACH\s+v_tab\s+IN\s+ARRAY\s+ARRAY\[(.*?)\]\s*LOOP(.*?)END\s+LOOP", testo, re.S | re.I)
+    assert m is not None, "ciclo dell'uid non trovato nella migrazione di G1"
+    corpo = m.group(2)
+    assert re.search(r"ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+uid\s+uuid", corpo, re.I)
+    assert re.search(r"CREATE\s+UNIQUE\s+INDEX[^;]*\(uid\)", corpo, re.I)
+    return frozenset(re.findall(r"'([a-z_][a-z0-9_]*)'", m.group(1)))
+
+
 def test_golden_chiave_naturale_e_una_chiave_vera_delle_migrazioni():
     blocchi = _blocchi_create_table()
+    assert _tabelle_con_uid_di_g1() == LOG_CON_UID_DI_G1
     for v in R.REGISTRO.voci():
         t, k = v.spec.nome, v.spec.chiave_naturale
         if not v.schema_nel_repo or t == "bet_features":
             continue
         candidate = _chiavi_candidate(t, blocchi)
+        if t in LOG_CON_UID_DI_G1:
+            candidate = candidate | {frozenset({"uid"})}   # indice unico creato dal ciclo dinamico di G1
         if k:
             assert frozenset(k) in candidate, (t, k, candidate)
         else:
-            # senza chiave: solo tabelle con il solo id seriale (log, archivi) o senza alcuna chiave
-            assert candidate <= {frozenset({"id"})}, (t, candidate)
+            # senza chiave: solo tabelle con il solo id seriale (log, archivi) o senza alcuna chiave;
+            # i log di G1 hanno in piu' l'uid unico (U-50): le chiavi vere sono id e uid
+            ammesse = {frozenset({"id"})} | ({frozenset({"uid"})} if t in LOG_CON_UID_DI_G1 else set())
+            assert candidate <= ammesse, (t, candidate)
