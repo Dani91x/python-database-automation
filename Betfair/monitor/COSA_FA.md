@@ -28,7 +28,7 @@
 8. **Come si prova da solo**: `python -m pytest Betfair/monitor -q -p no:cacheprovider` (client Supabase e
    APIClient VERI con il trasporto sostituito; LiveSession, recorder, canale e Diario veri).
 9. **Misure**: costo del giro dello scrittore (`monitor_giro_ms`); 2 richieste/min al DB per servizio (la riga);
-   righe ~1-2 KB (~30-55 MB/giorno con ~10 servizi; conservazione: `monitor_metrics_pulizia(14)`).
+   righe ~1-2 KB (~30-55 MB/giorno con ~10 servizi; conservazione: `monitor_metrics_pulizia(7)`, 7 giorni).
 10. **PSB par. 6/7**: 6.8 (referto riproducibile: stesse righe = stessi byte, `--salva-righe`/`--righe`), 7 n.27
     (finti con chiavi e tipi del vero), falsificazione (mutazioni nel referto di T0A), paper e live mai sommati
     (`esecuzione_live`/`esecuzione_paper` separati, transazioni solo dal Betfair vero), calcio e tennis mai

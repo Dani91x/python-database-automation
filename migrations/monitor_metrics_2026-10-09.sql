@@ -24,7 +24,7 @@
 --      l'utente o un job che l'utente decide; nessun pg_cron creato qui).
 --
 -- Volume atteso: ~10 servizi x 2.880 righe/giorno = ~29.000 righe/giorno,
--- 1-2 KB l'una (~30-55 MB/giorno). Conservazione suggerita 14 giorni.
+-- 1-2 KB l'una (~30-55 MB/giorno). Conservazione 7 giorni (decisione dell'utente; la copia completa resta sul PC in _logs/monitor/).
 --
 -- IDEMPOTENTE. La applica l'utente (SQL Editor, ruolo postgres).
 
@@ -179,9 +179,9 @@ REVOKE ALL ON FUNCTION public.monitor_vitalita_raccoglitori() FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.monitor_vitalita_raccoglitori() TO authenticated, service_role;
 
 -- ============================================================================
--- 4. conservazione (la lancia l'utente: SELECT public.monitor_metrics_pulizia(14);)
+-- 4. conservazione (la lancia l'utente: SELECT public.monitor_metrics_pulizia(7);)
 -- ============================================================================
-CREATE OR REPLACE FUNCTION public.monitor_metrics_pulizia(p_giorni integer DEFAULT 14)
+CREATE OR REPLACE FUNCTION public.monitor_metrics_pulizia(p_giorni integer DEFAULT 7)
 RETURNS bigint
 LANGUAGE plpgsql
 VOLATILE

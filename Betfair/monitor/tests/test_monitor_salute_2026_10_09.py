@@ -350,3 +350,27 @@ def test_processo_con_psutil():
 
     out = P.CampionatoreProcesso().campiona()
     assert out["psutil"] is True and out["rss_mb"] > 1.0 and out["thread"] >= 1
+
+
+def test_conservazione_7_giorni_come_deciso():
+    """R-4 della verifica del PC (09/10): la pulizia di serie conserva 7 giorni
+    (decisione dell'utente), non 14; il minimo di 2 giorni resta."""
+    sql = (RADICE / "migrations" / "monitor_metrics_2026-10-09.sql").read_text(encoding="utf-8")
+    assert "monitor_metrics_pulizia(p_giorni integer DEFAULT 7)" in sql
+    assert "pulizia(14" not in sql and "DEFAULT 14" not in sql
+    assert "conservazione minima 2 giorni" in sql
+
+
+def test_monitor_spento_all_import_in_un_processo_pulito():
+    """R-9 della verifica del PC (09/10): importare il monitor non lo accende.
+    Processo nuovo (nessun ``avvia`` di altri test), ambiente senza MONITOR_SALUTE."""
+    import os
+    import subprocess
+    import sys
+    env = {k: v for k, v in os.environ.items() if k != "MONITOR_SALUTE"}
+    codice = ("from Betfair.monitor import sonde; "
+              "print(sonde.ATTIVO is False and sonde.interruttore_acceso() is False)")
+    out = subprocess.run([sys.executable, "-c", codice], cwd=str(RADICE), env=env,
+                         capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "True"
