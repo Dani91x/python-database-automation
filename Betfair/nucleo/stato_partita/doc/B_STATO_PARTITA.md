@@ -47,8 +47,17 @@ Tutte le fonti restituiscono la stessa busta (`adattatori/lettura.py`: `fonte`, 
   finiscono in una coda che UN consegnatore alla volta svuota fuori dai lock, nell'ordine di calcolo (anche quando una
   callback chiama `aggiorna` dallo stesso thread: il giro annidato si accoda). Un dato che fa sollevare il calcolo di una
   partita non ferma le altre (log al piu' una volta al minuto per partita); idem negli adattatori `ips` e `ips_tennis`;
+- la coda (terza revisione): gli STATI e i `StatoCambiato` non ancora consegnati si COALESCONO per partita (resta l'ultimo,
+  in fondo alla coda: mai uno stato vecchio dopo uno nuovo; il `StatoCambiato` fuso va dal primo "prima" non consegnato
+  all'ultimo "dopo"); gli altri EVENTI (gol, fase, flusso) non si scartano MAI. Oltre `TETTO_CODA` (1000 voci) un WARNING
+  al minuto col nome della callback che blocca; contatori in `stato_servizio()` (coda, massimo, oltre tetto, coalescenze,
+  callback in corso). Destinatari: gli iscritti AL CALCOLO (un nuovo iscritto non riceve le voci calcolate prima), ricontrollati
+  ALLA CONSEGNA (dopo che `disiscrivi()` e' tornata nessuna callback, salvo quella gia' in esecuzione); un giro senza
+  partite o con la fonte giu' svuota comunque la coda (resti di una `BaseException` in una callback);
 - thread di `avvia`: una generazione per volta, ognuna col suo stop; `ferma` torna False se il thread e' ancora dentro
-  un giro (uscira' alla fine, senza rifarne un altro) o se e' chiamata dal thread del giro stesso (es. da una callback);
+  un giro (uscira' alla fine, senza rifarne un altro) o se e' chiamata dal thread del giro stesso (es. da una callback).
+  `ferma` NON scarta la coda: stati ed eventi gia' calcolati li consegna il consegnatore attuale (anche il thread fermato,
+  prima di uscire) o il prossimo `aggiorna`;
 - `prezzi_vivi(event_id, mercati)`: `flusso_prezzi.valuta` sull'ultima riga, per i mercati di una decisione.
 - Funzioni pure di `calcolo.py` (stato da grezzo/riga/API-Football/tennis, `ko_epoch_ms`, `KoPerMercato`,
   `KoUnico`, `fase_partita`, `minuto_da_orologio`) e di `freschezza.py` (`eta_riga_s`, `eta_punteggio_s`,

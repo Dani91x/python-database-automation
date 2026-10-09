@@ -343,4 +343,6 @@ def test_giri_serializzati_un_giro_lento_non_sovrascrive_quello_dopo() -> None:
     fonte.rilascia.set()
     a.join(5)
     b.join(5)
-    assert srv.stato("7").minuto == 11 and visti == [10, 11]
+    # (terza revisione) uno stato non ancora consegnato si coalesce col successivo:
+    # [10, 11] o [11], mai l'11' seguito da un 10' vecchio
+    assert srv.stato("7").minuto == 11 and visti in ([10, 11], [11])

@@ -71,6 +71,11 @@ logger = logging.getLogger(__name__)
 
 #: al piu' una riga di log al minuto per partita su un dato che fa sollevare il calcolo
 ERRORE_CALCOLO_OGNI_S = 60.0
+#: voci in coda oltre le quali si avvisa (una volta al minuto) che la consegna e'
+#: ferma: gli STATI si coalescono per partita, gli EVENTI non si scartano mai, quindi
+#: oltre il tetto la coda cresce solo di eventi veri (gol, fasi, flusso)
+TETTO_CODA = 1000
+CODA_AVVISO_OGNI_S = 60.0
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +264,10 @@ def _vivo_se_noto(esito: Any) -> Optional[bool]:
     return vivo if isinstance(vivo, bool) else None
 
 
+def _nome_callback(cb: Any) -> str:
+    return str(getattr(cb, "__qualname__", None) or getattr(cb, "__name__", None) or repr(cb))[:120]
+
+
 def _gol_noti(g: Any) -> bool:
     return isinstance(g, tuple) and len(g) == 2 and all(isinstance(x, int) for x in g)
 
@@ -266,6 +275,21 @@ def _gol_noti(g: Any) -> bool:
 # ---------------------------------------------------------------------------
 # il servizio
 # ---------------------------------------------------------------------------
+class _Voce:
+    """Una consegna in coda. ``tipo`` = "stato" (agli iscritti di ``iscrivi``) o
+    "evento" (a quelli di ``iscrivi_eventi``); ``ids`` = gli iscritti AL CALCOLO
+    (fotografia degli id, non delle funzioni: alla consegna si ricontrolla che
+    ognuno sia ancora iscritto). Uguaglianza per identita' (``deque.remove``)."""
+
+    __slots__ = ("tipo", "event_id", "cosa", "ids")
+
+    def __init__(self, tipo: str, event_id: str, cosa: Any, ids: Tuple[int, ...]) -> None:
+        self.tipo = tipo
+        self.event_id = event_id
+        self.cosa = cosa
+        self.ids = ids
+
+
 class _Giro:
     """Una generazione del thread di ``avvia``: il SUO segnale di stop e la SUA
     sveglia. Un thread fermato (anche se ancora dentro ``leggi``) resta fermo
@@ -289,8 +313,17 @@ class ServizioStatoPartita:
         self._lock = threading.RLock()            # stato in memoria
         self._giro_lock = threading.RLock()       # un giro alla volta: lettura + calcolo
         self._coda_lock = threading.Lock()        # la coda delle consegne
-        self._coda: Deque[Tuple[list, list, list, list]] = collections.deque()
+        self._coda: Deque[_Voce] = collections.deque()
+        # stato e StatoCambiato NON ancora consegnati, per partita (coalescenza)
+        self._voce_stato: Dict[str, _Voce] = {}
+        self._voce_cambio: Dict[str, _Voce] = {}
         self._consegnatore: Optional[int] = None  # thread che sta svuotando la coda
+        self._cb_in_corso: Optional[Callable[[Any], None]] = None
+        self.tetto_coda = TETTO_CODA
+        self._avviso_coda = _flusso.Promemoria(CODA_AVVISO_OGNI_S)
+        self.coda_max = 0
+        self.coda_oltre_tetto = 0
+        self.stati_coalescati = 0
         self._ciclo_lock = threading.Lock()       # avvia / ferma
         self._seguiti: Set[str] = set()
         self._stati: Dict[str, StatoPartita] = {}
@@ -418,38 +451,87 @@ class ServizioStatoPartita:
         svuota la coda FUORI dal lock, nell'ordine di calcolo. Se un altro thread
         sta gia' consegnando (o una callback chiama ``aggiorna`` dallo stesso
         thread), il giro accoda e torna: lo consegnera' quel consegnatore, dopo i
-        giri calcolati prima."""
+        giri calcolati prima. Anche un giro senza partite o con la fonte giu'
+        prova a svuotare la coda (es. resti lasciati da una ``BaseException``)."""
+        eventi: List[Evento] = []
         with self._giro_lock:
             ora = self.adesso_s() if adesso_s is None else float(adesso_s)
             ids = self.seguiti()
-            if not ids:
-                return []
-            try:
-                letture = self.fonte.leggi(ids)
-            except Exception as ex:  # noqa: BLE001 - una fonte giu' non ferma il servizio
-                self.errori_fonte += 1
-                logger.warning("[%s] lettura della fonte KO: %s", self.nome, str(ex)[:160])
-                return []
-            eventi: List[Evento] = []
-            cambiati: List[StatoPartita] = []
-            with self._lock:
-                self.giri += 1
-                for eid in ids:
-                    if eid not in self._seguiti:
-                        continue     # uscita da ``segui`` durante la lettura: non torna in memoria
-                    ev = self._calcola_uno(eid, letture.get(eid), ora)
-                    if ev:
-                        eventi.extend(ev)
-                        cambiati.append(ev[0].dopo)
-                if cambiati or eventi:
-                    with self._coda_lock:
-                        self._coda.append((list(self._iscritti.values()), cambiati,
-                                           list(self._iscritti_eventi.values()), eventi))
+            letture: Optional[Mapping[str, Mapping[str, Any]]] = None
+            if ids:
+                try:
+                    letture = self.fonte.leggi(ids)
+                except Exception as ex:  # noqa: BLE001 - una fonte giu' non ferma il servizio
+                    self.errori_fonte += 1
+                    logger.warning("[%s] lettura della fonte KO: %s", self.nome, str(ex)[:160])
+            if letture is not None:
+                eventi = self._calcola_e_accoda(ids, letture, ora)
         self._svuota_coda()
         return eventi
 
+    def _calcola_e_accoda(self, ids: Sequence[str], letture: Mapping[str, Mapping[str, Any]],
+                          ora: float) -> List[Evento]:
+        eventi: List[Evento] = []
+        with self._lock:
+            self.giri += 1
+            cambiati: List[StatoPartita] = []
+            for eid in ids:
+                if eid not in self._seguiti:
+                    continue     # uscita da ``segui`` durante la lettura: non torna in memoria
+                ev = self._calcola_uno(eid, letture.get(eid), ora)
+                if ev:
+                    eventi.extend(ev)
+                    cambiati.append(ev[0].dopo)
+            ids_stati = tuple(self._iscritti)
+            ids_eventi = tuple(self._iscritti_eventi)
+        if cambiati or eventi:
+            self._accoda(cambiati, ids_stati, eventi, ids_eventi)
+        return eventi
+
+    def _accoda(self, cambiati: Sequence[StatoPartita], ids_stati: Tuple[int, ...],
+                eventi: Sequence[Evento], ids_eventi: Tuple[int, ...]) -> None:
+        """In coda, nell'ordine di calcolo. Uno STATO (e il suo ``StatoCambiato``)
+        ancora non consegnato della stessa partita viene SOSTITUITO dal nuovo, che
+        va in fondo: chi legge riceve sempre l'ultimo stato, mai uno vecchio dopo
+        uno nuovo. Gli altri eventi non si scartano mai."""
+        with self._coda_lock:
+            if ids_stati:
+                for st in cambiati:
+                    self._sostituisci(self._voce_stato, _Voce("stato", st.event_id, st, ids_stati))
+            if ids_eventi:
+                for ev in eventi:
+                    if isinstance(ev, StatoCambiato):
+                        vecchia = self._voce_cambio.get(ev.event_id)
+                        if vecchia is not None:   # dal primo "prima" non consegnato all'ultimo "dopo"
+                            ev = StatoCambiato(ev.event_id, vecchia.cosa.prima, ev.dopo)
+                        self._sostituisci(self._voce_cambio, _Voce("evento", ev.event_id, ev, ids_eventi))
+                    else:
+                        self._coda.append(_Voce("evento", ev.event_id, ev, ids_eventi))
+            lunghezza = len(self._coda)
+            self.coda_max = max(self.coda_max, lunghezza)
+            oltre = lunghezza > self.tetto_coda
+            if oltre:
+                self.coda_oltre_tetto += 1
+            bloccante = self._cb_in_corso
+        if oltre and self._avviso_coda.dovuto("coda", time.monotonic()):
+            logger.warning("[%s] coda delle consegne oltre il tetto (%d voci > %d): consegna ferma "
+                           "nella callback %s", self.nome, lunghezza, self.tetto_coda,
+                           _nome_callback(bloccante))
+
+    def _sostituisci(self, mappa: Dict[str, _Voce], voce: _Voce) -> None:
+        """Con ``_coda_lock`` preso: la voce nuova al posto della vecchia della partita."""
+        vecchia = mappa.get(voce.event_id)
+        if vecchia is not None:
+            self._coda.remove(vecchia)
+            self.stati_coalescati += 1
+        mappa[voce.event_id] = voce
+        self._coda.append(voce)
+
     def _svuota_coda(self) -> None:
-        """Il consegnatore: uno solo alla volta, fuori da ogni lock del servizio."""
+        """Il consegnatore: uno solo alla volta, fuori da ogni lock del servizio.
+        Ogni callback riceve la voce solo se e' ANCORA iscritta in quel momento
+        (chi ha chiamato ``disiscrivi`` non riceve piu' niente; chi si e' iscritto
+        dopo il calcolo non riceve le voci calcolate prima)."""
         with self._coda_lock:
             if self._consegnatore is not None:
                 return
@@ -460,13 +542,43 @@ class ServizioStatoPartita:
                     if not self._coda:
                         self._consegnatore = None
                         return
-                    iscritti, cambiati, iscritti_eventi, eventi = self._coda.popleft()
-                self._consegna(iscritti, cambiati)
-                self._consegna(iscritti_eventi, eventi)
+                    voce = self._coda.popleft()
+                    mappa = self._voce_stato if voce.tipo == "stato" else self._voce_cambio
+                    if mappa.get(voce.event_id) is voce:
+                        del mappa[voce.event_id]
+                self._consegna_voce(voce)
         except BaseException:
             with self._coda_lock:
                 self._consegnatore = None
+                self._cb_in_corso = None
             raise
+
+    def _consegna_voce(self, voce: _Voce) -> None:
+        iscritti = self._iscritti if voce.tipo == "stato" else self._iscritti_eventi
+        for chiave in voce.ids:
+            with self._lock:
+                cb = iscritti.get(chiave)
+            if cb is None:
+                continue                       # disiscritto prima della consegna
+            with self._coda_lock:
+                self._cb_in_corso = cb
+            self._consegna([cb], [voce.cosa])
+            with self._coda_lock:
+                self._cb_in_corso = None
+
+    def stato_servizio(self) -> Dict[str, Any]:
+        """Lo stato del SERVIZIO (non di una partita): coda, contatori, callback in corso."""
+        with self._coda_lock:
+            coda = len(self._coda)
+            cb = self._cb_in_corso
+        return {
+            "giri": self.giri, "seguiti": len(self.seguiti()), "coda": coda,
+            "coda_max": self.coda_max, "tetto_coda": self.tetto_coda,
+            "coda_oltre_tetto": self.coda_oltre_tetto, "stati_coalescati": self.stati_coalescati,
+            "callback_in_corso": _nome_callback(cb) if cb is not None else None,
+            "errori_fonte": self.errori_fonte, "errori_calcolo": self.errori_calcolo,
+            "errori_callback": self.errori_callback, "thread_vivo": self.vivo,
+        }
 
     def _calcola_uno(self, eid: str, let: Optional[Mapping[str, Any]], ora: float) -> List[Evento]:
         """Stato ed eventi di UNA partita (con il lock dello stato preso). Un dato
@@ -572,8 +684,13 @@ class ServizioStatoPartita:
 
     def ferma(self, attesa_s: float = 5.0) -> bool:
         """Ferma la generazione viva. True se il suo thread e' terminato entro
-        ``attesa_s``; False se e' ancora dentro un giro (es. bloccato in ``leggi``):
-        resta fermo per sempre e uscira' alla fine del giro, senza rifarne un altro."""
+        ``attesa_s``; False se e' ancora dentro un giro (es. bloccato in ``leggi``
+        o in una callback) o se la chiamata viene dal thread del giro: resta fermo
+        per sempre e uscira' alla fine del giro, senza rifarne un altro.
+
+        ``ferma`` NON scarta la coda delle consegne: gli stati e gli eventi gia'
+        calcolati vengono consegnati dal consegnatore attuale (anche se e' il
+        thread fermato, prima di uscire) o dal prossimo ``aggiorna``."""
         with self._ciclo_lock:
             g = self._giro_vivo
             self._giro_vivo = None

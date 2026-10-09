@@ -287,3 +287,29 @@ Numeri: test del comparto **212 non-cert verdi** (175 della prima revisione, men
 
 Suite intera (`python -m pytest Betfair/ -q -p no:cacheprovider`, UNA volta, dopo questa correzione, test cert compresi):
 **11.807 verdi, 0 rossi, 65 saltati, 6 xfailed, 834 s**.
+
+## 12. Terza revisione (di `e330fdb5`, mirata alla coda e alla fase dedotta)
+
+Esito: DA CORREGGERE, difetti minori (coda senza deadlock e fase dedotta promosse). Commit nuovo sopra `e330fdb5`.
+Mutazioni: `mutazioni.py` per intero, **72/72 ROSSE** (61 di prima + 11 di questa, fra cui M1 e M3 del revisore), sha256
+uguale dopo ogni ripristino; `servizio.py` dopo la correzione: `ee2500d7b556` (12 cifre), gli altri file invariati.
+
+| # | Punto | Correzione (file:riga) | Test (`test_b_terza_revisione.py`) | Mutazione rossa |
+|---|---|---|---|---|
+| 1 | disiscritto riceveva ancora una voce in coda | `servizio.py:278` `_Voce` fotografa gli ID degli iscritti al calcolo; `:556` `_consegna_voce` ricontrolla ogni id ALLA CONSEGNA (callback per callback) | `test_disiscritto_con_una_voce_in_coda_non_la_riceve`, `test_nuovo_iscritto_non_riceve_le_voci_calcolate_prima`, `test_nuovo_iscritto_agli_eventi_non_riceve_il_gol_di_prima` | "3-1 disiscrivi senza effetto", "3-1 nuovo iscritto riceve le voci calcolate prima" |
+| 2 | coda illimitata (1,8 KB per giro con una callback bloccata) | `:491` `_accoda` + `:521` `_sostituisci`: stati e `StatoCambiato` coalescenti per partita (ultimo in fondo), eventi mai scartati; `:77` `TETTO_CODA` 1000 con WARNING al minuto e nome della callback; `:569` `stato_servizio()` | `test_callback_bloccata_mille_giri_memoria_limitata_eventi_tutti` (1000 giri: coda <= 12 voci, crescita < 200 KB, 10 gol su 10 in ordine, stato finale 1001'), `test_oltre_il_tetto_avviso_col_nome_della_callback`, `test_due_thread_con_callback_lenta_tornano_subito`, `test_ordine_di_calcolo_con_otto_thread` (8 x 40) | "3-2 stati non coalescenti", "3-2 eventi scartati", "3-2 StatoCambiato coalescente perde il primo 'prima'", "3-2 nessun avviso", "3-2 avviso a ogni giro", "3-2 callback in corso non registrata" |
+| 3 | `ferma` e coda; resti dopo una `BaseException` non svuotati al ritorno anticipato | `:685` docstring di `ferma` (la coda non si scarta) e doc par. 3; `:445` `aggiorna` svuota la coda a ogni uscita (anche senza partite o con la fonte giu') | `test_ferma_non_scarta_la_coda`, `test_coda_rimasta_si_svuota_anche_senza_partite`, `test_coda_rimasta_si_svuota_anche_con_la_fonte_giu` | "3-3 coda non svuotata al ritorno anticipato" |
+| 4 | mutanti M1 e M3 invisibili alla suite | (codice gia' corretto) | `test_base_exception_rilascia_il_consegnatore` (M1), `test_ordine_di_calcolo_con_otto_thread` (M3: i gol rovesciati) | "M1 consegnatore non rilasciato su BaseException", "M3 coda LIFO" |
+| 5 | referto | questa sezione | - | - |
+
+Scelte da conoscere: (a) con la coalescenza un iscritto lento salta gli stati intermedi di una partita (riceve sempre
+l'ultimo); gli eventi no. (b) `disiscrivi` non puo' interrompere una callback GIA' in esecuzione su un altro thread. (c)
+Le prove del revisore che assumevano la consegna di ogni stato ([1, 2, 3]) sono adeguate alla coalescenza ([1, 3]); quella
+che assumeva la fotografia delle funzioni (`visti_b == [1]` dopo `disiscrivi`) ora asserisce il comportamento richiesto
+(niente dopo `disiscrivi`). (d) Il test di serializzazione della seconda revisione accetta [10, 11] o [11] (coalescenza), mai
+l'11' seguito dal 10'.
+
+Numeri: test del comparto **224 non-cert verdi** (212 + 12) + 2 cert. Suite intera: riga in coda.
+
+Suite intera (`python -m pytest Betfair/ -q -p no:cacheprovider`, UNA volta, dopo la terza correzione, test cert compresi):
+**11.819 verdi, 0 rossi, 65 saltati, 6 xfailed, 671 s**.

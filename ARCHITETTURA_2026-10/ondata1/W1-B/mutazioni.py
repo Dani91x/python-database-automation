@@ -9,7 +9,7 @@ altrimenti ERRORE), test indicati (``-m "not cert"``), ripristino dei byte
 originali, sha256 ricontrollato. Una riga per mutazione e il totale in coda.
 Le prime 29 sono quelle della consegna ``be3cf075`` (adeguate alle righe
 cambiate dalle correzioni); poi quelle della prima revisione (``67775f35``) e
-della seconda (questo commit).
+della seconda (``e330fdb5``) e della terza (la coda delle consegne).
 """
 import hashlib
 import os
@@ -22,6 +22,7 @@ T = B + "tests/"
 CAL, FRE, SER = T + "test_b_calcolo.py", T + "test_b_freschezza.py", T + "test_b_servizio.py"
 ADA, COR, IMP = T + "test_b_adattatori.py", T + "test_b_correzioni.py", T + "test_b_import_innocuo.py"
 SEC = T + "test_b_seconda_revisione.py"
+TER = T + "test_b_terza_revisione.py"
 
 MUT = [
     # --- consegna be3cf075 -------------------------------------------------
@@ -187,11 +188,43 @@ MUT = [
      "            if eid not in self._seguiti:\n                return\n            ko = C.ko_ms_intero",
      "            ko = C.ko_ms_intero", [SEC]),
     ("g T21 chi esce durante la lettura torna in memoria", B + "servizio.py",
-     "                    if eid not in self._seguiti:\n                        continue",
-     "                    if False:\n                        continue", [SEC]),
+     "                if eid not in self._seguiti:\n                    continue",
+     "                if False:\n                    continue", [SEC]),
     ("g T24 tennis muto conserva la lettura vecchia", B + "servizio.py",
      '        elif nuovo.sport == "tennis":\n            self._letture.pop(eid, None)',
      "        elif False:\n            pass", [SEC]),
+    # --- terza revisione (coda delle consegne) ------------------------------
+    ("M1 consegnatore non rilasciato su BaseException", B + "servizio.py",
+     "        except BaseException:\n            with self._coda_lock:\n                self._consegnatore = None\n"
+     "                self._cb_in_corso = None\n            raise\n",
+     "        except BaseException:\n            raise\n", [TER]),
+    ("M3 coda LIFO", B + "servizio.py",
+     "                    voce = self._coda.popleft()", "                    voce = self._coda.pop()", [TER]),
+    ("3-1 disiscrivi senza effetto", B + "servizio.py",
+     "                dove.pop(chiave, None)", "                pass", [TER]),
+    ("3-1 nuovo iscritto riceve le voci calcolate prima", B + "servizio.py",
+     "        for chiave in voce.ids:", "        for chiave in list(iscritti):", [TER]),
+    ("3-2 stati non coalescenti (coda illimitata)", B + "servizio.py",
+     "        if vecchia is not None:\n            self._coda.remove(vecchia)\n            self.stati_coalescati += 1\n",
+     "", [TER]),
+    ("3-2 eventi scartati", B + "servizio.py",
+     '                        self._coda.append(_Voce("evento", ev.event_id, ev, ids_eventi))',
+     "                        pass", [TER]),
+    ("3-2 StatoCambiato coalescente perde il primo 'prima'", B + "servizio.py",
+     "                            ev = StatoCambiato(ev.event_id, vecchia.cosa.prima, ev.dopo)",
+     "                            pass", [TER]),
+    ("3-2 nessun avviso oltre il tetto", B + "servizio.py",
+     '        if oltre and self._avviso_coda.dovuto("coda", time.monotonic()):',
+     "        if False:", [TER]),
+    ("3-2 avviso a ogni giro (promemoria tolto)", B + "servizio.py",
+     '        if oltre and self._avviso_coda.dovuto("coda", time.monotonic()):',
+     "        if oltre:", [TER]),
+    ("3-2 callback in corso non registrata", B + "servizio.py",
+     "                self._cb_in_corso = cb\n", "                pass\n", [TER]),
+    ("3-3 coda non svuotata al ritorno anticipato", B + "servizio.py",
+     "        self._svuota_coda()\n        return eventi\n\n    def _calcola_e_accoda",
+     "        if ids and letture is not None:\n            self._svuota_coda()\n        return eventi\n\n"
+     "    def _calcola_e_accoda", [TER]),
 ]
 
 
