@@ -9,8 +9,13 @@ Finti con le chiavi e i tipi del vero:
     ``motore_ordini.fase_da_riga`` sulla riga dello specchio, come il motore
     (modello: ``banco_comune.py`` ~1024-1028, ordini e stati VERI, mai stringhe inventate);
   * diario: la classe VERA ``motore_ordini.Diario`` su una cartella temporanea (fsync);
-  * archivio: ``_ArchivioMemoria`` col protocollo ``nucleo/dati/contratto.Archivio``,
-    che sopravvive alla porta (simula il disco al riavvio).
+  * archivio (integrazione W1-G1 + W1-C1, 09/10): OGNI test gira DUE volte (fixture
+    ``archivio_parametrico``): con ``_ArchivioMemoria``, il finto col protocollo
+    ``nucleo/dati/contratto.Archivio`` che sopravvive alla porta (simula il disco al
+    riavvio), e con l'``ArchivioLocale`` VERO di W1-G1 su una cartella temporanea
+    (``_ArchivioVero``: aperto e chiuso dalla fixture, tabelle della porta dichiarate in
+    ``registro.TABELLE_SOLO_LOCALI``; al riavvio si CHIUDE e si RIAPRE sulla stessa
+    cartella). Il finto ha la semantica del vero, anche nei guasti (vedi le due classi).
 
 Coperti: (1) dedup per ref dopo il riavvio (dall'archivio, dal diario) e nella finestra;
 (2) ciclo di vita con le risposte vere: accettato, parziale, abbinato, FOK scaduto,
@@ -23,12 +28,18 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Callable, Dict, List, Mapping, Optional
+import sqlite3
+import threading
+import time
+from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Union
 
 import pytest
 from betfairlightweight.resources.bettingresources import (CancelOrders, PlaceOrders,
                                                            ReplaceOrders)
 
+from Betfair.nucleo.dati import archivio as ARCH
+from Betfair.nucleo.dati.archivio import ArchivioChiuso, ArchivioLocale
+from Betfair.nucleo.dati.registro import TABELLE_SOLO_LOCALI
 from Betfair.nucleo.ordini import adattatore_comando as AC
 from Betfair.nucleo.ordini import controlli as CT
 from Betfair.nucleo.ordini import porta as PT
@@ -52,62 +63,200 @@ class _Orologio:
 class _ArchivioMemoria:
     """Il protocollo ``Archivio`` in memoria con la SEMANTICA VERA di ``ArchivioLocale``
     (W1-G1, ``Betfair/nucleo/dati/archivio.py``): ``scrivi`` = upsert che FONDE le colonne
-    per chiave naturale; ``leggi`` = l'ultima versione o None; ``transizione`` = la
-    ``colonna_stato`` (di serie ``"status"``) passa da ``da`` ad ``a`` SOLO su una riga
-    ESISTENTE che vale ``da``: riga assente -> False (provato da
-    ``test_contratto_del_finto_transizione_come_il_vero``). ``cartella`` come il vero (una
-    per istanza). ``guasto_*`` fa sollevare; ``ritardo_lettura_s`` simula una lettura che
-    viaggia (fotografia, poi latenza)."""
+    per chiave naturale; ``leggi`` = l'ultima versione (anche se non ancora su disco) o None;
+    ``transizione`` = la ``colonna_stato`` (di serie ``"status"``) passa da ``da`` ad ``a``
+    SOLO su una riga ESISTENTE che vale ``da``: riga assente -> False (provato da
+    ``test_contratto_del_finto_transizione_come_il_vero``, che gira anche sul vero).
+    ``cartella`` come il vero (una per istanza). Righe in JSON e ritorno (tipi del vero).
 
-    CHIAVI = {PT.TABELLA_REF: ("ref",), getattr(PT, "TABELLA_SEQ", "ordini_seq"): ("chiave",)}
+    Guasti, con gli effetti del vero (integrazione del 09/10, INTEGRAZIONE.md par. 3):
+      * ``guasto_lettura``: il lettore fallisce -> ``leggi`` solleva (il vero:
+        ``sqlite3.OperationalError``);
+      * ``guasto_scrittura`` (disco che rifiuta i commit): ``scrivi`` NON solleva (il vero
+        accoda e il suo thread ritenta finche' il disco torna; ``leggi`` vede la riga in
+        coda); ``transizione`` (sincrona) ASPETTA che il disco torni, poi l'esito vero;
+      * ``chiudi()``: archivio chiuso -> ``leggi``/``scrivi``/``transizione`` sollevano
+        ``ArchivioChiuso`` (l'UNICO modo in cui lo ``scrivi`` del vero solleva, oltre a una
+        tabella non registrata: ``KeyError``);
+      * ``ritardo_lettura_s`` simula una lettura che viaggia (fotografia, poi latenza)."""
+
     _N = 0
 
     def __init__(self, colonna_stato: str = "status") -> None:
-        import threading
-
         _ArchivioMemoria._N += 1
         self.cartella = f"/finto/archivio-{_ArchivioMemoria._N}"
         self.colonna_stato = colonna_stato
-        self.tabelle: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self._righe: Dict[str, Dict[str, str]] = {}
         self.guasto_lettura = False
         self.guasto_scrittura = False
         self.ritardo_lettura_s = 0.0
         self.letture = 0
+        self._aperto = True
         self._lock = threading.Lock()
 
-    def _k(self, tabella: str, valori: Mapping[str, Any]) -> str:
-        return json.dumps({c: valori[c] for c in self.CHIAVI[tabella]}, sort_keys=True)
+    @property
+    def aperto(self) -> bool:
+        return self._aperto
+
+    def chiudi(self) -> None:
+        self._aperto = False
+
+    def _controlla(self, tabella: str) -> None:
+        if tabella not in TABELLE_SOLO_LOCALI:
+            raise KeyError(f"tabella non registrata nell'archivio: {tabella}")
+        if not self._aperto:
+            raise ArchivioChiuso("archivio finto non aperto")
+
+    @staticmethod
+    def _k(tabella: str, valori: Mapping[str, Any]) -> str:
+        return json.dumps([valori[c] for c in TABELLE_SOLO_LOCALI[tabella].chiave_naturale])
+
+    @property
+    def tabelle(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
+        """Le righe per tabella (come le vede il disco a fine coda)."""
+        with self._lock:
+            return {t: {k: json.loads(j) for k, j in d.items()} for t, d in self._righe.items() if d}
 
     def leggi(self, tabella: str, chiave: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+        self._controlla(tabella)
         if self.guasto_lettura:
-            raise OSError("archivio illeggibile")
+            raise sqlite3.OperationalError("disk I/O error")
         with self._lock:
             self.letture += 1
-            riga = self.tabelle.get(tabella, {}).get(self._k(tabella, chiave))
-            riga = dict(riga) if riga is not None else None
+            testo = self._righe.get(tabella, {}).get(self._k(tabella, chiave))
         if self.ritardo_lettura_s:
-            import time
+            time.sleep(self.ritardo_lettura_s)
+        return None if testo is None else json.loads(testo)
+
+    def scrivi(self, tabella: str, riga: Mapping[str, Any]) -> None:
+        self._controlla(tabella)
+        with self._lock:                               # col disco guasto: in coda, visibile
+            t = self._righe.setdefault(tabella, {})
+            k = self._k(tabella, riga)
+            prima = json.loads(t[k]) if k in t else {}
+            t[k] = json.dumps({**prima, **dict(riga)})  # fusione delle colonne (upsert)
+
+    def transizione(self, tabella: str, chiave: Mapping[str, Any], da: str, a: str) -> bool:
+        self._controlla(tabella)
+        while self.guasto_scrittura:                   # sincrona: aspetta il disco
+            time.sleep(0.01)
+        with self._lock:
+            t = self._righe.setdefault(tabella, {})
+            k = self._k(tabella, chiave)
+            if k not in t:
+                return False
+            riga = json.loads(t[k])
+            if riga.get(self.colonna_stato) != da:
+                return False
+            riga[self.colonna_stato] = a
+            t[k] = json.dumps(riga)
+            return True
+
+
+class _ArchivioVero(ArchivioLocale):
+    """L'``ArchivioLocale`` VERO di W1-G1 con il registro VUOTO: le tabelle della porta le
+    legge da ``registro.TABELLE_SOLO_LOCALI`` (regime ``stato_denaro``, FULL, mai il
+    cloud). Aggiunge SOLO gli interruttori di guasto del finto, iniettati nel punto in cui
+    il vero incontra il guasto (il resto e' il codice vero):
+      * ``guasto_lettura``: il lettore SQLite fallisce (``_leggi_uno``);
+      * ``guasto_scrittura``: i commit del file ``denaro`` falliscono con l'errore del disco
+        pieno (``_unita_sqlite``): il thread di scrittura ritenta finche' torna;
+      * ``ritardo_lettura_s``: latenza dopo la lettura; ``letture``: conteggio;
+      * ``tabelle``: le righe su disco dopo ``conferma`` (stessa forma del finto)."""
+
+    def __init__(self, processo: str, *, base: Any, colonna_stato: str = "status") -> None:
+        super().__init__(processo, {}, base=base, colonna_stato=colonna_stato)
+        self.base = base
+        self.colonna_stato = colonna_stato
+        self.guasto_lettura = False
+        self.guasto_scrittura = False
+        self.ritardo_lettura_s = 0.0
+        self.letture = 0
+        self._lock_letture = threading.Lock()
+
+    def _leggi_uno(self, regime: str, sql: str, args: Any) -> Any:
+        if self.guasto_lettura:
+            raise sqlite3.OperationalError("disk I/O error")
+        return super()._leggi_uno(regime, sql, args)
+
+    def leggi(self, tabella: str, chiave: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+        riga = super().leggi(tabella, chiave)
+        with self._lock_letture:
+            self.letture += 1
+        if self.ritardo_lettura_s:
             time.sleep(self.ritardo_lettura_s)
         return riga
 
-    def scrivi(self, tabella: str, riga: Mapping[str, Any]) -> None:
-        if self.guasto_scrittura:
-            raise OSError("disco pieno")
-        with self._lock:
-            t = self.tabelle.setdefault(tabella, {})
-            k = self._k(tabella, riga)
-            t[k] = {**t.get(k, {}), **dict(riga)}         # fusione delle colonne (upsert)
+    def _unita_sqlite(self, regime: str, voci: List[Any]) -> Any:
+        if self.guasto_scrittura and regime == "stato_denaro":
+            raise sqlite3.OperationalError("database or disk is full")
+        return super()._unita_sqlite(regime, voci)
 
-    def transizione(self, tabella: str, chiave: Mapping[str, Any], da: str, a: str) -> bool:
-        if self.guasto_scrittura:
-            raise OSError("disco pieno")
-        with self._lock:
-            t = self.tabelle.setdefault(tabella, {})
-            riga = t.get(self._k(tabella, chiave))
-            if riga is None or riga.get(self.colonna_stato) != da:
-                return False
-            riga[self.colonna_stato] = a
-            return True
+    @property
+    def tabelle(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
+        assert self.conferma(10.0), "archivio vero: coda non scritta entro 10 s"
+        out: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        for t in TABELLE_SOLO_LOCALI:
+            righe = self.righe_finestra(t, 0, None)
+            if righe:
+                out[t] = {k: json.loads(j) for k, j in righe}
+        return out
+
+
+ArchivioDiProva = Union[_ArchivioMemoria, _ArchivioVero]
+
+#: quale archivio usano ``_Ambiente`` e ``_nuovo_archivio`` nel test in corso (fixture)
+_FABBRICA: Dict[str, Any] = {"tipo": "finto", "base": None, "aperti": [], "n": 0}
+
+
+def _nuovo_archivio(colonna_stato: str = "status") -> ArchivioDiProva:
+    """Un archivio NUOVO (vuoto) del tipo del test in corso; il vero e' gia' aperto."""
+    if _FABBRICA["tipo"] == "finto":
+        return _ArchivioMemoria(colonna_stato)
+    _FABBRICA["n"] += 1
+    a = _ArchivioVero(f"porta-{_FABBRICA['n']}", base=_FABBRICA["base"], colonna_stato=colonna_stato)
+    _FABBRICA["aperti"].append(a)
+    return a.apri()
+
+
+def _riavviato(archivio: ArchivioDiProva) -> ArchivioDiProva:
+    """Il processo riparte con lo STESSO archivio su disco: il finto (che simula il disco)
+    resta lo stesso oggetto; il vero si CHIUDE (coda scritta) e si RIAPRE sulla stessa
+    cartella: le righe tornano dal file."""
+    if isinstance(archivio, _ArchivioMemoria):
+        return archivio
+    archivio.chiudi()
+    nuovo = _ArchivioVero(archivio.processo, base=archivio.base, colonna_stato=archivio.colonna_stato)
+    _FABBRICA["aperti"].append(nuovo)
+    return nuovo.apri()
+
+
+def _gemello(archivio: ArchivioDiProva) -> ArchivioDiProva:
+    """Un ALTRO oggetto archivio sulla STESSA cartella (non aperto)."""
+    if isinstance(archivio, _ArchivioMemoria):
+        g = _ArchivioMemoria(archivio.colonna_stato)
+        g.cartella = archivio.cartella
+        return g
+    return _ArchivioVero(archivio.processo, base=archivio.base, colonna_stato=archivio.colonna_stato)
+
+
+@pytest.fixture(params=["finto", "vero"], autouse=True)
+def archivio_parametrico(request: Any, tmp_path_factory: Any,
+                         monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """OGNI test della porta con l'archivio finto e con l'``ArchivioLocale`` VERO di W1-G1
+    (cartella temporanea, chiuso alla fine). Col vero il ritento dopo un guasto del disco
+    parte dopo 10 ms invece di 0,5 s (``ATTESA_RITENTO_BASE_S``): solo la velocita' del test."""
+    monkeypatch.setitem(_FABBRICA, "tipo", request.param)
+    monkeypatch.setitem(_FABBRICA, "base", tmp_path_factory.mktemp("archivi"))
+    monkeypatch.setitem(_FABBRICA, "aperti", [])
+    monkeypatch.setattr(ARCH, "ATTESA_RITENTO_BASE_S", 0.01)
+    try:
+        yield request.param
+    finally:
+        for a in _FABBRICA["aperti"]:
+            a.guasto_scrittura = False
+            a.guasto_lettura = False
+            a.chiudi(timeout_s=10.0)
 
 
 class _Freni:
@@ -268,12 +417,12 @@ class _EsecutoreBetfairFinto:
 # ---------------------------------------------------------------------------
 class _Ambiente:
     def __init__(self, tmp: Any, *, proc: str = "LIVE", tetto: Optional[int] = None,
-                 archivio: Optional[_ArchivioMemoria] = None, cartella: str = "diario",
+                 archivio: Optional[ArchivioDiProva] = None, cartella: str = "diario",
                  orologio: Optional[_Orologio] = None) -> None:
         self.orologio = orologio or _Orologio()
         self.betfair = _BetfairFinto(self.orologio)
         self.esecutore = _EsecutoreBetfairFinto(self.betfair)
-        self.archivio = archivio or _ArchivioMemoria()
+        self.archivio = archivio if archivio is not None else _nuovo_archivio()
         self.freni = _Freni(proc)
         self.cartella = str(tmp / cartella)
         self.diario = MO.Diario(self.cartella, giorno=lambda: GIORNO)
@@ -327,7 +476,7 @@ def test_dedup_dopo_il_riavvio_dall_archivio(tmp_path: Any) -> None:
     assert a1.accettato and not rif.accettato
     prima.porta.chiudi()
     # riavvio: RAM vuota, DIARIO NUOVO (cartella diversa), stesso archivio su disco
-    dopo = _Ambiente(tmp_path, cartella="diario_2", archivio=prima.archivio,
+    dopo = _Ambiente(tmp_path, cartella="diario_2", archivio=_riavviato(prima.archivio),
                      orologio=_Orologio(T0 + 3_600_000))
     b1 = dopo.porta.invia(_r(creato_ms=dopo.orologio.ms))
     b2 = dopo.porta.invia(_r(ref="safe-t2", importo=4.0, creato_ms=dopo.orologio.ms))
@@ -352,10 +501,39 @@ def test_archivio_illeggibile_fail_closed(tmp_path: Any) -> None:
     a = amb.porta.invia(_r())
     assert not a.accettato and a.motivo.startswith(PT.M_ARCHIVIO) and a.seq is None
     amb.archivio.guasto_lettura = False
-    amb.archivio.guasto_scrittura = True
+    # archivio CHIUSO (app in chiusura): leggi e scrivi sollevano ArchivioChiuso -> fail-closed
+    amb.archivio.chiudi()
     b = amb.porta.invia(_r(ref="safe-t9"))
-    assert not b.accettato and b.motivo.startswith(PT.M_ARCHIVIO)
+    assert not b.accettato and b.motivo.startswith(PT.M_ARCHIVIO) and b.seq is None
     assert amb.betfair.chiamate == []
+
+
+def test_disco_dell_archivio_guasto_l_ordine_parte_e_il_dedup_regge(tmp_path: Any) -> None:
+    """Semantica VERA di W1-G1 (integrazione del 09/10): col disco dell'archivio che rifiuta
+    i commit, ``scrivi`` NON solleva (accoda; il thread di scrittura ritenta finche' il disco
+    torna) e ``leggi`` vede la riga in coda. Il write-ahead durevole e' il DIARIO: l'ordine
+    parte una volta, il ref ripetuto risponde l'ack originale, e quando il disco torna la
+    riga del ref e' sul file. (Il finto della consegna di C1 faceva sollevare ``scrivi``:
+    differenza col vero, corretta nel finto.)"""
+    amb = _Ambiente(tmp_path)
+    amb.archivio.guasto_scrittura = True
+    a = amb.porta.invia(_r(ref="safe-t9"))
+    b = amb.porta.invia(_r(ref="safe-t9"))
+    assert a.accettato and a.motivo is None and len(amb.betfair.chiamate) == 1
+    assert (b.accettato, b.seq, b.motivo) == (True, a.seq, MO.MOTIVO_REF_GIA_VISTO)
+    assert len(amb.betfair.chiamate) == 1
+    amb.archivio.guasto_scrittura = False
+    riga = amb.archivio.tabelle[PT.TABELLA_REF]
+    assert [(x["ref"], x["accettato"], x["seq"]) for x in riga.values()] == [("safe-t9", True, a.seq)]
+
+
+def test_le_tabelle_della_porta_sono_le_solo_locali_del_registro() -> None:
+    """Integrazione W1-G1 + W1-C1: i nomi che la porta usa sono quelli dichiarati SOLO LOCALI
+    (regime stato_denaro, mai il cloud) nel registro, con le chiavi che la porta scrive."""
+    assert {PT.TABELLA_REF, PT.TABELLA_SEQ} == set(TABELLE_SOLO_LOCALI)
+    assert TABELLE_SOLO_LOCALI[PT.TABELLA_REF].chiave_naturale == ("ref",)
+    assert TABELLE_SOLO_LOCALI[PT.TABELLA_SEQ].chiave_naturale == ("chiave",)
+    assert all(s.regime == "stato_denaro" for s in TABELLE_SOLO_LOCALI.values())
 
 
 def test_ref_non_valido_non_registrato(tmp_path: Any) -> None:
@@ -572,7 +750,7 @@ def test_riavvio_con_ordine_in_volo(tmp_path: Any) -> None:
         prima.porta.invia(_r())
     seq_prima = prima.porta._visti["safe-t1"].seq   # il seq dato col primo invio
     prima.porta.chiudi()                         # il processo e' morto: archivio libero
-    dopo = _Ambiente(tmp_path, archivio=prima.archivio, orologio=_Orologio(T0 + 1_000))
+    dopo = _Ambiente(tmp_path, archivio=_riavviato(prima.archivio), orologio=_Orologio(T0 + 1_000))
     assert dopo.porta.in_volo() == ("safe-t1",)
     assert dopo.porta.stato("safe-t1").fase == "ignoto"
     b = dopo.porta.invia(_r(creato_ms=T0 + 1_000))

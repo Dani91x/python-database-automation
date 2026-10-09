@@ -717,3 +717,66 @@ def test_golden_chiave_naturale_e_una_chiave_vera_delle_migrazioni():
             # i log di G1 hanno in piu' l'uid unico (U-50): le chiavi vere sono id e uid
             ammesse = {frozenset({"id"})} | ({frozenset({"uid"})} if t in LOG_CON_UID_DI_G1 else set())
             assert candidate <= ammesse, (t, candidate)
+
+
+# ---------------------------------------------------------------------------
+# Tabelle SOLO LOCALI (integrazione W1-G1 + W1-C1, 09/10): dichiarate qui, MAI il cloud
+# ---------------------------------------------------------------------------
+def test_tabelle_solo_locali_dichiarate_e_fuori_dal_registro_del_cloud():
+    assert set(R.TABELLE_SOLO_LOCALI) == {"ordini_ref_visti", "ordini_seq"}
+    assert R.controlla_solo_locali(R.REGISTRO) == ()
+    assert R.TABELLE_SOLO_LOCALI["ordini_ref_visti"].chiave_naturale == ("ref",)
+    assert R.TABELLE_SOLO_LOCALI["ordini_seq"].chiave_naturale == ("chiave",)
+    _, tabelle_sql, dml = _definizioni_sql()
+    for t, s in R.TABELLE_SOLO_LOCALI.items():
+        assert (s.regime, s.ritardo_max_s) == ("stato_denaro", R.NON_APPLICABILE), t
+        assert t not in tabelle_sql and t not in dml, t          # nessuna tabella del cloud con quel nome
+        with pytest.raises(KeyError, match="non registrata"):
+            R.REGISTRO.spec(t)
+
+
+def test_falsifica_tabella_solo_locale_registrata_anche_nel_cloud():
+    spec = R.TABELLE_SOLO_LOCALI["ordini_seq"]
+    voce = R.VoceRegistro(spec, "EXTRA", "L+P", "nuova", (), "prova", "-")
+    doppio = R.RegistroTabelle(list(R.REGISTRO.voci()) + [voce], R.REGISTRO.rpc_scriventi().values())
+    assert any("registrata anche come tabella del cloud" in e for e in R.controlla_solo_locali(doppio))
+
+
+def test_il_client_cloud_rifiuta_le_tabelle_solo_locali():
+    from Betfair.nucleo.dati import cloud as C
+
+    def _mai() -> None:
+        raise AssertionError("nessun client: il rifiuto viene prima della rete")
+
+    cliente = C.ClienteCloud("bot", fabbrica_client=_mai)
+    for t in R.TABELLE_SOLO_LOCALI:
+        with pytest.raises(ValueError, match="non registrata"):
+            cliente.scrivi(t, "upsert", [{"ref": "safe-1", "chiave": "seq"}])
+
+
+def test_l_archivio_vero_tiene_le_solo_locali_sul_pc(tmp_path):
+    """Archivio VERO di W1-G1: le solo locali si scrivono e si leggono con QUALSIASI registro
+    iniettato (anche vuoto), stanno nel regime ``stato_denaro`` (FULL), NON entrano in outbox
+    (il postino non le vede mai) e NON sono fra le tabelle da riconciliare col cloud."""
+    from Betfair.nucleo.dati.archivio import SINCRONIA, ArchivioLocale
+    from Betfair.nucleo.dati.schema_locale import giorno_utc
+
+    adesso = 1_760_000_000_000
+    a = ArchivioLocale("solo-locali", {}, base=tmp_path, orologio_ms=lambda: adesso).apri()
+    try:
+        a.scrivi("ordini_ref_visti", {"ref": "safe-1", "attore": "safe", "accettato": True, "seq": 7,
+                                      "motivo": None, "ts_ms": adesso})
+        a.scrivi("ordini_seq", {"chiave": "seq", "fino_a": 1007})
+        assert a.conferma(10.0)
+        assert a.leggi("ordini_ref_visti", {"ref": "safe-1"})["seq"] == 7
+        assert a.leggi("ordini_seq", {"chiave": "seq"}) == {"chiave": "seq", "fino_a": 1007}
+        assert a.spec("ordini_ref_visti").regime == "stato_denaro" and SINCRONIA["stato_denaro"] == "FULL"
+        assert len(a.righe_finestra("ordini_ref_visti", 0, None)) == 1
+        for regime in ("stato_denaro", "stato_vivo"):
+            assert a.outbox_pronta(regime, adesso + 10**9, 100) == []
+            assert sum(a.conteggi_outbox(regime)[0].values()) == 0
+        assert a.tabelle_del_giorno(giorno_utc(adesso)) == []
+        with pytest.raises(KeyError, match="non registrata"):
+            a.scrivi("tabella_mai_dichiarata", {"id": 1})
+    finally:
+        a.chiudi()

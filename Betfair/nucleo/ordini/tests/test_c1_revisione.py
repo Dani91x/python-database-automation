@@ -16,8 +16,10 @@ from Betfair.nucleo.ordini import porta as PT
 from Betfair.nucleo.ordini.adattatore_comando import ExtraComando
 from Betfair.nucleo.ordini.contratto import Ack, EventoOrdine
 from Betfair.nucleo.ordini.eventi import ConsumatoreEventi
-from Betfair.nucleo.ordini.tests.test_c1_porta import (GIORNO, T0, _Ambiente,
-                                                       _ArchivioMemoria, _Orologio, _r)
+from Betfair.nucleo.dati.archivio import ArchivioChiuso
+from Betfair.nucleo.ordini.tests.test_c1_porta import (GIORNO, T0, _Ambiente, _gemello,  # noqa: F401
+                                                       _nuovo_archivio, _Orologio, _r, _riavviato,
+                                                       archivio_parametrico)
 from Betfair.stream import motore_ordini as MO
 
 
@@ -156,7 +158,7 @@ def test_crash_fra_diario_e_archivio_nessun_ack_fantasma(tmp_path: Any) -> None:
         prima.porta.invia(_r())
     assert prima.betfair.chiamate == []
     prima.porta.chiudi()
-    dopo = _Ambiente(tmp_path, archivio=prima.archivio, orologio=_Orologio(T0 + 1_000))
+    dopo = _Ambiente(tmp_path, archivio=_riavviato(prima.archivio), orologio=_Orologio(T0 + 1_000))
     b = dopo.porta.invia(_r(creato_ms=T0 + 1_000))
     fantasma = b.accettato and dopo.porta.in_volo() == () and dopo.porta.stato("safe-t1") is None
     assert not fantasma
@@ -168,14 +170,16 @@ def test_archivio_ko_dopo_inviato_chiude_il_ref_nel_diario(tmp_path: Any) -> Non
 
     def _ko_sul_ref(tabella: str, riga: Any) -> None:
         if tabella == PT.TABELLA_REF and riga.get("accettato"):
-            raise OSError("disco pieno")
+            # l'eccezione VERA dello scrivi di W1-G1 (archivio in chiusura): un disco guasto
+            # invece NON fa sollevare scrivi (test_disco_dell_archivio_guasto_*)
+            raise ArchivioChiuso("archivio in chiusura")
         orig(tabella, riga)
 
     prima.archivio.scrivi = _ko_sul_ref  # type: ignore[method-assign]
     a = prima.porta.invia(_r())
     assert not a.accettato and a.motivo.startswith(PT.M_ARCHIVIO)
     assert prima.betfair.chiamate == []
-    dopo = _Ambiente(tmp_path, archivio=_ArchivioMemoria(), orologio=_Orologio(T0 + 1_000))
+    dopo = _Ambiente(tmp_path, archivio=_nuovo_archivio(), orologio=_Orologio(T0 + 1_000))
     assert dopo.porta.in_volo() == () and dopo.porta.stato("safe-t1").fase == "rifiutato"
 
 
@@ -185,7 +189,7 @@ def test_ignoto_resta_da_riconciliare_dopo_il_riavvio(tmp_path: Any) -> None:
     prima.betfair.piano = [TimeoutError("timeout dopo placeOrders")]
     prima.porta.invia(_r())
     prima.porta.chiudi()
-    dopo = _Ambiente(tmp_path, archivio=prima.archivio, orologio=_Orologio(T0 + 1_000))
+    dopo = _Ambiente(tmp_path, archivio=_riavviato(prima.archivio), orologio=_Orologio(T0 + 1_000))
     assert dopo.porta.stato("safe-t1").fase == "ignoto"
     assert dopo.porta.in_volo() == ("safe-t1",)
     # un evento vero lo risolve e lo toglie dagli ordini in volo
@@ -292,7 +296,7 @@ def test_seconda_porta_sullo_stesso_archivio_rifiutata(tmp_path: Any) -> None:
     """Decisione del coordinatore: una porta per archivio. Fra processi c'e' il lucchetto
     esclusivo della cartella (W1-G1); nello stesso processo la seconda e' una
     misconfigurazione, rifiutata alla costruzione."""
-    arc = _ArchivioMemoria()
+    arc = _nuovo_archivio()
     a1 = _Ambiente(tmp_path, archivio=arc, cartella="d1")
     with pytest.raises(PT.ArchivioGiaInUso):
         _Ambiente(tmp_path, archivio=arc, cartella="d2")
@@ -302,8 +306,7 @@ def test_seconda_porta_sullo_stesso_archivio_rifiutata(tmp_path: Any) -> None:
     b = a3.porta.invia(_r(creato_ms=T0 + 10))
     assert b.motivo == MO.MOTIVO_REF_GIA_VISTO and b.accettato and a3.betfair.chiamate == []
     # lo stesso archivio vero ha la stessa cartella anche se e' un altro oggetto
-    gemello = _ArchivioMemoria()
-    gemello.cartella = arc.cartella
+    gemello = _gemello(arc)
     with pytest.raises(PT.ArchivioGiaInUso):
         _Ambiente(tmp_path, archivio=gemello, cartella="d4")
 
@@ -375,7 +378,7 @@ def test_seq_dopo_il_riavvio_con_orologio_indietro(tmp_path: Any) -> None:
     prima = _Ambiente(tmp_path)
     a = prima.porta.invia(_r(ref="safe-t1"))
     prima.porta.chiudi()
-    dopo = _Ambiente(tmp_path, cartella="d2", archivio=prima.archivio,
+    dopo = _Ambiente(tmp_path, cartella="d2", archivio=_riavviato(prima.archivio),
                      orologio=_Orologio(T0 - 5_000))
     b = dopo.porta.invia(_r(ref="safe-t2", creato_ms=T0 - 5_000))
     assert b.seq > a.seq
@@ -456,8 +459,9 @@ def test_notifica_di_un_ref_sconosciuto_ignorata(tmp_path: Any) -> None:
 # ---------------------------------------------------------------- seconda revisione (41ea9dcb)
 def test_contratto_del_finto_transizione_come_il_vero() -> None:
     """Il finto fa ESATTAMENTE cio' che fa ``ArchivioLocale.transizione`` di W1-G1: riga
-    assente -> False; colonna di stato configurabile (di serie ``status``); scrivi fonde."""
-    a = _ArchivioMemoria()
+    assente -> False; colonna di stato configurabile (di serie ``status``); scrivi fonde.
+    Gira sul finto E sul vero (fixture ``archivio_parametrico``): stesse risposte."""
+    a = _nuovo_archivio()
     assert a.transizione(PT.TABELLA_REF, {"ref": "safe-x"}, "", "qualsiasi") is False
     assert a.leggi(PT.TABELLA_REF, {"ref": "safe-x"}) is None
     a.scrivi(PT.TABELLA_REF, {"ref": "safe-x", "status": "aperto", "seq": 1})
@@ -466,7 +470,7 @@ def test_contratto_del_finto_transizione_come_il_vero() -> None:
                                                           "seq": 1, "motivo": "m"}
     assert a.transizione(PT.TABELLA_REF, {"ref": "safe-x"}, "altro", "chiuso") is False
     assert a.transizione(PT.TABELLA_REF, {"ref": "safe-x"}, "aperto", "chiuso") is True
-    b = _ArchivioMemoria(colonna_stato="stato")
+    b = _nuovo_archivio(colonna_stato="stato")
     b.scrivi(PT.TABELLA_REF, {"ref": "r", "stato": "x", "status": "y"})
     assert b.transizione(PT.TABELLA_REF, {"ref": "r"}, "y", "z") is False
     assert b.transizione(PT.TABELLA_REF, {"ref": "r"}, "x", "z") is True
@@ -494,7 +498,7 @@ def test_ref_gia_visto_risponde_l_ack_originale(tmp_path: Any) -> None:
         amb.porta.invia(_r(ref="safe-v1"))
     seq_v1 = amb.porta._visti["safe-v1"].seq
     amb.porta.chiudi()
-    dopo = _Ambiente(tmp_path, archivio=amb.archivio, orologio=_Orologio(T0 + 1_000))
+    dopo = _Ambiente(tmp_path, archivio=_riavviato(amb.archivio), orologio=_Orologio(T0 + 1_000))
     a = dopo.porta.invia(_r(ref="safe-v1", creato_ms=T0 + 1_000))
     assert (a.accettato, a.seq, a.motivo) == (True, seq_v1, MO.MOTIVO_REF_GIA_VISTO)
     assert dopo.porta.stato("safe-v1").fase == "ignoto"        # resta da riconciliare
@@ -570,7 +574,7 @@ def test_riavvio_con_righe_stantie_nel_diario(tmp_path: Any) -> None:
     prima.diario.scrivi({"tipo": "evento", "ref": "safe-t1", "ts_ms": T0,
                          "evento": dict(stantio.__dict__, seq=prima.porta._seq["safe"] + 1)})
     prima.porta.chiudi()
-    dopo = _Ambiente(tmp_path, archivio=prima.archivio, orologio=_Orologio(T0 + 1_000))
+    dopo = _Ambiente(tmp_path, archivio=_riavviato(prima.archivio), orologio=_Orologio(T0 + 1_000))
     st = dopo.porta.stato("safe-t1")
     assert (st.fase, st.abbinato) == ("parziale", 3.0)
 
@@ -579,7 +583,7 @@ def test_riavvio_con_righe_stantie_nel_diario(tmp_path: Any) -> None:
 def _riavvia(amb: Any, tmp_path: Any) -> Any:
     """Il processo muore e riparte: stesso diario (stessa cartella), stesso archivio."""
     amb.porta.chiudi()
-    return _Ambiente(tmp_path, archivio=amb.archivio, orologio=_Orologio(T0 + 1_000))
+    return _Ambiente(tmp_path, archivio=_riavviato(amb.archivio), orologio=_Orologio(T0 + 1_000))
 
 
 def test_riavvio_con_un_ref_rifiutato_stesso_rifiuto(tmp_path: Any) -> None:

@@ -845,6 +845,69 @@ _VOCI: Tuple[VoceRegistro, ...] = (
 
 
 # ---------------------------------------------------------------------------
+# 4-bis. Tabelle SOLO LOCALI (archivio di W1-G1, MAI il cloud) - integrazione W1-C1, 09/10
+# ---------------------------------------------------------------------------
+#: la destinazione delle tabelle di ``TABELLE_SOLO_LOCALI``: il file locale, nessun postino
+DESTINAZIONE_SOLO_LOCALE = "solo locale"
+
+
+def _solo_locale(nome: str, chiave: Tuple[str, ...], domani: str) -> SpecTabella:
+    """Una tabella SOLO LOCALE: regime ``stato_denaro`` (``denaro.sqlite3``, WAL
+    ``synchronous=FULL``), nessun ritardo verso il cloud (non ci va), nessuna versione."""
+    return SpecTabella(nome=nome, chiave_naturale=chiave, natura="SV", regime="stato_denaro",
+                       ritardo_max_s=NON_APPLICABILE, coalesce=False, rev_colonna=None, dipende_da=(),
+                       scrittori_oggi=(), scrittore_domani=domani)
+
+
+#: tabelle che vivono SOLO nell'archivio locale di W1-G1 e NON sono tabelle del cloud: non
+#: stanno nel ``REGISTRO`` (che e' il registro del cloud: il client le rifiuta), non hanno uno
+#: schema in ``migrations/``. L'archivio le legge da qui (``ArchivioLocale.spec``, prima del
+#: registro iniettato) e per loro: righe nel file ``denaro`` con durabilita' PIENA, NESSUNA voce
+#: in outbox (il postino non le vede mai), nessuna riconciliazione notturna col cloud e quindi
+#: nessuna pulizia (la pulizia toglie solo righe riconciliate ``ok``): restano finche' c'e' il file.
+#: Fonti: referto W1-C1 par. 11-12 (tabelle della porta), referto W1-G1 par. 12 (regime).
+TABELLE_SOLO_LOCALI: Mapping[str, SpecTabella] = {
+    "ordini_ref_visti": _solo_locale(
+        "ordini_ref_visti", ("ref",),
+        "nucleo/ordini/porta.py: PortaLocale._registra_ack e _rifiuto_dopo_seq (scrivi), _dedup (leggi); "
+        "colonne ref, attore, accettato, seq, motivo, ts_ms"),
+    "ordini_seq": _solo_locale(
+        "ordini_seq", ("chiave",),
+        "nucleo/ordini/porta.py: PortaLocale._nuovo_seq (scrivi, ogni BLOCCO_SEQ seq), apri (leggi); "
+        "una riga sola, chiave='seq', colonne chiave, fino_a"),
+}
+
+#: perche' ognuna resta sul PC (oggi l'equivalente e' il diario del motore, file locali)
+MOTIVI_SOLO_LOCALI: Mapping[str, str] = {
+    "ordini_ref_visti": "dedup per ref della porta degli ordini: oggi vive nel diario locale del motore "
+                        "(motore_ordini._carica_visti); nessuna tabella del cloud la riceve oggi",
+    "ordini_seq": "blocco dei seq prenotato (seq mai indietro dopo un riavvio): stato interno della porta, "
+                  "oggi in memoria del motore; nessuna tabella del cloud la riceve oggi",
+}
+
+
+def controlla_solo_locali(registro: RegistroTabelle) -> Tuple[str, ...]:
+    """Le tabelle solo locali: mai nel registro del cloud, regime ``stato_denaro``, nessun
+    ritardo verso il cloud, un motivo ciascuna. Ritorna gli errori (vuoto = coerenti)."""
+    errori: List[str] = []
+    cloud = set(registro.tabelle())
+    for nome, s in sorted(TABELLE_SOLO_LOCALI.items()):
+        if s.nome != nome:
+            errori.append(f"{nome}: nome della spec diverso ({s.nome})")
+        if nome in cloud:
+            errori.append(f"{nome}: tabella SOLO LOCALE registrata anche come tabella del cloud")
+        if s.regime != "stato_denaro":
+            errori.append(f"{nome}: regime {s.regime} invece di stato_denaro (durabilita' piena)")
+        if s.ritardo_max_s != NON_APPLICABILE or s.coalesce or s.dipende_da:
+            errori.append(f"{nome}: ritardo, coalescenza o dipendenze verso il cloud su una tabella solo locale")
+        if not s.chiave_naturale:
+            errori.append(f"{nome}: senza chiave naturale")
+        if not MOTIVI_SOLO_LOCALI.get(nome):
+            errori.append(f"{nome}: nessun motivo dichiarato in MOTIVI_SOLO_LOCALI")
+    return tuple(errori)
+
+
+# ---------------------------------------------------------------------------
 # 5. Composizione: scrittori di oggi = codice diretto + nomi dinamici + REST + RPC
 # ---------------------------------------------------------------------------
 def _siti_per_tabella(siti: Iterable[SitoDinamico]) -> Dict[str, List[str]]:

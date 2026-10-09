@@ -15,6 +15,10 @@ Scopo
       0 persi al crash del processo (07 par. 6.1); il file E' la coda del
       postino (offset in ``consegna``), nessuna doppia scrittura.
 
+    Tabelle SOLO LOCALI (``registro.TABELLE_SOLO_LOCALI``, integrazione W1-C1: le
+    tabelle della porta degli ordini): regime ``stato_denaro``, nessuna voce in
+    outbox, nessuna riconciliazione col cloud (e quindi nessuna pulizia).
+
     Due file SQLite separati (U-55): il checkpoint dell'uno non ferma l'altro.
     UN thread di scrittura per processo (``archivio-scrittore``): il chiamante
     di ``scrivi`` paga solo copia + JSON + accodamento. Riga e outbox nascono
@@ -95,6 +99,7 @@ from typing import (Any, Callable, Deque, Dict, Iterable, List, Mapping, Optiona
 
 from .contratto import Operazione, SpecTabella
 from .percorso import Lucchetto, cartella_processo, prepara_cartella
+from .registro import TABELLE_SOLO_LOCALI
 from .schema_locale import (applica_schema, chiave_canonica, giorno_utc, iso_utc, riga_log,
                             tabella_della_riga_log, testo_json)
 
@@ -416,7 +421,12 @@ class ArchivioLocale:
 
     # ------------------------------------------------------------------ contratto Archivio
     def spec(self, tabella: str) -> SpecTabella:
-        """La riga del registro; una tabella non registrata e' rifiutata."""
+        """La riga del registro; una tabella non registrata e' rifiutata. Le tabelle SOLO
+        LOCALI (``registro.TABELLE_SOLO_LOCALI``, integrazione W1-C1) valgono in ogni
+        archivio e vincono sul registro iniettato: regime ``stato_denaro``, mai il cloud."""
+        locale = TABELLE_SOLO_LOCALI.get(tabella)
+        if locale is not None:
+            return locale
         try:
             s = self._registro(tabella) if callable(self._registro) else self._registro[tabella]
         except KeyError:
@@ -896,6 +906,8 @@ class ArchivioLocale:
     @staticmethod
     def _in_outbox(conn: sqlite3.Connection, tabella: str, op: str, chiave: str, testo: str, ms: int,
                    coalesce: bool, vseq: Optional[int], origine: Optional[str]) -> int:
+        if tabella in TABELLE_SOLO_LOCALI:
+            return 0                     # solo locale: la riga resta sul PC, il postino non la vede mai
         if coalesce and op == "upsert":
             # resta SOLO una voce per chiave, con le colonne FUSE (B2): nessuna colonna di un
             # upsert parziale precedente si perde. Una voce gia' in volo tolta qui non fa danni:
@@ -1272,12 +1284,13 @@ class ArchivioLocale:
         return out
 
     def tabelle_del_giorno(self, giorno: str) -> List[str]:
-        """Le tabelle con righe locali nel giorno UTC (stato aggiornato o log scritto)."""
+        """Le tabelle con righe locali nel giorno UTC (stato aggiornato o log scritto),
+        escluse quelle SOLO LOCALI: non c'e' nulla da confrontare col cloud."""
         trovate: set[str] = set()
         for regime in REGIMI_SQLITE:
             trovate.update(r[0] for r in self._leggi_tutti(
                 regime, "SELECT DISTINCT tabella FROM righe WHERE strftime('%Y-%m-%d', aggiornato_ms / 1000, "
-                        "'unixepoch') = ?", (giorno,)))
+                        "'unixepoch') = ?", (giorno,)) if r[0] not in TABELLE_SOLO_LOCALI)
         percorso = self.cartella_log() / (giorno + ".jsonl")
         if percorso.exists():
             with open(percorso, "r", encoding="ascii", errors="replace") as f:
