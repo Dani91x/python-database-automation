@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Mapping, Optional, Sequence
 
-from Betfair.nucleo.stato_partita.adattatori.ips import FonteIpsRunner, _trasporto
+from Betfair.nucleo.stato_partita.adattatori.ips import FonteIpsRunner, LogRaro, _trasporto
 from Betfair.nucleo.stato_partita.adattatori.lettura import lettura
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,7 @@ class FonteIpsTennisRunner:
         self.dal_feed = 0
         self.diretti = 0
         self.errori = 0
+        self.log_raro = LogRaro()
 
     def _diretto(self, event_id: str) -> Any:
         return self.trading.in_play_service.get_scores(
@@ -65,8 +66,10 @@ class FonteIpsTennisRunner:
             self.diretti += 1
             grezzi = self._diretto(eid)
         except Exception as ex:  # noqa: BLE001 - il feed non rompe mai chi lo legge
+            # come il worker del runner tennis: ts=None per questa partita, le
+            # altre proseguono; nel log al piu' una volta al minuto per partita
             self.errori += 1
-            logger.debug("[stato-partita] punteggio tennis KO %s: %s", eid, str(ex)[:120])
+            self.log_raro.avvisa(self.nome, eid, ex)
             return None
         return lettura(fonte="ips_diretto", trasporto="http", sport="tennis",
                        grezzi=list(grezzi) if isinstance(grezzi, list) else None,

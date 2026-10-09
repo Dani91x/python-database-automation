@@ -60,6 +60,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 from Betfair.nucleo.comuni import Sport
@@ -82,6 +83,26 @@ _STATI_SUPPLEMENTARI = ("extratime", "penalt")
 _ORA_IRRILEVANTE = _dt.datetime(2000, 1, 1, tzinfo=_dt.timezone.utc)
 
 Coppia = Optional[Tuple[Optional[int], Optional[int]]]
+
+
+@dataclass(frozen=True)
+class StatoPartitaEsteso(StatoPartita):
+    """ESTENSIONE proposta del contratto (``contratto.StatoPartita`` e' fisso):
+    ``fase_dedotta`` = la fase NON e' letta da uno stato del fornitore ma dedotta
+    dal solo minuto con la regola di oggi (``mission_phase(status=None, ...)``),
+    come fa Omega quando il punteggio arriva dal ripiego (``omega_service.py:1129-1139``
+    e ``:1980``). Gli eventi ``FaseCambiata`` si emettono solo fra fasi LETTE."""
+
+    fase_dedotta: bool = False
+
+
+def fase_dedotta(stato: StatoPartita) -> bool:
+    """True se la fase dello stato e' dedotta dal minuto (``StatoPartitaEsteso``)."""
+    return bool(getattr(stato, "fase_dedotta", False))
+
+
+def _da_ms(ms: Optional[float]) -> Optional[_dt.datetime]:
+    return None if ms is None else _dt.datetime.fromtimestamp(float(ms) / 1000.0, tz=_dt.timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -232,27 +253,34 @@ def stato_calcio_da_riga(riga: Mapping[str, Any], *, eta: Eta, prezzi_vivi: Any,
 
 def stato_calcio_da_api_football(event_id: str, entry: Optional[Mapping[str, Any]], *,
                                  eta: Eta, prezzi_vivi: Any, in_gioco: bool = False,
-                                 ko_ms: Optional[int] = None) -> StatoPartita:
+                                 ko_ms: Optional[int] = None,
+                                 adesso_s: Optional[float] = None) -> StatoPartita:
     """Stato calcio dal ripiego API-Football (``parse_fixture_response``).
 
     Minuto e gol = ``parse_fixture_response`` (quelli che il runner scrive in
-    ``live_now``). Fase e tempo: ``sconosciuta`` e None. OGGI NESSUNO calcola una
-    fase o un tempo dal ripiego (l'entry non ha lo stato IPS; ``status.short``
-    di API-Football - HT, FT, ET, P, AET, PEN, PST, ABD... - non e' letto da
-    nessuna regola di oggi): dedurli dal solo minuto inventerebbe fasi mai
-    avvenute (un 'HT' al 45' sarebbe '1t'). Divergenza dichiarata nel referto.
-    Rossi, corner, gialli: assenti (il ripiego non li porta)."""
+    ``live_now``). FASE: quella che Omega calcola OGGI quando il punteggio arriva
+    dal ripiego, cioe' da ``live_now`` senza stato IPS: ``mission_phase(status=None,
+    minute, kickoff, now)`` (``omega_service.py:1129-1139``, il ripiego
+    ``score_lookup`` torna ``status=None``; ``:1980`` chiama ``mission_phase`` con
+    ``kickoff=ev.open_date`` e ``now``). Qui ``kickoff`` = ``ko_ms`` e ``now`` =
+    ``adesso_s`` (contano solo senza minuto). La fase e' DEDOTTA, non letta:
+    ``StatoPartitaEsteso.fase_dedotta = True``; ``status.short`` di API-Football
+    (HT, FT, ...) non e' letto da nessuna regola di oggi e qui nemmeno.
+    Tempo: None (nessuno lo calcola dal ripiego: Safe e Mike leggono solo la riga
+    dello scanner). Rossi, corner, gialli: assenti (il ripiego non li porta)."""
     snap = None
     if isinstance(entry, Mapping):
         snap = _api_football().parse_fixture_response(str(event_id), {"response": [dict(entry)]})
     if snap is None:
         return _stato_vuoto(event_id, "calcio", "api_football", eta, prezzi_vivi, in_gioco, ko_ms)
-    return StatoPartita(
+    return StatoPartitaEsteso(
         event_id=str(event_id), sport="calcio", in_gioco=bool(in_gioco),
-        fase="sconosciuta", minuto=snap.minute, tempo=None,
+        fase=fase_partita(None, snap.minute, ko=_da_ms(ko_ms),
+                          adesso=_da_ms(None if adesso_s is None else float(adesso_s) * 1000.0)),
+        minuto=snap.minute, tempo=None,
         gol=coppia(snap.score_home, snap.score_away), rossi=None, corner=None, gialli=None,
         set_game=None, ko_ms=ko_ms, fonte="api_football", eta=eta,
-        prezzi_vivi=prezzi_vivi, grezzo=entry or {},
+        prezzi_vivi=prezzi_vivi, grezzo=entry or {}, fase_dedotta=True,
     )
 
 

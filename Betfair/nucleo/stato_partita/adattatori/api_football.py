@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
-from Betfair.nucleo.stato_partita.adattatori.ips import FonteIpsRunner
+from Betfair.nucleo.stato_partita.adattatori.ips import FonteIpsRunner, LogRaro
 from Betfair.nucleo.stato_partita.adattatori.lettura import lettura
 from Betfair.stream.scores.poller import ScorePoller
 
@@ -96,6 +96,7 @@ class FonteCircuitoCalcio:
         self._retry = float(retry_primary_sec)
         self._clock = clock
         self.pollers: Dict[str, ScorePoller] = {}
+        self.log_raro = LogRaro()
 
     def poller(self, event_id: str) -> ScorePoller:
         eid = str(event_id)
@@ -115,7 +116,7 @@ class FonteCircuitoCalcio:
             try:
                 snap = poller.poll(eid)
             except Exception as ex:  # noqa: BLE001 - come ``score_worker``: si salta l'evento
-                logger.warning("[stato-partita] poll KO %s: %s", eid, str(ex)[:120])
+                self.log_raro.avvisa(self.nome, eid, ex)
                 continue
             if snap is None:
                 continue

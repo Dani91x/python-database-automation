@@ -39,13 +39,16 @@ Tutte le fonti restituiscono la stessa busta (`adattatori/lettura.py`: `fonte`, 
 - "in gioco": con almeno un `MarketBook` osservato (`osserva_book`) vale la regola del runner calcio (`runner.py:358-363`,
   un mercato in gioco e non CLOSED) per qualunque fonte; senza book vale `payload.inplay` della riga (bot lettori);
 - `iscrivi(cb)` (contratto): `cb(StatoPartita)` a ogni cambio, nessuna SELECT per chi legge;
-- `iscrivi_eventi(cb)` (estensione): `StatoCambiato`, `GolSegnato` (totale che SALE), `FaseCambiata` (fra fasi NOTE:
-  'sconosciuta' non e' una fase, il confronto e' con l'ultima nota), `FlussoInterrotto`/`FlussoRipreso` (fra esiti NOTI
-  di `flusso_prezzi.valuta`: un "non noto" non e' prova di ripresa);
-- giri serializzati (calcolo + consegna): gli iscritti ricevono gli stati nell'ordine in cui sono calcolati; un dato
-  che fa sollevare il calcolo di una partita non ferma le altre (log al piu' una volta al minuto per partita);
+- `iscrivi_eventi(cb)` (estensione): `StatoCambiato`, `GolSegnato` (totale che SALE), `FaseCambiata` (solo fra fasi
+  LETTE da uno stato IPS: 'sconosciuta' e le fasi DEDOTTE dal minuto del ripiego non contano, il confronto e' con l'ultima
+  fase letta), `FlussoInterrotto`/`FlussoRipreso` (fra esiti NOTI di `flusso_prezzi.valuta`: un "non noto" non e' prova di
+  ripresa). Quando la fonte tace il verdetto si ricalcola nel giro: stato ed eventi dicono la stessa cosa;
+- giri serializzati (lettura + calcolo sotto `_giro_lock`); le callback NON girano mai sotto un lock del servizio: i giri
+  finiscono in una coda che UN consegnatore alla volta svuota fuori dai lock, nell'ordine di calcolo (anche quando una
+  callback chiama `aggiorna` dallo stesso thread: il giro annidato si accoda). Un dato che fa sollevare il calcolo di una
+  partita non ferma le altre (log al piu' una volta al minuto per partita); idem negli adattatori `ips` e `ips_tennis`;
 - thread di `avvia`: una generazione per volta, ognuna col suo stop; `ferma` torna False se il thread e' ancora dentro
-  un giro (uscira' alla fine, senza rifarne un altro);
+  un giro (uscira' alla fine, senza rifarne un altro) o se e' chiamata dal thread del giro stesso (es. da una callback);
 - `prezzi_vivi(event_id, mercati)`: `flusso_prezzi.valuta` sull'ultima riga, per i mercati di una decisione.
 - Funzioni pure di `calcolo.py` (stato da grezzo/riga/API-Football/tennis, `ko_epoch_ms`, `KoPerMercato`,
   `KoUnico`, `fase_partita`, `minuto_da_orologio`) e di `freschezza.py` (`eta_riga_s`, `eta_punteggio_s`,
@@ -124,7 +127,10 @@ chi si iscrive (sveglia in processo); la misura del ritardo reale e' dell'ombra 
 
 ## 9-bis. Limiti e divergenze da conoscere
 
-- Ripiego API-Football: fase 'sconosciuta' e tempo None (oggi nessuno li deduce dal ripiego; `status.short` non e' letto).
+- Ripiego API-Football: fase = `mission_phase(status=None, minuto, kickoff, now)`, cioe' quella che Omega calcola OGGI
+  quando il punteggio arriva dal ripiego senza stato IPS (`omega_service.py:1129-1139`, `:1980`); marcata DEDOTTA
+  (`calcolo.StatoPartitaEsteso.fase_dedotta`); tempo None; `status.short` non e' letto. "Fase sconosciuta dal ripiego" e'
+  una possibile decisione dell'utente (cambierebbe la fase con cui Omega decide oggi), non presa.
 - Record IPS con soli `timeElapsedSeconds`: la riga dello scanner dice 25' (minuto calcolato sul record intero), chi
   riparsa lo `score_raw` spogliato (`strip_volatile_state`) dice None: lo stato riproduce ciascuno dei due.
 - `KoPerMercato`: come le 4 copie di oggi la cache cresce per tutta la vita di chi la usa; il SERVIZIO la pota quando una

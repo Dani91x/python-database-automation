@@ -160,8 +160,9 @@ def _api(short: str, el: Any) -> Dict[str, Any]:
 
 
 def test_passaggio_al_ripiego_non_inventa_fasi() -> None:
-    """IPS all'intervallo -> ripiego (HT) -> IPS ripresa: UNA FaseCambiata
-    intervallo -> 2t, nessuna 'intervallo -> 1t' mai avvenuta."""
+    """IPS all'intervallo -> ripiego (HT al 45': fase DEDOTTA '1t', come Omega
+    oggi) -> IPS ripresa: UNA FaseCambiata intervallo -> 2t, fra fasi LETTE;
+    nessuna 'intervallo -> 1t' mai avvenuta."""
     ora = [T0]
     srv, fonte, eventi = _srv(ora)
     srv.segui(["7"])
@@ -171,7 +172,8 @@ def test_passaggio_al_ripiego_non_inventa_fasi() -> None:
     fonte.buste["7"] = lettura(fonte="api_football", trasporto="http", sport="calcio",
                                grezzo=_api("HT", 45), origine="api_football")
     srv.aggiorna()
-    assert srv.stato("7").fase == "sconosciuta" and srv.stato("7").fonte == "api_football"
+    st = srv.stato("7")
+    assert (st.fase, C.fase_dedotta(st), st.fonte) == ("1t", True, "api_football")
     fonte.buste["7"] = lettura(fonte="ips_scanner", trasporto="db", sport="calcio",
                                grezzo={"timeElapsed": 47, "matchStatus": "SecondHalfKickOff"})
     srv.aggiorna()
@@ -187,15 +189,40 @@ def test_servizio_con_busta_api_football() -> None:
                                grezzo=_api("2H", 60), origine="api_football")
     srv.aggiorna()
     st = srv.stato("7")
-    assert (st.fonte, st.minuto, st.gol, st.fase, st.tempo) == ("api_football", 60, (1, 0), "sconosciuta", None)
+    assert (st.fonte, st.minuto, st.gol, st.fase, st.tempo) == ("api_football", 60, (1, 0), "2t", None)
+    assert C.fase_dedotta(st) is True
+    assert [type(e).__name__ for e in eventi] == ["StatoCambiato"]     # nessuna FaseCambiata
     assert st.eta == ETA_ASSENTE and st.prezzi_vivi is FP.NON_NOTO
 
 
 # ---------------------------------------------------------------------------
 # 5. "in gioco": regola del runner quando il book e' osservato
 # ---------------------------------------------------------------------------
-def _libro(mid: str, inplay: bool, status: str) -> Any:
-    return types.SimpleNamespace(market_id=mid, inplay=inplay, status=status, market_definition=None)
+def _md_vera() -> Dict[str, Any]:
+    """Il ``marketDefinition`` VERO del primo messaggio della registrazione 35760084."""
+    import gzip
+    import json
+    import os
+
+    radice = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+    path = os.path.join(radice, "registrazioni_banco", "35760084", "35760084.raw.jsonl.gz")
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        return json.loads(fh.readline())["mc"][0]["marketDefinition"]
+
+
+def _libro(mid: str, inplay: bool, status: str, market_time: Any = "-") -> Any:
+    """Un ``MarketBook`` VERO di betfairlightweight, costruito dal suo dict con la
+    ``MarketDefinition`` VERA della registrazione. ``market_time`` diverso da "-"
+    sostituisce il valore gia' letto (per i bordi che una registrazione non ha)."""
+    from betfairlightweight.resources.bettingresources import MarketBook
+    from betfairlightweight.resources.streamingresources import MarketDefinition
+
+    md = MarketDefinition(**dict(_md_vera(), status=status, inPlay=inplay))
+    libro = MarketBook(marketId=mid, inplay=inplay, status=status, runners=[],
+                       market_definition=md)
+    if market_time != "-":
+        libro.market_definition.market_time = market_time
+    return libro
 
 
 def test_in_gioco_segue_il_book_quando_osservato() -> None:
@@ -439,7 +466,7 @@ def test_ogni_punto_del_tennis_e_un_cambio() -> None:
 
 def test_ko_arrotondato_non_troncato() -> None:
     ko = dt.datetime(2026, 6, 30, 16, 0, 0, 600, tzinfo=dt.timezone.utc)    # 0,6 ms
-    libro = types.SimpleNamespace(market_id="1.1", market_definition=types.SimpleNamespace(market_time=ko))
+    libro = _libro("1.1", False, "OPEN", ko)
     grezzo = C.ko_epoch_ms(libro)
     assert grezzo == ko.timestamp() * 1000.0
     assert C.ko_ms_intero(grezzo) == int(ko.timestamp() * 1000) + 1
@@ -457,8 +484,7 @@ def test_ko_casi_strani_come_le_4_copie() -> None:
             dt.datetime(2026, 6, 30, 16, 0, 0, 123456, tzinfo=dt.timezone.utc),
             dt.date(2026, 6, 30), 1782837600, 1782837600.0, float("nan"), decimal.Decimal(5)]
     for i, mt in enumerate(casi):
-        libro = types.SimpleNamespace(market_id=f"1.{i}",
-                                      market_definition=types.SimpleNamespace(market_time=mt))
+        libro = _libro(f"1.{i}", False, "OPEN", mt)
         nuovo = C.ko_epoch_ms(libro)
         for cls in (ScalperStrategy, SniperStrategy, TennisScalperStrategy):
             assert cls._ko_epoch_ms(types.SimpleNamespace(_ko_ms={}), libro) == nuovo, repr(mt)
@@ -469,11 +495,8 @@ def test_segui_pota_la_cache_del_ko() -> None:
     ora = [T0]
     srv, _, _ = _srv(ora)
     srv.segui(["7", "8"])
-    ko = dt.datetime(2026, 6, 30, 16, 0, tzinfo=dt.timezone.utc)
     for eid, mid in (("7", "1.1"), ("7", "1.2"), ("8", "1.3")):
-        srv.osserva_book(eid, types.SimpleNamespace(
-            market_id=mid, inplay=False, status="OPEN",
-            market_definition=types.SimpleNamespace(market_time=ko)))
+        srv.osserva_book(eid, _libro(mid, False, "OPEN"))
     assert len(srv._ko) == 3
     srv.segui(["8"])
     assert len(srv._ko) == 1

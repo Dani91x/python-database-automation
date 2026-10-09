@@ -26,12 +26,35 @@ COSA NON FA: nessuna soglia nuova, nessun thread, nessuna rete all'import
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, Mapping, Optional, Sequence
 
 from Betfair.nucleo.comuni import Sport
 from Betfair.nucleo.stato_partita.adattatori.lettura import lettura
+from Betfair.stream.flusso_prezzi import Promemoria
 
 logger = logging.getLogger(__name__)
+
+#: al piu' una riga di log al minuto per partita su un errore di lettura
+ERRORE_LETTURA_OGNI_S = 60.0
+
+
+class LogRaro:
+    """Una riga di log per partita al piu' ogni ``ogni_s`` (``flusso_prezzi.Promemoria``
+    riusata), sull'orologio monotono: un errore che si ripete a ogni giro non
+    allaga il log, e non resta muto."""
+
+    def __init__(self, ogni_s: float = ERRORE_LETTURA_OGNI_S,
+                 orologio: Any = time.monotonic) -> None:
+        self._promemoria = Promemoria(ogni_s)
+        self._orologio = orologio
+
+    def avvisa(self, chi: str, event_id: str, ex: BaseException) -> bool:
+        if not self._promemoria.dovuto(str(event_id), float(self._orologio())):
+            return False
+        logger.warning("[stato-partita] %s: lettura della partita %s KO: %s: %s", chi, event_id,
+                       type(ex).__name__, str(ex)[:160])
+        return True
 
 
 def _scan_feed() -> Any:
@@ -98,6 +121,8 @@ class FonteIpsRunner:
         # contatori con lo stesso significato di ``feed_hits``/``direct_calls``
         self.dal_feed = 0
         self.diretti = 0
+        self.errori = 0
+        self.log_raro = LogRaro()
 
     @property
     def cache(self) -> Any:
@@ -131,9 +156,16 @@ class FonteIpsRunner:
                        grezzo=snap.payload, scanner_s=scanner_s)
 
     def leggi(self, event_ids: Sequence[str]) -> Mapping[str, Mapping[str, Any]]:
+        """Una partita che solleva (riga, battito, chiamata diretta) non scarta le
+        altre: come il ``continue`` di ``score_worker`` (``runner.py:351-353``)."""
         out: Dict[str, Mapping[str, Any]] = {}
-        for eid in event_ids:
-            let = self.leggi_uno(str(eid))
+        for eid in (str(e) for e in event_ids):
+            try:
+                let = self.leggi_uno(eid)
+            except Exception as ex:  # noqa: BLE001 - una partita rotta non ferma le altre
+                self.errori += 1
+                self.log_raro.avvisa(self.nome, eid, ex)
+                continue
             if let is not None:
-                out[str(eid)] = let
+                out[eid] = let
         return out

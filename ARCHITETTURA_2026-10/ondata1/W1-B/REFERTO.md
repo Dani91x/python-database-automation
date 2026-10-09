@@ -9,7 +9,7 @@ nessun replay del banco salvo la parita' per tick chiesta dal brief (servizio PA
 
 | File | Righe | Punti chiave |
 |---|---|---|
-| `calcolo.py` | 408 | `stato_calcio_da_grezzo` :181 (parse_score_dict + tempo_da_stato_ips + mission_phase), `stato_calcio_da_riga` :203 (numeri della riga che i bot leggono), `stato_calcio_da_api_football` :233 (fase 'sconosciuta'), `punteggio_tennis` :293 (parser con la guardia del runner), `stato_tennis_da_grezzo` :304 / `_da_riga` :327, `chiave_tennis` :285, `fase_partita` :142 / `fase_come_omega` :156, `ko_epoch_ms` :343, `KoPerMercato` :368 (`dimentica` :376), `KoUnico` :397, `ko_ms_intero` :361, `minuto_da_orologio` :163 |
+| `calcolo.py` | 408 | `stato_calcio_da_grezzo` :181 (parse_score_dict + tempo_da_stato_ips + mission_phase), `stato_calcio_da_riga` :203 (numeri della riga che i bot leggono), `stato_calcio_da_api_football` :254 (fase DEDOTTA come Omega, seconda revisione), `StatoPartitaEsteso` :89, `punteggio_tennis` :293 (parser con la guardia del runner), `stato_tennis_da_grezzo` :304 / `_da_riga` :327, `chiave_tennis` :285, `fase_partita` :142 / `fase_come_omega` :156, `ko_epoch_ms` :343, `KoPerMercato` :368 (`dimentica` :376), `KoUnico` :397, `ko_ms_intero` :361, `minuto_da_orologio` :163 |
 | `freschezza.py` | 91 | SOLO eta': `eta_riga_s` :46 (= `row_age_sec`), `eta_punteggio_s` :53 (= `score_age_sec`), `eta_scanner_da_stato_s` :60, `calcola_eta` :76. Nessuna soglia (U-08, contraddizione 4) |
 | `servizio.py` | 525 | `ServizioStatoPartita` :268 (`segui` :300, `stato`/`stato_a` :320/:324, `istante_dato_s` :336, `iscrivi` :341, `iscrivi_eventi` :344, `osserva_book` :360, `aggiorna` :382 con `_calcola_uno` :413 e `_senza_dato` :446, `prezzi_vivi` :465, `avvia`/`ferma` :482/:504), `stato_da_lettura` :154, `esito_flusso` :143 (= `flusso_prezzi.valuta`), `eventi_fra` :213, eventi :79-127 |
 | `adattatori/lettura.py` | 52 | la busta comune di ogni `FonteStato.leggi` |
@@ -29,6 +29,8 @@ Implementati: `StatoPartitaService` (`ServizioStatoPartita`, stesse firme: `test
 (6 adattatori). `StatoPartita`, `Eta`, `TennisSet` usati come sono. Contratto NON modificato.
 
 Estensioni (in file miei, proposte per il contratto):
+0. (seconda revisione) `calcolo.StatoPartitaEsteso(StatoPartita)` con `fase_dedotta: bool = False`: la fase NON e'
+   letta da uno stato del fornitore ma dedotta dal minuto (ripiego API-Football). Proposta: campo nel contratto.
 1. `iscrivi_eventi(cb)` con `StatoCambiato`, `GolSegnato`, `FaseCambiata`, `FlussoInterrotto`, `FlussoRipreso` (il
    contratto li nomina in commento; qui sono classi). `GolSegnato` solo se il totale SALE fra due stati noti.
 2. `osserva_book(event_id, market_book)`: KO e "in gioco" per le fonti senza riga (IPS diretto, ripiego).
@@ -131,7 +133,7 @@ D-015, D-016, E3-S07, G-011 (scritture, scanner, timeline, involucri e soglie de
 | 6.3 servizio intero a cadenza reale | parziale: il servizio gira alla cadenza del banco (1 s di mercato); ⊘ per i bot (non agganciati in ondata 1) |
 | 6.4 ciclo di vita dell'ordine | ⊘ (il comparto B non piazza) |
 | 6.5 persistenza e UI | ⊘ (nessuna scrittura in ondata 1; `live_now` resta al vecchio) |
-| 6.6 concorrenza | SOLLECITATA per il servizio: lock, thread `avvia`/`ferma` con join, callback isolati; ⊘ piu' partite su banco |
+| 6.6 concorrenza | SOLLECITATA per il servizio (aggiornata alla seconda revisione): lettura + calcolo serializzati sotto `_giro_lock`; callback MAI sotto un lock del servizio (coda + un solo consegnatore, ordine di calcolo, rientranza dallo stesso thread accodata); `avvia`/`ferma` sotto lock, una generazione per thread, `ferma` dal thread del giro senza `join` su se stesso; callback isolate (un'eccezione non ferma le altre); una partita rotta non ferma le altre (servizio e adattatori, log una volta al minuto). Test: lock invertito, rientranza, giri concorrenti, giro lento, `avvia` concorrenti, stress segui/iscrivi/aggiorna. ⊘ piu' partite su banco |
 | 6.7 scenari: feed stantio, 0-0 fermo, flusso interrotto | SOLLECITATI in unita' (stantio 200 s, 0-0 fermo con scanner vivo/morto, `FlussoInterrotto`/`Ripreso`); per tick gli esiti "fermi" reali (3 + 20) |
 | 6.7 falsificazione | 29/29 rosse + cert (par. 5-bis) |
 | 6.8 referto riproducibile | comandi nel doc par. 8; numeri attesi fissati nei test (220 righe, 6.076 e 11.720 giri) |
@@ -194,12 +196,17 @@ Divergenze di OGGI (non scelte: lo stato riporta il valore di ciascun chiamante;
 6. **`_is_fresh(None) = True`** (`omega_service.py:62-66`): resta in Omega (decisione B dec. 2 non presa); lo stato non
    tratta mai un dato assente come fresco.
 7. **API-Football parte dopo UN fallimento** (`poller.py:81-82`, U-10): riprodotto identico.
-8. **Fase dal ripiego API-Football**: oggi NESSUNO calcola una fase o un tempo dal ripiego (`status.short` - HT, FT, ET,
-   P, AET, PEN, PST, ABD - non e' letto da nessuna regola). Lo stato dice fase 'sconosciuta' e tempo None (scelta
-   prudente: dedurle dal minuto inventava fasi, es. 'HT' al 45' = '1t', 'FT' = '2t' mai 'finita'); `FaseCambiata` non
-   scatta da/verso 'sconosciuta' (si confronta con l'ultima fase nota). Una mappatura esplicita di `status.short` e' una
-   decisione dell'utente, non presa. `test_api_football_fase_sconosciuta_e_tempo_assente`,
-   `test_passaggio_al_ripiego_non_inventa_fasi`.
+8. **Fase dal ripiego API-Football** (riscritta nella seconda revisione: la prima versione diceva, SBAGLIANDO, che oggi
+   nessuno la calcola). OGGI Omega la calcola: quando il punteggio arriva dal ripiego (`score_lookup` su `live_now`)
+   `_live_state_for` torna `status=None` (`omega_service.py:1129-1139`) e la fase della missione e'
+   `mission_phase(status=None, minute, kickoff=ev.open_date, now)` (`:1980`): 30'/45' = '1t', 67'/90' = '2t', cioe' una fase
+   DEDOTTA dal minuto, che puo' essere sbagliata ('HT' al 45' = '1t', 'FT' = '2t' mai 'finita'). Le strategie non si
+   alterano: lo stato restituisce la STESSA fase (funzione di oggi importata), marcata `fase_dedotta=True`
+   (`StatoPartitaEsteso`), tempo None (Safe e Mike non leggono il ripiego). `FaseCambiata` scatta solo fra fasi LETTE (niente
+   falso 'intervallo -> 1t' al passaggio al ripiego). Per l'utente, due possibili decisioni NON prese: (a) dichiarare
+   'sconosciuta' la fase del ripiego (Omega cambierebbe condotta), (b) leggere `status.short` di API-Football (regola nuova).
+   `test_api_football_fase_identica_a_mission_phase` (minuti 0, 30, 45, 46, 67, 90, 95, None x 3 istanti x 11 `status.short`),
+   `test_passaggio_al_ripiego_non_inventa_fasi`, `test_fase_dedotta_non_fa_scattare_fase_cambiata`.
 9. **"In gioco": riga dello scanner contro regola del runner**: la riga porta `payload.inplay` (cio' che leggono Mike,
    Omega, Safe); il runner calcio scrive `live_now.inplay` dai book (`runner.py:358-363`: un mercato CLOSED non e' in
    gioco). A mercato chiuso con la riga ancora `inplay=True` le due letture divergono. Lo stato: con un book osservato
@@ -253,3 +260,30 @@ Numeri dopo la correzione:
   compresi): **11.770 verdi, 0 rossi, 65 saltati, 6 xfailed, 616 s**. La falsificazione a livello di banco
   (`mutazioni_cert.py`, par. 5-bis) non e' stata rilanciata: il test cert e `esito_flusso`/`eta_punteggio_s` non sono
   cambiati.
+
+## 11. Seconda revisione (di `67775f35`)
+
+Esito: DA CORREGGERE (deadlock e fase del ripiego verificati dal coordinatore). Commit nuovo sopra `67775f35`, nessuna
+riscrittura. Mutazioni: `mutazioni.py` per intero, **61/61 ROSSE** (29 della consegna + 17 della prima revisione + 15 di
+questa), sha256 uguale dopo ogni ripristino. sha256 (12 cifre) dei file dopo la correzione: `servizio.py` `d4d6a370a30b`,
+`calcolo.py` `72e1d3c98951`, `adattatori/ips.py` `872c79dfd2bb`, `adattatori/ips_tennis.py` `6ffb812d4a45`,
+`adattatori/api_football.py` `d40ab6a56293`, `freschezza.py` `bce82b0608e7` (invariato).
+
+| # | Punto | Correzione (file:riga) | Test | Mutazione rossa |
+|---|---|---|---|---|
+| a | DEADLOCK: callback sotto `_giro_lock` (regressione della prima correzione) | `servizio.py:412` `aggiorna` calcola sotto lock e ACCODA; `:451` `_svuota_coda`: un solo consegnatore, fuori dai lock, ordine di calcolo; un giro annidato (callback che chiama `aggiorna`) o concorrente si accoda e torna | `test_lock_invertito_fra_iscritto_e_chiamante_non_si_blocca` (exp2), `test_rientranza_consegna_nell_ordine_di_calcolo` (exp1/E3), `test_giri_serializzati_un_giro_lento_non_sovrascrive_quello_dopo` | "a consegna sotto _giro_lock (deadlock)", "a rientranza: il giro annidato consegna subito", "R6 giro non serializzato" |
+| b | `eta.scanner_s` congelata | `servizio.py:352` `_ricalcolato`: `scanner_s` + tempo passato dall'istante della lettura | `test_scanner_s_cresce_col_silenzio` (2,0 -> 602,0 dopo 600 s) | "b scanner_s non ricalcolato" |
+| c | stato "flusso fermo" senza `FlussoInterrotto` quando la fonte tace | `servizio.py:505` `_senza_dato`: calcio senza dato = ultimo stato con eta' e verdetto RICALCOLATI nel giro (eventi dal confronto) | `test_flusso_interrotto_al_giro_in_cui_il_verdetto_diventa_fermo` | "c fonte muta: verdetto non ricalcolato nel giro" |
+| d | fase dal ripiego: Omega oggi la deduce dal minuto | `calcolo.py:254` `mission_phase(status=None, minute, kickoff=ko_ms, now)` importata; `:89` `StatoPartitaEsteso.fase_dedotta`; `servizio.py:246` `_fase_letta`: `FaseCambiata` solo fra fasi lette; divergenza 8 riscritta (par. 9), doc 9-bis, docstring | `test_api_football_fase_identica_a_mission_phase` (24 combinazioni x 11 `status.short`), `test_le_fasi_ips_sono_lette_non_dedotte`, `test_fase_dedotta_non_fa_scattare_fase_cambiata`, `test_passaggio_al_ripiego_non_inventa_fasi` | "R4/d fase del ripiego 'sconosciuta'", "d kickoff ignorato", "d fase dedotta dichiarata letta", "d FaseCambiata anche da fasi dedotte" |
+| e | `ferma()` dal thread del giro: `RuntimeError` | `servizio.py:584`: dal proprio thread niente `join`, torna False | `test_ferma_dal_thread_del_giro_non_solleva` | "e ferma dal thread del giro: join su se stesso" |
+| f | una partita rotta scartava il giro delle altre negli adattatori | `adattatori/ips.py:92` `FonteIpsRunner.leggi` try per partita (`continue`, come `runner.py:351-353`); `ips.py:42` `LogRaro` (`flusso_prezzi.Promemoria`, una riga al minuto per partita); `ips_tennis.py:58` idem; `api_football.py` circuito idem | `test_runner_una_partita_rotta_non_scarta_le_altre` (`rows_for` che solleva su una), `test_tennis_una_partita_rotta_non_scarta_le_altre` (`grezzo_dal_feed` che solleva su una) | "f runner...", "f tennis...", "f log a ogni errore" |
+| g | mutanti sopravvissute T13, T15, T21, T24 | (codice gia' corretto; mancavano i test) | `test_t13_chi_esce_da_segui_dimentica_fase_e_flusso`, `test_t15_osserva_book_ignora_le_partite_non_seguite`, `test_t21_chi_esce_da_segui_durante_la_lettura_non_torna`, `test_t24_tennis_muto_con_riga_non_conserva_la_lettura_vecchia` | "g T13", "g T15", "g T21", "g T24" |
+| h | finti nei book di `osserva_book` | `test_b_correzioni._libro`: `MarketBook` VERO di betfairlightweight costruito dal suo dict con la `MarketDefinition` VERA della registrazione 35760084 (`market_time` sostituito solo per i bordi che una registrazione non ha) | tutti i test con `_libro` | - |
+| i | referto | par. 7 riga 6.6, questa sezione, `mutazioni.py` aggiornato | - | - |
+
+Numeri: test del comparto **212 non-cert verdi** (175 della prima revisione, meno il vecchio test unico della fase
+"sconosciuta", piu' 24 casi del test di parita' con `mission_phase`, `test_le_fasi_ips_sono_lette_non_dedotte` e i 13 di
+`test_b_seconda_revisione.py`) + 2 cert. Suite intera: riga in coda.
+
+Suite intera (`python -m pytest Betfair/ -q -p no:cacheprovider`, UNA volta, dopo questa correzione, test cert compresi):
+**11.807 verdi, 0 rossi, 65 saltati, 6 xfailed, 834 s**.

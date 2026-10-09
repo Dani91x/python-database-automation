@@ -54,12 +54,13 @@ COSA NON FA
 """
 from __future__ import annotations
 
+import collections
 import dataclasses
 import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Deque, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from Betfair.nucleo.stato_partita import calcolo as C
 from Betfair.nucleo.stato_partita import freschezza as F
@@ -95,8 +96,9 @@ class GolSegnato:
 
 @dataclass(frozen=True)
 class FaseCambiata:
-    """Passaggio fra due fasi NOTE: 'sconosciuta' (fonte che non sa la fase, es.
-    il ripiego API-Football) non e' una fase; il confronto e' con l'ultima nota."""
+    """Passaggio fra due fasi LETTE da uno stato del fornitore: 'sconosciuta' e
+    le fasi DEDOTTE dal minuto (ripiego API-Football, ``fase_dedotta``) non
+    contano; il confronto e' con l'ultima fase letta."""
 
     event_id: str
     prima: FasePartita
@@ -178,7 +180,7 @@ def stato_da_lettura(event_id: str, let: Mapping[str, Any], *, adesso_s: Optiona
                                           ko_ms=ko_ms)
     elif fonte == "api_football":
         st = C.stato_calcio_da_api_football(eid, let.get("grezzo"), eta=eta, prezzi_vivi=prezzi,
-                                            ko_ms=ko_ms)
+                                            ko_ms=ko_ms, adesso_s=adesso_s)
     elif let.get("grezzo") is not None:
         st = C.stato_calcio_da_grezzo(eid, let["grezzo"], fonte=fonte, eta=eta,
                                       prezzi_vivi=prezzi, ko_ms=ko_ms)
@@ -214,7 +216,9 @@ def eventi_fra(prima: Optional[StatoPartita], dopo: StatoPartita,
                fase_nota: Optional[FasePartita] = None,
                vivo_noto: Optional[bool] = None) -> List[Evento]:
     """Gli eventi del passaggio ``prima -> dopo`` (vuoto se la firma e' uguale).
-    ``fase_nota``: l'ultima fase NOTA della partita (default: quella di ``prima``);
+    ``fase_nota``: l'ultima fase LETTA della partita (default: quella di ``prima``
+    se letta). Una fase 'sconosciuta' o DEDOTTA dal minuto (ripiego API-Football,
+    ``calcolo.fase_dedotta``) non fa mai scattare ``FaseCambiata``;
     ``vivo_noto``: l'ultimo verdetto NOTO del flusso (default: quello di ``prima``
     se noto). Gli esiti "non noti" non contano ne' come vivi ne' come fermi."""
     if prima is not None and firma(prima) == firma(dopo):
@@ -225,8 +229,9 @@ def eventi_fra(prima: Optional[StatoPartita], dopo: StatoPartita,
         return out
     if _gol_noti(prima.gol) and _gol_noti(dopo.gol) and sum(dopo.gol) > sum(prima.gol):
         out.append(GolSegnato(eid, prima.gol, dopo.gol, dopo))
-    nota = fase_nota if fase_nota is not None else prima.fase
-    if nota != "sconosciuta" and dopo.fase != "sconosciuta" and nota != dopo.fase:
+    nota = fase_nota if fase_nota is not None else _fase_letta(prima)
+    letta = _fase_letta(dopo)
+    if nota is not None and letta is not None and nota != letta:
         out.append(FaseCambiata(eid, nota, dopo.fase, dopo))
     if vivo_noto is None:
         vivo_noto = _vivo_se_noto(prima.prezzi_vivi)
@@ -236,6 +241,13 @@ def eventi_fra(prima: Optional[StatoPartita], dopo: StatoPartita,
     elif vivo_dopo is True and vivo_noto is False:
         out.append(FlussoRipreso(eid, dopo.prezzi_vivi, dopo))
     return out
+
+
+def _fase_letta(stato: StatoPartita) -> Optional[FasePartita]:
+    """La fase se LETTA da uno stato del fornitore; None se sconosciuta o dedotta."""
+    if stato.fase == "sconosciuta" or C.fase_dedotta(stato):
+        return None
+    return stato.fase
 
 
 def _vivo_se_noto(esito: Any) -> Optional[bool]:
@@ -275,7 +287,10 @@ class ServizioStatoPartita:
         # None = l'orologio del PC (come oggi); il banco passa il tempo di mercato
         self._orologio_s = orologio_s
         self._lock = threading.RLock()            # stato in memoria
-        self._giro_lock = threading.RLock()       # un giro alla volta: calcolo + consegna
+        self._giro_lock = threading.RLock()       # un giro alla volta: lettura + calcolo
+        self._coda_lock = threading.Lock()        # la coda delle consegne
+        self._coda: Deque[Tuple[list, list, list, list]] = collections.deque()
+        self._consegnatore: Optional[int] = None  # thread che sta svuotando la coda
         self._ciclo_lock = threading.Lock()       # avvia / ferma
         self._seguiti: Set[str] = set()
         self._stati: Dict[str, StatoPartita] = {}
@@ -328,9 +343,24 @@ class ServizioStatoPartita:
         with self._lock:
             st = self._stati.get(eid)
             let = self._letture.get(eid)
+            istante = self._istanti.get(eid)
         if st is None or let is None:
             return st
-        return dataclasses.replace(st, eta=eta_da_lettura(let, adesso_s),
+        return self._ricalcolato(st, let, eid, adesso_s, istante)
+
+    @staticmethod
+    def _ricalcolato(st: StatoPartita, let: Mapping[str, Any], eid: str, adesso_s: float,
+                     istante: Optional[float]) -> StatoPartita:
+        """``st`` con le TRE eta' e il verdetto del flusso ad ``adesso_s``.
+        ``scanner_s`` (battito dello scanner al momento della lettura) cresce del
+        tempo passato da allora (``istante``, orologio del servizio)."""
+        scanner = let.get("scanner_s")
+        if scanner is not None and istante is not None:
+            scanner = float(scanner) + max(0.0, float(adesso_s) - float(istante))
+        riga = let.get("riga")
+        if not riga and let.get("istante_ms") is not None:
+            riga = F.riga_da_istante_ms(let.get("istante_ms"))
+        return dataclasses.replace(st, eta=F.calcola_eta(riga, adesso_s, scanner_s=scanner),
                                    prezzi_vivi=esito_flusso(let, eid, adesso_s))
 
     def istante_dato_s(self, event_id: str) -> Optional[float]:
@@ -380,8 +410,15 @@ class ServizioStatoPartita:
         return float(self._orologio_s()) if self._orologio_s is not None else time.time()
 
     def aggiorna(self, adesso_s: Optional[float] = None) -> List[Evento]:
-        """UN giro: legge la fonte per le partite seguite, calcola, sveglia.
-        Torna gli eventi del giro (anche gia' consegnati agli iscritti)."""
+        """UN giro: legge la fonte per le partite seguite, calcola, ACCODA la
+        consegna e consegna. Torna gli eventi del giro.
+
+        Le callback NON girano mai sotto un lock del servizio: il calcolo avviene
+        sotto ``_giro_lock`` e finisce in una coda; UN solo consegnatore alla volta
+        svuota la coda FUORI dal lock, nell'ordine di calcolo. Se un altro thread
+        sta gia' consegnando (o una callback chiama ``aggiorna`` dallo stesso
+        thread), il giro accoda e torna: lo consegnera' quel consegnatore, dopo i
+        giri calcolati prima."""
         with self._giro_lock:
             ora = self.adesso_s() if adesso_s is None else float(adesso_s)
             ids = self.seguiti()
@@ -399,16 +436,37 @@ class ServizioStatoPartita:
                 self.giri += 1
                 for eid in ids:
                     if eid not in self._seguiti:
-                        continue
+                        continue     # uscita da ``segui`` durante la lettura: non torna in memoria
                     ev = self._calcola_uno(eid, letture.get(eid), ora)
                     if ev:
                         eventi.extend(ev)
                         cambiati.append(ev[0].dopo)
-                iscritti = list(self._iscritti.values())
-                iscritti_eventi = list(self._iscritti_eventi.values())
-            self._consegna(iscritti, cambiati)
-            self._consegna(iscritti_eventi, eventi)
-            return eventi
+                if cambiati or eventi:
+                    with self._coda_lock:
+                        self._coda.append((list(self._iscritti.values()), cambiati,
+                                           list(self._iscritti_eventi.values()), eventi))
+        self._svuota_coda()
+        return eventi
+
+    def _svuota_coda(self) -> None:
+        """Il consegnatore: uno solo alla volta, fuori da ogni lock del servizio."""
+        with self._coda_lock:
+            if self._consegnatore is not None:
+                return
+            self._consegnatore = threading.get_ident()
+        try:
+            while True:
+                with self._coda_lock:
+                    if not self._coda:
+                        self._consegnatore = None
+                        return
+                    iscritti, cambiati, iscritti_eventi, eventi = self._coda.popleft()
+                self._consegna(iscritti, cambiati)
+                self._consegna(iscritti_eventi, eventi)
+        except BaseException:
+            with self._coda_lock:
+                self._consegnatore = None
+            raise
 
     def _calcola_uno(self, eid: str, let: Optional[Mapping[str, Any]], ora: float) -> List[Evento]:
         """Stato ed eventi di UNA partita (con il lock dello stato preso). Un dato
@@ -417,9 +475,9 @@ class ServizioStatoPartita:
         prima = self._stati.get(eid)
         try:
             if let is None:
-                nuovo = self._senza_dato(eid, prima)
+                nuovo = self._senza_dato(eid, prima, ora)
                 if nuovo is None:
-                    return []        # calcio: resta l'ultimo stato (come live_now oggi)
+                    return []
             else:
                 nuovo = stato_da_lettura(eid, let, adesso_s=ora, ko_ms=self._ko_evento.get(eid),
                                          in_gioco=self._in_gioco_dal_book(eid))
@@ -434,22 +492,33 @@ class ServizioStatoPartita:
         if let is not None:
             self._letture[eid] = let
             self._istanti[eid] = ora
-        else:
-            self._letture.pop(eid, None)
-        if nuovo.fase != "sconosciuta":
-            self._fase_nota[eid] = nuovo.fase
+        elif nuovo.sport == "tennis":
+            self._letture.pop(eid, None)        # tennis muto: la lettura vecchia non vale piu'
+        letta = _fase_letta(nuovo)
+        if letta is not None:
+            self._fase_nota[eid] = letta
         vivo = _vivo_se_noto(nuovo.prezzi_vivi)
         if vivo is not None:
             self._vivo_noto[eid] = vivo
         return ev
 
-    def _senza_dato(self, eid: str, prima: Optional[StatoPartita]) -> Optional[StatoPartita]:
-        """Nessun dato in questo giro. Tennis: stato senza punteggio (come
-        ``strat.score = None`` del runner tennis); calcio: None = resta il vecchio."""
-        if prima is None or prima.sport != "tennis":
+    def _senza_dato(self, eid: str, prima: Optional[StatoPartita],
+                    ora: float) -> Optional[StatoPartita]:
+        """Nessun dato in questo giro.
+        Tennis: stato senza punteggio (come ``strat.score = None`` del runner tennis).
+        Calcio: resta l'ultimo stato (come ``live_now`` oggi) con eta' e verdetto
+        del flusso ricalcolati ADESSO dall'ultimo dato: se il verdetto passa a
+        "fermo" (es. scanner bloccato) lo stato e gli eventi lo dicono in QUESTO
+        giro, come ``stato()``. None = nessuno stato precedente."""
+        if prima is None:
             return None
-        return dataclasses.replace(prima, set_game=None, eta=F.ETA_ASSENTE,
-                                   prezzi_vivi=_flusso.NON_NOTO, grezzo={})
+        if prima.sport == "tennis":
+            return dataclasses.replace(prima, set_game=None, eta=F.ETA_ASSENTE,
+                                       prezzi_vivi=_flusso.NON_NOTO, grezzo={})
+        let = self._letture.get(eid)
+        if let is None:
+            return None
+        return self._ricalcolato(prima, let, eid, ora, self._istanti.get(eid))
 
     def _consegna(self, cbs: Sequence[Callable[[Any], None]], cose: Sequence[Any]) -> None:
         for cosa in cose:
@@ -512,6 +581,10 @@ class ServizioStatoPartita:
             return True
         g.stop.set()
         g.sveglia.set()
+        if g.thread is threading.current_thread():
+            # chiamata dal thread del giro (es. da una callback): non ci si puo'
+            # aspettare da soli; il thread uscira' alla fine di questo giro
+            return False
         g.thread.join(attesa_s)
         terminato = not g.thread.is_alive()
         if not terminato:

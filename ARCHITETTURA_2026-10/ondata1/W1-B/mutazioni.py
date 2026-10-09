@@ -8,7 +8,8 @@ Per ogni mutazione: sha256 del file, sostituzione esatta (UNA sola occorrenza,
 altrimenti ERRORE), test indicati (``-m "not cert"``), ripristino dei byte
 originali, sha256 ricontrollato. Una riga per mutazione e il totale in coda.
 Le prime 29 sono quelle della consegna ``be3cf075`` (adeguate alle righe
-cambiate dalla correzione); le altre provano le correzioni dopo la revisione.
+cambiate dalle correzioni); poi quelle della prima revisione (``67775f35``) e
+della seconda (questo commit).
 """
 import hashlib
 import os
@@ -20,6 +21,7 @@ B = "Betfair/nucleo/stato_partita/"
 T = B + "tests/"
 CAL, FRE, SER = T + "test_b_calcolo.py", T + "test_b_freschezza.py", T + "test_b_servizio.py"
 ADA, COR, IMP = T + "test_b_adattatori.py", T + "test_b_correzioni.py", T + "test_b_import_innocuo.py"
+SEC = T + "test_b_seconda_revisione.py"
 
 MUT = [
     # --- consegna be3cf075 -------------------------------------------------
@@ -117,19 +119,20 @@ MUT = [
     ("R3 eta' congelate in stato()", B + "servizio.py",
      "        if st is None or let is None:\n            return st", "        return st", [COR]),
     ("R3 tennis muto tiene il punteggio", B + "servizio.py",
-     '        if prima is None or prima.sport != "tennis":', "        if True:", [COR]),
-    ("R4 fase del ripiego dal solo minuto", B + "calcolo.py",
-     '        fase="sconosciuta", minuto=snap.minute, tempo=None,',
-     "        fase=fase_partita(None, snap.minute), minuto=snap.minute, tempo=None,", [CAL, COR]),
-    ("R4 FaseCambiata contro la fase precedente, non l'ultima nota", B + "servizio.py",
-     "    nota = fase_nota if fase_nota is not None else prima.fase", "    nota = prima.fase", [COR]),
+     '        if prima.sport == "tennis":\n            return dataclasses.replace(prima, set_game=None,',
+     '        if False:\n            return dataclasses.replace(prima, set_game=None,', [COR]),
+    ("R4/d fase del ripiego 'sconosciuta' (Omega oggi la deduce)", B + "calcolo.py",
+     "        fase=fase_partita(None, snap.minute, ko=_da_ms(ko_ms),",
+     '        fase="sconosciuta" if snap else fase_partita(None, snap.minute, ko=_da_ms(ko_ms),', [CAL]),
+    ("R4 FaseCambiata contro la fase precedente, non l'ultima letta", B + "servizio.py",
+     "    nota = fase_nota if fase_nota is not None else _fase_letta(prima)", "    nota = prima.fase", [COR]),
     ("R6 ripresa senza prova (non noto conta)", B + "servizio.py",
      '    if getattr(esito, "noto", False) is not True:\n        return None\n', "", [COR]),
     ("R6 avvia senza controllo della generazione", B + "servizio.py",
      "            if self._giro_vivo is not None:\n                return\n", "", [SER, COR]),
     ("R6 giro non serializzato", B + "servizio.py",
      "        with self._giro_lock:\n            ora = self.adesso_s()",
-     "        if True:\n            ora = self.adesso_s()", [COR]),
+     "        if True:\n            ora = self.adesso_s()", [COR, SEC]),
     ("R7 cache del KO mai potata", B + "servizio.py",
      "        self._ko.dimentica(self._in_gioco_mercati.pop(eid, {}).keys())",
      "        self._in_gioco_mercati.pop(eid, {})", [COR]),
@@ -145,6 +148,50 @@ MUT = [
      "            stato.rossi, stato.corner, stato.gialli,", "            stato.rossi, stato.corner,", [COR]),
     ("R7 ko_ms troncato", B + "calcolo.py",
      "    return None if ko is None else int(round(ko))", "    return None if ko is None else int(ko)", [COR]),
+    # --- seconda revisione ---------------------------------------------------
+    ("a consegna sotto _giro_lock (deadlock)", B + "servizio.py",
+     "        self._svuota_coda()\n        return eventi",
+     "            self._svuota_coda()\n        return eventi", [SEC]),
+    ("a rientranza: il giro annidato consegna subito", B + "servizio.py",
+     "            if self._consegnatore is not None:\n                return\n", "", [SEC]),
+    ("b scanner_s non ricalcolato", B + "servizio.py",
+     "            scanner = float(scanner) + max(0.0, float(adesso_s) - float(istante))",
+     "            pass", [SEC]),
+    ("c fonte muta: verdetto non ricalcolato nel giro", B + "servizio.py",
+     "        let = self._letture.get(eid)\n        if let is None:\n            return None\n"
+     "        return self._ricalcolato(prima, let, eid, ora, self._istanti.get(eid))",
+     "        return None", [SEC]),
+    ("d kickoff ignorato nella fase dedotta", B + "calcolo.py",
+     "        fase=fase_partita(None, snap.minute, ko=_da_ms(ko_ms),",
+     "        fase=fase_partita(None, snap.minute, ko=None,", [CAL]),
+    ("d fase dedotta dichiarata letta", B + "calcolo.py",
+     "        prezzi_vivi=prezzi_vivi, grezzo=entry or {}, fase_dedotta=True,",
+     "        prezzi_vivi=prezzi_vivi, grezzo=entry or {}, fase_dedotta=False,", [CAL, SEC]),
+    ("d FaseCambiata anche da fasi dedotte", B + "servizio.py",
+     '    if stato.fase == "sconosciuta" or C.fase_dedotta(stato):',
+     '    if stato.fase == "sconosciuta":', [COR, SEC]),
+    ("e ferma dal thread del giro: join su se stesso", B + "servizio.py",
+     "        if g.thread is threading.current_thread():", "        if False:", [SEC]),
+    ("f runner: una partita rotta scarta il giro", B + "adattatori/ips.py",
+     "            except Exception as ex:  # noqa: BLE001 - una partita rotta non ferma le altre",
+     "            except ZeroDivisionError as ex:  # mutazione", [SEC]),
+    ("f tennis: una partita rotta scarta il giro", B + "adattatori/ips_tennis.py",
+     "        except Exception as ex:  # noqa: BLE001 - il feed non rompe mai chi lo legge",
+     "        except ZeroDivisionError as ex:  # mutazione", [SEC]),
+    ("f log a ogni errore (LogRaro tolto)", B + "adattatori/ips.py",
+     "        if not self._promemoria.dovuto(str(event_id), float(self._orologio())):\n            return False\n",
+     "", [SEC]),
+    ("g T13 _dimentica non pulisce fase/flusso", B + "servizio.py",
+     "        self._fase_nota.pop(eid, None)\n        self._vivo_noto.pop(eid, None)\n", "", [SEC]),
+    ("g T15 osserva_book senza filtro dei seguiti", B + "servizio.py",
+     "            if eid not in self._seguiti:\n                return\n            ko = C.ko_ms_intero",
+     "            ko = C.ko_ms_intero", [SEC]),
+    ("g T21 chi esce durante la lettura torna in memoria", B + "servizio.py",
+     "                    if eid not in self._seguiti:\n                        continue",
+     "                    if False:\n                        continue", [SEC]),
+    ("g T24 tennis muto conserva la lettura vecchia", B + "servizio.py",
+     '        elif nuovo.sport == "tennis":\n            self._letture.pop(eid, None)',
+     "        elif False:\n            pass", [SEC]),
 ]
 
 

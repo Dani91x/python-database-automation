@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Tuple
 import pytest
 
 from Betfair.nucleo.stato_partita import calcolo as C
+from Betfair.nucleo.stato_partita.contratto import StatoPartita
 from Betfair.nucleo.stato_partita.freschezza import ETA_ASSENTE
 from Betfair.omega import omega_engine as E
 from Betfair.stream import flusso_prezzi as FP
@@ -232,19 +233,35 @@ def test_riga_dello_scanner_usa_i_numeri_che_i_bot_leggono() -> None:
     assert (vuota.fase, vuota.minuto, vuota.gol, vuota.in_gioco) == ("pre", None, None, False)
 
 
-def test_api_football_fase_sconosciuta_e_tempo_assente() -> None:
-    """Il ripiego non ha lo stato IPS e OGGI nessuno ne deduce fase o tempo:
-    'sconosciuta' e None per ogni ``status.short`` (divergenza dichiarata)."""
-    for short, el in (("1H", 30), ("HT", 45), ("2H", 67), ("FT", 90), ("ET", 105), ("P", 120),
-                      ("AET", 120), ("PEN", 120), ("PST", None), ("ABD", 30), ("NS", None)):
-        entry = {"fixture": {"status": {"short": short, "elapsed": el}},
+KO_RIPIEGO = dt.datetime(2026, 6, 30, 16, 0, tzinfo=dt.timezone.utc)
+
+
+@pytest.mark.parametrize("minuto", [0, 30, 45, 46, 67, 90, 95, None])
+@pytest.mark.parametrize("ore_dal_ko", [-1.0, 1.0, 4.0])
+def test_api_football_fase_identica_a_mission_phase(minuto: Any, ore_dal_ko: float) -> None:
+    """La fase dal ripiego e' quella che Omega calcola OGGI quando il punteggio
+    viene dal ripiego senza stato IPS: ``mission_phase(status=None, minute,
+    kickoff, now)`` (``omega_service.py:1129-1139`` e ``:1980``). Stessi ingressi,
+    stesso valore (nella lingua di Omega); la fase e' DEDOTTA; il tempo resta None."""
+    adesso = KO_RIPIEGO + dt.timedelta(hours=ore_dal_ko)
+    for short in ("1H", "HT", "2H", "FT", "ET", "P", "AET", "PEN", "PST", "ABD", "NS"):
+        entry = {"fixture": {"status": {"short": short, "elapsed": minuto}},
                  "goals": {"home": 2, "away": 0}}
-        st = C.stato_calcio_da_api_football("9", entry, eta=ETA_ASSENTE, prezzi_vivi=FP.NON_NOTO)
+        st = C.stato_calcio_da_api_football(
+            "9", entry, eta=ETA_ASSENTE, prezzi_vivi=FP.NON_NOTO,
+            ko_ms=C.ko_ms_intero(KO_RIPIEGO.timestamp() * 1000.0), adesso_s=adesso.timestamp())
         ref = parse_fixture_response("9", {"response": [entry]})
+        omega = E.mission_phase(status=None, minute=ref.minute, kickoff=KO_RIPIEGO, now=adesso)
+        assert C.fase_come_omega(st.fase) == omega, (short, minuto)
+        assert C.fase_dedotta(st) is True and st.tempo is None
         assert (st.minuto, st.gol, st.fonte) == (ref.minute, (2, 0), "api_football")
-        assert (st.fase, st.tempo) == ("sconosciuta", None), short
-    assert C.stato_calcio_da_api_football("9", None, eta=ETA_ASSENTE,
-                                          prezzi_vivi=FP.NON_NOTO).fase == "sconosciuta"
+    vuoto = C.stato_calcio_da_api_football("9", None, eta=ETA_ASSENTE, prezzi_vivi=FP.NON_NOTO)
+    assert vuoto.fase == "sconosciuta" and C.fase_dedotta(vuoto) is False
+
+
+def test_le_fasi_ips_sono_lette_non_dedotte() -> None:
+    st = _stato("1", {"timeElapsed": 30, "matchStatus": "KickOff"})
+    assert C.fase_dedotta(st) is False and type(st) is StatoPartita
 
 
 def test_minuto_da_orologio_e_quello_di_omega() -> None:
