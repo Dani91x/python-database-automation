@@ -401,6 +401,9 @@ SITI_STORAGE: Tuple[SitoDinamico, ...] = (
                  "legge: download del modello"),
     SitoDinamico("Betfair/betfair_report_manager.py", "<dinamico:bucket>", (1335,), (BUCKET_MODELLI,),
                  "legge: download del modello"),
+    # seconda revisione del 09/10: Edge Function di Supabase (Deno, fuori dall'app, pg_cron make-daily-post)
+    SitoDinamico("Telegram bot/supabase/functions/make-daily-post/index.ts", "Loghi", (253, 263), ("Loghi",),
+                 "SCRIVE: upload del logo con upsert (:253); getPublicUrl (:263); resta nel cloud, invariato"),
 )
 
 

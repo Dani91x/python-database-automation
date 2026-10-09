@@ -116,6 +116,8 @@ class CloudFinto:
         self.errori: Dict[Tuple[str, str], Any] = {}          # (metodo, rotta) -> azione fissa
         self.errore_minuti: Set[Tuple[int, str]] = set()      # (bucket, target) che rispondono 404
         self.risposta_rpc: Dict[str, Any] = {}                # rpc -> corpo forzato
+        self.pubblicato = "2026-09-25T10:00:00+00:00"         # omega_transitions_state.published_at
+        self.jobs_at = "2026-09-20T00:00:00+00:00"            # omega_build_jobs.updated_at
         self.tabelle: Dict[str, List[Dict[str, Any]]] = {
             "live_follow": [{"event_id": e, "fixture_id": f, "status": "STREAMING"} for e, f in LIVE_FOLLOW.items()],
             "omega_events": [{"event_id": e, "fixture_id": f, "home": "A"} for e, f in OMEGA_EVENTS.items()],
@@ -156,14 +158,18 @@ class CloudFinto:
         return httpx.Response(404, json=CORPO_PGRST202)
 
     def _select(self, tabella: str, q: Dict[str, str]) -> httpx.Response:
-        if tabella == "omega_ht_ft_transitions":
-            return httpx.Response(200, json=[{"built_at": self.notte["built_at"]}])
-        if tabella == "omega_transitions_state":            # updated_at a ogni giro del pg_cron
-            return httpx.Response(200, json=[{"updated_at": self.notte["stato_at"],
-                                              "published_at": "2026-09-25T10:00:00+00:00"}])
-        if tabella == "omega_build_jobs":
-            return httpx.Response(200, json=[{"job": "minute", "updated_at": "2026-09-20T00:00:00+00:00"}])
-        righe = list(self.tabelle.get(tabella, []))
+        sentinelle = {   # le tre tabelle della sentinella, con righe "di disturbo" per filtri e ordinamento
+            "omega_ht_ft_transitions": [{"built_at": "2026-01-01T04:00:00+00:00"}, {"built_at": self.notte["built_at"]}],
+            "omega_transitions_state": [{"id": 2, "updated_at": "2020-01-01T00:00:00+00:00", "published_at": None},
+                                        {"id": 1, "updated_at": self.notte["stato_at"],
+                                         "published_at": self.pubblicato}],
+            "omega_build_jobs": [{"job": "vecchio", "updated_at": "2026-01-01T00:00:00+00:00"},
+                                 {"job": "minute", "updated_at": self.jobs_at}],
+        }
+        righe = list(sentinelle.get(tabella, self.tabelle.get(tabella, [])))
+        if "order" in q:
+            colonna, _, verso = q["order"].partition(".")
+            righe.sort(key=lambda r: str(r.get(colonna) or ""), reverse=(verso == "desc"))
         for col, cond in q.items():
             if col in ("select", "limit", "order"):
                 continue
@@ -627,3 +633,115 @@ def test_dossier_errori_mai_in_memoria_e_scadenza(cloud):
     adesso[0] += 1.0                                                      # scaduto: ripiego
     assert d.fixture_id_for_event("ev1") == 101
     assert d.statistiche()["ripieghi"] == prima + 1
+
+
+# ---------------------------------------------------------------------------
+# 5. Seconda revisione (09/10)
+# ---------------------------------------------------------------------------
+def test_ritardo_del_riprefetch_e_di_60_secondi(cloud):
+    """B1/B4: con il ritardo di serie una lega si richiede di nuovo dopo 60 s, non prima, non mai."""
+    adesso = [1000.0]
+    cloud.errore_minuti.add((45, "ft"))
+    r = _replica(ripiego_sincrono=False, orologio=lambda: adesso[0])
+    r.prefetch_lega(39)
+    assert r.minute_transitions(39, 45, "ft") is None and r._coda.qsize() == 1
+    r.drena_coda()                                                    # l'errore resta: chiave ancora mancante
+    adesso[0] = 1000.0 + 59
+    assert r.minute_transitions(39, 45, "ft") is None
+    assert r._coda.qsize() == 0                                       # 59 s: nessuna nuova richiesta
+    adesso[0] = 1000.0 + 60
+    assert r.minute_transitions(39, 45, "ft") is None
+    assert r._coda.qsize() == 1                                       # 60 s: richiesta di nuovo
+
+
+def _cambia_solo(cloud: CloudFinto, quale: str) -> None:
+    """Una ricostruzione vista da UNA sola delle tre letture della sentinella (righe nuove)."""
+    nuova = costruisci_notte(11, cloud.notte["built_at"])
+    if quale == "ht_ft":                                              # built_at dell'HT->FT
+        cloud.notte = {**cloud.notte, "ht": nuova["ht"], "built_at": "2026-10-14T04:00:00.170000+00:00"}
+    elif quale == "build_jobs":                                       # costruzione a mano dei minuti
+        cloud.notte = {**cloud.notte, "minuti": nuova["minuti"]}
+        cloud.jobs_at = "2026-10-14T09:00:00+00:00"
+    elif quale == "published_at":                                     # pubblicazione delle tabelle
+        cloud.notte = {**cloud.notte, "ht": nuova["ht"], "minuti": nuova["minuti"]}
+        cloud.pubblicato = "2026-10-14T05:00:00+00:00"
+
+
+@pytest.mark.parametrize("quale", ["ht_ft", "build_jobs", "published_at"])
+def test_sentinella_vede_ogni_sua_lettura(cloud, quale):
+    """C2/C3/C4: cambia SOLO una delle letture della sentinella -> la replica rilegge."""
+    r = _replica(ripiego_sincrono=False)
+    assert r.controlla_ricostruzione() is False
+    r.prefetch_lega(39)
+    _cambia_solo(cloud, quale)
+    assert r.controlla_ricostruzione() is True
+    assert r.ht_ft_transitions(39) == omega_db.ht_ft_transitions(39)
+    for target, bucket in (("ft", K.BUCKET_FT), ("ht", K.BUCKET_HT)):
+        for b in bucket:
+            assert r.minute_transitions(39, b, target) == omega_db.minute_transitions(39, b, target)
+
+
+def test_gara_prefetch_scrive_con_la_generazione_catturata_all_inizio(cloud):
+    """D2: una chiave letta dal prefetch PRIMA del cambio di generazione e salvata DOPO non deve
+    sovrascrivere la stessa chiave gia' riletta dalla ricostruzione (notte vecchia)."""
+    r: K.ReplicaEmpirica
+
+    def ricostruisci() -> None:
+        cloud.notte = costruisci_notte(12, "2026-10-15T04:00:00.170000+00:00")
+        assert r.controlla_ricostruzione() is True
+
+    r = K.ReplicaEmpirica(_SorgenteConGancio(_cliente(), (39, 40, "ht"), None), ripiego_sincrono=False)
+    r.controlla_ricostruzione()
+    r._sorgente._gancio = ricostruisci                                # type: ignore[attr-defined]
+    r.prefetch_lega(39)                                               # la ricostruzione avviene nel mezzo
+    assert r.minute_transitions(39, 40, "ht") == omega_db.minute_transitions(39, 40, "ht")
+    assert r.statistiche()["scartate"] >= 1
+
+
+def test_rilettura_toglie_le_voci_vecchie_non_rilette(cloud):
+    """D3: una chiave che la rilettura dopo la ricostruzione non riesce a leggere ESCE dalla memoria
+    (niente righe della notte vecchia servite come buone): None come la RPC in errore."""
+    r = _replica(ripiego_sincrono=False)
+    r.controlla_ricostruzione()
+    r.prefetch_lega(39)
+    assert r.minute_transitions(39, 45, "ft") is not None
+    cloud.notte = costruisci_notte(13, "2026-10-16T04:00:00.170000+00:00")
+    cloud.errore_minuti.add((45, "ft"))
+    assert r.controlla_ricostruzione() is True
+    assert r.minute_transitions(39, 45, "ft") is None
+    assert omega_db.minute_transitions(39, 45, "ft") is None
+
+
+def test_sentinella_illeggibile_non_rende_ciechi(cloud):
+    """Punto 4: lettura della sentinella fallita = "non so"; dopo SENTINELLA_ERRORI_MAX errori di
+    fila si rilegge comunque, e la prima lettura riuscita rilegge ancora."""
+    r = _replica(ripiego_sincrono=False)
+    assert r.controlla_ricostruzione() is False
+    r.prefetch_lega(39)
+    cloud.notte = costruisci_notte(14, "2026-10-17T04:00:00.170000+00:00")
+    cloud.errori[("GET", "/omega_transitions_state")] = lambda _r: httpx.Response(404, json=CORPO_PGRST202)
+    assert K.SENTINELLA_ERRORI_MAX == 3
+    assert r.controlla_ricostruzione() is False
+    assert r.controlla_ricostruzione() is False
+    assert r.ht_ft_transitions(39) != omega_db.ht_ft_transitions(39)     # ancora la notte vecchia
+    assert r.controlla_ricostruzione() is True                           # terzo errore di fila: rilegge
+    assert r.statistiche()["riletture_forzate"] == 1
+    assert r.ht_ft_transitions(39) == omega_db.ht_ft_transitions(39)
+    del cloud.errori[("GET", "/omega_transitions_state")]
+    cloud.notte = costruisci_notte(15, "2026-10-18T04:00:00.170000+00:00")
+    assert r.controlla_ricostruzione() is True                           # sentinella ignota: rilegge
+    assert r.ht_ft_transitions(39) == omega_db.ht_ft_transitions(39)
+    assert r.controlla_ricostruzione() is False                          # poi torna normale
+
+
+def test_dossier_la_memoria_non_cresce_oltre_la_finestra(cloud):
+    adesso = [0.0]
+    d = K.DossierPrematch(_cliente(), ripiego=mike_db, orologio=lambda: adesso[0])
+    eventi_pieni = ["ev1", "ev2", "ev3", "ev8", "ev9", "ev11"]
+    for i in range(40):                                                  # un precarica ogni 100 s
+        adesso[0] = i * 100.0
+        d.precarica([eventi_pieni[i % len(eventi_pieni)]])
+        for memoria in (d._ponte, d._fixture):
+            assert all(adesso[0] - t < K.SCADENZA_DOSSIER_S for t, _ in memoria.values())
+        assert 1 <= len(d._ponte) <= 3                                   # 300 s / 100 s
+    assert d.pota() == 0

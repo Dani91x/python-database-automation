@@ -147,12 +147,29 @@ def _valida_filtri(filtri: Mapping[str, Any]) -> None:
 
 
 class _Cache:
-    """Cache per lettura: chiave -> (scadenza monotona, valore). Thread-safe. Mai errori."""
+    """Cache per lettura: chiave -> (scadenza monotona, valore). Thread-safe. Mai errori.
+
+    Ogni voce appartiene a un GRUPPO (``t:<tabella>`` per le letture, ``r`` per tutte le RPC) con
+    una generazione: ``svuota_tabella`` la incrementa, e una lettura iniziata PRIMA (in volo
+    durante la scrittura) non rimette in cache il suo valore vecchio. Le voci scadute si potano
+    ogni ``POTA_OGNI`` inserimenti, non solo alla rilettura della stessa chiave."""
+
+    POTA_OGNI = 64
 
     def __init__(self, orologio: Callable[[], float]) -> None:
         self._orologio = orologio
         self._lock = threading.Lock()
         self._voci: Dict[str, Tuple[float, Any]] = {}
+        self._generazioni: Dict[str, int] = {}
+        self._inserimenti = 0
+
+    def generazione(self, gruppo: str) -> int:
+        with self._lock:
+            return self._generazioni.get(gruppo, 0)
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._voci)
 
     def prendi(self, chiave: str) -> Tuple[bool, Any]:
         with self._lock:
@@ -164,19 +181,33 @@ class _Cache:
                 return False, None
             return True, copy.deepcopy(voce[1])
 
-    def metti(self, chiave: str, valore: Any, durata_s: float) -> None:
+    def metti(self, chiave: str, valore: Any, durata_s: float, *, gruppo: str, generazione: int) -> bool:
+        """Mette in cache SOLO se il gruppo non e' stato invalidato da quando la lettura e' partita."""
         with self._lock:
-            self._voci[chiave] = (self._orologio() + float(durata_s), copy.deepcopy(valore))
+            if self._generazioni.get(gruppo, 0) != generazione:
+                return False
+            adesso = self._orologio()
+            self._voci[chiave] = (adesso + float(durata_s), copy.deepcopy(valore))
+            self._inserimenti += 1
+            if self._inserimenti % self.POTA_OGNI == 0:
+                for k in [k for k, (scade, _) in self._voci.items() if adesso >= scade]:
+                    del self._voci[k]
+            return True
 
     def svuota(self) -> None:
         with self._lock:
             self._voci.clear()
 
     def svuota_tabella(self, tabella: str) -> None:
-        """Toglie le letture in cache di UNA tabella (chiavi ``t:<tabella>:...``)."""
+        """Dopo una scrittura su ``tabella``: toglie le sue letture (``t:<tabella>:...``) e TUTTE le
+        RPC in cache (``r:...``): una RPC di lettura puo' leggere qualunque tabella e il registro
+        conosce solo le tabelle delle RPC che SCRIVONO, quindi la scelta prudente e' svuotarle tutte.
+        Incrementa le generazioni dei due gruppi (le letture in volo non rimettono il vecchio)."""
         prefisso = f"t:{tabella}:"
         with self._lock:
-            for chiave in [k for k in self._voci if k.startswith(prefisso)]:
+            for gruppo in (f"t:{tabella}", "r"):
+                self._generazioni[gruppo] = self._generazioni.get(gruppo, 0) + 1
+            for chiave in [k for k in self._voci if k.startswith(prefisso) or k.startswith("r:")]:
                 del self._voci[chiave]
 
 
@@ -229,10 +260,12 @@ class ClienteCloud:
                 self._conta("colpi_cache")
                 return valore
         self._conta("letture")
+        gruppo = f"t:{tabella}"
+        generazione = self._cache.generazione(gruppo)
         risposta = self._esegui(lambda c: costruisci_lettura(c, tabella, filtri), f"leggi {tabella}", True)
         righe = [dict(r) for r in (getattr(risposta, "data", None) or [])]
         if cache_s > 0:
-            self._cache.metti(chiave, righe, cache_s)
+            self._cache.metti(chiave, righe, cache_s, gruppo=gruppo, generazione=generazione)
         return copy.deepcopy(righe) if cache_s > 0 else righe
 
     def rpc(self, nome: str, args: Mapping[str, Any], *, cache_s: float = 0.0) -> Any:
@@ -247,10 +280,11 @@ class ClienteCloud:
                 self._conta("colpi_cache")
                 return valore
         self._conta("rpc")
+        generazione = self._cache.generazione("r")
         risposta = self._esegui(lambda c: c.rpc(nome, dict(args)), f"rpc {nome}", ritenta)
         dati = getattr(risposta, "data", None)
         if cache_s > 0:
-            self._cache.metti(chiave, dati, cache_s)
+            self._cache.metti(chiave, dati, cache_s, gruppo="r", generazione=generazione)
             return copy.deepcopy(dati)
         return dati
 

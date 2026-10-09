@@ -59,6 +59,10 @@ SCADENZA_MIKE_S: Optional[float] = None  # mike/dossier._EMPIRICAL_CACHE: mai
 INTERVALLO_SORVEGLIANZA_S = 300.0
 #: una lega con chiavi mancanti si richiede di nuovo al piu' ogni tanti secondi
 RITARDO_RIPREFETCH_S = 60.0
+#: dopo tante letture della sentinella fallite DI FILA si rilegge comunque tutto (scelta prudente:
+#: con l'intervallo di serie di 300 s una ricostruzione non resta invisibile oltre ~15 minuti)
+SENTINELLA_ERRORI_MAX = 3
+_SENTINELLA_IGNOTA = "?ignota"
 #: il dossier positivo vale al massimo quanto il ritento di Mike (mike/service._DOSSIER_RETRY_SEC)
 SCADENZA_DOSSIER_S = 300.0
 COLONNE_PREMATCH = "fixture_id,league_id,tactical_engine_json,db_json_analisi,home_team_id,away_team_id"
@@ -111,8 +115,9 @@ class SorgenteOmega:
         """Impronta dell'ultima ricostruzione delle DUE tabelle: la riga di ``omega_transitions_state``
         (``updated_at`` a ogni giro del pg_cron incrementale, anche quando cambia solo la tabella per
         minuto; ``published_at``), il ``built_at`` massimo di ``omega_ht_ft_transitions`` e l'ultimo
-        ``omega_build_jobs`` (costruzione a mano v3/v4 della tabella per minuto). None se una
-        delle letture fallisce (la sorveglianza riprova al giro dopo: nessuna rilettura a vuoto)."""
+        ``omega_build_jobs`` (costruzione a mano v3/v4 della tabella per minuto). None = "non so" se una
+        delle letture fallisce: ``ReplicaEmpirica.controlla_ricostruzione`` riprova al giro dopo e, dopo
+        ``SENTINELLA_ERRORI_MAX`` errori di fila, rilegge comunque (mai ciechi per sempre)."""
         letture = (("omega_transitions_state", {"select": "updated_at,published_at", "id": 1}),
                    ("omega_ht_ft_transitions", {"select": "built_at", "order": "built_at.desc", "limit": 1}),
                    ("omega_build_jobs", {"select": "job,updated_at", "order": "updated_at.desc", "limit": 1}))
@@ -164,11 +169,13 @@ class ReplicaEmpirica:
         self._richieste: Dict[Optional[int], float] = {}
         self._gen = 0
         self._sentinella: Optional[str] = None
+        self._errori_sentinella = 0
         self._coda: "queue.Queue[Any]" = queue.Queue()
         self._ferma = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._conti: Dict[str, int] = {"colpi": 0, "mancati": 0, "ripieghi": 0, "letture_rete": 0,
-                                       "ricostruzioni": 0, "errori": 0, "scartate": 0, "riprefetch": 0}
+                                       "ricostruzioni": 0, "errori": 0, "scartate": 0, "riprefetch": 0,
+                                       "riletture_forzate": 0}
 
     # --------------------------------------------- firme di omega_db / mike.db (ciclo di decisione)
     def ht_ft_transitions(self, league_id: Optional[int]) -> Optional[Righe]:
@@ -247,17 +254,31 @@ class ReplicaEmpirica:
         """Legge la sentinella: se e' cambiata apre una generazione nuova, rilegge TUTTE le chiavi
         delle leghe note e le FONDE nella memoria; alla fine toglie le voci rimaste della
         generazione vecchia (rilettura fallita = errore = mai in cache). La prima lettura registra
-        soltanto. Durante la rilettura si servono le voci vecchie (finestra dichiarata)."""
+        soltanto. Durante la rilettura si servono le voci vecchie (finestra dichiarata).
+
+        Sentinella illeggibile = "non so" (mai "uguale"): si riprova al giro dopo; dopo
+        ``SENTINELLA_ERRORI_MAX`` errori DI FILA si rilegge comunque tutto (puo' esserci stata una
+        ricostruzione che non vediamo) e la sentinella diventa ignota, cosi' la prima lettura riuscita
+        rilegge ancora: la replica non resta mai cieca a una ricostruzione."""
         nuova = self._sorgente.sentinella()
-        if nuova is None:
-            return False
         with self._lock:
-            vecchia = self._sentinella
-            if vecchia == nuova:
-                return False
-            self._sentinella = nuova
-            if vecchia is None:
-                return False
+            if nuova is None:
+                self._errori_sentinella += 1
+                if self._errori_sentinella < SENTINELLA_ERRORI_MAX:
+                    return False
+                self._errori_sentinella = 0
+                self._sentinella = _SENTINELLA_IGNOTA
+                self._conti["riletture_forzate"] += 1
+                logger.warning("[cache_cloud] sentinella illeggibile %d volte di fila: rilettura forzata",
+                               SENTINELLA_ERRORI_MAX)
+            else:
+                self._errori_sentinella = 0
+                vecchia = self._sentinella
+                if vecchia == nuova:
+                    return False
+                self._sentinella = nuova
+                if vecchia is None:
+                    return False
             self._gen += 1
             gen = self._gen
             leghe = sorted(self._leghe, key=lambda x: (x is None, x))
@@ -429,7 +450,20 @@ class DossierPrematch:
             for ev, fid in ponte.items():
                 self._ponte[ev] = (adesso, fid)
         self._precarica_fixture(sorted(set(ponte.values())))
+        self.pota()
         return len(ponte)
+
+    def pota(self) -> int:
+        """Toglie le voci scadute (la memoria non cresce oltre la finestra di ``scadenza_s``).
+        La chiama ``precarica``; ritorna quante ne ha tolte."""
+        adesso = self._orologio()
+        tolte = 0
+        with self._lock:
+            for memoria in (self._ponte, self._fixture):
+                for chiave in [k for k, (t, _) in memoria.items() if adesso - t >= self._scadenza]:
+                    del memoria[chiave]
+                    tolte += 1
+        return tolte
 
     # --------------------------------------------- firme di mike.db (ciclo)
     def fixture_id_for_event(self, event_id: str) -> Optional[int]:

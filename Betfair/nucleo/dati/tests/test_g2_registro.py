@@ -89,8 +89,43 @@ def _chiamate_codice() -> List[tuple]:
                 for m in RX_REST.finditer(riga):
                     out.append((rel, i, "rest_scrive", m.group(2), m.group(1), cat, "py"))
         elif rel.startswith(("frontend/src/", "desktop/")):
-            s03.analizza_ts(rel, testo, cat, out)
+            _analizza_ts(s03, rel, testo, cat, out)
+    out.extend(_chiamate_ts_altrove(s03, c))
     out.extend(_chiamate_workflow(c))
+    return out
+
+
+RX_TS_STORAGE = re.compile(r"\.storage\s*\.from\(\s*[\"'`]?([^\"'`)]+)")
+RX_TS_ESCLUSI = re.compile(r"(^|/)(node_modules|dist|build)/|\.(test|spec)\.")
+
+
+def _analizza_ts(s03: ModuleType, rel: str, testo: str, cat: str, out: List[tuple]) -> None:
+    """``s03_db.analizza_ts`` + lo Storage (``.storage.from(<bucket>)``): le righe dello Storage
+    non sono tabelle (``.from`` del bucket), si tolgono dalle chiamate di tabella."""
+    righe = testo.splitlines()
+    proprie: List[tuple] = []
+    s03.analizza_ts(rel, testo, cat, proprie)
+    for x in proprie:
+        if x[2] == "table" and RX_TS_STORAGE.search(righe[x[1] - 1]):
+            continue
+        out.append(x)
+    for i, riga in enumerate(righe, 1):
+        for m in RX_TS_STORAGE.finditer(riga):
+            out.append((rel, i, "storage", m.group(1).strip(), "?", cat, "ts"))
+
+
+def _chiamate_ts_altrove(s03: ModuleType, c: ModuleType) -> List[tuple]:
+    """TUTTI gli altri .ts/.tsx/.js/.mjs/.cjs tracciati (Edge Function di Supabase, strumenti, audit),
+    esclusi node_modules, dist, build e i file di test (seconda revisione del 09/10)."""
+    out: List[tuple] = []
+    for rel in c.file_tracciati():
+        if Path(rel).suffix.lower() not in (".ts", ".tsx", ".js", ".mjs", ".cjs"):
+            continue
+        if rel.startswith(("frontend/src/", "desktop/")) or RX_TS_ESCLUSI.search(rel):
+            continue
+        testo = c.leggi_testo(rel)
+        if testo is not None:
+            _analizza_ts(s03, rel, testo, "ts_altrove", out)
     return out
 
 
@@ -497,6 +532,17 @@ def test_storage_dichiarato_e_falsificato():
     assert {(s.file, s.nome) for s in R.SITI_STORAGE} == set(sc.storage)
     finta = replace(sc, storage={**sc.storage, ("Betfair/nuovo.py", "<dinamico:b>"): frozenset({3})})
     assert any(e.startswith("STORAGE NON DICHIARATO: Betfair/nuovo.py") for e in _verifica(R.REGISTRO, finta).errori)
+
+
+def test_storage_delle_edge_function_scansionato_e_falsificato(monkeypatch):
+    """Seconda revisione: ``make-daily-post/index.ts:253`` carica il logo nel bucket ``Loghi``. La
+    scansione guarda TUTTI i .ts/.js (non solo frontend e desktop); senza la dichiarazione e' rosso."""
+    sc = scansione_di_oggi()
+    chiave = ("Telegram bot/supabase/functions/make-daily-post/index.ts", "Loghi")
+    assert sc.storage[chiave] == {253, 263}
+    assert not any(k[1] == "Loghi" for k in sc.indeterminati)          # il .from del bucket non e' una tabella
+    monkeypatch.setattr(R, "SITI_STORAGE", tuple(s for s in R.SITI_STORAGE if s.nome != "Loghi"))
+    assert any(e.startswith("STORAGE NON DICHIARATO: Telegram bot/") for e in _verifica(R.REGISTRO, sc).errori)
 
 
 def _blocchi_create_table() -> Dict[str, List[str]]:

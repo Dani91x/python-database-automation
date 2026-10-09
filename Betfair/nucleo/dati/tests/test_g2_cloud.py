@@ -311,6 +311,46 @@ def test_filtri_di_patch_e_delete_e_cache_invalidata(server):
     assert server.conta("GET", "/mike_control") == 2 and server.conta("GET", "/x") == 1
 
 
+def test_rpc_in_cache_svuotate_dopo_una_scrittura(server):
+    """Seconda revisione: una RPC di lettura puo' leggere qualunque tabella (il registro sa solo cosa
+    SCRIVONO le RPC): dopo ``scrivi`` le RPC in cache si svuotano tutte."""
+    c = _cliente(orologio=lambda: 0.0)
+    c.rpc("get_omega_ht_ft", {"p_league_id": 1}, cache_s=60)
+    c.rpc("get_omega_ht_ft", {"p_league_id": 1}, cache_s=60)
+    assert server.conta("POST", "/rpc/get_omega_ht_ft") == 1
+    c.scrivi("live_ladder", "upsert", [{"event_id": "1", "market_id": "1.2"}], on_conflict="event_id,market_id")
+    c.rpc("get_omega_ht_ft", {"p_league_id": 1}, cache_s=60)
+    assert server.conta("POST", "/rpc/get_omega_ht_ft") == 2
+
+
+def test_lettura_in_volo_non_rimette_in_cache_il_vecchio(server):
+    """Una lettura partita PRIMA di una scrittura sulla stessa tabella e finita DOPO non rimette in
+    cache il valore vecchio (generazione per tabella)."""
+    c = _cliente(orologio=lambda: 0.0)
+
+    def scrittura_nel_mezzo(req: httpx.Request) -> httpx.Response:
+        c._cache.svuota_tabella("x")                     # = scrivi("x", ...) concorrente
+        return httpx.Response(200, json=server.righe["x"])
+    server.copione[("GET", "/x")] = [scrittura_nel_mezzo]
+    c.leggi("x", {"id": 1}, cache_s=60)
+    c.leggi("x", {"id": 1}, cache_s=60)
+    assert server.conta("GET", "/x") == 2                # il primo valore NON e' rimasto in cache
+    c.leggi("x", {"id": 1}, cache_s=60)
+    assert server.conta("GET", "/x") == 2                # il secondo si'
+
+
+def test_cache_pota_le_voci_scadute_ogni_tanto():
+    adesso = [0.0]
+    cache = C._Cache(lambda: adesso[0])
+    for i in range(cache.POTA_OGNI - 1):
+        assert cache.metti(f"t:x:{i}", [i], 1.0, gruppo="t:x", generazione=0)
+    assert len(cache) == cache.POTA_OGNI - 1
+    adesso[0] = 5.0                                       # tutte scadute, nessuna riletta
+    cache.metti("t:x:nuova", [0], 60.0, gruppo="t:x", generazione=0)
+    assert len(cache) == 1
+    assert not cache.metti("t:x:vecchia", [0], 60.0, gruppo="t:x", generazione=-1)
+
+
 def test_rpc_di_lettura_ritentate_scriventi_mai(server):
     server.copione[("POST", "/rpc/get_omega_ht_ft")] = [html_520]
     assert _cliente().rpc("get_omega_ht_ft", {"p_league_id": 39}) == server.rpc["get_omega_ht_ft"]

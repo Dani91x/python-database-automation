@@ -41,7 +41,7 @@ M = [
      [('    _v("live_now", "T08", "SV", "stato_vivo", "L+P", R_LADDER, ("event_id",), coalesce=True, rev=_UA,\n       dipende=_FOLLOW,',
        '    _v("live_now", "T08", "SV", "stato_vivo", "L+P", R_LADDER, ("event_id",), coalesce=True, rev=_UA,\n       dipende=(),')], TR),
     ("M10 cache: replica mai riletta dopo la sentinella", "cache_cloud.py",
-     [("            if vecchia is None:\n                return False", "            return False")], TK),
+     [("                if vecchia is None:\n                    return False", "                return False")], TK),
     ("M11 cache: errore del prefetch messo in cache come []", "cache_cloud.py",
      [('            if righe is None:\n                self._conti["errori"] += 1\n                return False',
        '            if righe is None:\n                righe = []')], TK),
@@ -103,7 +103,44 @@ M = [
        '    _v("live_markets", "T08", "SV", "stato_vivo", "L+P", R_LADDER, ("event_id",),')], TR),
     ("M32 D-10: leads marcata con schema nel repo", "registro.py",
      [('"fixture_predictions", "injuries", "leads",', '"fixture_predictions", "injuries",')], TR),
+    # --- seconda revisione del 09/10 (punti 1, 3, 4, 5)
+    ("M33 R2-1: Storage della Edge Function non dichiarato", "registro.py",
+     [('    SitoDinamico("Telegram bot/supabase/functions/make-daily-post/index.ts", "Loghi", (253, 263), ("Loghi",),',
+       '    SitoDinamico("Telegram bot/X/index.ts", "Loghi", (253, 263), ("Loghi",),')], TR),
+    ("M34 R2-3: il dossier non pota le voci scadute", "cache_cloud.py",
+     [("                for chiave in [k for k, (t, _) in memoria.items() if adesso - t >= self._scadenza]:",
+       "                for chiave in [k for k, (t, _) in memoria.items() if False]:")], TK),
+    ("M35 R2-4: sentinella illeggibile per sempre cieca", "cache_cloud.py",
+     [("                if self._errori_sentinella < SENTINELLA_ERRORI_MAX:", "                if True:")], TK),
+    ("M36 R2-5: RPC in cache non svuotate dopo scrivi", "cloud.py",
+     [('            for gruppo in (f"t:{tabella}", "r"):', '            for gruppo in (f"t:{tabella}",):'),
+      ('k.startswith(prefisso) or k.startswith("r:")', "k.startswith(prefisso)")], TC),
+    ("M37 R2-5: lettura in volo rimette in cache il vecchio", "cloud.py",
+     [("            if self._generazioni.get(gruppo, 0) != generazione:\n                return False",
+       "            if False:\n                return False")], TC),
+    ("M38 R2-5: la cache non pota mai le scadute", "cloud.py",
+     [("            if self._inserimenti % self.POTA_OGNI == 0:", "            if False:")], TC),
 ]
+
+# Le 15 mutazioni del revisore (seconda revisione, scratchpad/rev_w1g2_2/mie_mutazioni.py), riprese tali e quali
+M_REVISORE = [
+    ("REV A1 D-2: _fresca non scade mai", [("            if voce is None or self._orologio() - voce[0] >= self._scadenza:", "            if voce is None:")]),
+    ("REV A2 D-2: ponte/fixture negativi (tupla sempre non None)", [("and lambdas_da_riga(r)[0] is not None:", "and lambdas_da_riga(r) is not None:")]),
+    ("REV A3 D-2: scadenza ignorata", [("        self._scadenza = float(scadenza_s)", "        self._scadenza = 1e12")]),
+    ("REV B1 D-4: ritardo riprefetch infinito", [("RITARDO_RIPREFETCH_S = 60.0", "RITARDO_RIPREFETCH_S = 1e12")]),
+    ("REV B2 D-4: ritardo 0", [("RITARDO_RIPREFETCH_S = 60.0", "RITARDO_RIPREFETCH_S = 0.0")]),
+    ("REV B3 D-4: richiedi_incomplete non riaccoda", [("        incomplete = [lega for lega, n in per_lega.items() if n < CHIAVI_PER_LEGA]", "        incomplete = []")]),
+    ("REV B4 D-4: ritardo 3600 s", [("RITARDO_RIPREFETCH_S = 60.0", "RITARDO_RIPREFETCH_S = 3600.0")]),
+    ("REV C1 D-5: sentinella senza omega_transitions_state", [('        letture = (("omega_transitions_state", {"select": "updated_at,published_at", "id": 1}),\n                   (', '        letture = ((')]),
+    ("REV C2 D-5: sentinella senza omega_ht_ft_transitions", [('                   ("omega_ht_ft_transitions", {"select": "built_at", "order": "built_at.desc", "limit": 1}),\n', '')]),
+    ("REV C3 D-5: sentinella senza omega_build_jobs", [('                   ("omega_build_jobs", {"select": "job,updated_at", "order": "updated_at.desc", "limit": 1}))', '                   )')]),
+    ("REV C4 D-5: sentinella ignora published_at", [('"select": "updated_at,published_at"', '"select": "updated_at"')]),
+    ("REV D1 D-6: _servi memorizza con la generazione corrente", [("        self._memorizza(chiave, righe, gen)\n        return _copia(righe)", "        self._memorizza(chiave, righe, self._gen)\n        return _copia(righe)")]),
+    ("REV D2 D-6: prefetch_lega memorizza con la generazione corrente", [("            self._memorizza(chiave, righe, gen)\n            lette += righe is not None", "            self._memorizza(chiave, righe, self._gen)\n            lette += righe is not None")]),
+    ("REV D3 D-6: rilettura non toglie le voci vecchie", [("                for chiave in [k for k, (g, _) in self._righe.items() if g < gen]:\n                    del self._righe[chiave]", "                pass")]),
+    ("REV D4 D-6: scarto solo se gen < corrente-1", [("            if gen != self._gen:\n                self._conti[\"scartate\"] += 1", "            if gen < self._gen - 1:\n                self._conti[\"scartate\"] += 1")]),
+]
+M += [(nome, "cache_cloud.py", sostituzioni, TK) for nome, sostituzioni in M_REVISORE]
 
 
 def sha(p: Path) -> str:
