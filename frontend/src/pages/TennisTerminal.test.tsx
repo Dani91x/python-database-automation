@@ -14,7 +14,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 
 const registro = vi.hoisted(() => ({
@@ -140,5 +140,31 @@ describe('TennisTerminal - F-11: aprire la pagina non scrive', () => {
         expect(await screen.findByText('SEGUITA')).toBeTruthy();
         expect(screen.queryByRole('button', { name: 'SEGUI' })).toBeNull();
         expect(screen.queryByText(/premi «Segui»/)).toBeNull();
+    });
+});
+
+// 09/10 (Programma del giorno): dal tabellone si arriva con `from=board` e il
+// «Torna» riporta a /board (la scheda e la partita le rimette il tabellone)
+describe('TennisTerminal - ritorno al Programma del giorno', () => {
+    function Dove() {
+        const l = useLocation();
+        return <div data-testid="dove">{l.pathname}</div>;
+    }
+
+    it('from=board: «Torna al Programma» e il clic porta a /board', async () => {
+        registro.follows = [follow('STREAMING')];
+        render(
+            <HelmetProvider>
+                <MemoryRouter initialEntries={[`/tennis/terminal?event=${EV}&market=${MID}&p1=Bondar&p2=Birrell&from=board`]}>
+                    <Routes>
+                        <Route path="/tennis/terminal" element={<TennisTerminal />} />
+                        <Route path="/board" element={<Dove />} />
+                    </Routes>
+                </MemoryRouter>
+            </HelmetProvider>,
+        );
+        const torna = await screen.findAllByRole('button', { name: /Torna al Programma/ });
+        await userEvent.click(torna[0]);
+        expect(screen.getByTestId('dove').textContent).toBe('/board');
     });
 });

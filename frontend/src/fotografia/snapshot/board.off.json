@@ -1,7 +1,7 @@
 {
   "pagina": "board",
   "url": "/board",
-  "titolo": "Programma di oggi | Alpha Score",
+  "titolo": "Programma del giorno | Alpha Score",
   "testi": [
     "AI",
     "TERMINAL",
@@ -9,9 +9,9 @@
     "🛡️ Safe Strategy",
     "Segui Live",
     "Dashboard",
-    "Programma di",
-    "oggi",
-    "Tabellone in tempo reale dal canale locale del runner (push 'board', nessuna lettura DB).",
+    "Programma del",
+    "giorno",
+    "Tabellone in tempo reale dal canale locale del runner: quote, liquidità e punteggio si aggiornano a ogni push (nessuna lettura DB). Clic su una quota per piazzare.",
     "⚽ Calcio",
     "🎾 Tennis",
     "Canale locale",
