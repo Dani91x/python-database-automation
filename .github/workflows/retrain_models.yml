@@ -116,7 +116,8 @@ jobs:
     # agli anelli a valle (job passa-testimone, in fondo).
     if: ${{ inputs.monte_ok != 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # 09/10/2026: 8 -> 20 per le attese lunghe sul guasto DB (select_leagues_to_train_con_attesa)
+    timeout-minutes: 20
     outputs:
       shards: ${{ steps.gen.outputs.shards }}
       has_work: ${{ steps.gate.outputs.has_work }}
@@ -148,6 +149,8 @@ jobs:
           RETRAIN_INCREMENTAL_MIN_NEW: "10"
           PYTHONIOENCODING: utf-8
           PYTHONUNBUFFERED: "1"
+          # 09/10/2026: ritentativi PostgREST delle action (db_client.TrasportoResiliente)
+          DB_RESILIENZA_ACTION: "1"
         run: |
           python - <<'PY'
           import os
@@ -159,8 +162,10 @@ jobs:
               print(f"[GATE] override manuale (leagues='{leagues}', use_planner={use_planner}): training forzato.")
               has_work = True
           else:
-              from training_planner import select_leagues_to_train
-              plan = select_leagues_to_train()
+              # 09/10/2026: attese lunghe sul guasto DB; persistente -> riga chiara + exit 1
+              from db_client import esegui_main_action
+              from training_planner import select_leagues_to_train_con_attesa
+              plan = esegui_main_action(select_leagues_to_train_con_attesa, "planner (plan)")
               n = len(plan["todo"])
               has_work = n > 0
               print(f"[GATE] mode={plan['mode']} | da_fare={n} "
@@ -331,7 +336,8 @@ jobs:
     # rilanciare anche se qualche shard e' fallito: le altre leghe vanno avanti.
     if: ${{ always() && needs.plan.outputs.has_work == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # 09/10/2026: 8 -> 25 per le attese lunghe sul guasto DB (vedi il passo sotto)
+    timeout-minutes: 25
     permissions:
       actions: write      # necessario a `gh workflow run` per rilanciare
       contents: read
@@ -368,16 +374,43 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PYTHONIOENCODING: utf-8
           PYTHONUNBUFFERED: "1"
+          # 09/10/2026: ritentativi PostgREST delle action (db_client.TrasportoResiliente)
+          DB_RESILIENZA_ACTION: "1"
         run: |
           MAX_CHAIN=8
+          # 09/10/2026 (run 37898960743): il rechain e' solo la "riscrittura finale": il
+          # training e' gia' salvato. Un guasto DB che resta dopo i ritentativi (brevi del
+          # trasporto + lunghi del planner) NON fa rossa la run: lo si dichiara, non si
+          # rilancia (le leghe restanti le riprende il prossimo giro) e la staffetta passa.
+          set +e
           python - <<'PY'
-          from training_planner import select_leagues_to_train
-          p = select_leagues_to_train()
+          import sys
+          from db_client import classifica_guasto_rete, descrivi_errore
+          from training_planner import select_leagues_to_train_con_attesa
+          try:
+              p = select_leagues_to_train_con_attesa()
+          except Exception as e:
+              if classifica_guasto_rete(e) is None:
+                  raise
+              print(f"[RECHAIN] GUASTO DB PERSISTENTE: {descrivi_errore(e)}", flush=True)
+              sys.exit(3)
           todo = p["todo"]
           print(f"[RECHAIN] mode={p['mode']} | restano={len(todo)} -> {todo[:50]}")
           with open("remaining_count.txt", "w") as f:
               f.write(str(len(todo)))
           PY
+          RC=$?
+          set -e
+          if [ "$RC" -eq 3 ]; then
+            MSG="RECHAIN NON ESEGUITO: DB irraggiungibile dopo i ritentativi. Il training di questa run e' salvato; nessun rilancio, le leghe restanti le riprende il prossimo giro della catena."
+            echo "::warning::$MSG"
+            echo "### Retrain: rechain rinviato" >> "$GITHUB_STEP_SUMMARY"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$RC" -ne 0 ]; then
+            exit "$RC"
+          fi
           REMAINING=$(cat remaining_count.txt)
           echo "[RECHAIN] leghe rimaste=$REMAINING | chain_depth=$CHAIN_DEPTH | max=$MAX_CHAIN"
           if [ "$REMAINING" -eq 0 ]; then
@@ -396,6 +429,25 @@ jobs:
           # run rilanciata). Meglio una catena ferma (run rossa + allarme delle 07:30) che
           # un doppio lancio.
           echo "rilanciato=true" >> "$GITHUB_OUTPUT"
+          # 09/10/2026: `gh` con UN ritentativo e controllo anti-doppio (come la staffetta):
+          # se il lancio fallisce si guarda dopo 60 s se GitHub ha creato lo stesso la run;
+          # solo se non c'e' si riprova una volta. Stato illeggibile -> nessun rilancio,
+          # step rosso (meglio fermi che doppi; allarme delle 07:30).
+          INIZIO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          if gh workflow run retrain_models.yml -f chain_depth="$NEXT" -f catena="$CATENA" -f monte_ok=true; then
+            exit 0
+          fi
+          echo "[RECHAIN] gh workflow run fallito: controllo tra 60 s se la run e' stata creata lo stesso."
+          sleep 60
+          CREATE=$(gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/retrain_models.yml/runs" -f event=workflow_dispatch -f created=">=${INIZIO}" --jq '.total_count' 2>/dev/null || echo "ERR")
+          if [ "$CREATE" = "ERR" ] || ! [ "$CREATE" -eq "$CREATE" ] 2>/dev/null; then
+            echo "::error::[RECHAIN] stato delle run illeggibile: NON rilancio (evito un doppio)."
+            exit 1
+          fi
+          if [ "$CREATE" -gt 0 ]; then
+            echo "[RECHAIN] la run rilanciata esiste gia' ($CREATE): nessun secondo lancio."
+            exit 0
+          fi
           gh workflow run retrain_models.yml -f chain_depth="$NEXT" -f catena="$CATENA" -f monte_ok=true
 
   # STAFFETTA (09/10/2026, cantiere orologio notturno): finito il lavoro di questa run,

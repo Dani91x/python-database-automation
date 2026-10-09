@@ -25,7 +25,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from db_client import get_supabase_client
+from db_client import azzera_interruttore, classifica_guasto_rete, descrivi_errore, get_supabase_client
 
 # Cutoff: campagna NUOVA METODOLOGIA CERTIFICATA (storico pieno + NO leak
 # standings + target completi + ELO allineato train/predict) dal 2026-06-16.
@@ -161,6 +161,11 @@ def _incremental_todo(min_new: int, eligible) -> List[int]:
                 out.append(lid)
         return out
     except Exception as e:
+        # 09/10/2026: un guasto di rete/gateway NON e' "RPC non disponibile": prima si
+        # perdeva in silenzio (0 leghe incrementali -> training saltato o rechain fermo
+        # senza dirlo). Ora risale (ritentato dal trasporto e da select_leagues_to_train_con_attesa).
+        if classifica_guasto_rete(e) is not None:
+            raise
         print(f"[PLANNER] RPC incrementale non disponibile ({type(e).__name__}): {e}")
         return []
 
@@ -291,3 +296,30 @@ if __name__ == "__main__":
         f"cutoff={plan['cutoff']}"
     )
     print(f"[PLANNER] prime 30 da fare: {plan['todo'][:30]}")
+
+
+# 09/10/2026 (AUDIT_2026-10-09/fallimenti_action): i passi plan e rechain di
+# retrain_models.yml. Run 37898960743: i 3 shard di training erano RIUSCITI, il rechain
+# e' morto su un 522 di Cloudflare (lettura di ai_model_registry, DB giu' dalle 07:25 alle
+# 07:51 UTC) e la run e' diventata rossa. Qui, oltre ai ritentativi brevi del trasporto
+# (db_client.TrasportoResiliente, ~3 min), attese LUNGHE sul guasto di rete/gateway;
+# poi il guasto risale e il chiamante lo dichiara (il rechain non fa rossa la run).
+ATTESE_LUNGHE_PLANNER_S = (60.0, 120.0, 240.0)
+
+
+def select_leagues_to_train_con_attesa(attese=ATTESE_LUNGHE_PLANNER_S, dormi=None, **kwargs) -> Dict:
+    """select_leagues_to_train con attese lunghe SOLO sui guasti di rete/gateway
+    (classifica_guasto_rete). Ogni altro errore risale subito, identico."""
+    import time
+    dormi = dormi or time.sleep
+    for i in range(len(attese) + 1):
+        try:
+            return select_leagues_to_train(**kwargs)
+        except Exception as e:
+            if classifica_guasto_rete(e) is None or i >= len(attese):
+                raise
+            print(f"[RETE] planner: guasto DB ({descrivi_errore(e)}) -> attesa lunga "
+                  f"{attese[i]:.0f} s (tentativo lungo {i + 1}/{len(attese)})", flush=True)
+            dormi(attese[i])
+            azzera_interruttore()
+    raise RuntimeError("non raggiungibile")  # pragma: no cover

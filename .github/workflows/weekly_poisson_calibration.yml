@@ -53,6 +53,8 @@ jobs:
     # Nella catena solo il lunedi'; a mano (catena=false) sempre.
     if: ${{ inputs.catena != 'true' || needs.giorno.outputs.lunedi == 'true' }}
     runs-on: ubuntu-latest
+    # 09/10/2026: tetto esplicito (prima il default di GitHub, 360 min): ultime 4 riuscite mediana 18 min, max 22
+    timeout-minutes: 90
     permissions:
       contents: write
 

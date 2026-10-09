@@ -872,4 +872,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # 09/10/2026: resilienza di trasporto PostgREST + riga chiara sul guasto DB persistente
+    # (db_client.esegui_main_action, AUDIT_2026-10-09/fallimenti_action)
+    from db_client import esegui_main_action
+    esegui_main_action(main, "predictions_results_backfill.py")

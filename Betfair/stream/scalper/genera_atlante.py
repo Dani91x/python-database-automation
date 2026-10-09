@@ -930,11 +930,21 @@ class _Scrittore:
         self.timeout = timeout
         self.sleep = sleep
 
-    def _req(self, metodo: str, path: str, corpo: Any = None, prefer: str = "") -> None:
+    def _req(self, metodo: str, path: str, corpo: Any = None, prefer: str = "",
+             gia_scritto: Optional[Callable[[], bool]] = None) -> None:
         """POST/DELETE con ritentativi su 5xx/rete (attese crescenti, come
         ``LettoreDB.get``). Un 4xx e' un dato/richiesta invalidi (deterministico):
-        si propaga SUBITO, senza ritentare a vuoto."""
-        data = json.dumps(corpo).encode("utf-8") if corpo is not None else None
+        si propaga SUBITO, senza ritentare a vuoto.
+
+        09/10/2026 (AUDIT_2026-10-09/fallimenti_action): ``gia_scritto`` (facoltativo)
+        dice se la scrittura e' arrivata al DB nonostante l'errore. Si interroga SOLO
+        dopo un esito AMBIGUO (502/503/504/52x del gateway, rete, timeout: la richiesta
+        puo' essere stata eseguita); MAI dopo un 500 di PostgREST (57014 = istruzione
+        annullata, non scritta). Se risponde True non si ritenta: niente righe doppie e
+        niente altri invii da ~27 MB al DB. Corpo JSON compatto (stesso valore, ~12% di
+        byte in meno sull'atlante da 381 leghe)."""
+        data = (json.dumps(corpo, separators=(",", ":")).encode("utf-8")
+                if corpo is not None else None)
         for tent in range(len(self.attese) + 1):
             req = urllib.request.Request(f"{self.url}/rest/v1/{path}", data=data, method=metodo)
             req.add_header("apikey", self.key)
@@ -956,6 +966,10 @@ class _Scrittore:
                         dettaglio = ""
                 if code is not None and code < 500:
                     raise
+                if gia_scritto is not None and code != 500 and gia_scritto():
+                    logger.warning("[atlante] scrittura %s KO (%s) ma la riga RISULTA scritta "
+                                   "sul DB: nessun ritentativo", path, code or ex)
+                    return
                 if tent >= len(self.attese):
                     raise
                 logger.warning("[atlante] scrittura %s KO (%s) %s, ritento tra %ss",
@@ -1048,10 +1062,23 @@ class _Scrittore:
         frattempo."""
         corpo = {"generated_at": generated_at, "n_leghe": n_leghe, "n_partite": n_partite,
                 "watermark_event_id": watermark_event_id, "payload": atlas}
+
+        def _gia_scritta() -> bool:
+            # 09/10: la versione di QUESTA run (stesso generated_at) e' gia' sul DB?
+            # Una lettura sola, senza ritentativi; un errore vale "non lo so" = False.
+            try:
+                righe = LettoreDB(self.url, self.key, attese=(), timeout=60.0,
+                                  sleep=self.sleep, pausa=0.0).get(
+                    "hazard_atlas", {"select": "id", "generated_at": f"eq.{generated_at}",
+                                     "limit": "1"})
+            except Exception:  # noqa: BLE001 - controllo di cortesia, mai bloccante
+                return False
+            return bool(righe)
         try:
             self._req("POST", "rpc/hazard_atlas_salva_versione", {
                 "p_generated_at": generated_at, "p_n_leghe": n_leghe, "p_n_partite": n_partite,
-                "p_watermark_event_id": watermark_event_id, "p_payload": atlas}, "return=minimal")
+                "p_watermark_event_id": watermark_event_id, "p_payload": atlas}, "return=minimal",
+                gia_scritto=_gia_scritta)
             return
         except urllib.error.HTTPError as ex:
             if ex.code != 404:
@@ -1059,7 +1086,7 @@ class _Scrittore:
             logger.warning("[atlante] RPC hazard_atlas_salva_versione assente (migrazione "
                            "migrations/hazard_atlas_rpc_scrittura_2026-09-28.sql non ancora "
                            "applicata?): ripiego sulla POST diretta su hazard_atlas.")
-        self._req("POST", "hazard_atlas", corpo, "return=minimal")
+        self._req("POST", "hazard_atlas", corpo, "return=minimal", gia_scritto=_gia_scritta)
 
     def salva_versione(self, atlas: Dict[str, Any], tieni: int = 7) -> None:
         """Una riga nuova in ``hazard_atlas`` (atlante assemblato + filigrana);

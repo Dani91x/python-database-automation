@@ -104,6 +104,9 @@ def get_supabase_client() -> Client:
     _TLS.client = client
     _TLS.timeout = voluto
     _TLS.contatore = _installa_contatore(client) if _STATO_RETE["rinnovo_ogni"] else None
+    if resilienza_action_attiva():
+        # 09/10: solo nei processi delle action (mai nei bot), vedi TrasportoResiliente
+        _installa_trasporto_resiliente(client)
     return client
 
 
@@ -292,9 +295,12 @@ def con_ritentativi(fn: Callable[[], _T], *, etichetta: str = "",
         attese = ()                                      # interruttore aperto: un tentativo solo
     totale = len(attese) + 1
     for i in range(totale):
+        prima = getattr(_TLS, "dentro_ritentativi", False)
+        _TLS.dentro_ritentativi = True                   # 09/10: il trasporto non ritenta qui sotto
         try:
             risultato = fn()
         except Exception as e:
+            _TLS.dentro_ritentativi = prima
             classe = classifica_guasto_rete(e)
             if classe is None:
                 raise
@@ -314,6 +320,7 @@ def con_ritentativi(fn: Callable[[], _T], *, etichetta: str = "",
                               " con un client NUOVO" if classe == "connessione_terminata" else "")
             dormi(attesa)
             continue
+        _TLS.dentro_ritentativi = prima
         if i:
             STATISTICHE_RETE["riusciti_dopo_ritentativo"] += 1
         _STATO_RETE["guasti_di_fila"] = 0
@@ -408,3 +415,218 @@ def riepilogo_rete() -> str:
     return (f"ritentativi {s['ritentativi']} (riusciti dopo un ritentativo {s['riusciti_dopo_ritentativo']}), "
             f"guasti persistenti {s['guasti_persistenti']}, client rinnovati {s['rinnovi_client']}; "
             f"errori transitori per classe: {per_classe}")
+
+
+# ---------------------------------------------------------------------------
+# 09/10/2026 - RESILIENZA DI TRASPORTO PER LE ACTION (AUDIT_2026-10-09/fallimenti_action)
+# ---------------------------------------------------------------------------
+# Nelle ultime 300 run le rosse di Leagues Mapping (02, 03, 04/10), ML Post-Calibration
+# (05/10) e Retrain/rechain (09/10) sono TUTTE una pagina HTML di Cloudflare (520/521/522)
+# su UNA chiamata PostgREST senza ritentativo. Invece di avvolgere a mano le ~60
+# `.execute()` dei 9 workflow, il client PostgREST dei processi delle ACTION ritenta al
+# livello del trasporto httpx, con la STESSA politica di `con_ritentativi` (attese
+# 2-4-8-16-32 s con jitter, log `[RETE]`, STATISTICHE_RETE, interruttore) piu' UN
+# ritentativo lungo (ATTESA_LUNGA_ACTION_S). Si accende SOLO con `attiva_resilienza_action()`
+# (lo chiama `esegui_main_action`, il `__main__` degli script delle action) o con
+# `DB_RESILIENZA_ACTION=1` nell'ambiente (passi `python - <<PY` dei workflow): i bot non
+# lo chiamano mai e restano identici.
+#
+# Cosa si ritenta (mai il 57014, mai un 4xx, mai un 500 JSON di PostgREST):
+#   - richiesta NON consegnata all'origine (ConnectError/ConnectTimeout/PoolTimeout,
+#     Cloudflare 521/522/523/525/526/530): sempre, qualunque metodo;
+#   - esito AMBIGUO (520/524/502/503/504/527, 500 con pagina HTML, ReadTimeout, connessione
+#     terminata): SOLO se la richiesta e' idempotente: GET/HEAD/OPTIONS/PUT/PATCH/DELETE,
+#     upsert (Prefer: resolution=...), RPC di sola lettura (RPC_LETTURA_ACTION). Un insert
+#     puro o una RPC che scrive non si ripete alla cieca (righe doppie, contatori).
+# Persistente: il trasporto restituisce l'ultima risposta (o rilancia l'ultima eccezione),
+# lo script fallisce come prima e `esegui_main_action` lo dichiara con una riga chiara.
+ENV_RESILIENZA_ACTION = "DB_RESILIENZA_ACTION"
+#: dopo le attese brevi, un'attesa lunga (il 09/10 il DB e' rimasto giu' ~26 minuti)
+ATTESA_LUNGA_ACTION_S = 120.0
+STATUS_NON_CONSEGNATA = frozenset({521, 522, 523, 525, 526, 530})
+STATUS_AMBIGUI = frozenset({502, 503, 504, 520, 524, 527})
+#: RPC che leggono soltanto (ritentabili anche su esito ambiguo)
+RPC_LETTURA_ACTION = frozenset({"season_detail_gaps", "season_gaps_summary",
+                                "season_aggregates_summary", "leagues_needing_retrain",
+                                "get_direction", "fetch_missing_fixture_coverage"})
+_METODI_IDEMPOTENTI = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE"})
+
+
+def _attese_action() -> Tuple[float, ...]:
+    lunga = _secondi_da_env("DB_RESILIENZA_ATTESA_LUNGA_S", ATTESA_LUNGA_ACTION_S)
+    return tuple(ATTESE_RETE_S) + (lunga,)
+
+
+def resilienza_action_attiva() -> bool:
+    if _STATO_RETE.get("resilienza_action"):
+        return True
+    return (os.environ.get(ENV_RESILIENZA_ACTION) or "").strip().lower() in ("1", "true", "si", "on")
+
+
+def attiva_resilienza_action() -> None:
+    """Accende il trasporto resiliente per TUTTO il processo (il prossimo
+    get_supabase_client crea un client nuovo che lo monta). Solo processi delle action."""
+    _STATO_RETE["resilienza_action"] = True
+    _TLS.client = None
+
+
+def richiesta_idempotente(request: Any) -> bool:
+    """True se rieseguire la richiesta PostgREST non cambia il risultato."""
+    metodo = str(getattr(request, "method", "") or "").upper()
+    if metodo in _METODI_IDEMPOTENTI:
+        return True
+    if metodo != "POST":
+        return False
+    path = str(getattr(getattr(request, "url", None), "path", "") or "")
+    if "/rpc/" in path:
+        return path.rsplit("/rpc/", 1)[1].strip("/") in RPC_LETTURA_ACTION
+    prefer = str(request.headers.get("prefer", "") or "").lower()
+    return "resolution=" in prefer                        # upsert (merge/ignore duplicates)
+
+
+def classifica_risposta_action(status: int, content_type: str) -> Optional[str]:
+    """'non_consegnata' | 'ambigua' | None (risposta da restituire cosi' com'e')."""
+    if status in STATUS_NON_CONSEGNATA:
+        return "non_consegnata"
+    if status in STATUS_AMBIGUI:
+        return "ambigua"
+    if status == 500 and "html" in (content_type or "").lower():
+        return "ambigua"                                  # pagina del gateway, non JSON di PostgREST
+    return None
+
+
+def classifica_eccezione_action(exc: BaseException) -> Optional[str]:
+    """'non_consegnata' | 'ambigua' | None (da rilanciare subito)."""
+    import httpx
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+        return "non_consegnata"
+    if classifica_guasto_rete(exc) is not None:
+        return "ambigua"
+    return None
+
+
+class TrasportoResiliente:
+    """Avvolge il trasporto httpx del client PostgREST (``session._transport``) e ritenta i
+    guasti di rete/gateway secondo le regole sopra. Le richieste fuori da /rest/v1/
+    (storage, auth) passano intatte; dentro `con_ritentativi` (catchup) passa intatto,
+    perche' li' ritenta gia' il livello di sopra."""
+
+    def __init__(self, interno: Any, *, attese: Optional[Sequence[float]] = None,
+                 dormi: Optional[Callable[[float], Any]] = None,
+                 casuale: Optional[Callable[[], float]] = None) -> None:
+        self._interno = interno
+        self._attese = attese
+        self._dormi = dormi
+        self._casuale = casuale
+
+    def handle_request(self, request: Any) -> Any:
+        path = str(request.url.path or "")
+        if "/rest/v1/" not in path or getattr(_TLS, "dentro_ritentativi", False):
+            return self._interno.handle_request(request)
+        attese = tuple(self._attese) if self._attese is not None else _attese_action()
+        if _STATO_RETE["guasti_di_fila"] >= INTERRUTTORE_DOPO_GUASTI:
+            attese = ()                                   # interruttore aperto: un tentativo solo
+        dormi = self._dormi or _time.sleep
+        casuale = self._casuale or _random.random
+        idempotente = richiesta_idempotente(request)
+        etichetta = f"{request.method} {path.split('/rest/v1/', 1)[1][:60]}"
+        totale = len(attese) + 1
+        for i in range(totale):
+            try:
+                risposta = self._interno.handle_request(request)
+            except Exception as e:  # noqa: BLE001 - classificata sotto
+                tipo = classifica_eccezione_action(e)
+                if tipo is None or (tipo == "ambigua" and not idempotente):
+                    raise
+                classe = classifica_guasto_rete(e) or "connessione"
+                descr = descrivi_errore(e)
+                if i + 1 >= totale:
+                    self._persistente(etichetta, classe, totale, descr)
+                    raise
+            else:
+                tipo = classifica_risposta_action(risposta.status_code,
+                                                  risposta.headers.get("content-type", ""))
+                if tipo is None or (tipo == "ambigua" and not idempotente):
+                    if i:
+                        STATISTICHE_RETE["riusciti_dopo_ritentativo"] += 1
+                    if tipo is None:
+                        _STATO_RETE["guasti_di_fila"] = 0
+                    return risposta
+                classe = "gateway"
+                descr = f"HTTP {risposta.status_code}"
+                if i + 1 >= totale:
+                    self._persistente(etichetta, classe, totale, descr)
+                    return risposta
+                risposta.close()
+            STATISTICHE_RETE["per_classe"][classe] += 1
+            STATISTICHE_RETE["ritentativi"] += 1
+            attesa = float(attese[i]) * (0.75 + 0.5 * float(casuale()))
+            _log_rete.warning("[RETE] %s: %s %s (tentativo %d/%d): %s -> ritento tra %.1f s",
+                              etichetta, classe, tipo, i + 1, totale, descr, attesa)
+            dormi(attesa)
+        raise RuntimeError("non raggiungibile")  # pragma: no cover
+
+    @staticmethod
+    def _persistente(etichetta: str, classe: str, totale: int, descr: str) -> None:
+        STATISTICHE_RETE["per_classe"][classe] += 1
+        STATISTICHE_RETE["guasti_persistenti"] += 1
+        _STATO_RETE["guasti_di_fila"] += 1
+        _log_rete.error("[RETE] %s: %s PERSISTENTE dopo %d tentativi: %s", etichetta, classe,
+                        totale, descr)
+
+    def close(self) -> None:
+        self._interno.close()
+
+    def __enter__(self) -> "TrasportoResiliente":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
+
+
+def _installa_trasporto_resiliente(client: Any) -> bool:
+    """Mette TrasportoResiliente sotto il client PostgREST. False se non si puo'."""
+    try:
+        sessione = client.postgrest.session
+        if not isinstance(sessione._transport, TrasportoResiliente):
+            sessione._transport = TrasportoResiliente(sessione._transport)
+        return True
+    except Exception:  # noqa: BLE001 - client finti o versioni diverse
+        return False
+
+
+def azzera_interruttore() -> None:
+    """Richiude l'interruttore dei guasti di fila (dopo un'attesa lunga voluta: il
+    prossimo tentativo ha di nuovo tutti i ritentativi brevi)."""
+    _STATO_RETE["guasti_di_fila"] = 0
+
+
+def esegui_main_action(main: Callable[[], _T], nome: str) -> _T:
+    """Il `__main__` degli script delle action: accende la resilienza di trasporto ed esegue
+    `main`. Un guasto di rete/gateway rimasto dopo tutti i ritentativi diventa UNA riga
+    chiara (log, annotazione ::error:: e riepilogo del job) + exit 1; il traceback resta,
+    raccolto in un gruppo del log. Ogni altro errore risale identico (traceback normale)."""
+    attiva_resilienza_action()
+    try:
+        return main()
+    except Exception as e:  # noqa: BLE001 - classificata sotto
+        classe = classifica_guasto_rete(e)
+        if classe is None:
+            raise
+        import sys
+        import traceback
+        riga = (f"GUASTO DB PERSISTENTE ({classe}) in {nome}: {descrivi_errore(e)} "
+                f"- rete PostgREST: {riepilogo_rete()}")
+        print("::group::traceback del guasto (dettaglio)", flush=True)
+        traceback.print_exc(file=sys.stdout)
+        print("::endgroup::", flush=True)
+        print(f"::error::{riga}", flush=True)
+        print(riga, file=sys.stderr, flush=True)
+        percorso = os.environ.get("GITHUB_STEP_SUMMARY")
+        if percorso:
+            try:
+                with open(percorso, "a", encoding="utf-8") as fh:
+                    fh.write(f"### GUASTO DB PERSISTENTE\n\n{riga}\n")
+            except OSError:
+                pass
+        raise SystemExit(1) from None

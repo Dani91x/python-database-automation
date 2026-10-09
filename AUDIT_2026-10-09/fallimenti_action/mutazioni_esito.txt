@@ -1,0 +1,27 @@
+M01 trasporto mai montato: 10 rossi: test_522_persistente_attese_brevi_poi_lunga_poi_interruttore, test_attivazione_da_ambiente_per_i_passi_inline, test_eccezioni_di_trasporto, test_insert_puro_si_ritenta_solo_se_non_consegnato[521-2], test_insert_puro_si_ritenta_solo_se_non_consegnato[522-2], test_patch_e_delete_si_ritentano_su_520, test_postcal_run_37277717856_521_poi_200, test_rechain_run_37898960743_522_poi_200_il_planner_legge, test_rpc_di_lettura_si_ritenta_rpc_che_scrive_no, test_upsert_si_ritenta_anche_su_520
+M02 insert puro ritentato su esito ambiguo: 2 rossi: test_eccezioni_di_trasporto, test_insert_puro_si_ritenta_solo_se_non_consegnato[520-1]
+M03 RPC che scrive ritentata su esito ambiguo: 1 rossi: test_rpc_di_lettura_si_ritenta_rpc_che_scrive_no
+M04 522 trattato come ambiguo: 3 rossi: test_insert_puro_si_ritenta_solo_se_non_consegnato[521-2], test_insert_puro_si_ritenta_solo_se_non_consegnato[522-2], test_rpc_di_lettura_si_ritenta_rpc_che_scrive_no
+M05 500 JSON (57014) ritentato: 1 rossi: test_57014_e_4xx_mai_ritentati[<lambda>-57014]
+M06 niente attesa lunga: 1 rossi: test_522_persistente_attese_brevi_poi_lunga_poi_interruttore
+M07 interruttore ignorato dal trasporto: 3 rossi: test_522_persistente_attese_brevi_poi_lunga_poi_interruttore, test_esegui_main_action_guasto_persistente_riga_chiara_exit_1, test_incremental_todo_guasto_di_rete_risale_rpc_assente_resta_vuota
+M08 il trasporto ritenta anche dentro con_ritentativi: 1 rossi: test_dentro_con_ritentativi_il_trasporto_non_raddoppia
+M09 main: nessuna riga chiara (risale tutto): 1 rossi: test_esegui_main_action_guasto_persistente_riga_chiara_exit_1
+M10 main: inghiotte anche gli errori di codice: 1 rossi: test_esegui_main_action_errore_di_codice_risale_identico
+M11 variabile d'ambiente ignorata: 1 rossi: test_attivazione_da_ambiente_per_i_passi_inline
+M12 ritenta anche fuori da /rest/v1/: 1 rossi: test_fuori_da_rest_v1_passa_intatto
+M13 planner inghiotte di nuovo il guasto di rete: 1 rossi: test_incremental_todo_guasto_di_rete_risale_rpc_assente_resta_vuota
+M14 planner senza attese lunghe: 1 rossi: test_planner_con_attesa
+M15 rechain rosso sul guasto DB: 1 rossi: test_rechain_bash[guasto_db]
+M16 rechain rilancia senza controllo anti-doppio: 1 rossi: test_rechain_bash[gh_ko_run_creata]
+M17 rechain rilancia con stato illeggibile: 1 rossi: test_rechain_bash[gh_ko_stato_illeggibile]
+M18 atlante: gia_scritto ignorato: 2 rossi: test_atlante_520_ma_riga_gia_scritta_nessun_ritentativo, test_atlante_520_riga_assente_ritenta_e_500_57014_non_controlla
+M19 atlante: controllo anche dopo il 500 (57014): 1 rossi: test_atlante_520_riga_assente_ritenta_e_500_57014_non_controlla
+M20 atlante: JSON non compatto: 1 rossi: test_atlante_corpo_compatto
+M21 pre-controllo atlante senza ritentativi: 1 rossi: test_atlante_pre_controllo_ritenta_sul_520
+M22 Daily senza tetto di tempo: 1 rossi: test_workflow_contratti
+M23 Post-Cal di nuovo senza versione fissa: 1 rossi: test_workflow_contratti
+M24 leagues_mapper non passa da esegui_main_action: 1 rossi: test_entrypoint_dei_workflow_passano_da_esegui_main_action
+M25 timeout di lettura non ritentato: 1 rossi: test_eccezioni_di_trasporto
+M26 rechain: piano gate senza resilienza d'ambiente: 1 rossi: test_workflow_contratti
+ripristino sha256: identico

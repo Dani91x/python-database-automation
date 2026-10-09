@@ -403,4 +403,7 @@ def run_full_leagues_backfill_mapping() -> None:
 
 
 if __name__ == "__main__":
-    run_full_leagues_backfill_mapping()
+    # 09/10/2026: resilienza di trasporto PostgREST + riga chiara sul guasto DB persistente
+    # (db_client.esegui_main_action, AUDIT_2026-10-09/fallimenti_action)
+    from db_client import esegui_main_action
+    esegui_main_action(run_full_leagues_backfill_mapping, "leagues_mapper.py")

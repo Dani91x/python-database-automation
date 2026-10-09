@@ -91,11 +91,23 @@ jobs:
           import json, os, sys, urllib.error, urllib.request
           url = os.environ["SUPABASE_URL"].rstrip("/")
           key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          import time
           def leggi(path):
-              req = urllib.request.Request(url + "/rest/v1/" + path,
-                                           headers={"apikey": key, "Authorization": "Bearer " + key})
-              with urllib.request.urlopen(req, timeout=60) as r:
-                  return json.loads(r.read().decode("utf-8"))
+              # 09/10/2026: ritentativi su 5xx/52x/rete (prima un solo 520 = run rossa);
+              # un 4xx (404 = tabelle assenti) esce subito come prima
+              attese = (5, 15, 45, 90)
+              for i in range(len(attese) + 1):
+                  req = urllib.request.Request(url + "/rest/v1/" + path,
+                                               headers={"apikey": key, "Authorization": "Bearer " + key})
+                  try:
+                      with urllib.request.urlopen(req, timeout=60) as r:
+                          return json.loads(r.read().decode("utf-8"))
+                  except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
+                      code = getattr(e, "code", None)
+                      if (code is not None and code < 500) or i >= len(attese):
+                          raise
+                      print(f"[PRE] lettura {path.split('?')[0]} KO ({code or e}), ritento tra {attese[i]} s")
+                      time.sleep(attese[i])
           try:
               leggi("hazard_atlas_leghe?select=league_id&limit=1")
               ult = leggi("hazard_atlas?select=watermark_event_id&order=generated_at.desc&limit=1")

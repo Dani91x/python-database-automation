@@ -30,6 +30,8 @@ concurrency:
 jobs:
   run-predictions:
     runs-on: ubuntu-latest
+    # 09/10/2026: tetto esplicito (prima il default di GitHub, 360 min): ultime 25 riuscite mediana 67 min, p90 170, max 229
+    timeout-minutes: 330
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
