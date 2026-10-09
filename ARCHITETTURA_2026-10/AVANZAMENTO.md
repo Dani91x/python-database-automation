@@ -145,6 +145,16 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
   di menu «Salute» visibile a monitor spento: entra cosi' o si aspetta un interruttore?). Da fare nel cloud: R-3 prima del congelamento, R-4
   (7 giorni) prima della migrazione, R-6, R-9; poi le decisioni tecniche (a)-(e) e lo scenario «modalita-mista».
 
+- 09/10 (cloud, 19:00) - CHIUSI R-3, R-4, R-5, R-6, R-9 in un solo commit sul ramo dell'architettura, perimetro T0A/T0C (da portare sul
+  ramo `tappa0-salute-su-master` con cherry-pick). R-5: la voce «Salute» si vede SOLO con il monitor acceso: la STESSA riga
+  `MONITOR_SALUTE=1` del `.env` della radice, letta da `vite.config.ts` alla build (`VITE_MONITOR_SALUTE`, `frontend/src/lib/monitorSalute.ts`);
+  nessuna chiamata a runtime (una prima versione con una RPC ogni 5 minuti e' stata scartata: la fotografia di parita' vieta al guscio
+  letture nuove, 24 pagine rosse). Dopo aver cambiato la riga: `npm run build` ad app spenta. La rotta /salute resta. Scelta del
+  coordinatore su delega dell'utente: niente voce visibile a monitor spento. R-4: pulizia di serie 7 giorni (migrazione, COSA_FA, referto T0A) con test. R-9: test in processo pulito
+  (`sonde.ATTIVO` falso all'import; la mutazione del PC ora e' rossa). R-6: il finto `update_trade(id, **fields)` come il vero. R-3:
+  `CAMPI_ID_OROLOGIO` legato alla tabella del par. 3 di `TOLLERANZE.md` (campo in piu' o in meno = rosso). U-60: confermati 120 ms
+  (incertezza 110-150) come proposto dal PC. Ogni test nuovo falsificato (rosso con la mutazione, verde col ripristino).
+
 ## Punto di ripresa
 
 Ordine dei lavori: PC -> B1-B5 e verifica/firma di T0A, T0B4, T0C strumenti; cloud -> decisioni tecniche (a)-(e), scenario

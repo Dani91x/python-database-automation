@@ -607,3 +607,26 @@ def test_certifica_senza_flag_nuovi_nessuna_cassetta(banco, capsys, tmp_path, mo
     assert chiamate == []
     assert _originali() == prima
     assert "CASSETTA" not in capsys.readouterr().out
+
+
+def test_tolleranza_3_elenco_chiuso_uguale_a_tolleranze_md():
+    """R-3 della verifica del PC (09/10): l'elenco della tolleranza 3 e' CHIUSO e
+    deve essere ESATTAMENTE la tabella del par. 3 di TOLLERANZE.md. Un campo in
+    piu' (es. ``price``, ``size``, ``prezzo``) allargherebbe in silenzio la
+    tolleranza agli importi: qui diventa rosso."""
+    import re
+    from pathlib import Path
+    from Betfair.stream.backtest import ombra as OMB
+    radice = Path(__file__).resolve().parents[3]
+    testo = (radice / "ARCHITETTURA_2026-10" / "riferimenti_congelati" / "TOLLERANZE.md").read_text(encoding="utf-8")
+    par3 = testo.split("## 3.", 1)[1].split("\n## ", 1)[0]
+    righe = [r for r in par3.splitlines() if r.startswith("| `")]
+    prima_colonna = " ".join(r.split("|")[1] for r in righe)
+    dichiarati = set(re.findall(r"`([a-z_]+)`", prima_colonna))
+    # la prima riga cita anche il campo annidato e la sua voce: "(e `ordine` dentro `_fill_attraversato`)"
+    annidati = {x for coppia in OMB.CAMPI_ID_OROLOGIO_ANNIDATI for x in coppia}
+    assert set(OMB.CAMPI_ID_OROLOGIO) == dichiarati - annidati
+    assert len(OMB.CAMPI_ID_OROLOGIO) == len(set(OMB.CAMPI_ID_OROLOGIO))
+    assert OMB.CAMPI_ID_OROLOGIO_ANNIDATI == (("_fill_attraversato", "ordine"),)
+    for importo in ("price", "size", "prezzo", "importo", "stake", "bet_id", "ref", "pid"):
+        assert importo not in OMB.CAMPI_ID_OROLOGIO
