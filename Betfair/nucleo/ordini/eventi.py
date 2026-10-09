@@ -12,7 +12,10 @@ buco, chiedere ``da_seq`` (oggi servito dal motore: ``motore_ordini.py``
 La logica e' quella del consumatore di oggi, ``safe_strategy/porta_ordini.py``
 ``MemoriaComandi`` (``_avanza_seq``, ``ricevi_ack``, ``ricevi_evento``,
 ``chiudi_da_seq``), riscritta qui perche' un comparto non importa un bot (04 par. 2.3):
-la parita' e' provata dal test ``tests/test_c1_eventi.py`` contro la classe di oggi.
+la parita' e' provata dal test ``tests/test_c1_eventi.py`` contro la classe di oggi sui
+cicli di vita veri. DIVERGENZA voluta (revisione del 09/10): un terminale non viene
+sovrascritto da un altro terminale e l'abbinato non cala (``MemoriaComandi`` li accetta
+se il seq e' piu' alto).
 In piu' rispetto a oggi: il consumatore CHIEDE da solo il ``da_seq`` alla sorgente
 iniettata (in Safe lo fa il client WebSocket ``_chiedi_da_seq``).
 
@@ -55,6 +58,15 @@ class SorgenteDaSeq(Protocol):
     def da_seq(self, attore: str, dal: int) -> RispostaDaSeq: ...
 
 
+#: ref tenuti in memoria (come ``MemoriaComandi.MAX_REF_IN_MEMORIA``)
+MAX_REF_IN_MEMORIA = 5000
+
+
+def _pota(d: Dict[str, object], massimo: int = MAX_REF_IN_MEMORIA) -> None:
+    while len(d) > massimo:
+        d.pop(next(iter(d)))
+
+
 def terminale(ev: Optional[EventoOrdine]) -> bool:
     return ev is not None and ev.fase in FASI_TERMINALI
 
@@ -72,7 +84,7 @@ class ConsumatoreEventi:
         self.buchi_non_colmati = 0
         self.richieste_da_seq = 0
         self._riparazione_in_corso = False
-        self.ack: Dict[str, Ack] = {}
+        self.ack: Dict[str, Ack] = {}          # in ordine d'arrivo (dict), potati
         self.eventi: Dict[str, EventoOrdine] = {}
         self.conti: Dict[str, int] = {"ack": 0, "eventi": 0, "vecchi": 0}
 
@@ -114,19 +126,25 @@ class ConsumatoreEventi:
     def _registra_ack(self, a: Ack) -> bool:
         if not a.ref:
             return False
+        self.ack.pop(a.ref, None)
         self.ack[a.ref] = a
+        _pota(self.ack)
         self.conti["ack"] += 1
         return self._avanza_seq(a.seq)
 
     def _registra_evento(self, ev: EventoOrdine) -> Tuple[bool, bool]:
-        """(entrato, buco)."""
+        """(entrato, buco). Piu' severo di ``MemoriaComandi``: oltre al seq vecchio e al
+        non terminale dopo un terminale, scarta un terminale dopo un terminale e un
+        abbinato che CALA (lo stato non regredisce mai)."""
         buco = self._avanza_seq(ev.seq)
         prima = self.eventi.get(ev.ref)
-        if prima is not None and (ev.seq <= prima.seq or (terminale(prima)
-                                                         and not terminale(ev))):
+        if prima is not None and (ev.seq <= prima.seq or terminale(prima)
+                                  or float(ev.abbinato) < float(prima.abbinato) - 1e-9):
             self.conti["vecchi"] += 1
             return False, buco
+        self.eventi.pop(ev.ref, None)
         self.eventi[ev.ref] = ev
+        _pota(self.eventi)
         self.conti["eventi"] += 1
         return True, buco
 

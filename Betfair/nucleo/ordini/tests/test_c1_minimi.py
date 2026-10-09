@@ -260,3 +260,45 @@ def test_divergenze_di_oggi_fotografate() -> None:
     # (5) live_min_bet=2,0 e' solo un interruttore: il minimo usato e' quello di minimi_it (1,00)
     assert NM.taglia_scalper("LAY", 2.0, 1.2, variante="calcio", ingresso=False,
                              uscita_esatta=False, size_step=0.0, live_min_bet=2.0) == ("diretto", 1.2)
+
+
+class _Passato(Exception):
+    """L'importo ha superato le guardie: ``order_exec`` tocca il DB (qui: si ferma)."""
+
+
+class _SbFermo:
+    def __getattr__(self, _nome: str) -> Any:
+        raise _Passato()
+
+
+def test_politica_rifiuta_del_desktop_parita_con_order_exec() -> None:
+    """Divergenza 10a: il terminale del desktop RIFIUTA la punta non multipla di 0,50 (il
+    motore e la porta la troncano). ``verdetto_desktop`` = lo stesso testo di oggi."""
+    from Betfair import order_exec as OE
+
+    n = 0
+    for lato in ("back", "lay"):
+        for imp in [round(i * 0.01, 2) for i in range(1, 801)] + [7.27, 12.345, 99.995]:
+            try:
+                OE.place_order(1, "btts", "Yes", lato, 2.0, size=imp, sb=_SbFermo())
+                vecchio: Optional[str] = "?"          # nessuna rete: non deve accadere
+            except _Passato:
+                vecchio = None
+            except ValueError as ex:
+                vecchio = str(ex)
+            assert NM.verdetto_desktop(lato, imp) == vecchio, (lato, imp)
+            n += 1
+    assert n > 1500
+    # la divergenza: stessa punta, desktop rifiuta, porta/motore troncano
+    assert NM.verdetto_desktop("back", 7.27) is not None
+    assert NM.verdetto_runner("back", 7.27).legalized_size == 7.0
+
+
+def test_apertura_tennis_al_minimo_parita_con_esecutore_tennis(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    from Betfair.stream.tennis_live import esecutore_tennis as ET
+
+    monkeypatch.delenv("TENNIS_LIVE_JURISDICTION", raising=False)
+    for lato in ("back", "lay", "BACK", "LAY"):
+        for imp in IMPORTI[:1201]:
+            assert NM.porta_al_minimo(lato, imp) == ET._apertura_al_minimo(lato, imp), (lato, imp)

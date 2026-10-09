@@ -10,35 +10,46 @@ docstring) e nello stesso ordine:
   1. il ``ref`` e' ``"<attore>-<id>"`` di al massimo 32 caratteri, l'attore e' ammesso;
      altrimenti rifiuto NON registrato (senza seq, senza dedup), come il motore;
   2. DEDUP per ``ref``: lo stesso ref = la stessa richiesta, mai un secondo invio; la
-     risposta e' l'ack della PRIMA volta con motivo ``ref_gia_visto``. Il dedup vale per
-     tutta la vita del processo (ben oltre i 60 s di Betfair) e SOPRAVVIVE al riavvio
-     tramite l'``Archivio`` iniettato (``nucleo/dati/contratto.py``, tabella locale
-     ``TABELLA_REF``) e il diario;
-  3. validazione con ``valida_comando`` di oggi (via ``adattatore_comando``);
+     risposta e' l'ack della PRIMA volta con motivo ``ref_gia_visto``. Vale per tutta la
+     vita del processo (ben oltre i 60 s di Betfair) e SOPRAVVIVE al riavvio tramite
+     l'``Archivio`` iniettato (tabella locale ``TABELLA_REF``) e il diario. Fra DUE porte
+     sullo stesso archivio il ref si PRENOTA con ``Archivio.transizione(TABELLA_REF,
+     {"ref": ref}, "", "riservato:<porta>")`` (inserisci-se-assente atomico: estensione
+     chiesta a G1, referto par. 2): una sola porta lo esegue; la prenotazione orfana di
+     QUESTA porta (stesso diario, crash prima del diario) si riprende;
+  3. validazione con ``valida_comando`` di oggi (via ``adattatore_comando``); i ``params``
+     del bot arrivano all'esecutore che li dichiara (``accetta_params``), altrimenti la
+     richiesta e' RIFIUTATA (``params_non_serviti``): un cap che sparisce in silenzio no;
   4. freni (``controlli.controlla``): eta', modo della RIGA (mai del servizio), guardia
      d'avvio, modo effettivo sulle aperture, kill-switch, settings;
   5. minimi .it (``minimi.verdetto_porta``): punta diretta a multiplo di 0,50 per difetto
-     col residuo dichiarato (``punta_050`` negli eventi), sotto il minimo rifiuto
-     ``SOTTO_MINIMO_NON_PIAZZABILE`` (place-and-trim solo se l'esecutore lo dichiara);
-     una taglia gia' rifiutata da Betfair (``INVALID_BET_SIZE``) non si ritenta identica;
-  6. tetto delle transazioni/ora UNO per conto (``controlli.ContatoreTransazioni``);
-  7. ``seq`` per attore (UN contatore per ack ed eventi, base = istante d'avvio, mai
-     indietro), memoria degli ultimi ``MEMORIA_EVENTI`` messaggi per ``da_seq``;
-  8. DIARIO write-ahead (la classe ``motore_ordini.Diario`` di oggi, iniettata): la riga
-     ``inviato`` e' su disco (flush+fsync) PRIMA dell'esecutore; senza diario niente
-     ordine (``diario_non_scrivibile``); poi ``esito`` ed ``evento``;
+     col residuo dichiarato (``punta_050``), TENNIS: apertura sotto il minimo portata AL
+     minimo (``portata_al_minimo``, come ``esecutore_tennis._apertura_al_minimo``) e
+     nessun place-and-trim; sotto il minimo rifiuto ``SOTTO_MINIMO_NON_PIAZZABILE``; una
+     taglia gia' rifiutata da Betfair (``INVALID_BET_SIZE``) non si ritenta identica; il
+     place-and-trim NON passa dalla porta (il contratto non sa marcarlo);
+  6. tetto delle transazioni/ora UNO per conto e PER MODO (paper e live mai sommati: il
+     contatore del live e, se dato, uno del paper);
+  7. ``seq`` per attore (UN contatore per ack ed eventi), assegnato e messo in memoria
+     nella STESSA sezione di lucchetto (``da_seq`` non vede mai un seq non ancora in
+     memoria); mai indietro, nemmeno dopo un riavvio con l'orologio indietro (blocchi di
+     seq prenotati nell'archivio, ``TABELLA_SEQ``); memoria degli ultimi 500 per ``da_seq``;
+  8. DIARIO write-ahead (la classe ``motore_ordini.Diario`` di oggi, iniettata): ``inviato``
+     su disco PRIMA dell'archivio e dell'esecutore (un crash in mezzo non lascia mai un
+     ack accettato senza traccia); ``esito``/``evento`` durevoli come nel motore;
   9. un esito IGNOTO (eccezione o timeout dell'esecutore) e' l'evento ``ignoto``: MAI
-     trasformato in ``accettato``/``abbinato``, MAI ritentato (i soldi non si ritentano).
+     trasformato in ``accettato``/``abbinato``, MAI ritentato; un ref ``ignoto`` resta
+     ``in_volo`` anche dopo il riavvio finche' un evento vero non lo risolve;
+ 10. stato MONOTONO per ref: un terminale non si sovrascrive, l'abbinato non cala (un
+     evento in ritardo si scarta: ordini e mercato arrivano su due sistemi senza ordine).
 
-Entrate: ``Esecutore`` (place/cancel/replace -> ``EventoOrdine``), ``FreniConto``,
-``Archivio``, diario, orologio, contatore. Uscite: ``Ack``, ``EventoOrdine`` (in memoria,
-ai consumatori iscritti, in ``eventi``/``da_seq``), ``StatoOrdine`` per ref.
+I consumatori iscritti ricevono i messaggi FUORI da ogni lucchetto (coda di consegna): un
+consumatore puo' chiamare ``invia`` dalla sua callback senza bloccare nulla.
 
-Cosa NON fa (ondata 1): non e' agganciata all'app; e' SINCRONA (l'esecutore gira nel
-thread di ``invia``: il thread del motore e' dell'ondata 2); non fa place-and-trim ne'
-ordini equivalenti ne' azioni composte (green-up, cash-out: sopra la porta); non calcola
-la posizione (comparto C2: ``posizione`` delega a una fonte iniettata); non riconcilia
-con Betfair gli ordini in volo al riavvio: li marca ``ignoto`` e li elenca (``in_volo``).
+Cosa NON fa (ondata 1): non e' agganciata all'app; e' SINCRONA e SERIALIZZATA (un invio
+alla volta, come il thread unico del motore); non fa place-and-trim ne' ordini equivalenti
+ne' azioni composte (sopra la porta); non calcola la posizione (comparto C2); non
+riconcilia con Betfair gli ordini in volo al riavvio: li marca ``ignoto`` e li elenca.
 """
 from __future__ import annotations
 
@@ -64,15 +75,27 @@ logger = logging.getLogger(__name__)
 
 #: la tabella LOCALE dell'archivio con gli ack gia' dati (chiave: ``ref``)
 TABELLA_REF = "ordini_ref_visti"
+#: la tabella LOCALE con il blocco di seq prenotato (chiave: ``chiave="seq"``)
+TABELLA_SEQ = "ordini_seq"
+STATO_RISERVATO = "riservato"
+STATO_ACK = "ack"
+BLOCCO_SEQ = 1000
 MAX_REF = 32
 MEMORIA_EVENTI = 500
+#: ref tenuti in RAM (come ``MemoriaComandi.MAX_REF_IN_MEMORIA``): oltre, il dedup legge
+#: l'archivio
+MAX_IN_MEMORIA = 5000
 MAX_ETA_DEFAULT_MS = 3000
 MAX_ETA_SETTINGS_S_DEFAULT = 10.0
 #: codice dell'evento di un esito IGNOTO (eccezione/timeout dell'esecutore)
 CODICE_ESITO_IGNOTO = "ESITO_IGNOTO"
-#: rifiuti della porta che il motore non ha (fail-closed sul dedup persistente)
+#: rifiuti della porta che il motore non ha
 M_ARCHIVIO = "archivio_non_disponibile"
 M_COMPOSTA = "azione_composta_sopra_la_porta"
+M_PARAMS = "params_non_serviti"
+#: un ref prenotato da un'ALTRA porta sullo stesso archivio, senza ack entro l'attesa
+MOTIVO_IN_CARICO_ALTROVE = "in carico a un'altra porta: esito da riconciliare per ref"
+_EPS = 1e-9
 
 
 class Diario(Protocol):
@@ -100,8 +123,8 @@ def _codice_betfair(codice: Optional[str]) -> bool:
 
 
 def _ack_in_riga(ack: Ack, attore: str, ts_ms: int) -> Dict[str, Any]:
-    return {"ref": ack.ref, "attore": attore, "accettato": ack.accettato, "seq": ack.seq,
-            "motivo": ack.motivo, "ts_ms": ts_ms}
+    return {"ref": ack.ref, "stato": STATO_ACK, "attore": attore, "accettato": ack.accettato,
+            "seq": ack.seq, "motivo": ack.motivo, "ts_ms": ts_ms}
 
 
 def _ack_da_riga(riga: Mapping[str, Any]) -> Ack:
@@ -111,17 +134,30 @@ def _ack_da_riga(riga: Mapping[str, Any]) -> Ack:
                motivo=riga.get("motivo"))
 
 
-def _evento_in_riga(ev: EventoOrdine) -> Dict[str, Any]:
-    return dataclasses.asdict(ev)
+def _stantio(prima: Optional[StatoOrdine], ev: EventoOrdine) -> bool:
+    """Un evento che farebbe REGREDIRE lo stato: dopo un terminale, o con meno abbinato."""
+    if prima is None:
+        return False
+    if prima.fase in FASI_TERMINALI:
+        return True
+    return float(ev.abbinato) < float(prima.abbinato) - _EPS
+
+
+def _pota(d: "collections.OrderedDict[Any, Any]", massimo: Optional[int] = None) -> None:
+    limite = MAX_IN_MEMORIA if massimo is None else massimo
+    while len(d) > limite:
+        d.popitem(last=False)
 
 
 class PortaLocale:
     """``PortaOrdini`` in-process sopra un ``Esecutore``. Thread-safe: gli invii sono
-    SERIALIZZATI (``_lock_invio``, come il thread unico del motore di oggi); seq, memoria e
-    stati hanno il loro lucchetto, e ``notifica`` (flusso degli ordini) non aspetta l'invio."""
+    SERIALIZZATI (``_lock_invio``, come il thread unico del motore); seq, memoria e stati
+    stanno sotto ``_lock`` (seq assegnato e memorizzato insieme); le callback dei
+    consumatori girano fuori da ogni lucchetto (``_consegna``)."""
 
     def __init__(self, esecutore: Esecutore, *, freni: CT.FreniConto, archivio: Archivio,
                  diario: Diario, contatore: Optional[CT.ContatoreTransazioni] = None,
+                 contatore_paper: Optional[CT.ContatoreTransazioni] = None,
                  orologio_ms: Callable[[], int] = lambda: int(time.time() * 1000),
                  attori: Optional[frozenset] = None,
                  max_eta_ms: int = MAX_ETA_DEFAULT_MS,
@@ -129,12 +165,18 @@ class PortaLocale:
                  riduzione_verificata: Optional[Callable[[RichiestaOrdine], bool]] = None,
                  guardia_armata: Callable[[], bool] = lambda: False,
                  fonte_posizione: Optional[Callable[[str, Optional[int]], PosizioneConto]] = None,
-                 memoria_eventi: int = MEMORIA_EVENTI) -> None:
+                 memoria_eventi: int = MEMORIA_EVENTI,
+                 attesa_altrove_s: float = 0.5,
+                 dormi: Callable[[float], None] = time.sleep) -> None:
         self._esecutore = esecutore
         self._freni = freni
         self._archivio = archivio
         self._diario = diario
-        self._contatore = contatore
+        # UN contatore PER MODO, mai sommati: ``contatore`` e' quello del LIVE (il tetto di
+        # Betfair, per conto); ``contatore_paper`` (facoltativo) riproduce il tetto proprio
+        # del client simulato di oggi (``runner.py`` lo crea con lo stesso limite)
+        self._contatori: Dict[str, Optional[CT.ContatoreTransazioni]] = {
+            "live": contatore, "paper": contatore_paper}
         self._ora_ms = orologio_ms
         self._attori = attori if attori is not None else _motore().ATTORI_COMANDO
         self.max_eta_ms = int(max_eta_ms)
@@ -143,22 +185,32 @@ class PortaLocale:
         self._guardia_armata = guardia_armata
         self._fonte_posizione = fonte_posizione
         self._memoria_max = int(memoria_eventi)
+        self._attesa_altrove_s = float(attesa_altrove_s)
+        self._dormi = dormi
         self._lock = threading.RLock()
         self._lock_invio = threading.Lock()
+        self._lock_consegna = threading.Lock()
+        self._da_consegnare: Deque[Tuple[str, Messaggio]] = collections.deque()
         self._base_seq = int(orologio_ms())
+        self._seq_riservato = 0
+        # chi PRENOTA i ref nell'archivio: il diario identifica la porta (stesso diario
+        # dopo un riavvio = stessa porta; due porte vive = due diari)
+        self._padrone = f"{STATO_RISERVATO}:{getattr(diario, 'cartella', None) or id(self)}"
         self._seq: Dict[str, int] = {}
         self._memoria: Dict[str, Deque[Messaggio]] = {}
-        self._visti: Dict[str, Ack] = {}
-        self._attore_di_ref: Dict[str, str] = {}
-        self._richieste: Dict[str, RichiestaOrdine] = {}
-        self._stati: Dict[str, StatoOrdine] = {}
-        self._extra_eventi: Dict[str, Dict[str, Any]] = {}
+        self._visti: "collections.OrderedDict[str, Ack]" = collections.OrderedDict()
+        self._attore_di_ref: "collections.OrderedDict[str, str]" = collections.OrderedDict()
+        self._richieste: "collections.OrderedDict[str, RichiestaOrdine]" = \
+            collections.OrderedDict()
+        self._stati: "collections.OrderedDict[str, StatoOrdine]" = collections.OrderedDict()
+        self._extra_eventi: "collections.OrderedDict[str, Dict[str, Any]]" = \
+            collections.OrderedDict()
         self._taglie_rifiutate: "collections.OrderedDict[Tuple[str, str, float], int]" = \
             collections.OrderedDict()
         self._consumatori: Dict[str, List[Callable[[Messaggio], None]]] = {}
         self._in_volo: List[str] = []
         self.conti: Dict[str, int] = {"richieste": 0, "accettate": 0, "rifiutate": 0,
-                                      "doppioni": 0, "eventi": 0, "ignoti": 0}
+                                      "doppioni": 0, "eventi": 0, "ignoti": 0, "stantii": 0}
 
     # ------------------------------------------------------------ ciclo di vita
     def _giorni(self) -> List[str]:
@@ -166,48 +218,72 @@ class PortaLocale:
         return [(oggi - timedelta(days=1)).strftime("%Y-%m-%d"), oggi.strftime("%Y-%m-%d")]
 
     def apri(self) -> None:
-        """Rilegge il diario: ack gia' dati (dedup), ultimo stato per ref, ordini in volo
-        al riavvio (``inviato`` senza ``esito``) -> stato ``ignoto`` ed elenco ``in_volo``.
-        Diario illeggibile: si DICE (dedup dall'archivio, stati vuoti)."""
+        """Riavvio: base dei seq (mai indietro: blocco prenotato nell'archivio e seq del
+        diario), ack gia' dati (dedup), ultimo stato per ref, ordini in volo (``inviato``
+        senza esito o con esito ``ignoto``) -> stato ``ignoto`` ed elenco ``in_volo``.
+        Diario o archivio illeggibili: si DICE (log) e si prosegue col resto."""
+        massimo = self._base_seq
+        try:
+            riga = self._archivio.leggi(TABELLA_SEQ, {"chiave": "seq"})
+            if riga is not None:
+                massimo = max(massimo, int(riga.get("fino_a") or 0))
+        except Exception as ex:  # noqa: BLE001
+            logger.error("[porta] blocco dei seq illeggibile all'apertura: %s", str(ex)[:200])
         try:
             righe = self._diario.leggi(self._giorni())
         except Exception as ex:  # noqa: BLE001 - il dedup resta all'archivio
             logger.error("[porta] diario illeggibile all'apertura: %s", str(ex)[:200])
-            return
-        inviati: Dict[str, Dict[str, Any]] = {}
-        chiusi = set()
+            righe = []
         with self._lock:
-            for rec in righe:
-                ref = rec.get("ref")
-                if not isinstance(ref, str):
-                    continue
-                tipo = rec.get("tipo")
-                if tipo in ("inviato", "rifiuto") and isinstance(rec.get("ack"), dict):
-                    self._visti.setdefault(ref, _ack_da_riga(rec["ack"]))
-                    if rec.get("attore"):
-                        self._attore_di_ref[ref] = str(rec["attore"])
-                if tipo == "inviato":
-                    inviati[ref] = rec
-                elif tipo in ("esito", "evento") and isinstance(rec.get("evento"), dict):
-                    chiusi.add(ref)
-                    try:
-                        self._aggiorna_stato(EventoOrdine(**rec["evento"]))
-                    except (TypeError, ValueError) as ex:
-                        # riga scritta da un'altra versione: si DICE, lo stato resta
-                        # quello delle righe leggibili (il ref resta chiuso: nessun reinvio)
-                        logger.error("[porta] diario: evento di %s illeggibile: %s", ref,
-                                     str(ex)[:160])
-            for ref, rec in inviati.items():
-                if ref in chiusi:
-                    continue
-                self._in_volo.append(ref)
-                seq = (rec.get("ack") or {}).get("seq") or 0
-                self._stati[ref] = StatoOrdine(ref=ref, bet_id=None, fase="ignoto",
-                                               abbinato=0.0, residuo=0.0, prezzo_medio=None,
-                                               ultimo_seq=int(seq))
+            massimo = max(massimo, self._rileggi(righe))
+            self._base_seq = massimo
         if self._in_volo:
             logger.warning("[porta] %d ordini in volo al riavvio (stato ignoto, da "
                            "riconciliare): %s", len(self._in_volo), ", ".join(self._in_volo)[:300])
+
+    def _rileggi(self, righe: List[Dict[str, Any]]) -> int:
+        """Rilegge le righe del diario (in ordine); ritorna il seq piu' alto visto."""
+        inviati: Dict[str, Dict[str, Any]] = {}
+        massimo = 0
+        for rec in righe:
+            ref = rec.get("ref")
+            if not isinstance(ref, str):
+                continue
+            tipo = rec.get("tipo")
+            ack = rec.get("ack")
+            if tipo in ("inviato", "rifiuto") and isinstance(ack, dict):
+                self._visti[ref] = _ack_da_riga(ack)       # l'ultima riga vince
+                massimo = max(massimo, int(ack.get("seq") or 0))
+                if rec.get("attore"):
+                    self._attore_di_ref[ref] = str(rec["attore"])
+            if tipo == "inviato":
+                inviati[ref] = rec
+            elif tipo == "rifiuto":
+                inviati.pop(ref, None)                   # chiuso: nulla e' partito
+                self._stati[ref] = StatoOrdine(ref=ref, bet_id=None, fase="rifiutato",
+                                               abbinato=0.0, residuo=0.0, prezzo_medio=None,
+                                               ultimo_seq=int((ack or {}).get("seq") or 0))
+            elif tipo in ("esito", "evento") and isinstance(rec.get("evento"), dict):
+                try:
+                    ev = EventoOrdine(**rec["evento"])
+                except (TypeError, ValueError) as ex:
+                    logger.error("[porta] diario: evento di %s illeggibile: %s", ref,
+                                 str(ex)[:160])
+                    continue
+                massimo = max(massimo, int(ev.seq))
+                if not _stantio(self._stati.get(ref), ev):
+                    self._aggiorna_stato(ev)
+        for ref in inviati:
+            st = self._stati.get(ref)
+            if st is None or st.fase == "ignoto":
+                # inviato senza esito, o con esito IGNOTO: resta da riconciliare
+                self._in_volo.append(ref)
+                if st is None:
+                    seq = (inviati[ref].get("ack") or {}).get("seq") or 0
+                    self._stati[ref] = StatoOrdine(ref=ref, bet_id=None, fase="ignoto",
+                                                   abbinato=0.0, residuo=0.0,
+                                                   prezzo_medio=None, ultimo_seq=int(seq))
+        return massimo
 
     def chiudi(self) -> None:
         try:
@@ -216,30 +292,59 @@ class PortaLocale:
             logger.error("[porta] chiusura del diario KO: %s", str(ex)[:200])
 
     def in_volo(self) -> Tuple[str, ...]:
-        """I ref inviati e senza esito al riavvio: li riconcilia C2, mai un secondo invio."""
+        """I ref inviati e senza esito certo al riavvio: li riconcilia C2, mai un reinvio."""
         with self._lock:
             return tuple(self._in_volo)
 
     # ------------------------------------------------------------ seq e memoria
-    def _prossimo_seq(self, attore: str) -> int:
-        with self._lock:
-            s = self._seq.get(attore, self._base_seq) + 1
-            self._seq[attore] = s
-            return s
-
-    def _pubblica(self, attore: str, m: Messaggio) -> None:
-        with self._lock:
-            mem = self._memoria.get(attore)
-            if mem is None:
-                mem = collections.deque(maxlen=self._memoria_max)
-                self._memoria[attore] = mem
-            mem.append(m)
-            cbs = list(self._consumatori.get(attore, ()))
-        for cb in cbs:
+    def _nuovo_seq(self, attore: str) -> int:
+        """Da chiamare CON ``_lock`` tenuto, nella stessa sezione di ``_memorizza``."""
+        s = self._seq.get(attore, self._base_seq) + 1
+        self._seq[attore] = s
+        if s > self._seq_riservato:
+            self._seq_riservato = s + BLOCCO_SEQ
             try:
-                cb(m)
-            except Exception:  # noqa: BLE001 - un consumatore rotto non ferma la porta
-                logger.exception("[porta] consumatore di %s KO", attore)
+                self._archivio.scrivi(TABELLA_SEQ, {"chiave": "seq",
+                                                    "fino_a": self._seq_riservato})
+            except Exception as ex:  # noqa: BLE001 - il seq resta valido; il riavvio no
+                logger.error("[porta] blocco dei seq NON prenotato (dopo un riavvio con "
+                             "l'orologio indietro i seq potrebbero ripetersi): %s",
+                             str(ex)[:160])
+        return s
+
+    def _memorizza(self, attore: str, m: Messaggio) -> None:
+        """Da chiamare CON ``_lock`` tenuto: memoria per ``da_seq`` e coda di consegna."""
+        mem = self._memoria.get(attore)
+        if mem is None:
+            mem = collections.deque(maxlen=self._memoria_max)
+            self._memoria[attore] = mem
+        mem.append(m)
+        self._da_consegnare.append((attore, m))
+
+    def _consegna(self) -> None:
+        """Consegna ai consumatori FUORI da ogni lucchetto, in ordine. Una callback che
+        chiama ``invia`` (stesso thread) non blocca: i suoi messaggi li consegna il giro
+        gia' in corso."""
+        while True:
+            if not self._lock_consegna.acquire(blocking=False):
+                return
+            try:
+                while True:
+                    with self._lock:
+                        if not self._da_consegnare:
+                            break
+                        attore, m = self._da_consegnare.popleft()
+                        cbs = list(self._consumatori.get(attore, ()))
+                    for cb in cbs:
+                        try:
+                            cb(m)
+                        except Exception:  # noqa: BLE001 - un consumatore rotto non ferma la porta
+                            logger.exception("[porta] consumatore di %s KO", attore)
+            finally:
+                self._lock_consegna.release()
+            with self._lock:
+                if not self._da_consegnare:
+                    return
 
     def aggiungi_consumatore(self, attore: str, cb: Callable[[Messaggio], None]) -> None:
         """Iscrive ``cb`` ai messaggi (ack ed eventi) di ``attore``: il PUSH, che puo'
@@ -267,12 +372,12 @@ class PortaLocale:
     # ------------------------------------------------------------------- stato
     def _aggiorna_stato(self, ev: EventoOrdine) -> None:
         prima = self._stati.get(ev.ref)
-        if prima is not None and prima.fase in FASI_TERMINALI and ev.fase not in FASI_TERMINALI:
-            return
         self._stati[ev.ref] = StatoOrdine(
             ref=ev.ref, bet_id=ev.bet_id or (prima.bet_id if prima else None), fase=ev.fase,
             abbinato=float(ev.abbinato), residuo=float(ev.residuo),
             prezzo_medio=ev.prezzo_medio, ultimo_seq=int(ev.seq))
+        self._stati.move_to_end(ev.ref)
+        _pota(self._stati)
 
     def stato(self, ref: str) -> Optional[StatoOrdine]:
         with self._lock:
@@ -285,27 +390,61 @@ class PortaLocale:
         return self._fonte_posizione(market_id, selection_id)
 
     # ------------------------------------------------------------------- dedup
-    def _gia_visto(self, ref: str) -> Optional[Ack]:
-        """L'ack della prima volta, dalla RAM o dall'archivio. Solleva se l'archivio non
-        risponde (il chiamante rifiuta: fail-closed)."""
-        with self._lock:
-            ack = self._visti.get(ref)
-        if ack is not None:
-            return ack
-        riga = self._archivio.leggi(TABELLA_REF, {"ref": ref})
-        if riga is None:
-            return None
-        ack = _ack_da_riga(riga)
-        with self._lock:
-            self._visti.setdefault(ref, ack)
-        return ack
+    def _ricorda(self, attore: str, ack: Ack) -> None:
+        """Ack nel dedup in RAM (con ``_lock`` tenuto)."""
+        self._visti[ack.ref] = ack
+        self._attore_di_ref[ack.ref] = attore
+        _pota(self._visti)
+        _pota(self._attore_di_ref)
 
     def _registra_ack(self, attore: str, ack: Ack) -> None:
         """Ack nel dedup: RAM e archivio (persistente). Un errore dell'archivio SALE."""
         with self._lock:
-            self._visti[ack.ref] = ack
-            self._attore_di_ref[ack.ref] = attore
+            self._ricorda(attore, ack)
         self._archivio.scrivi(TABELLA_REF, _ack_in_riga(ack, attore, int(self._ora_ms())))
+
+    def _dall_archivio(self, ref: str) -> Optional[Mapping[str, Any]]:
+        return self._archivio.leggi(TABELLA_REF, {"ref": ref})
+
+    def _attesa_altrove(self, ref: str) -> Ack:
+        """Il ref e' prenotato da un'altra porta: si aspetta il suo ack (breve), mai un
+        secondo invio. Senza ack: accettato senza seq, esito da riconciliare per ref."""
+        M = _motore()
+        fine = time.monotonic() + self._attesa_altrove_s
+        while True:
+            riga = self._dall_archivio(ref)
+            if riga is not None and riga.get("stato") == STATO_ACK:
+                return dataclasses.replace(_ack_da_riga(riga), motivo=M.MOTIVO_REF_GIA_VISTO)
+            if time.monotonic() >= fine:
+                return Ack(ref=ref, accettato=True, seq=None,
+                           motivo=f"{M.MOTIVO_REF_GIA_VISTO}: {MOTIVO_IN_CARICO_ALTROVE}")
+            self._dormi(0.02)
+
+    def _dedup(self, ref: str) -> Optional[Ack]:
+        """L'ack di un ref gia' visto (RAM, archivio, prenotazione di un'altra porta), o
+        None dopo aver PRENOTATO il ref per questa porta. Solleva se l'archivio non
+        risponde (il chiamante rifiuta: fail-closed)."""
+        M = _motore()
+        with self._lock:
+            ack = self._visti.get(ref)
+        if ack is not None:
+            return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO)
+        riga = self._dall_archivio(ref)
+        if riga is None:
+            if self._archivio.transizione(TABELLA_REF, {"ref": ref}, "", self._padrone):
+                return None
+            riga = self._dall_archivio(ref)
+        if riga is not None and riga.get("stato") == self._padrone:
+            # prenotato da QUESTA porta in una vita precedente e mai arrivato al diario
+            # (il diario e' scritto PRIMA di ogni invio e qui non c'e'): nulla e' partito
+            logger.warning("[porta] %s: prenotazione orfana di questa porta ripresa", ref)
+            return None
+        if riga is not None and riga.get("stato") == STATO_ACK:
+            ack = _ack_da_riga(riga)
+            with self._lock:
+                self._ricorda(str(riga.get("attore") or ""), ack)
+            return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO)
+        return self._attesa_altrove(ref)
 
     # --------------------------------------------------------------- l'invio
     def _rifiuto_non_registrato(self, ref: str, motivo: str) -> Ack:
@@ -314,46 +453,53 @@ class PortaLocale:
 
     def _rifiuto_registrato(self, r: Union[RichiestaOrdine, RichiestaComposta],
                             motivo: str) -> Ack:
-        seq = self._prossimo_seq(r.attore)
-        ack = Ack(ref=r.ref, accettato=False, seq=seq, motivo=motivo)
-        self.conti["rifiutate"] += 1
-        try:
-            self._registra_ack(r.attore, ack)
-        except Exception as ex:  # noqa: BLE001 - il rifiuto resta rifiuto (dedup in RAM)
-            logger.error("[porta] archivio KO sul rifiuto di %s (dedup solo in RAM): %s",
-                         r.ref, str(ex)[:160])
-        try:
-            self._diario.scrivi({"tipo": "rifiuto", "ref": r.ref, "attore": r.attore,
-                                 "ts_ms": int(self._ora_ms()),
-                                 "ack": _ack_in_riga(ack, r.attore, 0)}, durevole=False)
-        except Exception as ex:  # noqa: BLE001
-            logger.warning("[porta] diario del rifiuto %s non scritto: %s", r.ref, ex)
         with self._lock:
+            seq = self._nuovo_seq(r.attore)
+            ack = Ack(ref=r.ref, accettato=False, seq=seq, motivo=motivo)
+            self.conti["rifiutate"] += 1
+            try:
+                self._registra_ack(r.attore, ack)
+            except Exception as ex:  # noqa: BLE001 - il rifiuto resta rifiuto (dedup in RAM)
+                logger.error("[porta] archivio KO sul rifiuto di %s (dedup solo in RAM): %s",
+                             r.ref, str(ex)[:160])
+            try:
+                self._diario.scrivi({"tipo": "rifiuto", "ref": r.ref, "attore": r.attore,
+                                     "ts_ms": int(self._ora_ms()),
+                                     "ack": _ack_in_riga(ack, r.attore, 0)}, durevole=False)
+            except Exception as ex:  # noqa: BLE001
+                logger.warning("[porta] diario del rifiuto %s non scritto: %s", r.ref, ex)
             self._stati[r.ref] = StatoOrdine(ref=r.ref, bet_id=None, fase="rifiutato",
                                              abbinato=0.0, residuo=0.0, prezzo_medio=None,
                                              ultimo_seq=seq)
-        self._pubblica(r.attore, ack)
+            _pota(self._stati)
+            self._memorizza(r.attore, ack)
         return ack
 
     def invia(self, r: Union[RichiestaOrdine, RichiestaComposta],
               extra: Optional[ExtraComando] = None) -> Ack:
-        """Il percorso di un ordine (vedi il docstring del modulo, passi 1-9)."""
-        # UN invio alla volta, come il thread unico del motore (``LUCCHETTO_ORDINI``): due
-        # thread con lo stesso ref non passano mai insieme il controllo del dedup
-        with self._lock_invio:
-            ricevuto = int(self._ora_ms())
-            self.conti["richieste"] += 1
-            ref = r.ref if isinstance(r.ref, str) else ""
-            subito = self._ref_e_dedup(r, ref)
-            if subito is not None:
-                return subito
-            motivo, da_eseguire, extra_eventi = self._valuta(r, extra, ricevuto)
-            if motivo is not None:
-                return self._rifiuto_registrato(r, motivo)
-            ack = self._accetta(r, ref, da_eseguire, extra, extra_eventi)
-            if ack.accettato:
-                self._esegui(da_eseguire)          # 9. l'esecutore, una volta sola
-            return ack
+        """Il percorso di un ordine (vedi il docstring del modulo, passi 1-10)."""
+        try:
+            # UN invio alla volta, come il thread unico del motore (``LUCCHETTO_ORDINI``)
+            with self._lock_invio:
+                return self._invia(r, extra)
+        finally:
+            self._consegna()
+
+    def _invia(self, r: Union[RichiestaOrdine, RichiestaComposta],
+               extra: Optional[ExtraComando]) -> Ack:
+        ricevuto = int(self._ora_ms())
+        self.conti["richieste"] += 1
+        ref = r.ref if isinstance(r.ref, str) else ""
+        subito = self._ref_e_dedup(r, ref)
+        if subito is not None:
+            return subito
+        motivo, da_eseguire, extra_eventi = self._valuta(r, extra, ricevuto)
+        if motivo is not None:
+            return self._rifiuto_registrato(r, motivo)
+        ack = self._accetta(r, ref, da_eseguire, extra, extra_eventi)
+        if ack.accettato:
+            self._esegui(da_eseguire, extra)          # 9. l'esecutore, una volta sola
+        return ack
 
     def _ref_e_dedup(self, r: Union[RichiestaOrdine, RichiestaComposta],
                      ref: str) -> Optional[Ack]:
@@ -368,20 +514,19 @@ class PortaLocale:
                 ref, f"{M.M_PARAM}: ref deve essere '{prefisso}<id>' di al massimo "
                      f"{MAX_REF} caratteri")
         try:
-            prima = self._gia_visto(ref)
+            prima = self._dedup(ref)
         except Exception as ex:  # noqa: BLE001 - dedup non verificabile: fail-closed
             logger.error("[porta] archivio illeggibile, %s RIFIUTATO: %s", ref, str(ex)[:160])
             return self._rifiuto_non_registrato(
                 ref, f"{M_ARCHIVIO}: dedup per ref non verificabile ({str(ex)[:120]})")
         if prima is not None:
             self.conti["doppioni"] += 1
-            return dataclasses.replace(prima, motivo=M.MOTIVO_REF_GIA_VISTO)
-        return None
+        return prima
 
     def _valuta(self, r: Union[RichiestaOrdine, RichiestaComposta],
                 extra: Optional[ExtraComando],
                 ricevuto: int) -> Tuple[Optional[str], Any, Dict[str, Any]]:
-        """Passi 3-6: validazione di oggi, freni, minimi, tetto delle transazioni.
+        """Passi 3-6: validazione di oggi, params, freni, minimi, tetto delle transazioni.
         Ritorna (motivo del rifiuto o None, richiesta da eseguire, extra degli eventi)."""
         M = _motore()
         try:
@@ -391,6 +536,10 @@ class PortaLocale:
         if isinstance(r, RichiestaComposta):
             return (f"{M_COMPOSTA}: azione '{r.azione}' composta: sta sopra la porta "
                     f"(contratto C, Azione = place|cancel|replace)"), r, {}
+        params = dict(extra.params) if extra is not None and extra.params else {}
+        if params and not getattr(self._esecutore, "accetta_params", False):
+            return (f"{M_PARAMS}: params {sorted(params)} non arrivano a questo esecutore: "
+                    f"richiesta NON eseguita (mai un cap che sparisce in silenzio)"), r, {}
         max_eta = int(extra.max_eta_ms) if extra is not None and extra.max_eta_ms else \
             self.max_eta_ms
         verifica = (lambda: bool(self._riduzione_verificata(r))) \
@@ -406,159 +555,203 @@ class PortaLocale:
             ok, da_eseguire, extra_eventi, motivo = self._minimi(r, piano)
             if not ok:
                 return str(motivo), r, {}
-        if self._contatore is not None and not self._contatore.consentito():
+        # paper e live MAI sommati: ogni modo ha il SUO contatore (o nessuno)
+        contatore = self._contatori.get(r.modo)
+        if contatore is not None and not contatore.consentito():
             return (f"{CT.CODICE_TETTO}: Max Transaction Count has been reached "
-                    f"({self._contatore.totale_ora}) for current hour"), r, {}
+                    f"({contatore.totale_ora}) for current hour"), r, {}
         return None, da_eseguire, extra_eventi
 
     def _accetta(self, r: RichiestaOrdine, ref: str, da_eseguire: RichiestaOrdine,
                  extra: Optional[ExtraComando], extra_eventi: Dict[str, Any]) -> Ack:
-        """Passi 7-8: seq, dedup persistente (archivio), diario write-ahead. Se uno dei
-        due non si scrive il comando e' RIFIUTATO (fail-closed) e il rifiuto resta nel
-        dedup."""
+        """Passi 7-8: seq, DIARIO write-ahead e poi dedup persistente, nello stesso lucchetto
+        che memorizza l'ack. Se uno dei due non si scrive il comando e' RIFIUTATO
+        (fail-closed); se il diario ha gia' ``inviato``, il rifiuto lo CHIUDE (riga
+        ``rifiuto``), cosi' il riavvio non lo crede in volo."""
         M = _motore()
-        seq = self._prossimo_seq(r.attore)
-        ack = Ack(ref=ref, accettato=True, seq=seq, motivo=None)
-        try:
-            self._registra_ack(r.attore, ack)
-        except Exception as ex:  # noqa: BLE001 - senza dedup persistente niente ordine
-            logger.error("[porta] archivio NON scrivibile, %s RIFIUTATO: %s", ref, ex)
-            return self._rifiuto_dopo_seq(r, Ack(ref=ref, accettato=False, seq=seq,
-                                                 motivo=f"{M_ARCHIVIO}: {str(ex)[:160]}"),
-                                          persisti=False)
-        try:
-            self._diario.scrivi({"tipo": "inviato", "canale": "porta", "ref": ref,
-                                 "attore": r.attore, "azione": r.azione, "mode": r.modo,
-                                 "seq": seq, "ts_ms": int(self._ora_ms()),
-                                 "parametri": comando_da_richiesta(da_eseguire, extra),
-                                 "ack": _ack_in_riga(ack, r.attore, 0)})
-        except Exception as ex:  # noqa: BLE001 - fail-closed: senza diario niente ordine
-            logger.error("[porta] diario NON scrivibile, %s RIFIUTATO: %s", ref, ex)
-            return self._rifiuto_dopo_seq(r, Ack(ref=ref, accettato=False, seq=seq,
-                                                 motivo=f"{M.M_DIARIO}: {str(ex)[:160]}"),
-                                          persisti=True)
         with self._lock:
-            self._richieste[ref] = da_eseguire
-            if extra_eventi:
-                self._extra_eventi[ref] = extra_eventi
-        self.conti["accettate"] += 1
-        self._pubblica(r.attore, ack)
-        return ack
-
-    def _rifiuto_dopo_seq(self, r: RichiestaOrdine, ack: Ack, *, persisti: bool) -> Ack:
-        """Un rifiuto con il seq gia' assegnato (archivio o diario non scrivibili)."""
-        with self._lock:
-            self._visti[ack.ref] = ack
-        if persisti:
+            seq = self._nuovo_seq(r.attore)
+            ack = Ack(ref=ref, accettato=True, seq=seq, motivo=None)
+            try:
+                self._diario.scrivi({"tipo": "inviato", "canale": "porta", "ref": ref,
+                                     "attore": r.attore, "azione": r.azione, "mode": r.modo,
+                                     "seq": seq, "ts_ms": int(self._ora_ms()),
+                                     "parametri": comando_da_richiesta(da_eseguire, extra),
+                                     "ack": _ack_in_riga(ack, r.attore, 0)})
+            except Exception as ex:  # noqa: BLE001 - fail-closed: senza diario niente ordine
+                logger.error("[porta] diario NON scrivibile, %s RIFIUTATO: %s", ref, ex)
+                return self._rifiuto_dopo_seq(
+                    r, Ack(ref=ref, accettato=False, seq=seq,
+                           motivo=f"{M.M_DIARIO}: {str(ex)[:160]}"), chiudi_diario=False)
             try:
                 self._registra_ack(r.attore, ack)
-            except Exception as ex:  # noqa: BLE001 - il dedup resta in RAM
-                logger.error("[porta] archivio KO sul rifiuto di %s: %s", ack.ref, ex)
+            except Exception as ex:  # noqa: BLE001 - senza dedup persistente niente ordine
+                logger.error("[porta] archivio NON scrivibile, %s RIFIUTATO: %s", ref, ex)
+                return self._rifiuto_dopo_seq(
+                    r, Ack(ref=ref, accettato=False, seq=seq,
+                           motivo=f"{M_ARCHIVIO}: {str(ex)[:160]}"), chiudi_diario=True)
+            self._richieste[ref] = da_eseguire
+            _pota(self._richieste)
+            if extra_eventi:
+                self._extra_eventi[ref] = extra_eventi
+                _pota(self._extra_eventi)
+            self.conti["accettate"] += 1
+            self._memorizza(r.attore, ack)
+        return ack
+
+    def _rifiuto_dopo_seq(self, r: RichiestaOrdine, ack: Ack, *, chiudi_diario: bool) -> Ack:
+        """Un rifiuto col seq gia' assegnato (diario o archivio non scrivibili), con
+        ``_lock`` tenuto: nel dedup (RAM, archivio se possibile) e, se ``inviato`` era gia'
+        sul diario, una riga ``rifiuto`` che lo chiude."""
+        self._ricorda(r.attore, ack)
+        try:
+            self._archivio.scrivi(TABELLA_REF, _ack_in_riga(ack, r.attore,
+                                                            int(self._ora_ms())))
+        except Exception as ex:  # noqa: BLE001 - il dedup resta in RAM
+            logger.error("[porta] archivio KO sul rifiuto di %s: %s", ack.ref, ex)
+        if chiudi_diario:
+            try:
+                self._diario.scrivi({"tipo": "rifiuto", "ref": ack.ref, "attore": r.attore,
+                                     "ts_ms": int(self._ora_ms()),
+                                     "ack": _ack_in_riga(ack, r.attore, 0)})
+            except Exception as ex:  # noqa: BLE001
+                logger.critical("[porta] %s: 'inviato' nel diario ma rifiuto NON scritto: "
+                                "al riavvio risultera' in volo (mai partito): %s", ack.ref, ex)
         self.conti["rifiutate"] += 1
-        self._pubblica(r.attore, ack)
+        self._stati[ack.ref] = StatoOrdine(ref=ack.ref, bet_id=None, fase="rifiutato",
+                                           abbinato=0.0, residuo=0.0, prezzo_medio=None,
+                                           ultimo_seq=int(ack.seq or 0))
+        self._memorizza(r.attore, ack)
         return ack
 
     def _minimi(self, r: RichiestaOrdine,
                 piano: Mapping[str, Any]) -> Tuple[bool, RichiestaOrdine, Dict[str, Any], Optional[str]]:
-        """Il verdetto dei minimi .it e la taglia gia' rifiutata (``_applica_minimi``)."""
+        """I minimi .it (``_controlla`` + ``_applica_minimi`` del motore): apertura TENNIS
+        portata al minimo, verdetto, punta 0,50, taglia gia' rifiutata."""
         M = _motore()
         riga = piano["riga"]
         lato = str(riga["side"]).lower()
-        v = MN.verdetto_porta(lato, float(riga["price"]), float(riga["size"]),
-                              submin_disponibile=bool(getattr(self._esecutore,
-                                                              "submin_disponibile", False)))
         extra: Dict[str, Any] = {}
         da_eseguire = r
+        if r.sport == "tennis" and not r.riduce_esposizione:
+            # 28/09 (decisione dell'utente): apertura tennis sotto il minimo -> AL minimo
+            chiesto = float(riga["size"])
+            portata = float(MN.porta_al_minimo(lato, chiesto))
+            if portata > chiesto + _EPS:
+                da_eseguire = dataclasses.replace(r, importo=portata)
+                extra["portata_al_minimo"] = {"chiesto": round(chiesto, 2),
+                                              "piazzato": round(portata, 2)}
+        importo = float(da_eseguire.importo or 0.0)
+        # place-and-trim MAI dalla porta: ``RichiestaOrdine`` non ha un campo che lo dica
+        # all'esecutore (un place da 0,60 partirebbe come place normale). Estensione
+        # proposta nel referto; fino ad allora il verdetto e' quello di un esecutore
+        # senza place-and-trim (come il runner tennis di oggi).
+        v = MN.verdetto_porta(lato, float(riga["price"]), importo, submin_disponibile=False)
         if v.esito == "impossibile":
             dettaglio = str(v.motivo or "")
             if dettaglio.startswith(M.M_SOTTO_MINIMO + ":"):
                 dettaglio = dettaglio[len(M.M_SOTTO_MINIMO) + 1:].strip()
             return False, r, extra, f"{M.M_SOTTO_MINIMO}: {dettaglio[:480]}"
         if v.esito == "diretto" and float(v.residuo or 0.0) > 0.0:
-            chiesta = round(float(riga["size"]), 2)
-            da_eseguire = dataclasses.replace(r, importo=float(v.size))
+            chiesta = round(importo, 2)
+            da_eseguire = dataclasses.replace(da_eseguire, importo=float(v.size))
             extra["punta_050"] = {"chiesto": chiesta, "piazzato": float(v.size),
                                   "residuo": round(float(v.residuo), 2),
                                   "motivo": "punta .it diretta solo a multipli di 0,50: "
                                             "arrotondata per difetto, residuo NON piazzato"}
         chiave = (r.modo, lato, round(float(da_eseguire.importo or 0.0), 2))
-        if v.esito != "submin" and chiave in self._taglie_rifiutate:
+        if chiave in self._taglie_rifiutate:
             return False, r, extra, (
                 f"{M.M_SOTTO_MINIMO}: Betfair ha gia' rifiutato INVALID_BET_SIZE un "
                 f"{chiave[1].upper()} da {chiave[2]:.2f} EUR ({chiave[0]}): non si ritenta "
                 f"identico")
         return True, da_eseguire, extra, None
 
-    def _esegui(self, r: RichiestaOrdine) -> None:
+    def _esegui(self, r: RichiestaOrdine, extra: Optional[ExtraComando]) -> None:
         """UNA chiamata all'esecutore. Un'eccezione e' un esito IGNOTO: evento ``ignoto``,
         mai ``accettato``, mai un secondo tentativo."""
+        params = dict(extra.params) if extra is not None and extra.params else None
         try:
-            if r.azione == "place":
-                ev = self._esecutore.place(r)
-            elif r.azione == "cancel":
-                ev = self._esecutore.cancel(r)
-            else:
-                ev = self._esecutore.replace(r)
+            metodo = getattr(self._esecutore, r.azione)
+            ev = metodo(r, params=params) if params else metodo(r)
         except Exception as ex:  # noqa: BLE001 - esito ignoto, si dice e si riconcilia
             logger.error("[porta] esito IGNOTO di %s (%s): %s", r.ref, r.azione, str(ex)[:200])
             self.conti["ignoti"] += 1
             ev = EventoOrdine(ref=r.ref, seq=0, fase="ignoto", bet_id=None, abbinato=0.0,
                               residuo=0.0, prezzo_medio=None,
                               codice_errore=CODICE_ESITO_IGNOTO, esito_ms=None)
-        if self._contatore is not None:
-            self._conta(r, ev)
+        contatore = self._contatori.get(r.modo)
+        if contatore is not None:
+            try:
+                self._conta(contatore, r, ev)
+            except Exception as ex:  # noqa: BLE001 - l'ordine e' partito: l'esito si scrive
+                logger.error("[porta] contatore delle transazioni KO per %s: %s", r.ref, ex)
         self._emetti(r.attore, ev, tipo="esito")
 
-    def _conta(self, r: RichiestaOrdine, ev: EventoOrdine) -> None:
-        """La transazione per conto: rifiutato da Betfair = fallita; rifiutato prima di
-        Betfair (validazione locale) = nulla; ignoto = nulla (come flumine)."""
+    @staticmethod
+    def _conta(contatore: CT.ContatoreTransazioni, r: RichiestaOrdine,
+               ev: EventoOrdine) -> None:
+        """La transazione nel contatore del SUO modo: rifiutato da Betfair = contato;
+        rifiutato prima di Betfair (validazione locale) = nulla; ignoto = nulla (flumine)."""
         if ev.fase == "ignoto":
             return
         if ev.fase == "rifiutato":
             if _codice_betfair(ev.codice_errore):
-                self._contatore.registra(r.azione, "fallito", attore=r.attore)
+                contatore.registra(r.azione, "fallito", attore=r.attore)
             return
-        self._contatore.registra(r.azione, "ok", attore=r.attore)
+        contatore.registra(r.azione, "ok", attore=r.attore)
 
-    def _emetti(self, attore: str, ev: EventoOrdine, *, tipo: str) -> EventoOrdine:
+    def _emetti(self, attore: str, ev: EventoOrdine, *, tipo: str) -> Optional[EventoOrdine]:
+        """Seq, diario (durevole), stato e memoria nella STESSA sezione di lucchetto. Un
+        evento successivo (``tipo="evento"``) che farebbe regredire lo stato si scarta."""
         with self._lock:
-            extra = self._extra_eventi.get(ev.ref)
-        if extra and "punta_050" in extra and ev.punta_050 is None:
-            ev = dataclasses.replace(ev, punta_050=extra["punta_050"])
-        ev = dataclasses.replace(ev, seq=self._prossimo_seq(attore),
-                                 esito_ms=ev.esito_ms if ev.esito_ms is not None
-                                 else int(self._ora_ms()))
-        if ev.codice_errore == "INVALID_BET_SIZE":
-            with self._lock:
-                rr = self._richieste.get(ev.ref)
-                if rr is not None and rr.azione == "place":
-                    self._taglie_rifiutate[(rr.modo, str(rr.lato),
-                                            round(float(rr.importo or 0.0), 2))] = ev.seq
-                    while len(self._taglie_rifiutate) > 500:
-                        self._taglie_rifiutate.popitem(last=False)
-        try:
-            self._diario.scrivi({"tipo": tipo, "ref": ev.ref, "ts_ms": int(self._ora_ms()),
-                                 "evento": _evento_in_riga(ev)}, durevole=False)
-        except Exception as ex:  # noqa: BLE001 - l'evento resta in memoria e si dice
-            logger.error("[porta] diario dell'evento %s/%s non scritto: %s", ev.ref, ev.seq, ex)
-        with self._lock:
+            if tipo == "evento" and _stantio(self._stati.get(ev.ref), ev):
+                self.conti["stantii"] += 1
+                logger.info("[porta] %s: evento %s scartato (stato gia' %s)", ev.ref, ev.fase,
+                            self._stati[ev.ref].fase)
+                return None
+            extra = self._extra_eventi.get(ev.ref) or {}
+            if "punta_050" in extra and ev.punta_050 is None:
+                ev = dataclasses.replace(ev, punta_050=extra["punta_050"])
+            if "portata_al_minimo" in extra and ev.portata_al_minimo is None:
+                ev = dataclasses.replace(ev, portata_al_minimo=extra["portata_al_minimo"])
+            ev = dataclasses.replace(ev, seq=self._nuovo_seq(attore),
+                                     esito_ms=ev.esito_ms if ev.esito_ms is not None
+                                     else int(self._ora_ms()))
+            self._ricorda_taglia(ev)
+            try:
+                self._diario.scrivi({"tipo": tipo, "ref": ev.ref, "ts_ms": int(self._ora_ms()),
+                                     "evento": dataclasses.asdict(ev)})
+            except Exception as ex:  # noqa: BLE001 - l'evento resta in memoria e si dice
+                logger.error("[porta] diario dell'evento %s/%s non scritto: %s", ev.ref,
+                             ev.seq, ex)
             self._aggiorna_stato(ev)
-        self.conti["eventi"] += 1
-        self._pubblica(attore, ev)
+            if ev.fase != "ignoto" and ev.ref in self._in_volo:
+                self._in_volo.remove(ev.ref)
+            self.conti["eventi"] += 1
+            self._memorizza(attore, ev)
         return ev
+
+    def _ricorda_taglia(self, ev: EventoOrdine) -> None:
+        """``INVALID_BET_SIZE``: quella taglia (modo, lato, importo) non si ritenta."""
+        if ev.codice_errore != "INVALID_BET_SIZE":
+            return
+        rr = self._richieste.get(ev.ref)
+        if rr is not None and rr.azione == "place":
+            self._taglie_rifiutate[(rr.modo, str(rr.lato).lower(),
+                                    round(float(rr.importo or 0.0), 2))] = ev.seq
+            _pota(self._taglie_rifiutate, 500)
 
     def notifica(self, ev: EventoOrdine) -> Optional[EventoOrdine]:
         """Un aggiornamento SUCCESSIVO dell'ordine ``ev.ref`` (abbinamento, scadenza) dal
         flusso degli ordini: nuovo ``seq`` dell'attore del ref. Un ref sconosciuto o un
-        evento non terminale dopo un terminale si ignorano (e si dice)."""
-        with self._lock:
-            attore = self._attore_di_ref.get(ev.ref)
-            prima = self._stati.get(ev.ref)
-        if attore is None:
-            logger.warning("[porta] evento per un ref sconosciuto %s: ignorato", ev.ref)
-            return None
-        if prima is not None and prima.fase in FASI_TERMINALI and ev.fase not in FASI_TERMINALI:
-            logger.info("[porta] %s: evento %s dopo la fase terminale %s ignorato", ev.ref,
-                        ev.fase, prima.fase)
-            return None
-        return self._emetti(attore, ev, tipo="evento")
+        evento che farebbe regredire lo stato si ignorano (e si dice)."""
+        try:
+            with self._lock:
+                attore = self._attore_di_ref.get(ev.ref)
+            if attore is None:
+                logger.warning("[porta] evento per un ref sconosciuto %s: ignorato", ev.ref)
+                return None
+            return self._emetti(attore, ev, tipo="evento")
+        finally:
+            self._consegna()

@@ -26,22 +26,36 @@ FASI = {"accettato": "accettato_betfair", "parziale": "abbinato_parziale",
 
 
 def _flusso(rnd: random.Random, n: int) -> List[Tuple[str, Any]]:
-    """Messaggi di UN attore in ordine di seq: ack e eventi di ~n/4 ref."""
+    """Messaggi di UN attore in ordine di seq: per ogni ref un ciclo di vita VERO (ack,
+    accettato, parziali con l'abbinato che cresce, UN terminale), cicli intercalati."""
     out: List[Tuple[str, Any]] = []
     seq = BASE
-    refs: List[str] = []
-    for i in range(n):
+    vivi: Dict[str, Tuple[float, int]] = {}      # ref -> (abbinato, eventi fatti)
+    i = 0
+    while len(out) < n:
         seq += 1
-        if not refs or rnd.random() < 0.25:
+        if not vivi or rnd.random() < 0.25:
+            i += 1
             ref = f"safe-t{i}"
-            refs.append(ref)
+            vivi[ref] = (0.0, 0)
             out.append(("ack", Ack(ref=ref, accettato=rnd.random() < 0.9, seq=seq, motivo=None)))
+            continue
+        ref = rnd.choice(list(vivi))
+        abbinato, fatti = vivi[ref]
+        if fatti == 0:
+            fase = rnd.choice(["accettato", "parcheggiato"])
+        elif fatti < 3 and rnd.random() < 0.6:
+            fase = rnd.choice(["parziale", "ridotto"])
+            abbinato = round(abbinato + rnd.choice([0.0, 0.5, 1.0]), 2)
         else:
-            ref = rnd.choice(refs)
-            fase = rnd.choice(list(FASI))
-            out.append(("evento", EventoOrdine(ref=ref, seq=seq, fase=fase, bet_id="1",
-                                               abbinato=0.0, residuo=0.0, prezzo_medio=None,
-                                               codice_errore=None, esito_ms=None)))
+            fase = rnd.choice(["abbinato", "annullato", "scaduto", "rifiutato"])
+            abbinato = round(abbinato + (1.0 if fase == "abbinato" else 0.0), 2)
+            del vivi[ref]
+        if ref in vivi:
+            vivi[ref] = (abbinato, fatti + 1)
+        out.append(("evento", EventoOrdine(ref=ref, seq=seq, fase=fase, bet_id="1",
+                                           abbinato=abbinato, residuo=0.0, prezzo_medio=None,
+                                           codice_errore=None, esito_ms=None)))
     return out
 
 
@@ -86,6 +100,39 @@ def test_parita_con_memoria_comandi(seme: int) -> None:
     for ref, ev in vecchio._eventi.items():
         mio = nuovo.ultimo(ref)
         assert mio is not None and (mio.seq, FASI[mio.fase]) == (ev["seq"], ev["fase"]), ref
+
+
+def _ev(ref: str, seq: int, fase: str, abbinato: float) -> EventoOrdine:
+    return EventoOrdine(ref=ref, seq=seq, fase=fase, bet_id="1", abbinato=abbinato,
+                        residuo=0.0, prezzo_medio=None, codice_errore=None, esito_ms=None)
+
+
+def test_stato_non_regredisce_piu_severo_di_oggi() -> None:
+    """DIVERGENZA dichiarata: ``MemoriaComandi`` accetta (seq piu' alto) un terminale dopo
+    un terminale e un abbinato che cala; il consumatore nuovo no."""
+    vecchio = PO.MemoriaComandi()
+    nuovo = ConsumatoreEventi("safe")
+    for ev in (_ev("safe-t1", BASE + 1, "parziale", 3.0), _ev("safe-t1", BASE + 2, "parziale", 1.0),
+               _ev("safe-t2", BASE + 3, "abbinato", 4.0), _ev("safe-t2", BASE + 4, "rifiutato", 0.0),
+               _ev("safe-t3", BASE + 5, "scaduto", 0.0), _ev("safe-t3", BASE + 6, "annullato", 0.0)):
+        vecchio.ricevi_evento(_come_safe(ev))
+        nuovo.ricevi(ev)
+    assert nuovo.ultimo("safe-t1").abbinato == 3.0
+    assert nuovo.ultimo("safe-t2").fase == "abbinato"
+    assert nuovo.ultimo("safe-t3").fase == "scaduto"            # terminale dopo terminale
+    assert vecchio._eventi["safe-t3"]["fase"] == "annullato"
+    assert vecchio._eventi["safe-t2"]["fase"] == "rifiutato"      # oggi: regredisce
+
+
+def test_memoria_del_consumatore_limitata() -> None:
+    from Betfair.nucleo.ordini import eventi as EV
+
+    cons = ConsumatoreEventi("safe")
+    for k in range(EV.MAX_REF_IN_MEMORIA + 50):
+        cons.ricevi(Ack(ref=f"safe-t{k}", accettato=True, seq=BASE + 2 * k + 1, motivo=None))
+        cons.ricevi(_ev(f"safe-t{k}", BASE + 2 * k + 2, "accettato", 0.0))
+    assert len(cons.ack) == EV.MAX_REF_IN_MEMORIA == len(cons.eventi)
+    assert "safe-t0" not in cons.eventi and cons.buchi == 0
 
 
 class _Sorgente:

@@ -8,16 +8,19 @@ Referto con numeri, parita' e divergenze: `ARCHITETTURA_2026-10/ondata1/W1-C1/RE
 UNA porta per gli ordini (`PortaLocale`, contratto `PortaOrdini`): riceve `RichiestaOrdine`, risponde `Ack`, pubblica la
 sequenza di `EventoOrdine` per attore con `seq` contiguo, con le garanzie del motore del runner di oggi (dedup per ref che
 sopravvive al riavvio, freni, minimi .it, diario write-ahead, esito ignoto mai ok) e in piu' il tetto delle transazioni/ora
-UNO per conto. Sotto, un `Esecutore` iniettato (oggi: il dispatch del runner, live e paper).
+UNO per conto e SOLO per il live (paper e live mai sommati), stato per ref monotono, dedup atomico anche fra due porte sullo
+stesso archivio. Sotto, un `Esecutore` iniettato (oggi: il dispatch del runner, live e paper, con i `params` del bot).
 
 ## 2. Entrate
 
-- `RichiestaOrdine` (contratto) piu' `ExtraComando` (max_eta_ms, params del bot); `RichiestaComposta` (estensione proposta:
+- `RichiestaOrdine` (contratto) piu' `ExtraComando` (max_eta_ms, params del bot: arrivano all'esecutore che dichiara
+  `accetta_params`, altrimenti la richiesta e' RIFIUTATA `params_non_serviti`); `RichiestaComposta` (estensione proposta:
   green-up, cash-out, dutch) e' riconosciuta e RIFIUTATA (`azione_composta_sopra_la_porta`): per contratto vive sopra.
 - Le tre forme di oggi, tradotte da `adattatore_comando.py`: comando del canale (`valida_comando`), riga della coda calcio
   `betfair_live_order_requests`, payload della coda tennis `tennis_live_order_queue`.
 - Iniettati: `Esecutore`, `FreniConto` (kill-switch, modo di processo, blocco del modo effettivo, eta' dei settings; quello di
-  oggi e' `controlli.FreniDiOggi`), `Archivio` (`nucleo/dati/contratto.py`, tabella locale `ordini_ref_visti`), diario
+  oggi e' `controlli.FreniDiOggi`), `Archivio` (`nucleo/dati/contratto.py`, tabelle locali `ordini_ref_visti` e
+  `ordini_seq`; `transizione(t, chiave, "", a)` usata come inserisci-se-assente atomico), diario
   (`motore_ordini.Diario`), `ContatoreTransazioni`, orologio, verifica della riduzione, guardia d'avvio, fonte della posizione.
 - Eventi consumati: aggiornamenti successivi di un ordine (`PortaLocale.notifica`, dal flusso degli ordini).
 
@@ -26,10 +29,11 @@ UNO per conto. Sotto, un `Esecutore` iniettato (oggi: il dispatch del runner, li
 - `Ack` (accettato/rifiutato, `seq`, motivo con i CODICI del motore: `parametri_invalidi`, `mode_non_servibile`,
   `kill_switch`, `reduces_liability_non_verificabile`, `guardia_avvio`, `settings_stantie`, `comando_scaduto`,
   `diario_non_scrivibile`, `SOTTO_MINIMO_NON_PIAZZABILE`, `ref_gia_visto`; nuovi: `MAX_TRANSACTION_COUNT`,
-  `archivio_non_disponibile`, `azione_composta_sopra_la_porta`).
+  `archivio_non_disponibile`, `azione_composta_sopra_la_porta`, `params_non_serviti`).
 - `EventoOrdine` per attore: in memoria (500), ai consumatori iscritti (`aggiungi_consumatore`), con `eventi(attore, da_seq)` e
   `da_seq(attore, dal)` (`RispostaDaSeq` con `completo`). Fasi: `FASE_DA_MOTORE` in `esecutori/runner.py`; esito ignoto =
-  `ignoto` con `codice_errore="ESITO_IGNOTO"`.
+  `ignoto` con `codice_errore="ESITO_IGNOTO"`; tennis: `portata_al_minimo` sull'apertura portata al minimo. Le callback
+  dei consumatori girano FUORI da ogni lucchetto (una callback puo' chiamare `invia`).
 - `StatoOrdine` per ref (`stato`), `in_volo()` dopo un riavvio, `ContatoreTransazioni.stato()` per la «Salute».
 - `posizione`: delegata (comparto C2); senza fonte iniettata solleva `NotImplementedError`.
 
@@ -47,12 +51,12 @@ Nessun import di supabase, di flumine o di un bot (i bot sono solo ARBITRI nei t
 | Voce | Cosa | Dove | Test |
 |---|---|---|---|
 | C-002 | schema del comando, rifiuti identici | `adattatore_comando.richiesta_da_comando` (chiama `valida_comando`) | `test_c1_adattatore_comando.py` (andata e ritorno, piano identico su comandi VERI di Safe, 14 rifiuti identici) |
-| C-003 | ack, `seq` per attore, `da_seq` 500 | `porta.py` `_prossimo_seq`, `da_seq`, `eventi`; `eventi.py` | `test_c1_porta.py` (push perso riparato, memoria superata, seq per attore, seq mai indietro); `test_c1_eventi.py` (parita' con `MemoriaComandi`) |
-| C-004 | dedup per ref anche dopo il riavvio | `porta._ref_e_dedup`, `_gia_visto`, `apri` | `test_c1_porta.py` (stessa vita, riavvio da archivio, riavvio da diario, archivio guasto fail-closed) |
+| C-003 | ack, `seq` per attore, `da_seq` 500 | `porta.py` `_nuovo_seq` + `_memorizza` (stesso lucchetto), `da_seq`, `eventi`; `eventi.py` | `test_c1_porta.py` (push perso riparato, memoria superata, seq per attore, seq mai indietro); `test_c1_eventi.py` (parita' con `MemoriaComandi`) |
+| C-004 | dedup per ref anche dopo il riavvio e fra due porte | `porta._ref_e_dedup`, `_dedup` (prenotazione), `apri` | `test_c1_porta.py` (stessa vita, riavvio da archivio, riavvio da diario, archivio guasto fail-closed); `test_c1_revisione.py` (due porte, ack fantasma, ignoto dopo il riavvio) |
 | C-011, C-013 (forma) | riga di coda di Safe, riga del dispatch | `adattatore_comando.riga_coda_da_richiesta` / `richiesta_da_riga_coda` | `test_c1_adattatore_comando.py` (riga VERA di `enqueue_place` con la normalizzazione della RPC; riga = riga del motore) |
 | C-020, C-021, C-028 (decisione) | kill-switch sulle aperture, modo della RIGA | `controlli.controlla` | `test_c1_controlli.py::test_controlla_parita_col_motore` (griglia di 768 casi = `_controlla`); `test_c1_porta.py` |
-| C-022 (rate) | transazioni/ora per CONTO | `controlli.ContatoreTransazioni` | parita' col control VERO `MaxTransactionCount` e con l'esecuzione VERA di flumine; somma su 3 attori |
-| C-030, C-031, C-035, C-036, C-072 (taglia) | minimi .it, punta 0,50, porta al minimo, taglia tennis, scalper | `minimi.py` | `test_c1_minimi.py` (griglia contro le 5 definizioni + `verdetto_minimi`) |
+| C-022 (rate) | transazioni/ora per CONTO, solo live | `controlli.ContatoreTransazioni` | parita' col control VERO `MaxTransactionCount` e con l'esecuzione VERA di flumine; somma su 3 attori; paper escluso (`test_c1_revisione.py`) |
+| C-030, C-031, C-035, C-036, C-072 (taglia) | minimi .it, punta 0,50, porta al minimo, taglia tennis, scalper | `minimi.py` | `test_c1_minimi.py` (griglia contro le 5 definizioni + `verdetto_minimi` + politica RIFIUTA del desktop `order_exec` + apertura tennis al minimo `esecutore_tennis`) |
 | C-032 (senza equivalente), C-044 (taglia non ritentata) | verdetto dei minimi della porta | `porta._minimi` | `test_c1_porta.py::test_ciclo_di_vita_con_le_risposte_vere`, `test_minimi_punta_050_e_sotto_minimo` |
 | C-040, C-041 (place/cancel/replace) | esecuzione | `esecutori/runner.py` (wrapper di `_dispatch`) | `test_c1_esecutore_runner.py` (client della riga, fase = motore) |
 | C-042 (riduzione mai creduta) | `reduces_liability` | `adattatore_comando`, `controlli.controlla` | rifiuto `reduces_liability_non_verificabile` col kill-switch |
@@ -72,7 +76,7 @@ C-060..C-082 (place-and-trim, equivalente, aggancio al volo, sorveglianza, specc
 ## 7. Come si sostituisce
 
 Un esecutore nuovo implementa `contratto.Esecutore` (`place/cancel/replace -> EventoOrdine`, seq 0, `submin_disponibile`
-opzionale) e deve far passare `test_c1_porta.py` (con il suo finto) e un test come `test_c1_esecutore_runner.py`. Una porta
+opzionale; `accetta_params` + argomento `params` per ricevere i params del bot) e deve far passare `test_c1_porta.py` (con il suo finto) e un test come `test_c1_esecutore_runner.py`. Una porta
 nuova implementa `PortaOrdini` e deve far passare `test_c1_porta.py`. Le taglie si cambiano SOLO in `minimi.py` dopo una
 decisione dell'utente sulle divergenze (referto par. 9) e con `test_c1_minimi.py` aggiornato insieme.
 
@@ -94,9 +98,11 @@ stesso del motore). Strumento e numeri nel referto par. 4.
 ## 10. PSB par. 6/7
 
 Sollecitati: par. 6.4 (parziali, FOK, esito ignoto, bet delay sull'orologio della risposta, rifiuto di Betfair, minimo .it e
-punta 0,50), 6.6 (concorrenza: un contatore per conto, seq per attore, stesso ref da 8 thread = 1 ordine), 6.7 (falsificazione 27/27); par. 7 n.1
+punta 0,50, apertura tennis al minimo, eventi in ritardo scartati), 6.6 (concorrenza: un contatore per conto e solo live,
+seq per attore, stesso ref da 8 thread e da 2 porte = 1 ordine, callback che reinvia senza blocco), 6.7 (falsificazione in
+`falsifica_c1.py`, numeri nel referto); par. 7 n.1
 (chiavi camelCase lette dalla libreria, mai scritte a mano), n.2 (rifiuto di Betfair letto: `rifiutato`), n.3 (prezzo medio dal
 report, non dal chiesto), n.4 (riconciliazione col ref di piazzamento: il diario lega ref e customerOrderRef VERO), n.7
 (bet_id dall'esito anche se non abbinato), n.10 (stato flumine letto dall'Enum via `fase_da_riga`/`_order_snapshot`), n.21 e
-n.25 (modo della RIGA), n.27 (finti col vero), n.30 (mutazioni), n.33 (costanti dei minimi non duplicate: importate da
+n.25 (modo della RIGA, paper e live mai sommati), n.27 (finti col vero), n.30 (mutazioni), n.33 (costanti dei minimi non duplicate: importate da
 `minimi_it`), n.35 (ogni test visto rosso). Gli altri, con la causa: referto par. 7.

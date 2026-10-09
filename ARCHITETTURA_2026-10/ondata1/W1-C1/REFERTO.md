@@ -1,6 +1,7 @@
 # REFERTO W1-C1 - Comparto C, porta degli ordini (ondata 1, 09/10/2026)
 
-Ramo `architettura/w1-c1` da `559a96df`. Agente W1-C1 (Opus 5.5). Nessun file esistente modificato: solo file nuovi del
+Ramo `architettura/w1-c1` da `559a96df`: consegna `0b4f2b59`, correzioni dopo la revisione indipendente nel commit
+successivo (par. 10, che PREVALE sui numeri dei par. 1-9 dove diversi). Agente W1-C1 (Opus 5.5). Nessun file esistente modificato: solo file nuovi del
 dominio (`Betfair/nucleo/ordini/{porta,adattatore_comando,minimi,controlli,eventi}.py`, `esecutori/runner.py`,
 `tests/test_c1_*.py`, `doc/C1_PORTA.md`, questa cartella). Nessuna rete, nessun DB, nessun processo, nessun replay.
 
@@ -9,11 +10,11 @@ dominio (`Betfair/nucleo/ordini/{porta,adattatore_comando,minimi,controlli,event
 | File | Punti chiave | Cosa NON fa |
 |---|---|---|
 | `adattatore_comando.py` (348) | `comando_da_richiesta` :130, `richiesta_da_comando` :178 (chiama `valida_comando` di oggi: stessi `Rifiuto`), `riga_coda_da_richiesta` :233 / `richiesta_da_riga_coda` :274 (coda calcio), `payload_tennis_da_richiesta` :328 / `richiesta_da_payload_tennis` :339 (legge con `parse_order_payload` di oggi); tipi di estensione `RichiestaComposta` :58, `ExtraComando` :79, `DettagliCoda` :91 | non valida minimi ne' freni, non manda nulla |
-| `minimi.py` (458) | una politica ESPLICITA per ogni definizione di oggi: `verdetto_runner` :138, `verdetto_porta` :173, `porta_al_minimo` :227, `diretta_ok_tennis` :238, `size_legale_tennis` :250, `spezza_esatta_tennis` :274, `spezza_uscita_scalper` :289, `taglia_scalper` :323 (calcio e tennis), `soglia_safe` :372, forma uniforme `taglia` :412; numeri SOLO da `minimi_it` (import) | non sceglie fra definizioni divergenti; niente .com; niente equivalente sull'altra selezione |
-| `controlli.py` (287) | `ContatoreTransazioni` :89 (UNO per conto, regola di flumine/Betfair), `controlla` :195 (freni del motore nello stesso ordine e con gli stessi codici), `FreniConto` :58 (iniettato), `FreniDiOggi` :263 (aggancio sopra le funzioni del worker), `tetto_di_oggi` :82 | non legge env ne' DB; non verifica la riduzione (iniettata); non sostituisce il `max_txn_hour` dello scalper |
-| `eventi.py` (171) | `ConsumatoreEventi` :62 (contiguita' di `seq` per attore, base al primo contatto, `da_seq` alla sorgente al primo buco, `chiudi_da_seq`), `RispostaDaSeq` :44 | non riconcilia un buco non colmabile: lo conta (come oggi) |
-| `porta.py` (564) | `PortaLocale` :118: `invia` :338 (invii serializzati da `_lock_invio`) -> `_ref_e_dedup` :358 -> `_valuta` :381 (valida, freni, minimi, tetto) -> `_accetta` :414 (seq, archivio, diario write-ahead) -> `_esegui` :492 (una chiamata, eccezione = `ignoto`); `notifica` :550, `da_seq` :250, `eventi` :261, `stato` :277, `apri` :168 (dedup e stati dal diario, ordini in volo -> `ignoto`) | sincrona; niente place-and-trim, equivalente, aggancio al volo, azioni composte; `posizione` delegata a C2 |
-| `esecutori/runner.py` (164) | `EsecutoreRunner` :66: wrapper sottile su `live_order_worker._dispatch` con gli shim di oggi (`_LocalSb(_SbDifferito())`, `LUCCHETTO_ORDINI`, `_CONTESTO`), riga `ordine` del diario prima di `place_order` (:105), `FASE_DA_MOTORE` :45 | `submin_disponibile = False`; non rigioca lo specchio (le scritture restano in `ultimo_differito`) |
+| `minimi.py` (480) | una politica ESPLICITA per ogni definizione di oggi: `verdetto_runner` :138, `verdetto_porta` :173, `porta_al_minimo` :227, `diretta_ok_tennis` :238, `size_legale_tennis` :250, `spezza_esatta_tennis` :274, `spezza_uscita_scalper` :289, `taglia_scalper` :323 (calcio e tennis), `soglia_safe`, `verdetto_desktop` :221 (politica RIFIUTA del desktop, par. 10), forma uniforme `taglia` :434; numeri SOLO da `minimi_it` (import) | non sceglie fra definizioni divergenti; niente .com; niente equivalente sull'altra selezione |
+| `controlli.py` (290) | `ContatoreTransazioni` :89 (UNO per conto, regola di flumine/Betfair), `controlla` :195 (freni del motore nello stesso ordine e con gli stessi codici), `FreniConto` :58 (iniettato), `FreniDiOggi` :263 (aggancio sopra le funzioni del worker), `tetto_di_oggi` :82 | non legge env ne' DB; non verifica la riduzione (iniettata); non sostituisce il `max_txn_hour` dello scalper |
+| `eventi.py` (189) | `ConsumatoreEventi` (contiguita' di `seq` per attore, base al primo contatto, `da_seq` alla sorgente al primo buco, `chiudi_da_seq`, stato monotono, memoria limitata), `RispostaDaSeq` :44 | non riconcilia un buco non colmabile: lo conta (come oggi) |
+| `porta.py` (758) | `PortaLocale` :152: `invia` :478 (serializzato; consegna ai consumatori FUORI dai lucchetti, `_consegna` :324) -> `_ref_e_dedup` :504 / `_dedup` :423 (RAM, archivio, prenotazione atomica) -> `_valuta` :527 (valida, params, freni, minimi, tetto PER MODO) -> `_accetta` :566 (seq, DIARIO poi archivio, nello stesso lucchetto) -> `_esegui` :671 (una chiamata, eccezione = `ignoto`) -> `_emetti` :705 (seq + diario durevole + stato monotono + memoria insieme); `notifica` :746, `da_seq` :355, `stato` :382, `apri` :220 / `_rileggi` :244 (dedup, stati, in volo, base dei seq) | sincrona; niente place-and-trim, equivalente, aggancio al volo, azioni composte; `posizione` delegata a C2 |
+| `esecutori/runner.py` (152) | `EsecutoreRunner`: wrapper sottile su `live_order_worker._dispatch` che CHIAMA `MotoreOrdini._pre_invio`, `_imposta_contesto`, `_pulisci_contesto` (nessuna copia), shim `_LocalSb(_SbDifferito())`, `LUCCHETTO_ORDINI`; `params` del bot nella riga (`accetta_params`); `FASE_DA_MOTORE` | `submin_disponibile = False`; non rigioca lo specchio (le scritture restano in `ultimo_differito`) |
 
 Esecutori NON costruiti (aggancio proposto, par. 8): **REST** (oggi la strada REST e' `omega/omega_market.py`, un modulo di
 bot: un comparto non lo importa; serve il `ClienteRest.mutazione` di A1) e **banco** (il banco usa gia' il motore con
@@ -35,10 +36,17 @@ Implemento `PortaOrdini` (`PortaLocale`, verificato strutturalmente in `test_la_
    `seq` e' UNO per ack ed eventi come nel motore: chi ripara un buco deve vedere anche gli ack).
 5. Fase "in volo": il contratto non ha `inviato`; uso `accettato` con `bet_id=None` (motore `inviato`) e `accettato` con
    `bet_id` (motore `accettato_betfair`). `errore` del motore -> `rifiutato` se prima dell'invio, `ignoto` dopo (`post_place:`).
-6. Archivio: la porta usa `TABELLA_REF = "ordini_ref_visti"` (chiave `ref`, righe `{ref, attore, accettato, seq, motivo,
-   ts_ms}`): tabella LOCALE da registrare in G1 (regime `stato_denaro`, NON verso il cloud). Il protocollo `Archivio` non ha
+6. Archivio: la porta usa `TABELLA_REF = "ordini_ref_visti"` (chiave `ref`, righe `{ref, stato, attore, accettato, seq,
+   motivo, ts_ms}`, `stato` = `ack` o `riservato:<porta>`) e `TABELLA_SEQ = "ordini_seq"` (chiave `chiave="seq"`, il blocco
+   di seq prenotato `fino_a`): tabelle LOCALI da registrare in G1 (regime `stato_denaro`, NON verso il cloud). SEMANTICA
+   CHIESTA A G1: `transizione(t, chiave, "", a)` = inserisci la riga `{chiave, stato: a}` SOLO SE ASSENTE, atomica, True se
+   inserita (la usa il dedup fra due porte sullo stesso archivio). Il protocollo `Archivio` non ha
    una lettura per scansione: la porta fa UNA lettura puntuale per ref nuovo (locale, nessuna rete); proposta per G:
    `Archivio.elenca(tabella, filtri)` per precaricare all'avvio come fa oggi `_carica_visti`.
+
+7. (par. 10) `Esecutore.place/cancel/replace(r, params=None)` + `accetta_params`: i params del bot verso l'esecutore;
+   `RichiestaOrdine.place_and_trim: bool` (oggi la porta NON fa place-and-trim: il contratto non sa dirlo all'esecutore);
+   `EventoOrdine.cor` (customerOrderRef vero, che il motore manda e `MemoriaComandi` conserva: divergenza 10b).
 
 ## 3. Parita' (funzione di oggi -> nuova -> test -> esito)
 
@@ -65,6 +73,8 @@ Tutti gli arbitri sono IMPORTATI dal codice di oggi e non modificati. "Identico"
 | `MotoreOrdini._esegui` :1480 -> `live_order_worker._dispatch` :4126 | `EsecutoreRunner` | `test_fase_uguale_al_motore_di_oggi` | place accettato e rifiutato dai control, su due framework gemelli | stessa fase (via `FASE_DA_MOTORE`), stesso bet_id presente/assente |
 | `MotoreOrdini._carica_visti` :2494 / dedup `_gestisci` :974 | `PortaLocale.apri` + `_ref_e_dedup` + archivio | `test_dedup_*` | stessa vita, riavvio da archivio (diario nuovo), riavvio da diario (archivio nuovo) | uguale o meglio: dedup illimitato (il motore ricarica solo ieri+oggi) e fail-closed se l'archivio non risponde |
 | `motore_ordini.Diario` :197 | la STESSA classe, iniettata | `test_diario_*` | | riuso, non copia |
+| `order_exec.place_order` ~273-290 (desktop) | `minimi.verdetto_desktop` | `test_politica_rifiuta_del_desktop_parita_con_order_exec` | 2 lati x 803 importi, la funzione VERA fermata prima del DB | identico (stessi testi del `ValueError`) |
+| `esecutore_tennis._apertura_al_minimo` :178 | `minimi.porta_al_minimo` (usata dalla porta per il tennis) | `test_apertura_tennis_al_minimo_parita_con_esecutore_tennis` | 4 lati x 1.201 importi | identico |
 
 ## 4. Migliorie misurate
 
@@ -185,3 +195,73 @@ Inoltre flumine NON conta un place senza risposta (eccezione/timeout) che Betfai
   illeggibile tiene il dedup solo in RAM e piazza. Piu' sicuro, ma e' un comportamento nuovo: va detto all'utente.
 - Il 2,00 dello scalper tennis e le altre divergenze non cambiano finche' la porta non e' agganciata: nessun bot usa ancora
   `minimi.py`.
+- Il contatore orario (come il control di flumine) si azzera al PRIMO controllo dell'ora (`_check_hour` con `_next_hour`
+  vuoto): le transazioni registrate prima del primo controllo si perdono. Identico a flumine; scoperto scrivendo il test
+  del paper (par. 10, M29 al primo giro verde).
+
+**Divergenze aggiunte dopo la revisione (per l'utente, NON risolte di iniziativa)**:
+
+9. **Tennis nella porta**: la consegna ignorava `r.sport`. Ora la porta fa per il tennis cio' che fa il motore con
+   `esecutore_tennis`: un'APERTURA sotto il minimo si porta AL minimo (`_apertura_al_minimo`, 28/09; parita' provata con
+   `minimi.porta_al_minimo` su 4 lati x 1.201 importi) e l'evento porta `portata_al_minimo`; una chiusura non si gonfia mai;
+   nessun place-and-trim. NON coperto: `TENNIS_LIVE_JURISDICTION` diversa da `it` (la porta usa sempre .it), e il resto del
+   runner tennis (azioni ammesse, `CanaleSoloComandi`) che resta all'esecutore. Scelta: implementare (opzione del
+   coordinatore) invece di rifiutare `sport="tennis"`.
+10a. **Punta non multipla di 0,50**: il terminale del desktop (`order_exec.py:285-297`) la RIFIUTA indicando i due importi
+   validi; il motore, il REST di Omega e la porta la TRONCANO (7,27 -> 7,00 + residuo dichiarato). `minimi.verdetto_desktop`
+   e' la politica RIFIUTA (parita' con `order_exec` provata); la porta usa la politica del motore. Quale vale per l'app
+   (desktop sulla porta) lo decide l'utente.
+10b. **`cor` (customerOrderRef vero) negli eventi**: il motore lo manda nel primo evento e `MemoriaComandi` lo conserva per chi
+   legge l'esito tardi; `EventoOrdine` non ha il campo. Oggi la porta lo scrive SOLO nel diario (riga `ordine` dell'esecutore).
+   Proposta: `EventoOrdine.cor: Optional[str]` (estensione additiva del contratto, decide il coordinatore).
+11. **Tetto per modo**: oggi flumine conta per CLIENT, quindi il client simulato ha il SUO tetto (stesso valore,
+   `runner.py:2281-2319`). La porta: contatore del live per conto + contatore del paper FACOLTATIVO (`contatore_paper`); mai
+   sommati. Come oggi, oltre il tetto il live ferma anche cancel e replace (control di flumine su ogni operazione): ora il
+   paper non puo' piu' consumarlo.
+12. **Consumatore piu' severo di `MemoriaComandi`**: un terminale non si sovrascrive con un altro terminale e l'abbinato non
+   cala (oggi Safe li accetta se il seq e' piu' alto). Fotografato in `test_stato_non_regredisce_piu_severo_di_oggi`.
+
+## 10. Correzioni dopo la revisione indipendente (09/10 sera)
+
+Revisione del coordinatore su `0b4f2b59`: DA CORREGGERE. Le prove del revisore (R01-R17, `rev_w1c1/test_rev_avversario.py`)
+sono incorporate con nomi miei in `tests/test_c1_revisione.py` (25 test) e, per l'esecutore, in `test_c1_esecutore_runner.py`.
+Prova "rosso prima": `rossi_prima_della_correzione.py` rimette i 5 moduli di `0b4f2b59`, lancia i test nuovi e ripristina
+(sha256 ok): **29 rossi** (`rossi_prima_della_correzione.txt`). I test nuovi verdi anche sul vecchio codice (V11, V23, V43,
+V52-V54, V59, V60, R17, parita' tennis) provavano un comportamento gia' giusto e non sorvegliato: ognuno uccide la sua mutazione.
+
+| # | Difetto (revisione) | Correzione (file) | Test (rosso prima) | Mutazione |
+|---|---|---|---|---|
+| 1 | il PAPER consumava il tetto del LIVE e lo bloccava (anche i cancel) | un contatore PER MODO (`_contatori`, porta `_valuta`/`_esegui`) | `test_paper_non_consuma_il_tetto_del_live`, `test_il_paper_non_impedisce_al_live_di_chiudere`, `test_il_tetto_del_live_non_ferma_il_paper`, `test_contatore_proprio_del_paper` | M28, M29 |
+| 2 | `params` del bot persi verso l'esecutore (cap `max_stake` sparito in silenzio) ma scritti nel diario | `Esecutore.place/cancel/replace(r, params=)` + `accetta_params`; `EsecutoreRunner` li mette nella riga; un esecutore che non li serve -> rifiuto `params_non_serviti`, nessun `inviato` | `test_params_arrivano_al_dispatch_vero` (catena VERA, il cap ferma l'ordine), `test_params_rifiutati_se_l_esecutore_non_li_serve`, `test_params_nella_riga_del_dispatch` | M30, M31 |
+| 3 | DEADLOCK: callback chiamata col lucchetto tenuto | coda di consegna fuori dai lucchetti (`_consegna`, rientrante per lo stesso thread) | `test_consumatore_che_invia_dentro_la_callback_non_blocca` | M32 |
+| 4 | ack fantasma (archivio scritto prima del diario) | DIARIO prima dell'archivio; archivio KO dopo `inviato` -> riga `rifiuto` che lo chiude; prenotazione orfana di QUESTA porta (stesso diario) ripresa | `test_crash_fra_diario_e_archivio_nessun_ack_fantasma`, `test_archivio_ko_dopo_inviato_chiude_il_ref_nel_diario` | M33, M34 |
+| 5 | un `ignoto` chiudeva il ref al riavvio | `_rileggi`: un ref con ultima fase `ignoto` resta in volo; un evento vero lo toglie | `test_ignoto_resta_da_riconciliare_dopo_il_riavvio` | M35 |
+| 6 | stato che regrediva (abbinato che cala, terminale sovrascritto) | `_stantio` in `_emetti` e `_rileggi`; stessa regola nel consumatore | `test_un_terminale_tardivo_non_cancella_un_abbinato`, `test_un_terminale_non_si_sovrascrive_con_un_altro_terminale`, `test_un_evento_vecchio_non_fa_regredire_l_abbinato`, `test_stato_non_regredisce_piu_severo_di_oggi` | M25, M36, M45 |
+| 7 | seq assegnato e memorizzato in due momenti | `_nuovo_seq` + diario + stato + `_memorizza` nella STESSA sezione di `_lock` | `test_memoria_in_ordine_di_seq_sotto_stress`, `test_da_seq_non_dichiara_visto_un_seq_non_ancora_in_memoria` | M37 |
+| 8 | dedup non atomico fra due porte sullo stesso archivio | prenotazione `transizione(.., "", "riservato:<porta>")` (semantica chiesta a G1, par. 2.6); l'altra porta aspetta l'ack (0,5 s) o risponde `ref_gia_visto` senza seq | `test_due_porte_sullo_stesso_archivio_un_solo_ordine` | M38 |
+| 9 | tennis ignorato | apertura al minimo come il motore tennis (divergenza 9) | `test_tennis_apertura_sotto_minimo_portata_al_minimo`, parita' in `test_c1_minimi.py` | M39 |
+| 10a | desktop rifiuta, porta tronca | politica `verdetto_desktop` in `minimi.py` (divergenza 10a) | `test_politica_rifiuta_del_desktop_parita_con_order_exec` | M46 |
+| R07 | eccezione del contatore dopo il place | `_conta` protetto: l'esito si scrive comunque | `test_contatore_che_solleva_dopo_l_invio_lascia_l_esito` | M43 |
+| R08 | lato maiuscolo e taglia rifiutata | chiave col lato minuscolo | `test_taglia_rifiutata_anche_con_lato_maiuscolo` | M42 |
+| R09 | `riduce_esposizione` letto anche su replace/cancel | riduzione solo sul place (come `valida_comando`) | `test_replace_con_riduce_non_scavalca_il_kill_switch` | M40 |
+| R15 | ramo place-and-trim senza canale verso l'esecutore | TOLTO: la porta non fa place-and-trim (estensione proposta) | `test_place_and_trim_mai_dalla_porta` | - |
+| R16 | seq indietro dopo un riavvio con l'orologio indietro | blocchi di seq prenotati in `TABELLA_SEQ` e seq del diario letti in `apri` | `test_seq_dopo_il_riavvio_con_orologio_indietro` | M41 |
+| bassi | memoria senza limite; esito/evento non durevoli; esecutore non sottile | potatura a 5.000 ref (archivio resta la fonte del dedup); esito/evento durevoli; `EsecutoreRunner` chiama `_pre_invio`/`_imposta_contesto`/`_pulisci_contesto` del motore, ramo `startswith` morto tolto, dispatch senza esito -> ignoto | `test_memoria_della_porta_limitata`, `test_memoria_del_consumatore_limitata`, `test_write_ahead_e_durevole`, `test_dispatch_senza_esito_e_ignoto` | M44, M47 |
+| V* | mutazioni sopravvissute (V08, V11, V23, V43, V52-V54, V59, V60) | test sui VALORI di `StatoOrdine`, ordini flumine abbinati/parziali con `CurrentOrder` VERO, ramo ok False, rifiuto locale e ignoto non contati, ref sconosciuto | `test_stato_porta_i_valori_veri`, `test_ordine_abbinato_e_parziale`, `test_esito_ok_false_e_rifiutato`, `test_ignoto_e_rifiuto_locale_non_contano_come_transazioni`, `test_notifica_di_un_ref_sconosciuto_ignorata`, `test_write_ahead_e_durevole` | V08=M47, V11, V23, V43, V52-V60 |
+
+Prove del revisore rilanciate COSI' COM'ERANO sul codice corretto: 15/18 verdi; restano rosse per costruzione R14 (aggancia
+`_pubblica`, che non esiste piu': lo scenario e' rifatto in `test_da_seq_non_dichiara_visto...` bloccando DENTRO la sezione
+che assegna il seq), R15 (finisce con `pytest.fail` per progetto: sostituita da `test_place_and_trim_mai_dalla_porta`) e R16
+(riparte con archivio E diario NUOVI: nessuna memoria da cui ripartire; la mia versione riparte con lo stesso archivio, come
+in un riavvio vero).
+
+Restano, dichiarati: l'`EsecutoreRunner` rifa' la riga da `valida_comando` (deterministica) e non rigioca lo specchio; le
+righe `ripresa` del vecchio motore sono ignote ad `apri` (diario della porta separato: un ref li' resta in volo, direzione
+sicura); una prenotazione `riservato:<altra porta>` di una porta morta resta finche' qualcuno non la chiude (la porta risponde
+`ref_gia_visto` senza seq: mai un secondo ordine, riconciliazione per ref).
+
+Numeri dopo le correzioni: **135 test C1 verdi**; falsificazione **58/58 rosse, 58/58 ripristini sha256**
+(M01-M27 riancorate al codice nuovo, M28-M47 nuove, 11 mutazioni del revisore); suite intera (una corsa) **11.705 passed, 1 failed**, 87 skipped, 6 xfailed (546 s): il rosso e' `test_motore_ordini_2026_09_24.py::test_latenza_logica_comando_place_sotto_20_ms` (23,8 ms contro 20 su macchina condivisa con altri 6 agenti; codice NON toccato, `git diff 0b4f2b59 -- Betfair/stream/` vuoto; rilanciato da solo 3/3 verde; lo stesso rosso compare nella suite di un altro agente). Al primo giro
+della nuova campagna 54/58: M25 e M45 (terminale dopo terminale con lo STESSO abbinato non provato), M28 e M29 (il test del
+paper registrava prima del primo controllo dell'ora, che azzera il contatore come in flumine): test aggiunti/corretti, poi
+rosse.

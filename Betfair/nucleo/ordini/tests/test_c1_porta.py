@@ -50,18 +50,31 @@ class _Orologio:
 
 
 class _ArchivioMemoria:
-    """Il protocollo ``Archivio`` in memoria; ``guasto`` fa sollevare letture/scritture."""
+    """Il protocollo ``Archivio`` in memoria, con le chiavi naturali delle due tabelle
+    della porta e ``transizione(t, chiave, "", a)`` = inserisci-se-assente ATOMICO (la
+    semantica che la porta chiede a G1). ``guasto_*`` fa sollevare; ``ritardo_lettura_s``
+    simula una lettura che viaggia (fotografia, poi latenza)."""
+
+    CHIAVI = {PT.TABELLA_REF: ("ref",), getattr(PT, "TABELLA_SEQ", "ordini_seq"): ("chiave",)}
 
     def __init__(self) -> None:
+        import threading
+
         self.tabelle: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self.guasto_lettura = False
         self.guasto_scrittura = False
-        self.ritardo_lettura_s = 0.0          # una lettura dal disco non e' istantanea
+        self.ritardo_lettura_s = 0.0
+        self._lock = threading.Lock()
+
+    def _k(self, tabella: str, valori: Mapping[str, Any]) -> str:
+        return json.dumps({c: valori[c] for c in self.CHIAVI[tabella]}, sort_keys=True)
 
     def leggi(self, tabella: str, chiave: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
         if self.guasto_lettura:
             raise OSError("archivio illeggibile")
-        riga = self.tabelle.get(tabella, {}).get(json.dumps(dict(chiave), sort_keys=True))
+        with self._lock:
+            riga = self.tabelle.get(tabella, {}).get(self._k(tabella, chiave))
+            riga = dict(riga) if riga is not None else None
         if self.ritardo_lettura_s:
             # la risposta viaggia: chi scrive nel frattempo non e' in questa lettura
             import time
@@ -71,11 +84,21 @@ class _ArchivioMemoria:
     def scrivi(self, tabella: str, riga: Mapping[str, Any]) -> None:
         if self.guasto_scrittura:
             raise OSError("disco pieno")
-        k = json.dumps({"ref": riga["ref"]}, sort_keys=True)
-        self.tabelle.setdefault(tabella, {})[k] = dict(riga)
+        with self._lock:
+            self.tabelle.setdefault(tabella, {})[self._k(tabella, riga)] = dict(riga)
 
     def transizione(self, tabella: str, chiave: Mapping[str, Any], da: str, a: str) -> bool:
-        return False
+        if self.guasto_scrittura:
+            raise OSError("disco pieno")
+        with self._lock:
+            t = self.tabelle.setdefault(tabella, {})
+            k = self._k(tabella, chiave)
+            attuale = t.get(k)
+            if (attuale is None and da == "") or (attuale is not None
+                                                  and attuale.get("stato") == da):
+                t[k] = {**dict(chiave), **(attuale or {}), "stato": a}
+                return True
+            return False
 
 
 class _Freni:
@@ -126,7 +149,7 @@ class _BetfairFinto:
         if cosa == "FAILURE":
             rep = {"status": "FAILURE", "instruction": ins, "errorCode": "INVALID_BET_SIZE"}
         else:
-            matched = {"EXECUTABLE": 0.0, "PARZIALE": round(size / 2, 2),
+            matched = {"EXECUTABLE": 0.0, "PARZIALE": 1.0,
                        "EXECUTION_COMPLETE": size, "EXPIRED": 0.0}[cosa]
             rep.update({"betId": f"31242600{self._n:04d}", "placedDate": "2026-10-09T10:00:00.000Z",
                         "averagePriceMatched": ins["limitOrder"]["price"] if matched else 0.0,
@@ -332,7 +355,7 @@ def test_ref_non_valido_non_registrato(tmp_path: Any) -> None:
               _r(attore="sconosciuto", ref="sconosciuto-t1")):
         a = amb.porta.invia(r)
         assert not a.accettato and a.seq is None
-    assert amb.betfair.chiamate == [] and amb.archivio.tabelle == {}
+    assert amb.betfair.chiamate == [] and not amb.archivio.tabelle.get(PT.TABELLA_REF)
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +368,7 @@ def test_ciclo_di_vita_con_le_risposte_vere(tmp_path: Any) -> None:
     a = amb.porta.invia(_r(ref="safe-t1", time_in_force=None, persistenza="PERSIST"))
     ev = list(amb.porta.eventi("safe", a.seq))
     assert [e.fase for e in ev] == ["parziale"]
-    assert ev[0].bet_id == "312426000001" and (ev[0].abbinato, ev[0].residuo) == (2.0, 2.0)
+    assert ev[0].bet_id == "312426000001" and (ev[0].abbinato, ev[0].residuo) == (1.0, 3.0)
     assert ev[0].esito_ms == T0 + 5_000 and ev[0].seq == a.seq + 1
     # il resto si abbina dopo: lo porta il flusso degli ordini
     fine = amb.porta.notifica(EventoOrdine(ref="safe-t1", seq=0, fase="abbinato",

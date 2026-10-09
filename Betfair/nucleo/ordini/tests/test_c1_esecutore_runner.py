@@ -57,6 +57,7 @@ class _Market:
         self.rifiuta = False
         self.solleva = False
         self.su_place: Any = None
+        self.dopo_place: Any = None          # l'abbinamento arriva DOPO il place
         self._n = 0
 
     def place_order(self, order: Any, customer_strategy_ref: Any = None,
@@ -73,6 +74,8 @@ class _Market:
         order.client = client
         order.bet_id = f"3124260{self._n:04d}"
         order.executable()
+        if self.dopo_place is not None:
+            self.dopo_place(order)
         self.blotter.ordini[order.bet_id] = order
         return True
 
@@ -162,20 +165,9 @@ def test_eccezione_dentro_place_order_e_esito_ignoto(amb: Any) -> None:
         def eta_settings_s(self) -> float:
             return 0.0
 
-    class _Arch:
-        def __init__(self) -> None:
-            self.d: Dict[str, Any] = {}
+    from Betfair.nucleo.ordini.tests.test_c1_porta import _ArchivioMemoria
 
-        def leggi(self, _t: str, k: Any) -> Any:
-            return self.d.get(k["ref"])
-
-        def scrivi(self, _t: str, riga: Any) -> None:
-            self.d[riga["ref"]] = dict(riga)
-
-        def transizione(self, *_a: Any) -> bool:
-            return False
-
-    porta = PT.PortaLocale(amb.es, freni=_Freni(), archivio=_Arch(),
+    porta = PT.PortaLocale(amb.es, freni=_Freni(), archivio=_ArchivioMemoria(),
                            diario=MO.Diario(str(amb.tmp / "p"), giorno=lambda: GIORNO),
                            orologio_ms=lambda: 1)
     a = porta.invia(_r(ref="safe-t7"))
@@ -222,3 +214,66 @@ def test_fase_uguale_al_motore_di_oggi(amb: Any, monkeypatch: pytest.MonkeyPatch
         assert mio.fase == atteso, (rifiuta, fase_motore, mio)
         assert (mio.bet_id is None) == (ordini[0].get("bet_id") is None)
         DB.imposta_scrittore(None)
+
+
+def _ordine_corrente(order: Any, abbinato: float, stato: str) -> Any:
+    """Lo stato dell'ordine come lo porta Betfair (``listCurrentOrders``/order stream):
+    risorsa VERA ``CurrentOrder`` di betfairlightweight dal JSON camelCase."""
+    from betfairlightweight.resources.bettingresources import CurrentOrder
+
+    size = float(order.order_type.size)
+    return CurrentOrder(
+        betId=order.bet_id, marketId="1.234", selectionId=47972, handicap=0.0,
+        priceSize={"price": 2.5, "size": size}, bspLiability=0.0, side="BACK",
+        status=stato, persistenceType="LAPSE", orderType="LIMIT",
+        placedDate="2026-10-09T10:00:00.000Z", matchedDate="2026-10-09T10:00:00.500Z",
+        averagePriceMatched=2.52 if abbinato else 0.0, sizeMatched=abbinato,
+        sizeRemaining=round(size - abbinato, 2), sizeLapsed=0.0, sizeCancelled=0.0,
+        sizeVoided=0.0, regulatorCode="X", customerOrderRef=order.customer_order_ref)
+
+
+@pytest.mark.parametrize("abbinato,fase", [(1.0, "parziale"), (3.0, "abbinato")])
+def test_ordine_abbinato_e_parziale(amb: Any, abbinato: float, fase: str) -> None:
+    """V52-V54: abbinato, residuo e prezzo medio letti dall'ordine flumine VERO."""
+    amb.market.dopo_place = lambda o: o.update_current_order(
+        _ordine_corrente(o, abbinato, "EXECUTABLE"))
+    ev = amb.es.place(_r(modo="live"))
+    assert (ev.fase, ev.abbinato, ev.residuo, ev.prezzo_medio) == (
+        fase, abbinato, round(3.0 - abbinato, 2), 2.52)
+
+
+class _LowConEsito:
+    """``live_order_worker`` VERO, salvo un ``_dispatch`` che scrive un esito ok False
+    (ramo difensivo dell'esecutore: oggi place/cancel/replace sollevano)."""
+
+    def __getattr__(self, nome: str) -> Any:
+        return getattr(LOW, nome)
+
+    @staticmethod
+    def _dispatch(sb: Any, _fl: Any, riga: Dict[str, Any], mode: str, _s: Any) -> None:
+        LOW._write_done(sb, riga["id"], {"ok": False, "error": "kill_switch: no",
+                                         "bet_id": None, "status": None})
+
+
+def test_esito_ok_false_e_rifiutato(amb: Any) -> None:
+    """V23."""
+    es = EsecutoreRunner(amb.fl, {"live": _STRAT_LIVE, "paper": _STRAT_PAPER},
+                         low=_LowConEsito())
+    ev = es.place(_r())
+    assert (ev.fase, ev.codice_errore) == ("rifiutato", "kill_switch")
+
+
+def test_dispatch_senza_esito_e_ignoto(amb: Any) -> None:
+    class _Muto(_LowConEsito):
+        @staticmethod
+        def _dispatch(*_a: Any) -> None:
+            return None
+
+    es = EsecutoreRunner(amb.fl, {"live": _STRAT_LIVE, "paper": _STRAT_PAPER}, low=_Muto())
+    with pytest.raises(RuntimeError, match="senza esito"):
+        es.place(_r())
+
+
+def test_params_nella_riga_del_dispatch(amb: Any) -> None:
+    ev = amb.es.place(_r(importo=3.0), params={"max_stake": 1.0})
+    assert ev.fase == "rifiutato" and amb.market.chiamate == []   # cap rispettato

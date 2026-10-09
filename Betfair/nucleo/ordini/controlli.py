@@ -212,7 +212,10 @@ def controlla(r: Union[RichiestaOrdine, RichiestaComposta], freni: FreniConto,
     if r.modo not in servibili(proc):
         return EsitoControllo(False, M.M_MODE,
                               f"{M.M_MODE}: mode '{r.modo}' non servibile dal runner in {proc}")
-    riduce = isinstance(r, RichiestaOrdine) and bool(r.riduce_esposizione)
+    # come il motore (``valida_comando``: ``reduces_liability`` vale solo per il place): una
+    # riduzione dichiarata su un replace/cancel NON scavalca nulla
+    riduce = isinstance(r, RichiestaOrdine) and r.azione == "place" \
+        and bool(r.riduce_esposizione)
     verificata: Optional[bool] = None
 
     def _verifica() -> bool:

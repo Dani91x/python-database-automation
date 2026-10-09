@@ -60,7 +60,7 @@ from Betfair.stream.trading.minimi_it import (
 )
 
 __all__ = [
-    "POLITICHE", "Politica", "Taglia", "VerdettoRunner", "VerdettoPorta", "verdetto_porta",
+    "POLITICHE", "Politica", "Taglia", "VerdettoRunner", "VerdettoPorta", "verdetto_porta", "verdetto_desktop",
     "importo_piazzabile", "verdetto_runner", "porta_al_minimo", "size_legale_tennis",
     "diretta_ok_tennis", "spezza_esatta_tennis", "spezza_uscita_scalper",
     "taglia_scalper", "soglia_safe", "taglia",
@@ -211,6 +211,28 @@ def verdetto_porta(lato: str, prezzo: float, importo: float, *,
         f"{s.upper()} {chiesta:.2f}@{prezzo} sotto il minimo: place-and-trim ({perche_no_eq}; "
         f"in gioco su .it il bet delay si paga due volte, parcheggio e riprezzo: calcio "
         f"circa 5 -> 10 s)")
+
+
+def _euro(x: float) -> str:
+    """Come ``order_exec._euro``: importo con la virgola decimale (7.5 -> '7,50')."""
+    return f"{float(x):.2f}".replace(".", ",")
+
+
+def verdetto_desktop(lato: str, importo: float) -> Optional[str]:
+    """La politica RIFIUTA del terminale del desktop (``order_exec.place_order``, righe
+    ~273-290): stesso minimo del runner, ma una punta non multipla di 0,50 NON si tronca:
+    si RIFIUTA indicando i due importi validi vicini. None = l'importo passa cosi' com'e';
+    altrimenti il testo del ``ValueError`` di oggi. Pura."""
+    size = round(float(importo), 2)
+    v = verdetto_runner(str(lato).lower(), size)
+    if not v.valid:
+        return f"stake \u20ac{size:.2f} sotto il minimo Betfair .it: {v.reason}."
+    if str(lato).upper() == "BACK" and float(v.residuo or 0.0) > 0.0:
+        sotto = float(v.legalized_size)
+        sopra = round(sotto + IT_PASSO_PUNTA_DIRETTA, 2)
+        return (f"{_euro(size)}: la punta va a multipli di 0,50, usa {_euro(sotto)} o "
+                f"{_euro(sopra)}.")
+    return None
 
 
 # ---------------------------------------------------------------------------
