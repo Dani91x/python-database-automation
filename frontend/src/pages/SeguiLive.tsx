@@ -64,7 +64,8 @@ import { origineRitorno } from '@/lib/ritorno';
 // off NON passiamo i prop → LadderView/GridView usano i default DB (path invariato).
 // (23/09: il LADDER non segue piu' questa regola: usa sempre sorgenteLadderAlMs,
 // canale al tick con ricaduta DB interna. Resta valida per gli ORDINI.)
-const CALCIO_DB_ORDER_API: LadderOrderApi = {
+// 09/10: esportata per il box quote del Programma del giorno (stesso dbApi, mai una copia).
+export const CALCIO_DB_ORDER_API: LadderOrderApi = {
     send: sendLiveOrderCommand,
     fetchOrders: fetchLiveOrders,
     fetchPositions: fetchLivePositions,

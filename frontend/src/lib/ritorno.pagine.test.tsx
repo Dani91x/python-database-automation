@@ -8,6 +8,12 @@
 //     davvero in vista la partita (il timer non si cancella da solo).
 // ============================================================================
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+vi.mock('@/lib/omegaMissions', async (orig) => ({
+    ...(await orig() as object),
+    followMission: vi.fn(async () => undefined),
+}));
+
 import type { ReactElement } from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
@@ -16,6 +22,7 @@ import {
     ORIGINI_RITORNO, origineRitorno, leggiRitorno, salvaRitorno, useRitornoAlPunto,
 } from '@/lib/ritorno';
 import type { PartitaGiornata } from '@/lib/controlRoom';
+import { followMission } from '@/lib/omegaMissions';
 
 function partita(): PartitaGiornata {
     return {
@@ -39,6 +46,8 @@ function monta(el: ReactElement) {
             <Routes>
                 <Route path="/qui" element={el} />
                 <Route path="/dashboard" element={<Dove />} />
+                <Route path="/tennis/terminal" element={<Dove />} />
+                <Route path="/segui-live" element={<Dove />} />
             </Routes>
         </MemoryRouter>,
     );
@@ -79,7 +88,48 @@ describe('AzioniPartita: soloMediaStatistiche (secondo giro)', () => {
     });
 });
 
+describe('AzioniPartita dal Programma del giorno (09/10)', () => {
+    const tennis = (marketId: string | null): PartitaGiornata => ({
+        ...partita(), event_id: 'T1', sport: 'tennis', nome: 'Sinner v Draper', marketId, extra: null,
+    });
+
+    it('origine board: Statistiche calcio con from=board e punto su /board', () => {
+        monta(<AzioniPartita p={partita()} scheda="calcio" ritorno={ORIGINI_RITORNO.board} />);
+        fireEvent.click(screen.getByTestId('cr-statistiche'));
+        expect(screen.getByTestId('dove').textContent).toBe('/dashboard?fixture=777&from=board');
+        expect(leggiRitorno()).toMatchObject({ rotta: '/board', nome: 'Programma', scheda: 'calcio', eventId: 'E1' });
+    });
+
+    it('tennis: «Statistiche» solo se chiesto, e apre il Tennis Terminal sulla partita', () => {
+        const { unmount } = monta(<AzioniPartita p={tennis('1.T')} scheda="tennis" />);
+        expect(screen.queryByTestId('cr-statistiche')).toBeNull();   // Control Room: come prima
+        unmount();
+        monta(<AzioniPartita p={tennis('1.T')} scheda="tennis" ritorno={ORIGINI_RITORNO.board} statisticheTennis />);
+        fireEvent.click(screen.getByTestId('cr-statistiche'));
+        expect(screen.getByTestId('dove').textContent)
+            .toBe('/tennis/terminal?event=T1&market=1.T&name=Match+Odds&from=board&p1=Sinner&p2=Draper');
+    });
+
+    it('tennis SENZA mercato: Trading non scrive un seguito calcio, lo dice', async () => {
+        vi.mocked(followMission).mockClear();
+        monta(<AzioniPartita p={tennis(null)} scheda="tennis" ritorno={ORIGINI_RITORNO.board} statisticheTennis />);
+        expect(screen.getByTestId('cr-statistiche')).toBeDisabled();
+        await act(async () => { fireEvent.click(screen.getByTestId('cr-trading')); });
+        expect(followMission).not.toHaveBeenCalled();
+        expect(screen.getByTestId('cr-azioni-errore').textContent).toContain('manca il mercato Match Odds');
+        expect(screen.queryByTestId('dove')).toBeNull();
+    });
+});
+
 describe('«Torna»: l\'origine dal parametro from', () => {
+    it('board: «Torna al Programma» verso /board', () => {
+        expect(origineRitorno('board')).toEqual({
+            rotta: '/board', nome: 'Programma', from: 'board',
+            torna: 'Torna al Programma', testId: 'torna-board',
+            titolo: 'torna al Programma del giorno, alla scheda sport e alla partita da cui sei partito',
+        });
+    });
+
     it('control-room invariato, cash-out nuovo, altro = nessun pulsante', () => {
         expect(origineRitorno('control-room')).toEqual({
             rotta: '/control-room', nome: 'Control Room', from: 'control-room',
