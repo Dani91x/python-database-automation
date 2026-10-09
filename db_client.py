@@ -131,6 +131,7 @@ import logging as _logging
 import random as _random
 import time as _time
 from collections import Counter as _Counter
+from contextlib import contextmanager as _contextmanager
 from typing import Callable, Dict, Sequence, Tuple, TypeVar
 
 _log_rete = _logging.getLogger("db_client")
@@ -599,6 +600,21 @@ def azzera_interruttore() -> None:
     """Richiude l'interruttore dei guasti di fila (dopo un'attesa lunga voluta: il
     prossimo tentativo ha di nuovo tutti i ritentativi brevi)."""
     _STATO_RETE["guasti_di_fila"] = 0
+
+
+@_contextmanager
+def ritentativi_del_chiamante():
+    """09/10 (AUDIT_2026-10-09/fallimenti_action/ENRICH_RINVIO.md): dentro questo blocco il
+    TrasportoResiliente NON ritenta (stesso segnale che usa `con_ritentativi`), perche' a
+    ritentare e' il chiamante con la sua politica (attese, fetta, rinvio). Evita il doppio
+    strato (7 tentativi del trasporto x N tentativi del chiamante). Fuori dal blocco nulla
+    cambia; i bot non montano il trasporto resiliente e non lo usano."""
+    prima = getattr(_TLS, "dentro_ritentativi", False)
+    _TLS.dentro_ritentativi = True
+    try:
+        yield
+    finally:
+        _TLS.dentro_ritentativi = prima
 
 
 def esegui_main_action(main: Callable[[], _T], nome: str) -> _T:

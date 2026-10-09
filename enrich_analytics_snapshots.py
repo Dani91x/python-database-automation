@@ -47,10 +47,13 @@ MODO INCREMENTALE (--days N / --today, per le partite del GIORNO, pre-match):
 
   Una LEGA che non si riesce a leggere (57014 & co. anche dopo i tentativi ed i
   dimezzamenti di blocco, vedi _PAGE_LEGA/_PAGE_MIN) NON ferma le altre: si
-  registra in counters['leghe_fallite'] con il motivo, si logga [ERR lega N] e
-  si passa alla lega successiva; il riepilogo delle leghe fallite si stampa a
-  fine run e lo script esce con SystemExit != 0 (vedi run 35837906029: la lega
-  929 in 57014 aveva fatto morire lo script PRIMA di elaborare le leghe dopo).
+  registra come RINVIATA (09/10: prima "leghe_fallite" -> exit != 0 sempre) e
+  si passa alla lega successiva (vedi run 35837906029: la lega 929 in 57014
+  aveva fatto morire lo script PRIMA di elaborare le leghe dopo). Stessa sorte
+  per una SCRITTURA che non passa dopo i ritentativi (run 37927426667, lega
+  850). Esito: exit 0 con ::warning:: se le rinviate sono entro la soglia
+  (ENRICH_SOGLIA_RINVII_PCT, 25%) e nessuna lo e' da 3 run di fila; altrimenti
+  exit 1. Vedi _esito_rinvii.
   Un errore LOGICO (colonna inesistente, vincolo, ...) propaga SUBITO: non è un
   DB sotto pressione, è un difetto da vedere e basta, non da inghiottire lega
   per lega.
@@ -67,16 +70,18 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import re
 import sys
 import time
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Iterator, Optional
 
 import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from db_client import get_supabase_client
+from db_client import classifica_guasto_rete, get_supabase_client, ritentativi_del_chiamante
 from analytics_market_stats import (
     Snapshot,
     compute_current_state,
@@ -100,6 +105,37 @@ _PAGE_MIN = 25          # blocco minimo dopo i dimezzamenti sui transitori (100 
 _RETRY = 5              # tentativi su errori TRANSITORI
 _CLEAN_FIXTURES = 100   # fixture per richiesta di DELETE sulla staging (URL corto)
 
+# ---------------------------------------------------------------------------
+# 09/10/2026 - RINVIO DICHIARATO (AUDIT_2026-10-09/fallimenti_action/ENRICH_RINVIO.md)
+# ---------------------------------------------------------------------------
+# Run 37927426667: dopo 116 minuti il flush della lega 850 e' andato in ReadTimeout
+# (client a 120 s = statement_timeout della RPC lato server, 120 s: gara persa dal
+# server), 5 tentativi a 0,5-4 s di distanza, lega abbandonata, 3612 righe contate
+# come "falliti" -> exit 1 -> run ROSSA per un DB sotto carico.
+# Ora le SCRITTURE (upsert in staging, RPC di flush, pulizia staging):
+#   - timeout di lettura del client 150 s SOLO durante la scrittura (oltre i 120 s
+#     della RPC: decide il server, con un 57014 chiaro invece di un esito ignoto);
+#   - ritentativi sui transitori con attese 2-4-8-16-32-60 s (jitter +-25%), un solo
+#     strato (il TrasportoResiliente non ritenta qui sotto, vedi _scrittura);
+#   - transitorio ancora presente: lega RINVIATA (contatore separato da "failed"),
+#     riga chiara, avviso in live_alerts, riepilogo; ripresa al giro successivo;
+#   - errore LOGICO (4xx, vincolo, colonna): RuntimeError SUBITO -> exit 1.
+_ATTESE_SCRITTURA_S = (2.0, 4.0, 8.0, 16.0, 32.0, 60.0)
+_TIMEOUT_SCRITTURA_S = 150.0      # env ENRICH_TIMEOUT_SCRITTURA_S
+_CONNECT_SCRITTURA_S = 10.0
+_SOGLIA_RINVII_PCT = 25.0         # env ENRICH_SOGLIA_RINVII_PCT (% delle leghe elaborate)
+_RUN_RINVIO_PERSISTENTE = 3       # stessa lega rinviata in 3 run di fila -> exit 1
+_RINVII_DI_FILA_MAX = 3           # 3 leghe rinviate una dopo l'altra: il DB non risponde
+_GIORNI_STORIA_RINVII = 14        # quanto indietro si legge live_alerts
+COD_RINVIO = "ENRICH_RINVIO"
+COD_RINVIO_PERSISTENTE = "ENRICH_RINVIO_PERSISTENTE"
+COD_RIPRESA = "ENRICH_RIPRESA"
+_RE_LEGA_ALLARME = re.compile(r"^lega (\d+):")
+
+
+class _Rinvio(Exception):
+    """Scrittura non riuscita dopo tutti i ritentativi su un errore TRANSITORIO."""
+
 # Errori TRANSITORI (si ritentano): statement timeout, DB occupato/riavvio,
 # deadlock/serializzazione, connessione persa, 5xx del gateway, PGRST002 (schema
 # cache non pronta). Gli errori LOGICI (vincoli, 4xx di validazione) NON si ritentano.
@@ -116,7 +152,12 @@ def _is_transient(e: Exception) -> bool:
     if code is not None and str(code) in _TRANSIENT_CODES:
         return True
     msg = str(getattr(e, "message", "") or "").lower()
-    return "timeout" in msg or "temporarily unavailable" in msg
+    if "timeout" in msg or "temporarily unavailable" in msg:
+        return True
+    # 09/10: anche i guasti di gateway/rete che db_client riconosce (pagine Cloudflare
+    # 520-530, 5xx, PGRST000-003, 08xxx, errori h2/httpcore): stessa classificazione
+    # del TrasportoResiliente. 4xx ed errori applicativi restano NON transitori.
+    return classifica_guasto_rete(e) is not None
 
 
 def _is_retry_esauriti(err: RuntimeError) -> bool:
@@ -286,62 +327,113 @@ def _stage_row(fid: int, market: str, selection: str, s: Snapshot) -> dict:
     return {"fixture_id": fid, "market": market, "selection": selection, **_snap_payload(s)}
 
 
-def _upsert_stage(sb, rows: list[dict], counters: dict) -> bool:
-    """Carica UNA fetta nella staging (una sola richiesta). True se scritta."""
-    for attempt in range(_RETRY):
+def _timeout_scrittura() -> httpx.Timeout:
+    """Timeout del client durante le SCRITTURE (override ENRICH_TIMEOUT_SCRITTURA_S)."""
+    try:
+        lettura = float((os.environ.get("ENRICH_TIMEOUT_SCRITTURA_S") or "").strip())
+    except ValueError:
+        lettura = _TIMEOUT_SCRITTURA_S
+    if lettura <= 0:
+        lettura = _TIMEOUT_SCRITTURA_S
+    return httpx.Timeout(lettura, connect=_CONNECT_SCRITTURA_S, pool=_CONNECT_SCRITTURA_S)
+
+
+@contextmanager
+def _scrittura(sb) -> Iterator[None]:
+    """Contesto di UNA richiesta di scrittura di questo script:
+    1) timeout di lettura 150 s sul client PostgREST di QUESTO processo, solo per la
+       durata della richiesta (poi torna quello di prima): il client non deve chiudere
+       prima del server (RPC flush: statement_timeout 120 s, pg_proc 09/10);
+    2) il TrasportoResiliente non ritenta (db_client.ritentativi_del_chiamante): ritenta
+       _scrivi_con_ritentativi, un solo strato. Client finti senza sessione httpx: solo 2)."""
+    sessione = getattr(getattr(sb, "postgrest", None), "session", None)
+    prima = None
+    if isinstance(sessione, httpx.Client):
+        prima = sessione.timeout
+        sessione.timeout = _timeout_scrittura()
+    try:
+        with ritentativi_del_chiamante():
+            yield
+    finally:
+        if prima is not None:
+            sessione.timeout = prima
+
+
+def _descrivi(e: Exception) -> str:
+    codice = getattr(e, "code", None)
+    testo = str(getattr(e, "message", None) or e)
+    return (f"{type(e).__name__}" + (f" code={codice}" if codice is not None else "")
+            + f": {testo[:100]}")
+
+
+def _scrivi_con_ritentativi(fai, cosa: str, sb=None):
+    """Esegue UNA richiesta di scrittura `fai()` con i ritentativi del 09/10.
+    Transitorio (ReadTimeout, 57014, 5xx, pagina Cloudflare, GOAWAY...) -> attese
+    2-4-8-16-32-60 s (jitter +-25%), poi _Rinvio. Errore LOGICO -> RuntimeError
+    subito (from e: la causa resta in __cause__ e _is_retry_esauriti la vede logica).
+    Tutte le scritture qui sono ripetibili senza effetti doppi: upsert in staging,
+    DELETE per chiave, RPC di flush (UPDATE ... FROM staging + DELETE delle chiavi
+    flushate: rieseguita dopo un esito ignoto trova la staging gia' vuota per quelle
+    chiavi e aggiorna 0 righe, stato finale identico)."""
+    totale = len(_ATTESE_SCRITTURA_S) + 1
+    for i in range(totale):
         try:
-            (sb.table("analytics_snap_staging")
-             .upsert(rows, on_conflict="fixture_id,market,selection").execute())
-            return True
-        except Exception as e:  # noqa: BLE001
-            if not _is_transient(e) or attempt == _RETRY - 1:
-                counters["failed"] += len(rows)
-                print(f"    [ERR staging] {len(rows)} righe perse: "
-                      f"{type(e).__name__}: {str(e)[:100]}")
-                return False
-            _sleep_backoff(attempt)
-    return False
+            with _scrittura(sb):
+                return fai()
+        except Exception as e:  # noqa: BLE001 - classificata sotto
+            if not _is_transient(e):
+                raise RuntimeError(f"errore LOGICO su {cosa}: {_descrivi(e)}") from e
+            if i + 1 >= totale:
+                raise _Rinvio(f"{cosa}: {_descrivi(e)} dopo {totale} tentativi") from e
+            attesa = _ATTESE_SCRITTURA_S[i] * (0.75 + 0.5 * random.random())
+            print(f"    [RITENTO] {cosa}: {_descrivi(e)} (tentativo {i + 1}/{totale}) "
+                  f"-> attendo {attesa:.0f} s", flush=True)
+            time.sleep(attesa)
+    raise RuntimeError("non raggiungibile")  # pragma: no cover
+
+
+def _registra_rinvio(counters: dict, league_id: int, righe: Optional[int], motivo: str,
+                     aggiornate: int = 0) -> None:
+    counters.setdefault("rinviate", []).append(
+        {"lega": league_id, "righe": righe, "motivo": motivo, "aggiornate": aggiornate})
+
+
+def _upsert_stage(sb, rows: list[dict], counters: dict) -> bool:
+    """Carica UNA fetta nella staging (una sola richiesta). True se scritta;
+    _Rinvio su transitorio persistente, RuntimeError su errore logico."""
+    _scrivi_con_ritentativi(
+        lambda: (sb.table("analytics_snap_staging")
+                 .upsert(rows, on_conflict="fixture_id,market,selection").execute()),
+        f"upsert staging ({len(rows)} righe)", sb)
+    return True
 
 
 def _flush_league(sb, league_id: int) -> tuple[bool, int]:
     """UN UPDATE ... FROM (RPC) sulle righe ATTUALMENTE in staging per la lega.
     La RPC cancella dalla staging le sole chiavi flushate -> le fette successive
-    partono da una staging vuota. Ritorna (riuscito, righe_aggiornate)."""
-    for attempt in range(_RETRY):
-        try:
-            res = sb.rpc("flush_analytics_snap_staging",
-                         {"p_league_id": league_id}).execute()
-            return True, (res.data if isinstance(res.data, int) else 0)
-        except Exception as e:  # noqa: BLE001
-            if not _is_transient(e) or attempt == _RETRY - 1:
-                print(f"    [ERR flush lega {league_id}] "
-                      f"{type(e).__name__}: {str(e)[:100]}")
-                return False, 0
-            _sleep_backoff(attempt)
-    return False, 0
+    partono da una staging vuota. Ritorna (True, righe_aggiornate); _Rinvio su
+    transitorio persistente, RuntimeError su errore logico."""
+    res = _scrivi_con_ritentativi(
+        lambda: sb.rpc("flush_analytics_snap_staging", {"p_league_id": league_id}).execute(),
+        f"flush lega {league_id}", sb)
+    return True, (res.data if isinstance(res.data, int) else 0)
 
 
 def _delete_stage_fixtures(sb, fids: set[int], what: str) -> bool:
     """Cancella dalla staging le righe dei fixture `fids` (a blocchi di
-    _CLEAN_FIXTURES, retry sui transitori). True se TUTTE le richieste sono
-    riuscite. La staging non ha league_id: la RPC scopa alla lega con il JOIN
+    _CLEAN_FIXTURES, ritentativi sui transitori). True se TUTTE le richieste sono
+    riuscite; _Rinvio su transitorio persistente, RuntimeError su errore logico.
+    La staging non ha league_id: la RPC scopa alla lega con il JOIN
     su analytics_signals, e un fixture appartiene a una sola lega, quindi
     cancellare per fixture_id toglie esattamente cio' che il flush della lega
     toccherebbe (e niente delle altre leghe)."""
     ordinati = sorted(fids)
     for i in range(0, len(ordinati), _CLEAN_FIXTURES):
         blocco = ordinati[i:i + _CLEAN_FIXTURES]
-        for attempt in range(_RETRY):
-            try:
-                (sb.table("analytics_snap_staging").delete()
-                 .in_("fixture_id", blocco).execute())
-                break
-            except Exception as e:  # noqa: BLE001
-                if not _is_transient(e) or attempt == _RETRY - 1:
-                    print(f"    [ERR pulizia staging {what}] "
-                          f"{type(e).__name__}: {str(e)[:100]}")
-                    return False
-                _sleep_backoff(attempt)
+        _scrivi_con_ritentativi(
+            lambda b=blocco: (sb.table("analytics_snap_staging").delete()
+                              .in_("fixture_id", b).execute()),
+            f"pulizia staging {what}", sb)
     return True
 
 
@@ -362,23 +454,28 @@ def _flush_staging(sb, league_id: int, stage_rows: list[dict], counters: dict,
     staging le righe dei fixture della lega (`league_fids`: tutti i fixture
     della lega in analytics_signals; se manca, quelli di `stage_rows`), cosi'
     il flush tocca SOLO le chiavi calcolate in questo run. Se la pulizia non
-    riesce la lega viene abbandonata SENZA flush (flushare i residui
-    riscriverebbe valori vecchi): righe contate in counters['failed'].
+    riesce la lega viene RINVIATA SENZA flush (flushare i residui riscriverebbe
+    valori vecchi).
 
-    Se un flush non riesce dopo i retry la LEGA viene abbandonata (caricarne
-    altre renderebbe l'UPDATE ancora piu' pesante) e le chiavi della fetta
-    appena caricata si cancellano dalla staging: nessun residuo resta per il
-    run successivo. Le righe non scritte sono contate in counters['failed']
-    -> exit != 0 a fine script.
+    09/10 - RINVIO: se una scrittura non riesce dopo i ritentativi (transitorio:
+    DB sotto carico) la LEGA viene RINVIATA (caricarne altre renderebbe l'UPDATE
+    ancora piu' pesante): fetta dimezzata per le leghe successive, chiavi della
+    fetta appena caricata tolte dalla staging, righe non scritte in
+    counters['rinviate'] (NON in 'failed'). Le riprende il giro successivo: ogni
+    giro ricalcola e riscrive TUTTE le righe della lega (vedi _enrich_league).
+    Un errore LOGICO risale come RuntimeError (exit 1).
     """
     if not stage_rows:
         return 0
     fids_lega = set(league_fids) if league_fids is not None else set()
     fids_lega |= {r["fixture_id"] for r in stage_rows}
-    if not _delete_stage_fixtures(sb, fids_lega, f"lega {league_id}"):
-        counters["failed"] += len(stage_rows)
-        print(f"    [ERR lega {league_id}] staging non ripulita: abbandono la lega "
-              f"senza flush, {len(stage_rows)} righe NON scritte")
+    try:
+        _delete_stage_fixtures(sb, fids_lega, f"lega {league_id}")
+    except _Rinvio as r:
+        motivo = f"staging non ripulita, nessun flush: {r}"
+        _registra_rinvio(counters, league_id, len(stage_rows), motivo)
+        print(f"    RINVIATA lega {league_id}: {len(stage_rows)} righe, motivo: {motivo}",
+              flush=True)
         return 0
     state = slice_state if slice_state is not None else {"size": _FLUSH_SLICE}
     updated = 0
@@ -387,21 +484,26 @@ def _flush_staging(sb, league_id: int, stage_rows: list[dict], counters: dict,
         size = max(_FLUSH_MIN, min(int(state["size"]), _STAGE_BATCH))
         part = stage_rows[i:i + size]
         i += len(part)
-        if not _upsert_stage(sb, part, counters):
-            continue                      # righe gia' contate come perse
-        ok, n = _flush_league(sb, league_id)
-        if ok:
-            updated += n
-            continue
-        state["size"] = max(_FLUSH_MIN, size // 2)   # fetta adattiva
-        persi = len(part) + (len(stage_rows) - i)
-        counters["failed"] += persi
-        # la fetta caricata non deve restare in staging come residuo
-        _delete_stage_fixtures(sb, {r["fixture_id"] for r in part},
-                               f"fetta fallita lega {league_id}")
-        print(f"    [ERR flush lega {league_id}] abbandono la lega: {persi} righe "
-              f"NON scritte (fetta ridotta a {state['size']})")
-        return updated
+        try:
+            _upsert_stage(sb, part, counters)
+            _ok, n = _flush_league(sb, league_id)
+        except _Rinvio as r:
+            state["size"] = max(_FLUSH_MIN, size // 2)   # fetta adattiva
+            rinviate = len(part) + (len(stage_rows) - i)
+            # la fetta caricata non deve restare in staging come residuo (se anche
+            # questo non riesce, la toglie la pulizia P2 del giro successivo)
+            try:
+                _delete_stage_fixtures(sb, {r_["fixture_id"] for r_ in part},
+                                       f"fetta rinviata lega {league_id}")
+            except (_Rinvio, RuntimeError) as e:
+                print(f"    [AVVISO] fetta rinviata lega {league_id} non tolta dalla staging "
+                      f"({e}): la toglie la pulizia della lega al giro successivo", flush=True)
+            motivo = str(r)
+            _registra_rinvio(counters, league_id, rinviate, motivo, aggiornate=updated)
+            print(f"    RINVIATA lega {league_id}: {rinviate} righe, motivo: {motivo} "
+                  f"(fetta ridotta a {state['size']})", flush=True)
+            return updated
+        updated += n
     return updated
 
 
@@ -492,6 +594,149 @@ def _recent_targets(sb, days: int) -> dict[int, set[int]]:
     return out
 
 
+def _soglia_rinvii_pct() -> float:
+    """Soglia % di leghe rinviate oltre la quale la run e' rossa (ENRICH_SOGLIA_RINVII_PCT)."""
+    try:
+        v = float((os.environ.get("ENRICH_SOGLIA_RINVII_PCT") or "").strip())
+    except ValueError:
+        return _SOGLIA_RINVII_PCT
+    return v if v >= 0 else _SOGLIA_RINVII_PCT
+
+
+def _storia_rinvii(sb) -> dict[int, int]:
+    """{lega: rinvii CONSECUTIVI nelle run precedenti} letti da public.live_alerts
+    (righe ENRICH_RINVIO / ENRICH_RINVIO_PERSISTENTE / ENRICH_RIPRESA scritte da questo
+    script, messaggio che inizia con "lega N:"). Si contano i rinvii dal piu' recente
+    all'indietro fino alla prima ENRICH_RIPRESA della stessa lega. Nessuna tabella
+    nuova: lo stato fra run vive negli avvisi che l'utente vede gia' nell'app.
+    Lettura non riuscita: {} con avviso (rinvii contati da zero), mai un crash."""
+    since = (datetime.now(timezone.utc) - timedelta(days=_GIORNI_STORIA_RINVII)).isoformat()
+    try:
+        righe = (sb.table("live_alerts").select("id,code,message,created_at")
+                 .in_("code", [COD_RINVIO, COD_RINVIO_PERSISTENTE, COD_RIPRESA])
+                 .gte("created_at", since)
+                 .order("created_at", desc=True).order("id", desc=True)
+                 .limit(2000).execute().data or [])
+    except Exception as e:  # noqa: BLE001 - canale ausiliario: si dichiara e si prosegue
+        print(f"::warning::enrich: storico dei rinvii (live_alerts) non leggibile "
+              f"({_descrivi(e)}): rinvii consecutivi contati da zero e leghe rinviate "
+              f"nelle run precedenti non aggiunte d'ufficio", flush=True)
+        return {}
+    out: dict[int, int] = {}
+    chiuse: set[int] = set()
+    for r in righe:
+        m = _RE_LEGA_ALLARME.match(str(r.get("message") or ""))
+        if not m:
+            continue
+        lid = int(m.group(1))
+        if lid in chiuse:
+            continue
+        if r.get("code") == COD_RIPRESA:
+            chiuse.add(lid)
+            out.setdefault(lid, 0)
+            continue
+        out[lid] = out.get(lid, 0) + 1
+    return out
+
+
+def _scrivi_allarme(sb, level: str, code: str, message: str) -> bool:
+    """Una riga in public.live_alerts (colonne vere: level, code, message). Insert
+    puro: UN tentativo (un doppione sarebbe un avviso doppio). Errore -> avviso nel
+    log, mai un crash: il rinvio resta dichiarato nel log e nel riepilogo del job."""
+    try:
+        sb.table("live_alerts").insert(
+            {"level": level, "code": code, "message": message[:500]}).execute()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"::warning::enrich: avviso {code} non scritto in live_alerts "
+              f"({_descrivi(e)}): {message}", flush=True)
+        return False
+
+
+def _scrivi_output_job(nome: str, valore: str) -> None:
+    percorso = os.environ.get("GITHUB_OUTPUT")
+    if percorso:
+        try:
+            with open(percorso, "a", encoding="utf-8") as fh:
+                fh.write(f"{nome}={valore}\n")
+        except OSError:
+            pass
+
+
+def _scrivi_riepilogo_job(testo: str) -> None:
+    percorso = os.environ.get("GITHUB_STEP_SUMMARY")
+    if percorso:
+        try:
+            with open(percorso, "a", encoding="utf-8") as fh:
+                fh.write(testo)
+        except OSError:
+            pass
+
+
+def _esito_rinvii(sb, counters: dict, storia: dict[int, int], leghe_ok: set[int],
+                  n_leghe: int, scrivi: bool = True) -> None:
+    """Chiude il modo incrementale: avvisi in live_alerts, riepilogo del job, exit.
+      - nessun rinvio: niente (exit 0 come sempre); le leghe rinviate in passato e
+        scritte oggi ricevono la riga ENRICH_RIPRESA;
+      - rinvii <= soglia e nessuna lega rinviata per la 3a run di fila: ::warning::,
+        exit 0 (la run resta VERDE: il DB era sotto carico, nessun dato perso);
+      - rinvii oltre soglia, o una lega rinviata da >= 3 run consecutive:
+        ::error:: e SystemExit (exit 1, run ROSSA)."""
+    rinviate = counters.get("rinviate", [])
+    for lid in sorted(leghe_ok):
+        if storia.get(lid, 0) > 0 and scrivi:
+            _scrivi_allarme(sb, "INFO", COD_RIPRESA,
+                            f"lega {lid}: freq/ritardi RIPRESI e scritti dopo "
+                            f"{storia[lid]} run con rinvio")
+            print(f"  RIPRESA lega {lid}: scritta dopo {storia[lid]} run con rinvio")
+    _scrivi_output_job("rinvii", str(len(rinviate)))
+    if not rinviate:
+        return
+    soglia = _soglia_rinvii_pct()
+    pct = 100.0 * len(rinviate) / n_leghe if n_leghe else 100.0
+    persistenti = []
+    righe_md = []
+    print(f"\nRINVIATE ({len(rinviate)} leghe, {pct:.1f}% delle {n_leghe} elaborate, "
+          f"soglia {soglia:.0f}%): righe NON scritte oggi, riprese al giro successivo "
+          f"(ogni giro riscrive tutte le righe della lega)")
+    for r in rinviate:
+        consecutivi = storia.get(r["lega"], 0) + 1
+        righe_txt = "righe non calcolate (lettura)" if r["righe"] is None else f"{r['righe']} righe"
+        testo = (f"lega {r['lega']}: {righe_txt} RINVIATE al prossimo giro, motivo: "
+                 f"{r['motivo']}; run consecutive con rinvio: {consecutivi}")
+        persistente = consecutivi >= _RUN_RINVIO_PERSISTENTE
+        if persistente:
+            persistenti.append(r["lega"])
+        print(f"  - RINVIATA {testo}")
+        righe_md.append(f"- {'**PERSISTENTE** ' if persistente else ''}{testo}")
+        if scrivi:
+            _scrivi_allarme(sb, "CRITICAL" if persistente else "WARN",
+                            COD_RINVIO_PERSISTENTE if persistente else COD_RINVIO, testo)
+    oltre = pct > soglia
+    if oltre or persistenti:
+        motivi = []
+        if oltre:
+            motivi.append(f"rinvii oltre la soglia ({pct:.1f}% > {soglia:.0f}%)")
+        if persistenti:
+            motivi.append(f"leghe rinviate da >= {_RUN_RINVIO_PERSISTENTE} run consecutive: "
+                          f"{persistenti}")
+        esito = "guasto"
+        riga = ("ENRICH: " + "; ".join(motivi) + f" - {len(rinviate)} leghe rinviate: "
+                f"{[r['lega'] for r in rinviate]}")
+        print(f"::error::{riga}", flush=True)
+    else:
+        esito = "rinviato"
+        riga = (f"ENRICH: {len(rinviate)} leghe RINVIATE per DB sotto carico "
+                f"({pct:.1f}% <= soglia {soglia:.0f}%), riprese al giro successivo: "
+                f"{[r['lega'] for r in rinviate]}")
+        print(f"::warning::{riga}", flush=True)
+    _scrivi_output_job("esito", esito)
+    _scrivi_riepilogo_job(f"### Enrich freq/ritardi: RINVIATE PER DB SOTTO CARICO ({esito})\n\n"
+                          f"{riga}\n\n" + "\n".join(righe_md) + "\n")
+    if esito == "guasto":
+        raise SystemExit(f"ATTENZIONE: {riga}.")
+
+
 def main() -> None:
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -515,7 +760,9 @@ def main() -> None:
         raise SystemExit("Specificare --league N | --days N | --today")
 
     sb = get_supabase_client()
-    counters = {"failed": 0, "leghe_fallite": []}  # leghe_fallite: [(league_id, motivo)]
+    # failed: righe perse per altri motivi (oggi nessuno: un errore logico risale subito);
+    # rinviate: leghe non scritte per DB sotto carico (09/10), vedi _esito_rinvii.
+    counters = {"failed": 0, "rinviate": []}
     # dimensione della fetta di flush, condivisa fra le leghe: si dimezza dopo un
     # flush fallito e resta ridotta per le leghe successive (DB sotto pressione).
     slice_state = {"size": _FLUSH_SLICE}
@@ -528,55 +775,73 @@ def main() -> None:
             print(f"Lega {args.league}: nessuna riga in analytics_signals. Nulla da fare.")
             return
         print(f"\nLega {args.league}: {n_target} righe-target | aggiornate {updated} "
-              f"(BULK) | falliti {counters['failed']}")
-        if counters["failed"]:
-            raise SystemExit(f"ATTENZIONE: {counters['failed']} righe non scritte.")
+              f"(BULK) | falliti {counters['failed']} | rinviate "
+              f"{sum(r['righe'] or 0 for r in counters['rinviate'])}")
+        if counters["failed"] or counters["rinviate"]:
+            # lancio a mano di UNA lega: chi l'ha chiesto deve vedere che non e' finita
+            raise SystemExit(f"ATTENZIONE: lega {args.league} non scritta per intero "
+                             f"({counters['failed']} falliti, rinvii: {counters['rinviate']}).")
         return
 
     # ---- MODO INCREMENTALE: leghe con fixture recenti (point-in-time + stato corrente) ----
     days = args.days if args.days else 1
+    storia = {} if args.dry_run else _storia_rinvii(sb)
     recent = _recent_targets(sb, days)
     if solo_leghe:
         # recupero mirato delle leghe fallite in un run precedente
         mancanti = sorted(solo_leghe - set(recent))
         recent = {lid: f for lid, f in recent.items() if lid in solo_leghe}
         print(f"Recupero --leagues: {sorted(solo_leghe)} (senza fixture recenti: {mancanti})")
+    # 09/10: le leghe RINVIATE nelle run precedenti (e non ancora riprese) si rifanno
+    # anche se oggi non hanno partite nella finestra: senza questo una lega rinviata
+    # l'ultimo giorno della sua finestra resterebbe con i valori vecchi fino alla sua
+    # prossima partita. Nessun fixture "corrente" (solo snapshot delle settlate).
+    da_riprendere = sorted(lid for lid, n in storia.items()
+                           if n > 0 and lid not in recent and (not solo_leghe or lid in solo_leghe))
+    for lid in da_riprendere:
+        recent[lid] = set()
+    if da_riprendere:
+        print(f"Leghe RINVIATE nelle run precedenti, riprese in questo giro: {da_riprendere}")
     if not recent:
         print(f"Incrementale (--days {days}): nessuna fixture recente in analytics_signals.")
         return
     print(f"Incrementale (--days {days}): {len(recent)} leghe con fixture recenti, "
           f"{sum(len(v) for v in recent.values())} fixture-target.")
     tot_target = tot_upd = 0
+    leghe_ok: set[int] = set()
+    di_fila = 0
     for league_id, fids in recent.items():
+        if di_fila >= _RINVII_DI_FILA_MAX:
+            # interruttore: 3 leghe di fila rinviate = il DB non risponde; le altre si
+            # dichiarano rinviate senza altri ~20 minuti di tentativi ciascuna
+            _registra_rinvio(counters, league_id, None,
+                             f"non tentata: {di_fila} leghe rinviate di fila (DB non risponde)")
+            continue
+        prima = len(counters["rinviate"])
         try:
             n_target, updated = _enrich_league(sb, league_id, args.dry_run, counters,
                                                current_fids=fids, slice_state=slice_state)
         except RuntimeError as e:
             if not _is_retry_esauriti(e):
                 raise  # errore LOGICO (colonna inesistente, vincolo, ...): propaga SUBITO
-            motivo = str(e)
-            counters["leghe_fallite"].append((league_id, motivo))
-            print(f"\n  [ERR lega {league_id}] lettura fallita dopo i tentativi, "
-                  f"salto la lega e proseguo: {motivo}")
+            motivo = f"lettura fallita dopo i tentativi: {e}"
+            _registra_rinvio(counters, league_id, None, motivo)
+            print(f"\n    RINVIATA lega {league_id}: {motivo}", flush=True)
+            di_fila += 1
             continue
+        if len(counters["rinviate"]) > prima:
+            di_fila += 1
+        else:
+            di_fila = 0
+            leghe_ok.add(league_id)
         tot_target += n_target
         tot_upd += updated
         print(f"  lega {league_id}: target {n_target} | aggiornate {updated}", end="\r")
     print(f"\nIncrementale: target {tot_target} | aggiornate {tot_upd} (BULK) | "
-          f"falliti {counters['failed']} | leghe fallite {len(counters['leghe_fallite'])}")
-    if counters["leghe_fallite"]:
-        print(f"\nLeghe FALLITE ({len(counters['leghe_fallite'])}), NON elaborate in "
-              f"questo run (le altre leghe SONO state aggiornate regolarmente):")
-        for league_id, motivo in counters["leghe_fallite"]:
-            print(f"  - lega {league_id}: {motivo}")
-    if counters["failed"] or counters["leghe_fallite"]:
-        msg = []
-        if counters["failed"]:
-            msg.append(f"{counters['failed']} righe non scritte")
-        if counters["leghe_fallite"]:
-            leghe_id = [lid for lid, _ in counters["leghe_fallite"]]
-            msg.append(f"{len(counters['leghe_fallite'])} leghe fallite: {leghe_id}")
-        raise SystemExit("ATTENZIONE: " + "; ".join(msg) + ".")
+          f"falliti {counters['failed']} | leghe rinviate {len(counters['rinviate'])}")
+    if counters["failed"]:
+        raise SystemExit(f"ATTENZIONE: {counters['failed']} righe non scritte.")
+    _esito_rinvii(sb, counters, storia, leghe_ok, len(recent), scrivi=not args.dry_run)
 
 
 if __name__ == "__main__":
