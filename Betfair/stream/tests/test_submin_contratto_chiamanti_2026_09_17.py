@@ -71,6 +71,11 @@ _CHIAMANTI_ATTESI = {
     # del worker nel motore. Verificato da test_mike_d1bis_freno_coperture_runner_2026_09_28.
     "Betfair/mike/porta_ordini.py",
     "Betfair/stream/trading/submin.py",
+    # 09/10 (T0C, cassetta d'ombra): ``cassetta.py`` NOMINA ``place_submin_live``
+    # solo per AVVOLGERE ``MercatoFlumine.place_submin_live`` del banco a cassetta
+    # accesa (registra richiesta e risposta e chiama l'originale con gli stessi
+    # argomenti): non chiama la sequenza, non ne ha una copia.
+    "Betfair/stream/backtest/cassetta.py",
 }
 
 _PAROLE = re.compile(r"place_submin_live|start_submin|advance_submin")
