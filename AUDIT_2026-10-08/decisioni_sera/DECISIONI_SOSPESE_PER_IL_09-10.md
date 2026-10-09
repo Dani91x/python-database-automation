@@ -105,3 +105,18 @@ Fonte dei punti: `AUDIT_2026-10-08/HANDOFF_VERIFICA_PC_E_FUSIONE.md` §6.
     40 s per test) e' rosso quando la macchina e' sotto carico (4 rossi nel worktree UI con pytest in parallelo; 1 rosso nella corsa
     intera della cima fusa, 5/5 x3 da solo). Non e' un difetto del codice: proposta per domani, alzare il tetto a 90 s o eseguire
     quel file in serie (`sequence`), cosi' la suite intera e' verde anche sotto carico.
+
+## 6. Incidente del 09/10 mattina: database Supabase in ciclo di crash (09:28-09:51), app ferma al login
+24. **Causa misurata**: il «Daily Yesterday Backfill» (cron 01:12 UTC, eseguito da GitHub alle 07:19 UTC = 09:19) a fine corsa fa
+    partire A CATENA (`workflow_run`) Hazard Atlas, Retrain ML, Leagues Mapping -> Seasons Catchup, e Post-Calibration: 4-5 action
+    sul DB nello stesso minuto. L'istanza Supabase e' piccola (`shared_buffers` 256 MB, `effective_cache_size` 768 MB,
+    `max_connections` 60: ~1 GB di RAM). Postgres «interrupted / not properly shut down» alle 07:28:21, 07:29:34, 07:32:13,
+    07:37:50, 07:43:30 UTC (nessun errore nei log: memoria esaurita), poi 522 su ogni richiesta fino alle 07:51. Rimedio
+    immediato (09:52): cancellate le due action in corso (Catchup 37899249882, Hazard Atlas 37898960772); richieste 200 dal
+    minuto dopo. DA DECIDERE: (a) scaglionare la catena (Hazard Atlas, Retrain e Catchup a orari diversi, uno alla volta);
+    (b) tetto di concorrenza (`concurrency` di GitHub Actions su un gruppo unico «db-pesante»); (c) istanza Supabase piu' grande
+    (collegato al disco 52 GB gia' aperto). Il catchup di oggi va rilanciato a DB scarico (quota API-Football del giorno intatta).
+25. **App che resta «in caricamento» al login quando il DB non risponde**: l'avvio e il login aspettano Supabase senza un tempo
+    massimo ne' un messaggio. Ordine dell'utente: «l'app deve essere una scheggia». Proposta: avvio e login con tempo massimo
+    (2-3 s) e messaggio chiaro «database non raggiungibile: riprova», pagina di login mai bloccata dal DB; rientra nel piano di
+    architettura (T0A pannello Salute, strato locale SQLite) ma il tempo massimo e il messaggio si possono fare subito.

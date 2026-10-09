@@ -5569,3 +5569,8 @@ riletto, test rilanciati, mutazioni PROPRIE, replay) e committata sul suo ramo; 
   (3) i 23 sospesi di `AUDIT_2026-10-08/decisioni_sera/DECISIONI_SOSPESE_PER_IL_09-10.md`, uno alla volta; (4) prima di paper/live:
   per ogni bot dire se e' certificato sul replay; replay tennis dei cantieri 5/6/9/W3b non ancora eseguiti (corsa unica §3.1 dell'handoff);
   live con scalper/sniper/tennis/worker solo dopo l'osservazione dal vivo del D-2 (referto §7 e §8).
+- 09/10 09:44-09:55 INCIDENTE DB: migrazione `replay_tennis_fonte_nomi` applicata dall'utente (VERIFICATA: `list_replays_tennis` e
+  `get_replay_tennis_meta` con `nomi_fonte`, lista con `market_types` e `nomi_fonte`); nello stesso momento Supabase era in un ciclo
+  di crash iniziato alle 09:28 (5 ripartenze di Postgres senza errore nei log = memoria esaurita; istanza ~1 GB) per 4-5 action
+  GitHub partite insieme a catena dal Daily delle 09:19; app ferma al login (522 su ogni richiesta). Cancellate alle 09:52 Seasons
+  Catchup e Hazard Atlas in corso; DB stabile dalle 09:43, richieste 200 dalle 09:52. Dettagli e decisioni: sospesi 24-25.
