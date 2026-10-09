@@ -431,6 +431,8 @@ _FONTI_CONVERTITE = {
     "Betfair/stream/tennis_live/tennis_runner.py": "monta_su_flumine(",
     "Betfair/stream/scalper/scalper_session.py": "monta_su_flumine(",
     "Betfair/safe_strategy/stream.py": "converti_libro(",
+    # architettura nuova (W1-A2, 09/10): il gestore dei flussi converte ogni book in _consegna
+    "Betfair/nucleo/betfair/flusso.py": "converti_libro(",
     # banco (la conversione la monta assicura_middleware_simulato)
     "Betfair/stream/backtest/banco_comune.py": "assicura_middleware_simulato(",
     "Betfair/stream/backtest/trasporto_rapido.py": "assicura_middleware_simulato(",
@@ -439,6 +441,9 @@ _FONTI_CONVERTITE = {
 # Fonti NON convertite, con il perche'. Registratori (il raw resta GBP) e
 # laboratori/avviatori storici non lanciati dall'app (desktop/main.js).
 _FONTI_ESENTI = {
+    # architettura nuova (W1-A2, 09/10): stream ORDINI, listener lightweight, nessun book;
+    # gli importi degli ordini arrivano gia' nella valuta del conto (EUR)
+    "Betfair/nucleo/betfair/flusso_ordini_conto.py": "stream ORDINI: importi gia' in EUR, nessun book",
     "Betfair/stream/tennis_scalper/record_multi.py": "registratore",
     "Betfair/stream/tennis_scalper/record_tennis.py": "registratore",
     "Betfair/stream/tennis_scalper/research_data.py": "ricerca",

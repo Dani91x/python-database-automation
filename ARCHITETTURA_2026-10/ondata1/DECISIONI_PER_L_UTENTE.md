@@ -22,5 +22,6 @@ ripiego come Omega, aggiornamenti mai scartati per l'orologio, nessuna ripresa d
 | 10 | Ritardo dei dati del cloud (W1-G2) | Lettura ogni volta | Mike: un dossier aggiornato puo' arrivare fino a 5 min dopo (resta la lettura diretta di riserva); Omega: dopo la ricostruzione notturna fino a 5 min di tabelle vecchie | **Si'**, con la lettura diretta di riserva di Mike sempre accesa |
 | 11 | Due script batch senza chiave di conflitto (W1-G2) | Ritentati dal trasporto del vecchio client | Nel client nuovo non sarebbero ritentati | **Lasciarli sul client di oggi** (nessun cambio) |
 | 12 | Cadenza del ladder (W1-A2) | 200 ms | Il nuovo sa scendere a 20 ms (CPU misurata: +0,15% di un core con una partita, -7% con dieci) | **Decidere dopo l'ombra**: di serie restano 200 ms |
+| 13 | Connessioni a Betfair in LIVE (W1-A2, terza revisione) | Ogni processo flumine LIVE (runner calcio, tennis, ogni scalper) apre gia' il suo stream ordini: caso peggiore 10 su 10 | Lo stream ordini del conto AGGIUNTO e basta: 11 su 10 (non entra). SOSTITUENDO gli stream ordini di flumine all'aggancio: 9 su 10 | **Sostituire** all'ondata 2: un solo stream ordini per l'app (e' anche cio' che porta tutti gli ordini sul ladder). Mai aggiunto senza sostituire |
 
 Riferimenti: referti in `ARCHITETTURA_2026-10/ondata1/W1-*/REFERTO.md` (par. 9 "Divergenze per l'utente").
