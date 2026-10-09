@@ -37,11 +37,12 @@ Le regole (tutte nei test ``tests/test_a2_flusso*.py``):
 
 Entrate: ``Sessione`` (``client()`` = ``APIClient`` valido), il ``ProfiloFlusso``,
 ``imposta_mercati``. Uscite: i ``MarketBook`` della libreria ai consumatori (un
-thread di consegna; ``trasforma`` facoltativa, es. GBP->EUR), ``book``,
+thread di consegna; prima la conversione GBP->EUR di ``valuta.converti_libro``,
+poi ``trasforma`` facoltativa), ``book``,
 ``stato``, ``stato_flusso``.
 
 Cosa NON fa: non decide quali mercati seguire (auto-follow, D), non registra il
-raw (P5), non scrive DB, non converte la valuta da solo, non tocca flumine (il
+raw (P5), non scrive DB, non tocca flumine (il
 banco resta su ``HistoricalStream``). Importare il modulo non apre socket ne'
 thread: nascono in ``avvia``/``imposta_mercati`` e muoiono in ``ferma``.
 """
@@ -59,6 +60,7 @@ from betfairlightweight.filters import streaming_market_filter
 from betfairlightweight.streaming.listener import StreamListener
 
 from Betfair.stream import stream_muto as _SM
+from Betfair.stream import valuta as _valuta
 
 from .contratto import ProfiloFlusso, Sessione, StatoFlusso
 from .profili import LIMITE_BETFAIR_CONNESSIONI, LIMITE_BETFAIR_MERCATI, filtro_dati
@@ -366,8 +368,16 @@ class GestoreFlussi:
                  crea_stream: Callable[[Any, int, StreamListener], Any] = _crea_stream_libreria,
                  orologio: Callable[[], float] = time.monotonic,
                  trasforma: Optional[Callable[[Any], Any]] = None,
+                 cambio: Optional[Any] = None,
+                 converti_valuta: bool = True,
                  limite_mercati: int = LIMITE_BETFAIR_MERCATI) -> None:
         self.profilo = profilo
+        # K1 (26/09): lo stream dei mercati e' SEMPRE in GBP, il conto in EUR. Come lo
+        # scanner (``safe_strategy/stream.py`` ``drain``) ogni book si converte ALLA FONTE
+        # con l'unica funzione ``valuta.converti_libro`` (cambio di processo
+        # ``valuta.CAMBIO``, congelato per mercato) prima di ogni consumatore.
+        self._cambio = cambio
+        self._converti = bool(converti_valuta)
         self._sessione = sessione
         self._crea_stream = crea_stream
         self._ora = orologio
@@ -608,6 +618,13 @@ class GestoreFlussi:
             with self._lock:
                 consumatori = list(self._consumatori)
             for b in libri:
+                if self._converti:
+                    try:
+                        b = _valuta.converti_libro(b, self._cambio or _valuta.CAMBIO)
+                    except Exception as e:  # noqa: BLE001 - un book in GBP non si consegna mai
+                        logger.error("[flusso] conversione GBP->EUR KO su %s: book NON consegnato (%s)",
+                                     getattr(b, "market_id", "?"), e)
+                        continue
                 if self._trasforma is not None:
                     try:
                         b = self._trasforma(b)

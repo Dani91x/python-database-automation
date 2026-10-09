@@ -58,8 +58,8 @@ TOPIC_LADDER = "ladder"
 
 Sport = Literal["calcio", "tennis"]
 #: cosa fa il ladder quando arriva un book CLOSED (oggi diverso per sport):
-#: calcio  = marca CLOSED l'ultimo book noto (``recorder.py:221-225``);
-#: tennis  = serializza il book chiuso e lo marca CLOSED (``tennis_runner.py:443-458``)
+#: calcio  = marca CLOSED l'ultimo book noto (``recorder.py:220-225``);
+#: tennis  = serializza il book chiuso e lo marca CLOSED (``tennis_runner.py:433-458``)
 Chiusura = Literal["marca_ultimo", "serializza_chiuso"]
 
 
@@ -188,13 +188,13 @@ def payload_ladder(libro: Mapping[str, Any], nomi: Mapping[str, str], max_livell
 
 def firma_con_stato(libro: Mapping[str, Any], payload: Mapping[str, Any]) -> str:
     """Lo stato entra nella firma: OPEN -> SUSPENDED -> CLOSED si pubblica anche a
-    livelli fermi (``runner.py:715-717``)."""
+    livelli fermi (``runner.py:725-727``)."""
     return (libro.get("status") or "") + "|" + firma(payload["selections"])
 
 
 def riga_ladder(meta: MetaLadder, market_id: str, libro: Mapping[str, Any],
                 payload: Dict[str, Any]) -> Dict[str, Any]:
-    """La riga del topic ``ladder`` (chiavi e ordine di ``runner.py:733-740``)."""
+    """La riga del topic ``ladder`` (chiavi e ordine di ``runner.py:738-745``)."""
     return {
         "event_id": meta.event_id,
         "market_id": market_id,
@@ -209,9 +209,9 @@ def libro_chiuso(profilo: ProfiloLadder, libro: Any,
                  ultimo: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Il book serializzato dopo un CLOSED, come oggi per lo sport del profilo.
 
-    calcio: l'ultimo book noto con ``status`` = quello del book (``recorder.py:221-225``),
+    calcio: l'ultimo book noto con ``status`` = quello del book (``recorder.py:220-225``),
     nessuno se non ce n'era uno. tennis: il book chiuso serializzato e marcato CLOSED,
-    l'ultimo noto se non serializzabile (``tennis_runner.py:443-458``)."""
+    l'ultimo noto se non serializzabile (``tennis_runner.py:433-458``)."""
     if profilo.chiusura == "marca_ultimo":
         if ultimo is None:
             return None

@@ -173,6 +173,22 @@ MUTAZIONI = [
      "            base = int(raw)\n",
      [T + "test_a2_profili.py::test_profili_uguali_ai_valori_di_oggi"],
      "tetto tennis letto in un altro modo"),
+    ("M26", N + "flusso_ordini_conto.py",
+     "        scartati = normalizza_ordini(data)\n",
+     "        scartati = []\n",
+     [T + "test_a2_flusso_ordini_conto.py::test_ordine_del_sito_SENZA_rfo_rfs_rc_non_fa_cadere_la_cache",
+      T + "test_a2_flusso_ordini_conto.py::test_connessione_vera_regge_l_ordine_del_sito_senza_riferimenti"],
+     "ordine del sito senza rfo/rfs: la cache della libreria cade (reperto W1-C2)"),
+    ("M27", N + "flusso_ordini_conto.py",
+     "                    scartati.append(str(uo.get(\"id\")))\n",
+     "                    tenuti.append(uo)\n",
+     [T + "test_a2_flusso_ordini_conto.py::test_ordine_senza_un_campo_obbligatorio_si_scarta_e_si_segnala_il_resto_passa"],
+     "ordine senza un campo obbligatorio passato alla libreria (cade tutto il messaggio)"),
+    ("M28", N + "flusso.py",
+     "                if self._converti:\n",
+     "                if False:\n",
+     [T + "test_a2_flusso.py::test_size_dello_stream_convertite_gbp_eur_alla_fonte"],
+     "size dello stream lasciate in GBP (K1)"),
 ]
 
 

@@ -26,6 +26,16 @@ Le scelte del filtro (``filters.streaming_order_filter``):
   in cache sarebbe vecchio. L'attribuzione per bot si fa sugli ordini (``rfs``,
   ``rfo``) nel comparto C. Meno traffico sulla connessione.
 
+Ordini senza riferimenti (reperto di W1-C2, 09/10): in betfairlightweight 2.23.2
+``UnmatchedOrder`` vuole ``rfo`` e ``rfs`` come argomenti obbligatori; un ordine del
+sito o di un'altra app che non li porta farebbe cadere la cache (``TypeError``) e con
+lei lo stream. ``normalizza_ordini`` li mette a ``""`` (= nessun riferimento, None in
+``OrdineDalConto``) PRIMA della cache; un ordine senza un altro campo obbligatorio non
+si inventa: si toglie dal messaggio, si conta e si segnala (``ordini_non_confermati``).
+
+Valuta: gli importi dello stream ORDINI sono gia' nella valuta del conto (EUR,
+``Betfair/stream/valuta.py`` testata); la conversione GBP->EUR riguarda solo i book.
+
 Ripresa: la sottoscrizione si rifa' con ``initialClk``/``clk`` dell'ultimo
 messaggio completo (la libreria li tiene; con la segmentazione ``clk`` arriva
 solo a fine segmento): Betfair risponde ``RESUB_DELTA`` con i soli cambi. Dopo
@@ -48,6 +58,7 @@ ne' thread: tutto nasce in ``avvia`` e muore in ``ferma``.
 from __future__ import annotations
 
 import datetime as _dt
+import inspect
 import json
 import logging
 import queue
@@ -139,13 +150,58 @@ def ordine_dalla_cache(uo: UnmatchedOrder, market_id: str, selection_id: int,
 # ---------------------------------------------------------------------------
 # listener e stream: la catena VERA della libreria, con due osservazioni in piu'
 # ---------------------------------------------------------------------------
+#: argomenti OBBLIGATORI di ``UnmatchedOrder`` nella libreria installata (letti dalla
+#: firma, non scritti a mano): in 2.23.2 anche ``rfo`` e ``rfs``
+_OBBLIGATORI_UO = tuple(
+    n for n, p in inspect.signature(UnmatchedOrder.__init__).parameters.items()
+    if n not in ("self", "publish_time") and p.default is p.empty
+    and p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY))
+#: riferimenti che Betfair puo' NON mandare (ordine del sito, di un'altra app):
+#: assenti = nessun riferimento; la conversione li porta comunque a None
+_RIFERIMENTI = ("rfo", "rfs")
+
+
+def normalizza_ordini(data: list) -> List[str]:
+    """Prepara IN PLACE il messaggio ``oc`` per la cache della libreria.
+
+    betfairlightweight 2.23.2 costruisce ``UnmatchedOrder(**uo)`` con ``rfo`` e
+    ``rfs`` obbligatori: un ordine senza riferimenti (sito Betfair, altre app)
+    farebbe ``TypeError`` e lo stream cadrebbe proprio sugli ordini che si vogliono
+    vedere (reperto di W1-C2, 09/10). Qui: ``rfo``/``rfs`` assenti -> ``""`` (nessun
+    riferimento: in ``OrdineDalConto`` diventano None come oggi gli stringa vuota);
+    un ordine senza un ALTRO campo obbligatorio (id, prezzo, size, stato, importi...)
+    non si inventa: si toglie dal messaggio (il resto passa) e il suo ``id`` torna
+    nella lista degli scartati (lo stato lo conta, il comparto C lo riconcilia via REST)."""
+    scartati: List[str] = []
+    for oc in data or []:
+        for orc in oc.get("orc") or []:
+            uos = orc.get("uo")
+            if not uos:
+                continue
+            tenuti = []
+            for uo in uos:
+                for k in _RIFERIMENTI:
+                    uo.setdefault(k, "")
+                mancanti = [k for k in _OBBLIGATORI_UO if k not in uo]
+                if mancanti:
+                    scartati.append(str(uo.get("id")))
+                    logger.error("[ordini-conto] ordine %s del mercato %s senza %s: non applicabile, "
+                                 "da riconciliare via REST", uo.get("id"), oc.get("id"), mancanti)
+                    continue
+                tenuti.append(uo)
+            orc["uo"] = tenuti
+    return scartati
+
+
 class _OrderStreamConto(OrderStream):
-    """``OrderStream`` di betfairlightweight che, DOPO aver aggiornato la cache
-    (``super()._process``), passa al listener il messaggio appena applicato."""
+    """``OrderStream`` di betfairlightweight che, PRIMA, rende il messaggio
+    applicabile dalla cache (``normalizza_ordini``) e, DOPO aver aggiornato la
+    cache (``super()._process``), passa al listener il messaggio appena applicato."""
 
     def _process(self, data: list, publish_time: int) -> bool:
+        scartati = normalizza_ordini(data)
         img = super()._process(data, publish_time)
-        self._listener.cambiati(self, data)
+        self._listener.cambiati(self, data, scartati)
         return img
 
 
@@ -216,11 +272,12 @@ class ListenerConto(StreamListener):
             if d.get("oc"):
                 self.ultimo_dato_ms = self.ultimo_msg_ms
 
-    def cambiati(self, stream: OrderStream, data: list) -> None:
+    def cambiati(self, stream: OrderStream, data: list, scartati: Optional[List[str]] = None) -> None:
         """Gli ordini toccati dal messaggio, letti dalla cache GIA' aggiornata."""
         ricevuto = int(self._ora_ms())
         ordini: List[OrdineDalConto] = []
-        info: Dict[str, Any] = {"immagini": {}, "posizioni": {}, "chiusi": []}
+        info: Dict[str, Any] = {"immagini": {}, "posizioni": {}, "chiusi": [],
+                                "scartati": list(scartati or [])}
         for oc in data:
             mid = str(oc.get("id"))
             cache = stream._caches.get(mid)
@@ -317,7 +374,8 @@ class FlussoOrdiniContoBetfair:
         self._thread_consegna: Optional[threading.Thread] = None
         self.conti: Dict[str, int] = {
             "connessioni": 0, "riconnessioni": 0, "riprese_con_clk": 0, "immagini_piene": 0,
-            "ordini_ricevuti": 0, "errori_consumatori": 0, "rinnovi_sessione": 0,
+            "ordini_ricevuti": 0, "ordini_scartati": 0, "errori_consumatori": 0,
+            "rinnovi_sessione": 0,
         }
         self._avviato_ms: Optional[float] = None
 
@@ -512,6 +570,8 @@ class FlussoOrdiniContoBetfair:
                     if o.market_id == mid and o.stato == "EXECUTABLE" and bet_id not in visti:
                         self._non_confermati.add(bet_id)
             self._posizioni.update(info["posizioni"])
+            self._non_confermati.update(info["scartati"])
+            self.conti["ordini_scartati"] += len(info["scartati"])
             self._chiusi.update(info["chiusi"])
             self.conti["ordini_ricevuti"] += len(ordini)
         if ordini:

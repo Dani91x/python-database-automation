@@ -76,7 +76,14 @@ def backoff_breve(monkeypatch):
     monkeypatch.setattr(F, "BACKOFF_MAX_S", 0.2)
 
 
+#: cambio FISSO dei test (come il banco: ``valuta.cambio_banco``), mai la cache su disco
+CAMBIO = 1.2
+
+
 def _gestore(nome: str = "runner_calcio", ambiente: Dict[str, str] = None, **kw: Any) -> F.GestoreFlussi:
+    from Betfair.stream.valuta import CambioGbpEur
+
+    kw.setdefault("cambio", CambioGbpEur(fisso=CAMBIO))
     return F.GestoreFlussi(SessioneFinta(), P.profilo(nome, ambiente or {}), **kw)
 
 
@@ -325,6 +332,34 @@ def test_consumatori_filtro_trasformazione_ed_errori(server_stream):
         assert solo == ["1.000002"]
         assert g.book("1.000001").valuta == "EUR" and sorted(trasformati) == _ids(0, 4)
         assert g.stato()["conti"]["errori_consumatori"] == 4
+    finally:
+        g.ferma()
+
+
+def test_size_dello_stream_convertite_gbp_eur_alla_fonte(server_stream):
+    """K1: lo stream dei mercati e' in GBP; ogni book consegnato e' gia' in EUR
+    (``valuta.converti_libro``, marcato ``valuta='EUR'``), come oggi lo scanner e i
+    middleware di flumine. Senza conversione la liquidita' sarebbe sottostimata del ~14%."""
+    from Betfair.stream.recorder import serialize_book
+
+    server_stream(_risposta_immagine)
+    g = _gestore("runner_tennis")
+    try:
+        g.imposta_mercati(_ids(0, 1))
+        assert attendi(lambda: g.book("1.000000") is not None)
+        b = g.book("1.000000")
+        assert b.valuta == "EUR" and b.size_gbp_convertite is True
+        gbp = {r["id"]: r for r in MODELLO["rc"]}
+        s = serialize_book(b, 10)
+        assert s["valuta"] == "EUR"
+        for sel, r in s["runners"].items():
+            originale = gbp.get(int(sel), {}).get("atb") or []
+            if originale and r["b"]:
+                migliore = max(originale, key=lambda lv: lv[0])
+                assert r["b"][0] == [migliore[0], round(migliore[1] * CAMBIO, 2)]
+                break
+        else:
+            raise AssertionError("nessun livello back da confrontare")
     finally:
         g.ferma()
 

@@ -120,8 +120,8 @@ def test_book_invariato_non_ripubblica_e_stato_entra_nella_firma():
 
 @pytest.mark.parametrize("sport,atteso_runner", [("calcio", "ultimo"), ("tennis", "chiuso")])
 def test_chiusura_come_oggi_per_sport(sport, atteso_runner):
-    """calcio: l'ultimo book noto marcato CLOSED (``recorder.py:221-225``);
-    tennis: il book chiuso serializzato e marcato CLOSED (``tennis_runner.py:443-458``)."""
+    """calcio: l'ultimo book noto marcato CLOSED (``recorder.py:220-225``);
+    tennis: il book chiuso serializzato e marcato CLOSED (``tennis_runner.py:433-458``)."""
     lb = Libri()
     lad, pub, ora = _ladder(sport)
     aperto = lb.immagine()

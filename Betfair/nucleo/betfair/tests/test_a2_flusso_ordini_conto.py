@@ -132,6 +132,47 @@ def test_ordine_del_sito_senza_riferimenti_e_avp_assente():
     assert (o.tipo, o.persistenza, o.lato) == ("MARKET_ON_CLOSE", "MARKET_ON_CLOSE", "back")
 
 
+def _senza(d: Dict[str, Any], *chiavi: str) -> Dict[str, Any]:
+    return {k: v for k, v in d.items() if k not in chiavi}
+
+
+def test_ordine_del_sito_SENZA_rfo_rfs_rc_non_fa_cadere_la_cache():
+    """Reperto di W1-C2 (09/10): in betfairlightweight 2.23.2 ``UnmatchedOrder`` vuole
+    ``rfo`` e ``rfs``; un ordine del sito (o di un'altra app) che non li porta
+    mandava la cache in ``TypeError``. Formato ufficiale (schema ESA: nessuna chiave
+    dell'Order e' obbligatoria), chiavi tolte, catena vera della libreria."""
+    from betfairlightweight.streaming.cache import UnmatchedOrder
+
+    assert {"rfo", "rfs"} <= set(FOC._OBBLIGATORI_UO)          # il difetto della libreria c'e'
+    with pytest.raises(TypeError):
+        UnmatchedOrder(PT0, **_senza(uo("x"), "rfo", "rfs", "rac", "rc"))
+    li, r = listener_vero()
+    li.on_data(ocm([mercato(MID, [runner(19, [_senza(uo("SITO1"), "rfo", "rfs", "rac", "rc"),
+                                              uo("BOT1", rfs="mike_live", rfo="mk-1")])], full=True)],
+                   ct="SUB_IMAGE", clk="1"))
+    li.on_data(ocm([mercato(MID, [runner(19, [_senza(uo("SITO1", sm=4.0, sr=6.0, avp=2.5), "rfo", "rfs", "rac", "rc")])])],
+                   clk="2", pt=PT0 + 10))
+    u = r.ultimi
+    assert set(u) == {"SITO1", "BOT1"}
+    assert (u["SITO1"].customer_order_ref, u["SITO1"].customer_strategy_ref,
+            u["SITO1"].regulator_code) == (None, None, None)
+    assert (u["SITO1"].abbinato, u["SITO1"].prezzo_medio) == (4.0, 2.5)
+    assert u["BOT1"].customer_strategy_ref == "mike_live"
+    assert li.clk == "2" and not li.errore_elaborazione
+
+
+def test_ordine_senza_un_campo_obbligatorio_si_scarta_e_si_segnala_il_resto_passa():
+    f = FOC.FlussoOrdiniContoBetfair(SessioneFinta())
+    li = f._listener
+    li.register_stream(5, "orderSubscription")
+    li.on_data(ocm([mercato(MID, [runner(19, [_senza(uo("ROTTO"), "sm"), uo("BUONO")])], full=True)],
+                   ct="SUB_IMAGE", clk="1"))
+    assert [o.bet_id for o in f.ordini()] == ["BUONO"]
+    assert "ROTTO" in f.ordini_non_confermati()           # il comparto C lo riconcilia via REST
+    st = f.stato()
+    assert st["ordini_scartati"] == 1 and st["riconnessioni"] == 0
+
+
 def test_parziale_poi_completo_poi_annullato_scaduto_e_annullato_da_betfair():
     li, r = listener_vero()
     li.on_data(ocm([mercato(MID, [runner(19, [uo("A"), uo("B"), uo("C"), uo("D")])])],
@@ -398,6 +439,23 @@ def test_consumatore_per_mercato_e_consumatore_che_solleva(server_stream):
         assert attendi(lambda: sorted(tutti) == ["1", "2"])
         assert solo_mid2 == ["2"]
         assert f.stato()["errori_consumatori"] == 2
+    finally:
+        f.ferma()
+
+
+def test_connessione_vera_regge_l_ordine_del_sito_senza_riferimenti(server_stream, backoff_breve):
+    def risposta(n: int, m: Dict[str, Any], k: int) -> List[Any]:
+        return [{"op": "ocm", "initialClk": "I", "clk": "C1", "pt": PT0, "ct": "SUB_IMAGE",
+                 "oc": [mercato(MID, [runner(19, [uo("1", rfs="mike_live")])], full=True)]},
+                {"op": "ocm", "clk": "C2", "pt": PT0 + 5,
+                 "oc": [mercato(MID, [runner(19, [_senza(uo("SITO"), "rfo", "rfs", "rac", "rc")])])]}]
+    srv = server_stream(risposta)
+    f = FOC.FlussoOrdiniContoBetfair(SessioneFinta())
+    f.avvia()
+    try:
+        assert attendi(lambda: {o.bet_id for o in f.ordini()} == {"1", "SITO"})
+        assert not attendi(lambda: len(srv.sottoscrizioni) > 1, secondi=0.5)   # nessuna caduta
+        assert f.stato()["riconnessioni"] == 0 and f.stato()["ultimo_clk"] == "C2"
     finally:
         f.ferma()
 

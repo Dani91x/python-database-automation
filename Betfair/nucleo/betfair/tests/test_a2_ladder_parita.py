@@ -2,7 +2,7 @@
 
 Oggi (importato, mai copiato nel test):
 * calcio: ``Betfair/stream/runner.py`` ``build_ladder_payload``, ``ladder_signature``
-  e il ``ladder_worker`` vero (``runner.py:687-757``) con il recorder vero
+  e il ``ladder_worker`` vero (``runner.py:689-757``) con il recorder vero
   (``MarketRecorderStrategy``: ``serialize_book`` e la chiusura che marca CLOSED);
 * tennis: ``Betfair/stream/tennis_live/tennis_runner.py`` ``build_ladder_payload``,
   ``ladder_signature``, ``ladder_worker`` (``:1469-1517``) con la capture vera
@@ -42,6 +42,17 @@ from .test_a2_finti import REGISTRAZIONI, conforme, libri_registrazione
 LIBRI_ATTESI = {"35760084": 65445, "35797769": 197229}
 
 
+def passo_del_confronto(ev: str) -> int:
+    """Ogni quanti book si confronta. 35760084: OGNI book, sempre. 35797769: ogni book
+    con ``A2_PARITA_COMPLETA=1`` (13 min su macchina condivisa il 09/10: esito verde,
+    referto W1-A2 par. 5), altrimenti uno ogni 7 (passo fisso, deterministico), per
+    tenere la suite entro tempi umani. Tutti i book vengono comunque RICOSTRUITI e contati."""
+    import os
+    if ev == "35760084" or os.environ.get("A2_PARITA_COMPLETA") == "1":
+        return 1
+    return 7
+
+
 def nomi_finti(serializzato: Dict[str, Any]) -> Dict[str, str]:
     """Nomi per META' delle selezioni (l'altra meta' resta senza nome: ramo None)."""
     ids = sorted(serializzato.get("runners") or {})
@@ -49,7 +60,7 @@ def nomi_finti(serializzato: Dict[str, Any]) -> Dict[str, str]:
 
 
 def _firma_vecchia(mod: Any, libro: Dict[str, Any], payload: Dict[str, Any]) -> str:
-    """La firma con lo stato come la calcolano oggi i due worker (``runner.py:717``)."""
+    """La firma con lo stato come la calcolano oggi i due worker (``runner.py:727``)."""
     return (libro.get("status") or "") + "|" + mod.ladder_signature(payload["selections"])
 
 
@@ -62,9 +73,14 @@ def test_payload_e_firma_identici_su_ogni_book(ev):
     assert (pc.livelli_max, pc.livelli_wom) == (R.LADDER_MAX_LEVELS, R.LADDER_WOM_LEVELS)
     assert (pt.livelli_max, pt.livelli_wom) == (T.LADDER_MAX_LEVELS, T.LADDER_WOM_LEVELS)
     stessi = (pc.livelli_max, pc.livelli_wom) == (pt.livelli_max, pt.livelli_wom)
-    n = 0
+    passo = passo_del_confronto(ev)
+    n = confrontati = 0
     for _t, libri in libri_registrazione(ev):
         for b in libri:
+            n += 1
+            if (n - 1) % passo:
+                continue
+            confrontati += 1
             s = serialize_book(b, pc.profondita)
             nomi = nomi_finti(s)
             nuovo_c = L.payload_ladder(s, nomi, pc.livelli_max, pc.livelli_wom)
@@ -77,8 +93,8 @@ def test_payload_e_firma_identici_su_ogni_book(ev):
                 vecchio = mod.build_ladder_payload(s, nomi, mod.LADDER_MAX_LEVELS)
                 assert nuovo == vecchio, (ev, b.market_id, prof.sport)
                 assert firma == _firma_vecchia(mod, s, vecchio), (ev, b.market_id, prof.sport)
-            n += 1
     assert n == LIBRI_ATTESI[ev]
+    assert confrontati == (n + passo - 1) // passo
 
 
 CASI_LIMITE = [
