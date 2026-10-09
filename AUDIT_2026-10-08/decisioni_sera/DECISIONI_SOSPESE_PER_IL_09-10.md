@@ -101,3 +101,7 @@ Fonte dei punti: `AUDIT_2026-10-08/HANDOFF_VERIFICA_PC_E_FUSIONE.md` §6.
     con la corsa unica del §3.1 dell'handoff.
 22. **D-6, eccezione**: nella sezione «Concluse» lo scalper resta fermabile (il pulsante ferma la sessione, non piazza sul mercato
     chiuso). Confermare.
+23. **Test di tempo ricorrente**: `frontend/src/lib/replayVerificaBarraScript.test.ts` (lancia davvero lo script con vite-node, tetto
+    40 s per test) e' rosso quando la macchina e' sotto carico (4 rossi nel worktree UI con pytest in parallelo; 1 rosso nella corsa
+    intera della cima fusa, 5/5 x3 da solo). Non e' un difetto del codice: proposta per domani, alzare il tetto a 90 s o eseguire
+    quel file in serie (`sequence`), cosi' la suite intera e' verde anche sotto carico.

@@ -5524,3 +5524,39 @@ Il piano e' pronto per la revisione del PC e la decisione dell'utente. Prossimi 
   `master` = `a025f1f2`, `npm run build` exit 0 in 31 s (`AUDIT_2026-10-08/build_coordinatore_a025f1f2.txt`). Rami di ieri e oggi
   tutti in master; i due rami d'appoggio del cloud non fusi (`-c11`, `-w3b-appoggio`) sono bozze precedenti superate da master
   (confronto file per file). L'utente riavvia l'app; all'avvio nessun bot opera.
+
+### 08/10 sera -> 09/10 mattina — DECISIONI DELL'UTENTE D-1..D-15: quattro cantieri in parallelo, certificati e fusi (coordinatore PC, Fable 5.1)
+Ordine dell'utente (08/10, 20:00): «Procedi con: D2, D1 patch, D3 (se e' strategia teniamolo), D4 esporre, D5 ok, D6 sezione apposta
+per le concluse, D7 annullarlo, D8 fuori, D9 lascia, D10 (gli any vari), D11 1-2 si', D13 si', D14 tutto, D15 scegli; i sospesi li
+facciamo domani. Massima attenzione al codice, nessuna regressione, quando hai finito controlla e pusha tutto.»
+Documento delle decisioni e dei sospesi: `AUDIT_2026-10-08/decisioni_sera/DECISIONI_SOSPESE_PER_IL_09-10.md` (23 punti per il 09/10).
+Quattro delegati Opus, ciascuno nel suo worktree su un ramo da master `d257abea`; ogni consegna verificata dal coordinatore (diff
+riletto, test rilanciati, mutazioni PROPRIE, replay) e committata sul suo ramo; poi fusione in `fusione-sera` (worktree separato,
+0 conflitti) e controlli sulla cima fusa:
+- **D-2 `cantiere-d2` `790bbb97` (MONEY-CRITICAL, `trading/submin.py`)**: REPRICED -> DONE solo col sostituto del replace nato;
+  replace rifiutato -> conferma al giro dopo, poi ABORTED «rimpiazzo NON nato...», parcheggio vivo ritirato, la chiusura si rifa'.
+  Due completamenti ordinati dal coordinatore: D-2b tetto 15 s al replace in volo (regola «mai ciechi con soldi a mercato»; limite
+  dichiarato: flumine rifiuta il cancel di un REPLACING) e D-2a solo banco (RC3 accetta la riga del bot per replaceOrders: il codice
+  non arriva al bot, flumine `pass # todo`). 42 test su oggetti veri di flumine; 22 mutazioni del delegato + 1 mia (sostituto a
+  qualunque prezzo: 29 rossi). Replay: scalper 35797769 rifiuti-betfair-codici KO RC3 -> OK 132, base identico, ordini identici;
+  tennis_scalper 17 OK identico; mike 3 OK identico.
+- **Banco `cantiere-banco-sera` `9deb53d6`**: D-1 B2 per ciclo come K5 (chiusura-abbinata-in-parte KO -> OK 213); D-13 cache
+  lambda azzerata anche all'uscita dello scenario (non al riavvio: sospeso 16); D-14a psutil 7.2.2 + pytest-xdist installati nel
+  `.venv` del PC dal coordinatore; D-14b psutil in requirements + riga «worker: 1 (psutil assente: richiesti N)»; D-14c riavvio di
+  Omega = `_processo_nuovo()`; D-14d NON applicata (sospeso 17); D-15 righe dello specchio tolte nel figlio: padre 2725 -> 144 MB,
+  530 -> 303 s, referto identico. Mie mutazioni: conteggio `_tolte` non scritto -> 1 rosso; B2 senza cicli -> 5 rossi.
+- **Frontend `cantiere-ui-sera` `62bab6cc`**: D-4 soglie di gate-aperto lette dai bot tennis esposte nelle schede (scalper warmup_ms;
+  pro price_min, min_book_size; flb min_lay_size; swing conf_ticks, min_matched, price_min, price_max) con default di produzione,
+  catalogo Python = scheda TS (20 test nuovi), valori di gate-aperto invariati, nota del referto veritiera; D-6 sezione «Concluse ·
+  posizioni da regolare» nella pagina Cash Out, cash out spenti con il motivo. Mie mutazioni: default diverso dalla produzione -> 1
+  rosso; conclusa non spostata -> 7 rossi. Replay swing 35790089 prima/dopo: solo testa e note.
+- **W2 D-7 `cantiere-w2-sera` `66304f27`**: ordine dell'app non abbinato sul lato della copertura annullato in automatico
+  (`cancelOrders` solo con marketId+betId), conto riletto, copertura sull'esposizione reale, rifiuto se l'ordine resta vivo; 20 test
+  con client flumine vero su trasporto finto; 19 mutazioni + 1 mia (lato ignorato -> 1 rosso); 58 test W2 invariati.
+- **Senza codice**: D-3 tenuto (e' strategia, come dice il cloud), D-5, D-8, D-9, D-11.1/2, D-12.1 (lettura da confermare).
+- **Cima fusa `fusione-sera`** (09/10): pytest Betfair 11.407 verdi / 71 skipped / 6 xfailed / 0 rossi (7 min); tools 17; catchup 103;
+  tsc 0; vitest 5.484 verdi, 1 rosso di solo tempo (`replayVerificaBarraScript`, 40 s sotto il carico di vitest; 5/5 x3 da solo:
+  sospeso 23). Replay di coerenza miei (09:20-09:26, `decisioni_sera/replay_coordinatore/CONFRONTO.md`): scalper 4 scenari (i due
+  attesi KO -> OK, base e ingresso IDENTICI al controllo finale del cloud), omega apertura/paper/riavvio IDENTICI nelle righe di esito
+  (solo righe di log CRITICAL per processo), mike base/cap-stretto IDENTICI, safe_base base/riavvio IDENTICI, swing IDENTICO.
+- Commit orfano `1f35f5c8` (log 3 GB): `git gc` rimandato (non pushato, nessun rischio).
