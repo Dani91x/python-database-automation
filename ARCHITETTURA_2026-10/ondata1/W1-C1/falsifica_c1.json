@@ -1,0 +1,218 @@
+[
+ {
+  "mutazione": "M01 dedup tolto",
+  "file": "Betfair/nucleo/ordini/porta.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 1 passed in 1.41s",
+  "sha256": "f71c04f626f03d506d3b8e0969e7e795185114394926f193d50270cc32e3f6fc",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M02 dedup persistente tolto (archivio ignorato)",
+  "file": "Betfair/nucleo/ordini/porta.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 2 passed in 1.12s",
+  "sha256": "f71c04f626f03d506d3b8e0969e7e795185114394926f193d50270cc32e3f6fc",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M03 da_seq tolto (nessuna richiesta al buco)",
+  "file": "Betfair/nucleo/ordini/eventi.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 10 passed in 2.02s",
+  "sha256": "0b54b41579f5a4e283cfbc966bf91fd492b058e3a59de6017bda6beb0704d263",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M04 controllo di contiguita' tolto",
+  "file": "Betfair/nucleo/ordini/eventi.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 10 passed in 1.46s",
+  "sha256": "0b54b41579f5a4e283cfbc966bf91fd492b058e3a59de6017bda6beb0704d263",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M05 ok all'esito ignoto",
+  "file": "Betfair/nucleo/ordini/porta.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 9 passed in 1.28s",
+  "sha256": "f71c04f626f03d506d3b8e0969e7e795185114394926f193d50270cc32e3f6fc",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M06 ritento di una mutazione",
+  "file": "Betfair/nucleo/ordini/porta.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 9 passed in 1.50s",
+  "sha256": "f71c04f626f03d506d3b8e0969e7e795185114394926f193d50270cc32e3f6fc",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M07 diario write-ahead dopo l'esecutore (inviato non scritto)",
+  "file": "Betfair/nucleo/ordini/porta.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 3 passed in 1.30s",
+  "sha256": "f71c04f626f03d506d3b8e0969e7e795185114394926f193d50270cc32e3f6fc",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M08 modo del servizio al posto della riga",
+  "file": "Betfair/nucleo/ordini/controlli.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 12 passed in 1.54s",
+  "sha256": "129a09cae28d8f7ce420810d85a1dbb1533a6a5167d78427e354a54d369eca0c",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M09 kill-switch anche sulle chiusure",
+  "file": "Betfair/nucleo/ordini/controlli.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 13 passed in 1.83s",
+  "sha256": "129a09cae28d8f7ce420810d85a1dbb1533a6a5167d78427e354a54d369eca0c",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M10 tetto con < invece di <=",
+  "file": "Betfair/nucleo/ordini/controlli.py",
+  "rosso": true,
+  "riepilogo": "1 failed in 1.49s",
+  "sha256": "129a09cae28d8f7ce420810d85a1dbb1533a6a5167d78427e354a54d369eca0c",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M11 cancellazione riuscita contata",
+  "file": "Betfair/nucleo/ordini/controlli.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 4 passed in 1.71s",
+  "sha256": "129a09cae28d8f7ce420810d85a1dbb1533a6a5167d78427e354a54d369eca0c",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M12 contatore per attore invece che per conto",
+  "file": "Betfair/nucleo/ordini/porta.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 16 passed in 1.85s",
+  "sha256": "f71c04f626f03d506d3b8e0969e7e795185114394926f193d50270cc32e3f6fc",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M13 seq globale invece che per attore",
+  "file": "Betfair/nucleo/ordini/porta.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 21 passed in 2.35s",
+  "sha256": "f71c04f626f03d506d3b8e0969e7e795185114394926f193d50270cc32e3f6fc",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M14 scalper tennis con il minimo del calcio",
+  "file": "Betfair/nucleo/ordini/minimi.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 13 passed in 9.83s",
+  "sha256": "742e0a7650d0b1ac8f3d00a8bdc3f7ccc457f492e4b444d771682632a4d7b572",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M15 punta senza residuo (al centesimo)",
+  "file": "Betfair/nucleo/ordini/minimi.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 1 passed in 1.51s",
+  "sha256": "742e0a7650d0b1ac8f3d00a8bdc3f7ccc457f492e4b444d771682632a4d7b572",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M16 spezza_esatta tennis come lo scalper",
+  "file": "Betfair/nucleo/ordini/minimi.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 9 passed in 6.05s",
+  "sha256": "742e0a7650d0b1ac8f3d00a8bdc3f7ccc457f492e4b444d771682632a4d7b572",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M17 passo dello scalper per difetto",
+  "file": "Betfair/nucleo/ordini/minimi.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 12 passed in 8.36s",
+  "sha256": "742e0a7650d0b1ac8f3d00a8bdc3f7ccc457f492e4b444d771682632a4d7b572",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M18 bump delle uscite tolto",
+  "file": "Betfair/nucleo/ordini/minimi.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 12 passed in 9.51s",
+  "sha256": "742e0a7650d0b1ac8f3d00a8bdc3f7ccc457f492e4b444d771682632a4d7b572",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M19 FOK perso nel comando",
+  "file": "Betfair/nucleo/ordini/adattatore_comando.py",
+  "rosso": true,
+  "riepilogo": "1 failed in 1.65s",
+  "sha256": "73126a64de001d04ac990b361f5cf87b2fac2f9bfc1c8545889965912fddc151",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M20 riduzione creduta dai params della coda",
+  "file": "Betfair/nucleo/ordini/adattatore_comando.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 21 passed in 2.21s",
+  "sha256": "73126a64de001d04ac990b361f5cf87b2fac2f9bfc1c8545889965912fddc151",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M21 handicap perso nella coda",
+  "file": "Betfair/nucleo/ordini/adattatore_comando.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 18 passed in 1.91s",
+  "sha256": "73126a64de001d04ac990b361f5cf87b2fac2f9bfc1c8545889965912fddc151",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M22 esecutore: post_place trattato da rifiuto",
+  "file": "Betfair/nucleo/ordini/esecutori/runner.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 4 passed in 2.28s",
+  "sha256": "0c43a25420fff6ba78a6d6043275cdb824ea21f908612b9d61beaac61ff26784",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M23 esecutore: fase sbagliata",
+  "file": "Betfair/nucleo/ordini/esecutori/runner.py",
+  "rosso": true,
+  "riepilogo": "1 failed in 2.15s",
+  "sha256": "0c43a25420fff6ba78a6d6043275cdb824ea21f908612b9d61beaac61ff26784",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M24 taglia rifiutata ritentata",
+  "file": "Betfair/nucleo/ordini/porta.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 6 passed in 1.67s",
+  "sha256": "f71c04f626f03d506d3b8e0969e7e795185114394926f193d50270cc32e3f6fc",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M25 terminale sovrascritto da non terminale",
+  "file": "Betfair/nucleo/ordini/porta.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 6 passed in 1.96s",
+  "sha256": "f71c04f626f03d506d3b8e0969e7e795185114394926f193d50270cc32e3f6fc",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M26 archivio illeggibile = fail-open",
+  "file": "Betfair/nucleo/ordini/porta.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 4 passed in 1.54s",
+  "sha256": "f71c04f626f03d506d3b8e0969e7e795185114394926f193d50270cc32e3f6fc",
+  "ripristinato": true
+ },
+ {
+  "mutazione": "M27 invii non serializzati (dedup in corsa fra thread)",
+  "file": "Betfair/nucleo/ordini/porta.py",
+  "rosso": true,
+  "riepilogo": "1 failed, 22 passed in 2.34s",
+  "sha256": "f71c04f626f03d506d3b8e0969e7e795185114394926f193d50270cc32e3f6fc",
+  "ripristinato": true
+ }
+]
