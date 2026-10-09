@@ -5675,3 +5675,36 @@ dei due runner, `/order` del desktop (motore ordini calcio, worker ordini tennis
   automatica: 10/10 00:12 UTC.
 - Prove a schermo dell'utente (dopo B1 dell'argomento 2): Control Room «Nascondi»; Programma del giorno (tabellone tennis senza
   partite seguite, punteggio, liquidita', menu' mercato, box quote in PROVA, Statistiche/Trading con «Torna al Programma»).
+
+### 09/10 — ARGOMENTO 2: TAPPA 0 DELL'ARCHITETTURA, LAVORI DEL PC B1-B7 (coordinatore PC, Fable 5.1) — ore 18:05-19:20
+- Ramo `claude/architettura-tappa0` nel worktree `..\pda-architettura` (mai master). Tre delegati (B2 Opus, B4 Sonnet, B5 Opus) + lavoro
+  diretto del coordinatore su B1 e B3; ogni consegna rifatta/verificata dal coordinatore (sha256, percentili, diff, mutazioni, replay).
+- B1 U-62 (18:05, app spenta): w32time Automatico/Running su time.windows.com, scarto residuo -0,16 s (era +0,84 s); sospensione e
+  ibernazione a rete «mai»; `NoAutoRebootWithLoggedOnUsers=1`, ore attive 6-24; avvio al login = collegamento in Esecuzione automatica
+  all'avviatore esistente (`desktop\release\AlphaScore Trading 1.1.0.exe`), attivita' pianificata rifiutata senza amministratore.
+- B3 U-37: 4 documenti versionati byte per byte (`143a60d6`); Base di `SPEC_STRATEGIA_S.md` allineata al 25/09 (quota di banca 20-34),
+  diff approvato dall'utente («ok diff») e committato (`7c92904c`). Q4/Q5 del 25/09 non sono nella spec: segnalato, fuori perimetro.
+- B2 T0B(5): `695a62cd` + `6247fbd0`: tennis 35790089, 35794049, 35795993 (+35797566 solo score: il Match Odds non fu mai registrato)
+  in `registrazioni_banco/tennis/<giorno>/<id>/`; calcio COMPLETE per Mike 35777617, 35768365, 35774000 con fixture della barra di
+  Match Replay (standard 07/10). Reperti: `validate_recordings` promuove 36006953 (ferma al 44') a COMPLETE 100%; il feed ri-emette
+  le righe-evento dopo una riconnessione (35774000): test della barra adattato per contare come il verificatore (falsificato).
+- B4 U-60 (`e7eee8bd`, app spenta, 18:16-18:31): letture REST del DB a connessione viva p50 111 / p90 148 / p99 493 ms, a connessione
+  nuova p50 228 ms; letture verso Betfair NON misurate; banco invariato (decide l'utente). Durante la misura un `find.exe` orfano
+  (`find / -name hazard_atlas_live.json`, dalle 12:13, 5,6 h di CPU) teneva la CPU al 100%: terminato su ordine dell'utente alle 18:47.
+- B5 (`fe531f51`): T0A, T0B4, T0C strumenti FIRMATE dal PC (diff 0aa76dfa..ee965e26 letto, additivita' provata, mutazioni rosse del
+  delegato; pytest 11.606/0 in 1044 s; tsc 0; build ok; Mike base 35760084 PRIMA/DOPO identici tick 52082 decisioni 5246 azioni 6;
+  Safe rapidi 18/0). Correzioni del coordinatore ai test: `salute.test.ts` CRLF (`be660b93`). Reperti R-1..R-9 nel referto
+  (`ARCHITETTURA_2026-10/tappa0/VERIFICA_PC_2026-10-09/`): R-3 tolleranza 3 non bloccata (prima del congelamento), R-4 pulizia 14 gg
+  contro 7 decisi (prima della migrazione), R-5 voce di menu «Salute» SEMPRE visibile (decide l'utente), R-9 nessun test su
+  `sonde.ATTIVO` all'import (mutazione mia non colta).
+- B6: AVANZAMENTO aggiornato (`7256e0e7`), fuso con i 3 commit del cloud (ondata 1, `Betfair/nucleo/*/contratto.py`, senza conflitti),
+  ramo pushato (vedi riga seguente). B7: ramo `tappa0-salute-su-master` pronto nel scratchpad (cherry-pick di e44032a9+6d02e578+test
+  CRLF su `979aac18`: solo i 67 file di T0A, pytest 11.533/0 in 634 s, vitest 5565/0 dopo la correzione, tsc 0, build ok): NON pushato,
+  in attesa della decisione dell'utente su R-5.
+- PUNTO DI RIPRESA: decisione su R-5 -> push di `tappa0-salute-su-master` su master (avanzamento veloce) -> `git pull` nel checkout
+  principale e build ad app spenta -> correggere R-4 nella migrazione -> migrazione `monitor_metrics` applicata dall'utente ->
+  `MONITOR_SALUTE=1` -> 24 h -> referto T0A §5. Cloud: R-3, R-6, R-9, decisioni (a)-(e), scenario «modalita-mista», ondata 1.
+- CHIUSURA 19:25: altri 5 rossi di vitest sul ramo per le registrazioni nuove (i test iniettavano il difetto sul «primo gol di casa»:
+  35774000 segnano solo gli ospiti, 35768365/35777617 primo gol annullato) -> aiutante comune `primoGolCheResta` (`5c5d0033`,
+  falsificato). Suite finale del ramo: vitest 5.611 verdi / 0 rossi, tsc 0, pytest 11.606/0. Ramo `claude/architettura-tappa0`
+  PUSHATO a `5c5d0033` (10 commit del PC sopra i 3 del cloud, fusione senza conflitti). Master NON toccato (solo questa cronostoria).
