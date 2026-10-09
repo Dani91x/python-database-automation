@@ -5655,3 +5655,23 @@ dei due runner, `/order` del desktop (motore ordini calcio, worker ordini tennis
 - PUNTO DI RIPRESA: sul PC `npm run build` e riavvio dell'app da parte dell'utente; prova a schermo del Programma (prima in PROVA);
   limiti aperti nei referti (tetto OFF = «NON NOTA»; primo clic da parcheggiato puo' dire «riprova»; ripiego DB senza aggancio).
   Prossimi passi: le altre pagine che l'utente manda una per una.
+
+### 09/10 — FUSIONE SU MASTER DEL PROGRAMMA DEL GIORNO + CONTROL ROOM + enrich (coordinatore PC, Fable 5.1) — ore 17:59
+- Push UNICO coordinato con la sessione dell'audit (ordine dell'utente): master `852b717f` -> `413795b1` (avanzamento veloce).
+  Dentro: `74c4e28e` fix dutching A1 (sessione audit, verificato da lei: 26+28 test, suite 11483/0); `04e1b9a4` merge del SOLO
+  commit `a7cf9fdd` del ramo cloud `claude/sweet-hypatia-t4bmna` (Control Room «Nascondi» + Programma del giorno; i 10 commit
+  dell'architettura sopra a7cf9fdd NON sono entrati: grep AVANZAMENTO/tappa0/monitor/cassetta/ombra/congela = vuoto); test del
+  frontend «senza credenziali» reso indipendente dal `.env` locale; `413795b1` merge dell'enrich con rinvio dichiarato.
+- Controlli sulla cima finale: pytest Betfair 11.535 verdi / 11 skipped / 6 xfailed / 0 rossi; vitest 5.547 verdi / 0 rossi
+  (il rosso ricorrente era il test «senza credenziali» con il `.env` del PC, non un timeout: corretto); tsc 0; nessuna migrazione
+  nuova; package.json/package-lock/requirements invariati; build exit 0 in 39 s ad app spenta
+  (`AUDIT_2026-10-09/build_coordinatore_413795b1.txt`). `.env` non toccato: LIVE_ORDER_MODE=LIVE,
+  MOTORE_ORDINI_CANALE_TENNIS=1, TENNIS_LIVE_ORDER_MODE assente (nessun tetto tennis dichiarato nel .env).
+- CATENA DI PROVA DI OGGI (programma del giorno rifatto come lo fara' la notte, dal 4o anello): Predictions Results 12:02-14:02 UTC
+  ROSSA (passo enrich: ReadTimeout su lega 850 dopo 116 min, 3.612 righe non scritte -> corretto con `f762ac37`: RINVIATA, run
+  verde con avviso, rientro d'ufficio) -> staffetta OK -> Hazard Atlas 14:02 SUCCESS (prima scrittura riuscita con la riga leggera)
+  -> Catchup 14:03-15:42 SUCCESS -> Retrain 14:58 SUCCESS -> Post-Cal 15:33 SUCCESS -> Weekly Poisson 15:34 success (calibrate
+  skipped: non lunedi'). Recupero mirato lega 850 (`leagues=850`, catena=false) 15:42-15:48 SUCCESS: righe scritte. Prima notte
+  automatica: 10/10 00:12 UTC.
+- Prove a schermo dell'utente (dopo B1 dell'argomento 2): Control Room «Nascondi»; Programma del giorno (tabellone tennis senza
+  partite seguite, punteggio, liquidita', menu' mercato, box quote in PROVA, Statistiche/Trading con «Torna al Programma»).
