@@ -1,0 +1,55 @@
+# misura_g1: N=3000 record per tabella, 3 ripetizioni, cartella /tmp/claude-0/-home-user-python-database-automation/de0c05e1-9b23-51a5-8faa-2f087819c4e5/scratchpad/w1g1/misura
+
+## A. archivio vero (checkpoint nel thread di manutenzione): microsecondi
+rep1 betfair_live_orders  accodamento n=3000 p50=18.5 p95=46.6 p99=102.2 max=2151.1 | rec/s accodamento 36054, durevole 10581
+rep1 live_follow          accodamento n=3000 p50=16.7 p95=41.2 p99=123.7 max=5208.3 | rec/s accodamento 34396, durevole 10830
+rep1 mike_activity        accodamento n=3000 p50=43.8 p95=73.0 p99=124.4 max=3790.6 | rec/s accodamento 20532, durevole 12269
+rep1 commit stato_denaro  n=30 p50=1598.8 p95=3260.1 p99=7080.2 max=7080.2 | durevole dopo n=3000 p50=130959.0 p95=197630.3 p99=201580.2 max=202305.2
+rep1 commit stato_vivo    n=30 p50=304.1 p95=1185.3 p99=1357.1 max=1357.1 | durevole dopo n=3000 p50=153343.6 p95=185624.7 p99=190875.5 max=191438.8
+rep1 commit log           n=31 p50=7.9 p95=42.3 p99=12049.8 max=12049.8 | durevole dopo n=3000 p50=108961.4 p95=129638.6 p99=134740.5 max=136053.6
+rep1 checkpoint n=6 p50=10828.6 p95=17145.0 p99=17145.0 max=17145.0 | disco 4.33 MB
+rep2 betfair_live_orders  accodamento n=3000 p50=25.0 p95=53.8 p99=143.0 max=3283.7 | rec/s accodamento 29778, durevole 9230
+rep2 live_follow          accodamento n=3000 p50=16.3 p95=26.1 p99=71.5 max=3555.7 | rec/s accodamento 43027, durevole 15450
+rep2 mike_activity        accodamento n=3000 p50=21.3 p95=81.5 p99=252.4 max=12032.0 | rec/s accodamento 14818, durevole 14516
+rep2 commit stato_denaro  n=30 p50=2173.8 p95=4427.8 p99=4626.9 max=4626.9 | durevole dopo n=3000 p50=175667.9 p95=222752.8 p99=225720.7 max=227359.2
+rep2 commit stato_vivo    n=30 p50=247.2 p95=5427.2 p99=11849.3 max=11849.3 | durevole dopo n=3000 p50=97694.3 p95=118217.4 p99=125582.7 max=126223.7
+rep2 commit log           n=141 p50=5.5 p95=16.6 p99=31.7 max=127.0 | durevole dopo n=3000 p50=5342.2 p95=15412.4 p99=19866.6 max=27484.4
+rep2 checkpoint n=4 p50=18691.0 p95=23883.9 p99=23883.9 max=23883.9 | disco 4.33 MB
+rep3 betfair_live_orders  accodamento n=3000 p50=18.4 p95=42.3 p99=110.3 max=10203.1 | rec/s accodamento 28164, durevole 9879
+rep3 live_follow          accodamento n=3000 p50=16.6 p95=32.8 p99=100.1 max=1006.0 | rec/s accodamento 44555, durevole 13502
+rep3 mike_activity        accodamento n=3000 p50=40.2 p95=85.7 p99=775.3 max=8220.0 | rec/s accodamento 13823, durevole 12017
+rep3 commit stato_denaro  n=30 p50=1781.9 p95=7010.2 p99=7375.8 max=7375.8 | durevole dopo n=3000 p50=131814.4 p95=188013.3 p99=197183.6 max=197858.0
+rep3 commit stato_vivo    n=30 p50=270.9 p95=773.9 p99=1023.5 max=1023.5 | durevole dopo n=3000 p50=130737.5 p95=154067.1 p99=156267.0 max=156783.4
+rep3 commit log           n=32 p50=5.6 p95=34.2 p99=12662.2 max=12662.2 | durevole dopo n=3000 p50=76706.9 p95=117356.4 p99=119532.5 max=120870.5
+rep3 checkpoint n=6 p50=4305.6 p95=24668.9 p99=24668.9 max=24668.9 | disco 4.33 MB
+
+## B. checkpoint NEL commit (wal_autocheckpoint=1000, default)
+rep1 commit stato_denaro  n=30 p50=1555.0 p95=3791.7 p99=10313.4 max=10313.4
+rep1 commit stato_vivo    n=30 p50=322.6 p95=1088.2 p99=26381.0 max=26381.0
+rep2 commit stato_denaro  n=30 p50=1646.8 p95=7839.9 p99=9651.4 max=9651.4
+rep2 commit stato_vivo    n=30 p50=240.7 p95=984.9 p99=21836.1 max=21836.1
+rep3 commit stato_denaro  n=30 p50=1504.1 p95=2851.8 p99=9222.1 max=9222.1
+rep3 commit stato_vivo    n=30 p50=219.6 p95=1658.9 p99=22630.0 max=22630.0
+
+## C. U-55: commit del denaro (FULL) con il vivo a lotti da 100 nello stesso thread
+rep1 UN file  n=1000 p50=326.0 p95=594.9 p99=910.2 max=4635.4
+rep1 DUE file n=1000 p50=452.0 p95=744.6 p99=2013.2 max=9799.9
+rep2 UN file  n=1000 p50=339.8 p95=653.6 p99=1258.7 max=4290.4
+rep2 DUE file n=1000 p50=374.8 p95=639.3 p99=1623.9 max=4021.2
+rep3 UN file  n=1000 p50=318.4 p95=1408.3 p99=4003.0 max=5960.4
+rep3 DUE file n=1000 p50=494.3 p95=829.5 p99=1912.4 max=5130.6
+
+## D. R08 laboratorio: giro di decisione (json.dumps ladder + calcolo), microsecondi
+rep1 spento #1           n=2648 p50=102.4 p95=194.8 p99=307.1 max=2166.7 | giri/s 441
+rep1 spento #2           n=2513 p50=115.9 p95=216.7 p99=390.7 max=4400.6 | giri/s 419
+rep1 ACCESO 600 righe/s  n=1604 p50=138.7 p95=269.7 p99=405.4 max=1467.4 | giri/s 267
+rep1 ACCESO 60 righe/s   n=2495 p50=108.0 p95=202.2 p99=295.3 max=3908.9 | giri/s 416
+rep2 spento #1           n=2528 p50=113.9 p95=209.3 p99=366.0 max=3418.8 | giri/s 421
+rep2 spento #2           n=2588 p50=110.7 p95=207.5 p99=311.5 max=2010.4 | giri/s 431
+rep2 ACCESO 600 righe/s  n=1576 p50=134.0 p95=230.3 p99=318.4 max=2210.3 | giri/s 263
+rep2 ACCESO 60 righe/s   n=2389 p50=108.5 p95=198.7 p99=309.1 max=2287.7 | giri/s 398
+rep3 spento #1           n=2570 p50=105.3 p95=196.5 p99=291.9 max=4934.7 | giri/s 428
+rep3 spento #2           n=2541 p50=122.3 p95=223.7 p99=340.5 max=4299.5 | giri/s 424
+rep3 ACCESO 600 righe/s  n=1631 p50=114.3 p95=216.1 p99=359.2 max=4410.4 | giri/s 272
+rep3 ACCESO 60 righe/s   n=2552 p50=102.3 p95=193.1 p99=265.0 max=3452.5 | giri/s 425
+rc=0

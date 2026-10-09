@@ -1,0 +1,284 @@
+"""schema_locale.py - lo schema GENERICO e versionato dell'archivio locale (W1-G1).
+
+Scopo
+    Uno schema solo, uguale per i due file SQLite di un processo (``denaro`` e
+    ``vivo``), che non conosce NESSUNA tabella del cloud: aggiungere una
+    tabella al postino = una riga di registro (``SpecTabella``), mai uno schema
+    nuovo (requisito dell'utente "cambiare un componente in minuti").
+
+    Tabelle locali (versione 1):
+      * ``righe``       (tabella, chiave) -> json, rev, aggiornato_ms: l'ultima
+                        versione di ogni riga di stato, per chiave naturale;
+      * ``outbox``      (seq, tabella, op, chiave, json, tentativi, prossimo_ms):
+                        cio' che il postino deve ancora consegnare, scritta
+                        NELLA STESSA transazione della riga;
+      * ``dead_letter`` righe rifiutate dal cloud per sempre (es. un CHECK):
+                        visibili, contate, MAI cancellate da sole;
+      * ``consegna``    marcatori di consegna dei file JSONL (offset per file);
+      * ``riconciliazioni`` esito del confronto notturno per (tabella, giorno);
+      * ``segnalazioni`` fatti da mostrare (riga JSONL troncata da un crash...).
+
+    Aggiornamento automatico all'apertura con ``PRAGMA user_version``: si
+    applicano in ordine le migrazioni mancanti, ciascuna in una transazione.
+    Un file creato da una versione PIU' NUOVA dell'app non si tocca
+    (``SchemaPiuNuovo``): niente retrocessioni silenziose.
+
+    Qui vivono anche il formato della riga JSONL dei log e le due funzioni
+    canoniche condivise da archivio, postino e riconcilia: ``chiave_canonica``
+    (uguale, carattere per carattere, a ``jsonb_build_array(...)::text`` del
+    cloud) e ``rev_ordinabile`` (versione monotona confrontabile).
+
+Cosa NON fa
+    Non apre file e non crea connessioni: riceve una ``sqlite3.Connection``.
+"""
+from __future__ import annotations
+
+import json
+import sqlite3
+from datetime import datetime, timezone
+from typing import Any, Mapping, Optional, Sequence, Tuple
+
+from .contratto import SpecTabella
+
+VERSIONE_SCHEMA = 4
+
+#: migrazioni in ordine; l'indice + 1 e' la ``user_version`` raggiunta
+MIGRAZIONI: Tuple[Tuple[str, ...], ...] = (
+    (
+        """CREATE TABLE righe (
+               tabella        TEXT    NOT NULL,
+               chiave         TEXT    NOT NULL,
+               json           TEXT    NOT NULL,
+               rev            INTEGER,
+               aggiornato_ms  INTEGER NOT NULL,
+               PRIMARY KEY (tabella, chiave)
+           ) WITHOUT ROWID""",
+        "CREATE INDEX righe_aggiornato ON righe (tabella, aggiornato_ms)",
+        """CREATE TABLE outbox (
+               seq            INTEGER PRIMARY KEY AUTOINCREMENT,
+               tabella        TEXT    NOT NULL,
+               op             TEXT    NOT NULL CHECK (op IN ('upsert', 'insert', 'patch', 'delete')),
+               chiave         TEXT,
+               json           TEXT    NOT NULL,
+               creato_ms      INTEGER NOT NULL,
+               tentativi      INTEGER NOT NULL DEFAULT 0,
+               prossimo_ms    INTEGER NOT NULL DEFAULT 0,
+               ultimo_errore  TEXT,
+               coalesce       INTEGER NOT NULL DEFAULT 0
+           )""",
+        "CREATE INDEX outbox_prossimo ON outbox (prossimo_ms, seq)",
+        "CREATE INDEX outbox_chiave ON outbox (tabella, chiave)",
+        """CREATE TABLE dead_letter (
+               id             INTEGER PRIMARY KEY AUTOINCREMENT,
+               fonte          TEXT    NOT NULL,
+               seq_origine    INTEGER,
+               tabella        TEXT    NOT NULL,
+               op             TEXT    NOT NULL,
+               chiave         TEXT,
+               json           TEXT    NOT NULL,
+               codice         TEXT,
+               errore         TEXT,
+               tentativi      INTEGER NOT NULL DEFAULT 0,
+               creato_ms      INTEGER NOT NULL,
+               morto_ms       INTEGER NOT NULL
+           )""",
+        """CREATE TABLE consegna (
+               fonte          TEXT    PRIMARY KEY,
+               offset         INTEGER NOT NULL,
+               aggiornato_ms  INTEGER NOT NULL
+           )""",
+        """CREATE TABLE riconciliazioni (
+               tabella        TEXT    NOT NULL,
+               giorno         TEXT    NOT NULL,
+               esito          TEXT    NOT NULL,
+               dettagli       TEXT,
+               ts_ms          INTEGER NOT NULL,
+               PRIMARY KEY (tabella, giorno)
+           )""",
+        """CREATE TABLE segnalazioni (
+               id             INTEGER PRIMARY KEY AUTOINCREMENT,
+               tipo           TEXT    NOT NULL,
+               dettagli       TEXT    NOT NULL,
+               ts_ms          INTEGER NOT NULL
+           )""",
+    ),
+    # v2 (revisione 09/10): causa e rientro automatico delle dead_letter (A4), firma del
+    # file nei marcatori dei log (M2), rientri contati anche in outbox
+    (
+        "ALTER TABLE dead_letter ADD COLUMN motivo TEXT NOT NULL DEFAULT 'dato'",
+        "ALTER TABLE dead_letter ADD COLUMN rientri INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE dead_letter ADD COLUMN prossimo_rientro_ms INTEGER NOT NULL DEFAULT 0",
+        "CREATE INDEX dead_letter_rientro ON dead_letter (prossimo_rientro_ms)",
+        "ALTER TABLE outbox ADD COLUMN rientri INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE consegna ADD COLUMN firma TEXT",
+    ),
+    # v3 (terza revisione 09/10, R1/R2): versione LOCALE delle scritture. ``meta.vseq`` e'
+    # l'ultima sequenza confermata del file (mai indietro, mai riusata), ``meta.origine``
+    # l'identita' del file (casuale alla nascita: un file ricreato e' un'origine nuova).
+    # ``righe.rev`` non si usa piu' (la versione del bot resta nel JSON tale e quale).
+    # dead_letter: ``vseq`` d'origine, ``archiviata_ms`` (R2b: fuori dall'allarme e dai
+    # rientri) e ``nota`` (perche' archiviata).
+    (
+        "CREATE TABLE meta (nome TEXT PRIMARY KEY, valore) WITHOUT ROWID",
+        "INSERT INTO meta (nome, valore) VALUES ('vseq', 0)",
+        "INSERT INTO meta (nome, valore) VALUES ('origine', lower(hex(randomblob(16))))",
+        "ALTER TABLE righe ADD COLUMN vseq INTEGER",
+        "ALTER TABLE outbox ADD COLUMN vseq INTEGER",
+        "ALTER TABLE dead_letter ADD COLUMN vseq INTEGER",
+        "ALTER TABLE dead_letter ADD COLUMN archiviata_ms INTEGER",
+        "ALTER TABLE dead_letter ADD COLUMN nota TEXT",
+        "CREATE INDEX dead_letter_archiviata ON dead_letter (archiviata_ms)",
+    ),
+    # v4 (quarta revisione 09/10, riserva D): l'origine cambia a OGNI apertura, quindi ogni voce
+    # di outbox e di dead_letter tiene la SUA origine (quella dell'apertura che l'ha scritta)
+    (
+        "ALTER TABLE outbox ADD COLUMN origine TEXT",
+        "ALTER TABLE dead_letter ADD COLUMN origine TEXT",
+    ),
+)
+
+assert len(MIGRAZIONI) == VERSIONE_SCHEMA
+
+
+class SchemaPiuNuovo(RuntimeError):
+    """Il file e' stato creato da una versione piu' nuova dell'app."""
+
+
+def versione(conn: sqlite3.Connection) -> int:
+    return int(conn.execute("PRAGMA user_version").fetchone()[0])
+
+
+def applica_schema(conn: sqlite3.Connection) -> int:
+    """Porta il file all'ultima versione; ritorna la versione di partenza.
+
+    ``conn`` deve essere in autocommit (``isolation_level=None``)."""
+    partenza = versione(conn)
+    if partenza > VERSIONE_SCHEMA:
+        raise SchemaPiuNuovo(f"schema locale v{partenza} piu' nuovo di questo codice (v{VERSIONE_SCHEMA})")
+    assicura_auto_vacuum(conn)
+    for n in range(partenza, VERSIONE_SCHEMA):
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for istruzione in MIGRAZIONI[n]:
+                conn.execute(istruzione)
+            conn.execute(f"PRAGMA user_version = {n + 1}")
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+    return partenza
+
+
+def assicura_auto_vacuum(conn: sqlite3.Connection) -> None:
+    """``auto_vacuum=INCREMENTAL`` EFFETTIVO (revisione B1): con il WAL gia' acceso il
+    PRAGMA da solo non cambia nulla; serve un ``VACUUM`` (istantaneo su un file nuovo,
+    una volta sola su un file vecchio). Poi la pulizia restituisce spazio a pezzi."""
+    if int(conn.execute("PRAGMA auto_vacuum").fetchone()[0]) == 2:
+        return
+    conn.execute("PRAGMA auto_vacuum = INCREMENTAL")
+    conn.execute("VACUUM")
+
+
+# ---------------------------------------------------------------------------
+# funzioni canoniche condivise
+# ---------------------------------------------------------------------------
+def chiave_canonica(spec: SpecTabella, riga: Mapping[str, Any]) -> str:
+    """La chiave naturale come testo: ``["paper", "1.23"]``.
+
+    Identica a ``jsonb_build_array(c1, c2, ...)::text`` di PostgreSQL per testo,
+    interi e booleani (separatore ``", "``, UTF-8 non scappato): e' cio' che
+    confronta ``riconcilia``. Una colonna della chiave assente e' un errore del
+    chiamante (``KeyError``), mai una chiave inventata."""
+    if not spec.chiave_naturale:
+        raise ValueError(f"tabella {spec.nome}: chiave naturale vuota")
+    mancanti = [c for c in spec.chiave_naturale if c not in riga]
+    if mancanti:
+        raise KeyError(f"tabella {spec.nome}: manca la chiave {mancanti}")
+    return json.dumps([riga[c] for c in spec.chiave_naturale], ensure_ascii=False, separators=(", ", ": "))
+
+
+def rev_ordinabile(valore: Any) -> int:
+    """Versione confrontabile: intero cosi' com'e', istante ISO -> microsecondi UTC.
+
+    Un istante senza fuso si legge come UTC (il cloud lavora in UTC)."""
+    if isinstance(valore, bool) or valore is None:
+        raise ValueError(f"versione di riga non valida: {valore!r}")
+    if isinstance(valore, int):
+        return valore
+    if isinstance(valore, str):
+        dt = datetime.fromisoformat(valore.strip().replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        delta = dt - datetime(1970, 1, 1, tzinfo=timezone.utc)
+        return (delta.days * 86_400 + delta.seconds) * 1_000_000 + delta.microseconds
+    raise ValueError(f"versione di riga non valida (serve intero o istante ISO): {valore!r}")
+
+
+def iso_utc(ms: int) -> str:
+    """Istante ISO UTC con millisecondi (``2026-10-09T10:00:00.123+00:00``)."""
+    return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).isoformat(timespec="milliseconds")
+
+
+def iso_da_us(us: int) -> str:
+    """Istante ISO UTC con microsecondi da microsecondi dall'epoca (versione corretta)."""
+    from datetime import timedelta
+    return (datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(microseconds=us)).isoformat(timespec="microseconds")
+
+
+def testo_json(valore: Any) -> str:
+    """JSON compatto e SOLO ASCII per i file SQLite e JSONL (revisione A1/A2): un surrogato
+    isolato diventa ``\\ud800`` e si conserva; nessuna riga diventa impossibile da salvare."""
+    return json.dumps(valore, ensure_ascii=True, separators=(",", ":"), default=str)
+
+
+def firma_file(percorso: Any) -> Optional[str]:
+    """Impronta della PRIMA riga del file (fino a 4 KiB): se cambia, il file e' stato
+    sostituito e il marcatore di consegna non vale piu' (revisione M2)."""
+    import hashlib
+    try:
+        with open(percorso, "rb") as f:
+            testa = f.read(4096)
+    except OSError:
+        return None
+    fine = testa.find(b"\n")
+    if fine < 0:
+        return None
+    return hashlib.sha1(testa[:fine]).hexdigest()
+
+
+def giorno_utc(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).strftime("%Y-%m-%d")
+
+
+# ---------------------------------------------------------------------------
+# la riga JSONL dei log (il file E' la coda del postino)
+# ---------------------------------------------------------------------------
+VERSIONE_RIGA_LOG = 1
+
+
+def riga_log(tabella: str, op: str, ms: int, riga: Mapping[str, Any]) -> str:
+    """Una riga del file del giorno, terminata da ``\\n``. ``t`` per primo: il
+    conteggio per tabella di ``stato()`` non deve decodificare tutto."""
+    return json.dumps({"t": tabella, "op": op, "ms": ms, "v": VERSIONE_RIGA_LOG, "r": riga},
+                      ensure_ascii=True, separators=(",", ":")) + "\n"
+
+
+def leggi_riga_log(testo: str) -> Tuple[str, str, int, Mapping[str, Any]]:
+    """(tabella, op, ms, riga) da una riga completa; ``ValueError`` se guasta."""
+    d = json.loads(testo)
+    if not isinstance(d, dict) or not isinstance(d.get("r"), dict):
+        raise ValueError("riga di log senza oggetto 'r'")
+    return str(d["t"]), str(d.get("op") or "insert"), int(d["ms"]), d["r"]
+
+
+def tabella_della_riga_log(testo: str) -> Optional[str]:
+    """Solo il nome della tabella (prefisso fisso ``{"t":"...``), senza decodificare."""
+    if not testo.startswith('{"t":"'):
+        return None
+    fine = testo.find('"', 6)
+    return testo[6:fine] if fine > 6 else None
+
+
+def colonne(conn: sqlite3.Connection, tabella: str) -> Sequence[str]:
+    """Le colonne di una tabella locale (diagnostica e test dello schema)."""
+    return [r[1] for r in conn.execute(f"PRAGMA table_info({tabella})")]
