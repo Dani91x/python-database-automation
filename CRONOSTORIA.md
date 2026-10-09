@@ -5708,3 +5708,20 @@ dei due runner, `/order` del desktop (motore ordini calcio, worker ordini tennis
   35774000 segnano solo gli ospiti, 35768365/35777617 primo gol annullato) -> aiutante comune `primoGolCheResta` (`5c5d0033`,
   falsificato). Suite finale del ramo: vitest 5.611 verdi / 0 rossi, tsc 0, pytest 11.606/0. Ramo `claude/architettura-tappa0`
   PUSHATO a `5c5d0033` (10 commit del PC sopra i 3 del cloud, fusione senza conflitti). Master NON toccato (solo questa cronostoria).
+
+### 09/10 — T0A «SALUTE» SU MASTER, SPENTA (coordinatore PC, Fable 5.1) — ore 22:10-23:25
+- Decisione dell'utente su R-5: aspettato l'interruttore. Il cloud ha chiuso R-4/R-5/R-6/R-9 in `f9084b4c` (voce di menu «Salute»
+  solo con `MONITOR_SALUTE=1` nel `.env` della radice, letto da `vite.config.ts` alla build; pulizia 7 giorni; finto `update_trade`
+  con la firma del vero; test su `sonde.ATTIVO` all'import) e le fotografie del guscio senza la voce (`2255266c`).
+- Verifica del PC sui due commit: pytest `Betfair/monitor` 60/60; vitest shell + monitorSalute + fotografia 70/70; tsc 0; mutazione
+  mia dell'interruttore (`!== '0'`) rossa su 2 test e ripristinata.
+- Ramo `tappa0-salute-su-master` = master `30216dac` + i soli file di T0A (67 + i 2 commit di oggi; il referto della tappa 0 NON
+  entra): pytest 11.535 verdi / 0 rossi (401 s), vitest 5.572 / 0, tsc 0, build ok. Push su master in avanzamento veloce:
+  **master = `cf5236f9`**. Checkout principale: `git pull`, `npm run build` ad app spenta (23:22, 25 s) con `.env` SENZA
+  `MONITOR_SALUTE`: la voce «Salute» non compare, l'app e' identica a prima.
+- U-60: l'utente CONFERMA i 120 ms del banco (incertezza dichiarata 110-150 ms).
+- Latenza comando->place (`test_latenza_logica_comando_place_sotto_20_ms`, rosso nel cloud a 24 ms sotto carico): sul PC scarico
+  (CPU 15%) tre corse: p95 1,92 / 2,53 / 3,12 ms, p50 1,2-1,5 ms, max 13 ms. Il tetto di 20 ms regge: il rosso del cloud e' la macchina.
+- PUNTO DI RIPRESA, nell'ordine: (1) l'utente applica `migrations/monitor_metrics_2026-10-09.sql` (7 giorni); (2) il PC aggiunge
+  `MONITOR_SALUTE=1` al `.env`; (3) `npm run build` ad app spenta; (4) l'utente riavvia l'app; (5) 24 h di misura con 30 ordini paper;
+  (6) referto T0A §5. Cloud: R-3 chiuso (`5d03131e`), restano decisioni (a)-(e), «modalita-mista», ondata 1.
