@@ -34,14 +34,15 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
 
 | Tappa | Contenuto | Chi | Stato |
 |---|---|---|---|
-| T0A | Modulo «Salute» + misure mancanti + referto 24 h | cloud (codice) + PC (migrazione `monitor_metrics`, 24 h app accesa) | in corso (cloud, 09/10) |
+| T0A | Modulo «Salute» + misure mancanti + referto 24 h | cloud (codice) + PC (migrazione `monitor_metrics`, 24 h app accesa) | parte cloud fatta (`e44032a9`, `6d02e578`, `bd9e37cc`, 09/10); da fare PC: migrazione, `MONITOR_SALUTE=1`, 24 h, 30 ordini paper, referto (`tappa0/T0A_SALUTE/REFERTO.md` §5) |
 | T0B (1)-(3) | Cantieri 15, 11, 7 del banco | cloud | fatta (fusi su master entro il 09/10, `CRONOSTORIA.md` 08/10) |
 | T0B (4) | Finto di Omega con la firma del vero (`aggregates(..., mode)`), referto prima/dopo | cloud | fatta (`07115d13`, 09/10; referto `tappa0/T0B4_FINTO_OMEGA/`) |
 | T0B (5) | 3-5 partite tennis in `registrazioni_banco/` (U-44) + registrazioni calcio COMPLETE aggiuntive per Mike (U-27) | PC | da fare (PC) |
 | T0B (6) | Commit dei 4 documenti (U-37) + testo della Base allineato al 25/09 | PC | da fare (PC) |
 | U-62 | Ora di Windows, niente sospensione, avvio al login (app spenta o bot flat) | PC + utente | da fare (PC) |
 | U-60 | Misura dei 120 ms delle letture REST del banco | PC | da fare (PC) |
-| T0C | Cassetta, ombra (`--ombra`), `TOLLERANZE.md`, `congela`, determinismo, impronte, manifesto | cloud (strumenti e baseline calcio) + PC (tennis, firma) | in corso (cloud: SOLO strumenti, 09/10); baseline e manifesto DOPO T0B (4)-(6) |
+| T0C strumenti | Cassetta, ombra (`--ombra`), `TOLLERANZE.md`, `congela`, determinismo, impronte | cloud | fatta (`cd41b2f1`, 09/10; referto `tappa0/T0C_STRUMENTI/`) |
+| T0C congelamento | Baseline (due giri ciascuna) e `MANIFEST.json` | PC (sulla macchina dell'ombra) | da fare: dopo T0B (5)-(6), U-62, U-60 e le decisioni tecniche qui sotto; comandi in `tappa0/T0C_STRUMENTI/REFERTO.md` §10 |
 | T1..T26 | Come in 05 §2 | | da fare |
 
 ## Registro (una riga per evento, la piu' recente in fondo)
@@ -59,8 +60,28 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
   tutti --worker 3` 1033-1466 s, sopra il tetto dei 600 s, su macchina condivisa), R3 (altri finti di Omega nei test unitari senza
   `mode`, 12 chiavi contro 19), R4 (parita' della RPC `get_omega_aggregates_modalita` da verificare sul PC col DB in sola lettura).
 
+- 09/10 — T0C strumenti FATTA e verificata dal coordinatore cloud (`cd41b2f1`): additivita' e innocuita' 4/4 (Mike, Omega, Safe,
+  scalper `base`), falsificazione dell'ombra 10/10, test 39 verdi e mutazione del coordinatore rossa (13), impronte di Omega/Safe/
+  scalper/tennis (0 differenze, falsificazione 16/16). Determinismo: Mike, Omega, Safe 0 divergenze; SCALPER 3 divergenze (pid in una
+  riga di log, `scalper_session.py:1590`).
+- 09/10 — T0A parte cloud FATTA e verificata dal coordinatore cloud: `Betfair/monitor/`, migrazione `monitor_metrics_2026-10-09.sql`
+  (NON applicata), pagina `/salute`, agganci additivi sotto `MONITOR_SALUTE` (di serie 0) in 19 file; banco identico (Mike `base`,
+  Safe `rapidi`); mutazioni del coordinatore rosse (monitor sempre acceso: 7; diario non scritto: 6). Volume stimato ~29.000 righe
+  al giorno (30-55 MB) in `monitor_metrics`: conservazione da decidere (utente).
+- 09/10 — Cima integrata del ramo cloud: pytest Betfair 11.571 verdi / 0 rossi; vitest 5551 verdi; tsc 0; build ok.
+- 09/10 — DECISIONI TECNICHE DEL COORDINATORE (nel perimetro delle decisioni dell'utente, da applicare prima del congelamento):
+  (a) R2 scalper: il banco DICHIARA un pid fisso nel replay dello scalper (nessuna tolleranza in piu': restano le 3 di U-59);
+  (b) R1 Mike (diradamento dei log a orologio di macchina, `mike/service.py:5739`) + R3 (percorsi assoluti e riga dei worker nel
+  referto): le cassette di riferimento si congelano e si confrontano SULLA STESSA MACCHINA (il PC, dove gira l'ombra); il cloud
+  per le sue verifiche usa una baseline propria dallo stesso commit; (c) R4 sha256 delle `.timeline.jsonl`: si calcolano sui byte
+  del repo (`git show`), mai sulla copia di lavoro con `autocrlf`; (d) R5: Omega e Safe si congelano su `tutti`; (e) R6: cassette
+  `tutti` nel repo COMPRESSE (~0,4-0,8 MB ciascuna).
+- 09/10 — DECISIONI CHIESTE ALL'UTENTE: (1) scenario «modalita-mista» di Omega prima del congelamento (reperto R1 di T0B4);
+  (2) conservazione di `monitor_metrics` nel DB.
+
 ## Punto di ripresa
 
-Prossima sessione: leggere i referti delle tre consegne del 09/10 (cartella `ARCHITETTURA_2026-10/tappa0/`), verificarle e
-integrarle; poi, appena il PC chiude T0B (5)-(6) e U-62/U-60, produrre le baseline (due volte ciascuna) e il manifesto di T0C.
+Prossima sessione: le tre consegne del 09/10 sono verificate e integrate. Da fare nel cloud: applicare le decisioni tecniche
+(a)-(e) e, se l'utente dice si', lo scenario «modalita-mista» di Omega; leggere i numeri del PC (U-62, U-60, T0B 5-6, T0A 24 h).
+Poi il PC produce le baseline (due giri ciascuna) e il manifesto di T0C sulla sua macchina.
 Dopo T0C: T1/T2/T3 (05 §3, grafo delle dipendenze).
