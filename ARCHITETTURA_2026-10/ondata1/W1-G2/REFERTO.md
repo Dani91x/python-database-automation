@@ -2,7 +2,8 @@
 
 Ramo `architettura/w1-g2` da `559a96df`. Comparto G, tappe T2 (con la consegna R23) e T7 del piano. Nessun file
 esistente modificato; nessuna rete, nessun DB vero, nessun processo nuovo. Consegna 1: `c10099d4`; revisione
-indipendente «DA CORREGGERE» (D-1..D-10); consegna 2 (questa): `7fe2b64a` + referto e doc. Le correzioni sono
+indipendente «DA CORREGGERE» (D-1..D-10); consegna 2: `7fe2b64a` + `2089d977`; seconda revisione «DA CORREGGERE (lieve)»; consegna 3 (questa):
+`d21dadb4` + referto (par. 11). Le correzioni sono
 elencate al par. 10; i paragrafi 1-9 descrivono lo stato DOPO le correzioni.
 
 ## 1. Cosa ho costruito (e cosa NON fa)
@@ -12,9 +13,9 @@ elencate al par. 10; i paragrafi 1-9 descrivono lo stato DOPO le correzioni.
 | `Betfair/nucleo/dati/registro.py` | 1085 | `ECCEZIONI_DML` (:69), `_SCRITTURE_DIRETTE` (generato dalla scansione al commit `559a96df`), `SITI_DINAMICI`/`SITI_PASSANTI`/`RPC_DINAMICHE`/`SCRITTURE_REST`/`SITI_STORAGE` (:393), `RPC_SCRIVENTI_ELENCO` 74 RPC (:414), `SENZA_SCHEMA_NEL_REPO` (:524), `_VOCI` 121 tabelle (:550), `RegistroTabelle`, `_controlla_migrazioni` (:1020), `verifica_copertura` (:1041), `controlla_coerenza`, `REGISTRO` (:1085) |
 | `Betfair/nucleo/dati/cloud.py` | 333 | `politica(profilo)`, `costruisci_lettura`/`applica_filtri`, `_Cache` (con `svuota_tabella`), `ClienteCloud.leggi/rpc/scrivi/upsert_ritentabile/rpc_ritentabile/_esegui`, `interruttore_client` |
 | `Betfair/nucleo/dati/cache_cloud.py` | 535 | `SorgenteOmega` (RPC + `sentinella`), `ReplicaEmpirica` (generazioni, fusione, `prefetch_lega(solo_mancanti=)`, `richiedi_prefetch`, `drena_coda`, `richiedi_incomplete`, `controlla_ricostruzione`, `avvia`/`ferma`), `lambdas_da_riga`, `DossierPrematch` (solo positivi, 300 s) |
-| `tests/test_g2_registro.py`, `test_g2_cloud.py`, `test_g2_cache_cloud.py` | 643+411+629 | 118 test |
+| `tests/test_g2_registro.py`, `test_g2_cloud.py`, `test_g2_cache_cloud.py` | 689+451+747 | 130 test |
 | `Betfair/nucleo/dati/doc/G2_REGISTRO_CLOUD.md` | | schema del `COSA_FA.md` |
-| `ARCHITETTURA_2026-10/ondata1/W1-G2/mutazioni_w1g2.py` | | le 35 mutazioni, rifacibili |
+| `ARCHITETTURA_2026-10/ondata1/W1-G2/mutazioni_w1g2.py` | | le 56 mutazioni (41 mie + 15 del revisore), rifacibili |
 
 **Registro**: 121 voci = le 89 di `00 §0` + le 6 «solo RPC» di `g_copertura_tabelle.py` + 26 trovate dalla scansione
 (13 alla consegna 1, 13 con la revisione: par. 10, D-1). Ogni voce: chiave naturale, natura, regime, ritardo massimo e
@@ -92,7 +93,8 @@ le chiavi e i tipi delle migrazioni: le vere sono nel cloud (riconciliazione in 
 
 ## 5. Test e falsificazioni
 
-- Miei: **118 verdi** (`test_g2_registro.py` 37, `test_g2_cloud.py` 42, `test_g2_cache_cloud.py` 39), ~35 s.
+- Miei: **130 verdi** (`test_g2_registro.py` 38, `test_g2_cloud.py` 45, `test_g2_cache_cloud.py` 47), ~45 s
+  (consegna 2: 118). Mutazioni della consegna 3: par. 11.
 - Mutazioni sul codice (`mutazioni_w1g2.py`): **35/35 rosse**, ripristino con sha256 identico (`cloud.py 6879b6b05f59`,
   `registro.py 7aac8b4f7401`, `cache_cloud.py a334cec6bf61`). M1-M16 della consegna 1 (riadattate al codice nuovo) e
   M17-M32 della revisione: negativi del dossier in memoria (M17), scadenza 3600 s e 36000 s (M18, M18b: quella del
@@ -174,6 +176,13 @@ codice di bot, nessun ordine, nessun replay in questa ondata»: 6.1-6.4, 6.6, 6.
 - **D7** Prudenze da approvare: patch e delete non ritentati; nei processi delle action (`DB_RESILIENZA_ACTION=1`) il
   TRASPORTO di `db_client` ritenta da se' PATCH/DELETE (e gli upsert): li' il "un tentativo" di `scrivi` non vale;
   runner a 120 s come oggi; l'interruttore «2 guasti di fila» di `db_client` e' di processo, condiviso.
+- **D9 (seconda revisione) script batch e ritento in «nuovo»**: con `ARCH_DATI_CLIENT=nuovo` gli upsert SENZA
+  `on_conflict` non si ritentano (sono equivalenti a un INSERT per il client): `generate_dynamic_cal.py:459` e
+  `load_poisson_calibration_to_db.py:65` (`poisson_calibration`) avrebbero UN tentativo, salvo il trasporto di
+  `db_client` acceso con `DB_RESILIENZA_ACTION=1` nei processi delle action (che li ritenta da se'). Verificato di
+  persona: `build_direzione.py:226` ha `on_conflict=pk` con `pk = "engine,market,selection,league_id,prob_bucket"`
+  (:219) = chiave naturale del registro, quindi QUELLO si ritenterebbe. Oggi nessuno dei tre passa dal client nuovo
+  (sono raccoglitori, invariati): conta solo se un domani li si aggancia.
 - **D8** `omega_requests`: chi la consuma resta «da chiarire» (G B). `analytics_prob_staging`/`flush_analytics_prob_staging`:
   dormienti nel repo (registrate, avviso).
 - **Per il coordinatore (integrazione dei rami)**: il test di copertura vede OGNI file tracciato. I moduli nuovi
@@ -199,6 +208,29 @@ codice di bot, nessun ordine, nessun replay in questa ondata»: 6.1-6.4, 6.6, 6.
 | D-10 e mutazioni K/L | `schema_nel_repo` + `SENZA_SCHEMA_NEL_REPO` (19); golden `rev_colonna` (colonna `updated_at` nelle migrazioni), chiave = PK/UNIQUE/indice unico vero, (regime, ritardo, coalesce, chiave) di G §4.3 | `test_schema_nel_repo_*`, `test_golden_*` (3); M29 (K), M30 (L), M31, M32 |
 
 Portate all'utente come divergenze: D-2 e D-5 (par. 9, D5 e D6).
+
+## 11. Seconda revisione (09/10, su `7fe2b64a`/`2089d977`; commit `d21dadb4`)
+
+sha256 dopo le correzioni: `cloud.py 4a2780107806`, `registro.py 5baf19f2a476`, `cache_cloud.py a1524645a447`.
+Mutazioni (`mutazioni_w1g2.py`): **56/56 rosse** = 41 mie (M1-M38) + 15 del revisore (`REV A1`..`REV D4`, riprese tali e
+quali dal suo `mie_mutazioni.py`), ogni file ripristinato con sha256 identico. Il suo script, rilanciato sulla
+versione nuova: 15/15 rosse (prima 8/15: B1, B4, C2, C3, C4, D2, D3 sopravvivevano).
+
+| Punto | Correzione (file:riga) | Test | Mutazione rossa |
+|---|---|---|---|
+| 1 Storage mancante | `registro.py:405` `SITI_STORAGE` con `make-daily-post/index.ts` bucket `Loghi` (:253 upload, :263 URL); la scansione guarda TUTTI i `.ts/.tsx/.js/.mjs/.cjs` tracciati esclusi `node_modules`, `dist`, `build` e i file `.test./.spec.` (`test_g2_registro.py:102` `_analizza_ts`, :117 `_chiamate_ts_altrove`); il `.from(<bucket>)` dello Storage non e' piu' scambiato per una tabella | `test_storage_delle_edge_function_scansionato_e_falsificato` (:537): senza la dichiarazione e' rosso | M33 |
+| 2 B1, B4 ritardo del ri-prefetch | invariato (`cache_cloud.py:61`, 60 s): mancava il test | `test_ritardo_del_riprefetch_e_di_60_secondi` (`test_g2_cache_cloud.py:641`, 59 s nessuna richiesta, 60 s richiesta, scritti letterali) | REV B1, REV B4 (e REV B2) |
+| 2 C2, C3, C4 sentinella | invariata (`cache_cloud.py:121-123`); il finto ora ha righe di disturbo in tutte e tre le tabelle (stato `id=2`, versioni piu' vecchie) e rispetta `id=eq.1` e `order` | `test_sentinella_vede_ogni_sua_lettura` (:671, 3 casi: solo HT->FT, solo `omega_build_jobs`, solo `published_at`) | REV C2, C3, C4 (e C1) |
+| 2 D2 prefetch con la generazione catturata | invariato (`cache_cloud.py:195-208`, `gen` catturata all'inizio): mancava il test | `test_gara_prefetch_scrive_con_la_generazione_catturata_all_inizio` (:684) | REV D2 |
+| 2 D3 rilettura toglie le voci vecchie | invariato (`cache_cloud.py:292`): mancava il test | `test_rilettura_toglie_le_voci_vecchie_non_rilette` (:701) | REV D3 |
+| 3 memoria del dossier | `DossierPrematch.pota()` (`cache_cloud.py:456`), chiamata da `precarica` | `test_dossier_la_memoria_non_cresce_oltre_la_finestra` (:737: 40 precarica ogni 100 s, mai piu' di 3 eventi, nessuna voce oltre 300 s) | M34 |
+| 4 sentinella che fallisce | scelta: lettura fallita = "non so"; dopo `SENTINELLA_ERRORI_MAX = 3` errori di fila (`cache_cloud.py:64`, ~15 min con l'intervallo di serie) rilettura FORZATA e sentinella "ignota", cosi' la prima lettura riuscita rilegge ancora (`controlla_ricostruzione`, :253) | `test_sentinella_illeggibile_non_rende_ciechi` (:715) | M35 |
+| 5 RPC in cache dopo `scrivi` | `_Cache.svuota_tabella` (`cloud.py:201`) svuota anche TUTTE le RPC in cache (una RPC di lettura puo' leggere qualunque tabella: il registro conosce solo le tabelle delle RPC che scrivono) | `test_rpc_in_cache_svuotate_dopo_una_scrittura` (`test_g2_cloud.py:314`) | M36 |
+| 5 lettura in volo | generazione per gruppo (`t:<tabella>`, `r`) catturata prima della richiesta (`cloud.py:264`, :283); `metti` rifiuta se cambiata (:184) | `test_lettura_in_volo_non_rimette_in_cache_il_vecchio` (:326) | M37 |
+| 5 potatura della cache | ogni `POTA_OGNI = 64` inserimenti (`cloud.py:157`) | `test_cache_pota_le_voci_scadute_ogni_tanto` (:342) | M38 |
+| 6 referto | questo paragrafo; divergenza D9 al par. 9 | - | - |
+
+Test miei: 130 verdi. Suite intera (una volta, su `d21dadb4`): **11.701 verdi, 0 rossi, 87 saltati, 6 xfailed** in 597 s.
 
 Comandi: `python -m pytest Betfair/nucleo/dati/tests/test_g2_registro.py Betfair/nucleo/dati/tests/test_g2_cloud.py
 Betfair/nucleo/dati/tests/test_g2_cache_cloud.py -q -p no:cacheprovider`;
