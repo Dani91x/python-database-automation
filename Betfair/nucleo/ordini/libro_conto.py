@@ -36,7 +36,8 @@ sovrascrive (si conta); uno piu' nuovo che fa REGREDIRE l'ordine (abbinato che
 cala, completo che torna eseguibile: un seme REST letto prima e consegnato dopo)
 si rifiuta e si dice a WARNING. Il tetto di memoria dimentica prima i mercati
 chiusi; l'abbinato degli ordini dimenticati di mercati aperti resta nel P&L
-(riassunto). Thread-safe: un ``RLock``; i consumatori sono chiamati FUORI dal
+(riassunto); se un ordine riassunto rientra (seme, aggiornamento tardivo) la sua
+parte si storna e tornano attore e indizi: mai contato due volte. Thread-safe: un ``RLock``; i consumatori sono chiamati FUORI dal
 lucchetto, uno alla volta e sempre con lo stato PIU' RECENTE dell'ordine; un
 loro errore si logga, mai propagato a chi alimenta.
 
@@ -211,7 +212,22 @@ class _InfoMercato:
     runner: Optional[Tuple[int, ...]] = None
     tipo_scommessa: Optional[str] = None
     vincitori: Optional[int] = None
+    tipo_mercato: Optional[str] = None
     chiuso: bool = False
+
+
+@dataclass
+class _Riassunto:
+    """Un ordine terminale dimenticato dal tetto su un mercato APERTO: il suo
+    stato (per le guardie se rientra), l'attore, gli indizi e la sua parte nel
+    riassunto (per stornarla se rientra: seconda revisione 09/10, M2)."""
+
+    ordine: OrdineDalConto
+    attore: Optional[str]
+    indizi: Tuple[attr.Indizio, ...]
+    chiave_acc: Optional[Tuple[int, float, str, str]]
+    abbinato: float
+    somma: float
 
 
 #: tetto degli indizi tenuti per bet_id non (ancora) nel libro
@@ -247,13 +263,17 @@ class LibroConto:
         # ordini terminali dimenticati dal tetto su mercati APERTI: accumulati
         # per (selezione, handicap, lato, autore) -> [abbinato, abbinato*prezzo]
         self._riassunti: Dict[Tuple[str, str], Dict[Tuple[int, float, str, str], List[float]]] = {}
+        # i bet_id riassunti per (modo, mercato): se rientrano (seme, aggiornamento
+        # tardivo) si storna la loro parte, mai contati due volte
+        self._riassunti_bet: Dict[Tuple[str, str], Dict[str, _Riassunto]] = {}
+        self._attore_rientrato: Dict[Tuple[str, str], str] = {}
         self._mancanze: Dict[Tuple[str, str, int, float], Dict[str, float]] = {}
         # il live parte SENZA seme: lo stream non porta gli ordini gia' completi
         self._seme: Dict[str, bool] = {"live": False, "paper": True}
         self.conti: Dict[str, int] = {"ricevuti": 0, "fuori_ordine": 0, "regressioni": 0,
                                       "scartati": 0, "dimenticati": 0,
                                       "dimenticati_aperti": 0, "consumatori_ko": 0,
-                                      "semi": 0, "semi_ko": 0}
+                                      "semi": 0, "semi_ko": 0, "riassunti_rientrati": 0}
 
     # ------------------------------------------------------------ alimentazione
     def collega_live(self, flusso: FlussoOrdiniConto, *,
@@ -371,6 +391,10 @@ class LibroConto:
         with self._lock:
             self.conti["ricevuti"] += 1
             voce = self._voci.get(chiave)
+            if voce is None and not self._rientro_da_riassunto(modo, o):
+                return
+            if voce is None:
+                attore = attore or self._attore_rientrato.pop(chiave, None)
             if voce is not None and int(o.ricevuto_ms) < int(voce.ordine.ricevuto_ms):
                 self.conti["fuori_ordine"] += 1
                 logger.debug("[libro] %s %s: messaggio piu' vecchio di quello tenuto, ignorato",
@@ -395,6 +419,43 @@ class LibroConto:
             self._per_mercato.setdefault((modo, str(o.market_id)), set()).add(str(o.bet_id))
             self._rispetta_tetto(modo)
         self._avvisa(chiave)
+
+    def _rientro_da_riassunto(self, modo: str, o: OrdineDalConto) -> bool:
+        """Un ordine gia' riassunto dal tetto rientra (seme dopo riconnessione,
+        aggiornamento tardivo): con le stesse guardie di sempre contro il suo
+        ultimo stato; se passa, la sua parte si STORNA dal riassunto e tornano
+        attore e indizi. False = messaggio rifiutato (il riassunto resta)."""
+        per_bet = self._riassunti_bet.get((modo, str(o.market_id)))
+        rec = per_bet.get(str(o.bet_id)) if per_bet else None
+        if rec is None:
+            return True
+        if int(o.ricevuto_ms) < int(rec.ordine.ricevuto_ms):
+            self.conti["fuori_ordine"] += 1
+            return False
+        regr = self._regressione(rec.ordine, o)
+        if regr is not None:
+            self.conti["regressioni"] += 1
+            logger.warning("[libro] %s %s (riassunto): regressione rifiutata (%s)",
+                           modo, o.bet_id, regr)
+            return False
+        del per_bet[str(o.bet_id)]
+        if rec.chiave_acc is not None:
+            acc = self._riassunti.get((modo, str(o.market_id)), {})
+            parte = acc.get(rec.chiave_acc)
+            if parte is not None:
+                parte[0] -= rec.abbinato
+                parte[1] -= rec.somma
+                if parte[0] <= 1e-9:
+                    del acc[rec.chiave_acc]
+        if rec.indizi:
+            tenuti = list(self._indizi.get(str(o.bet_id), ()))
+            self._indizi[str(o.bet_id)] = tuple(tenuti + [i for i in rec.indizi if i not in tenuti])
+        if rec.attore is not None:
+            self._attore_rientrato[(modo, str(o.bet_id))] = rec.attore
+        self.conti["riassunti_rientrati"] += 1
+        logger.info("[libro] %s %s: ordine riassunto rientrato, la sua parte stornata",
+                    modo, o.bet_id)
+        return True
 
     def _componi(self, modo: str, o: OrdineDalConto, attore: Optional[str]) -> OrdineConto:
         regole = self._regole_attive()
@@ -440,13 +501,20 @@ class LibroConto:
                            self._max, modo, aperti)
 
     def _riassumi(self, chiave: Tuple[str, str]) -> None:
-        c = self._voci[chiave].conto
+        v = self._voci[chiave]
+        c = v.conto
+        rec = _Riassunto(v.ordine, v.attore_dichiarato, tuple(self._indizi.get(chiave[1], ())),
+                         None, 0.0, 0.0)
+        self._riassunti_bet.setdefault((chiave[0], str(c.market_id)), {})[chiave[1]] = rec
         if c.abbinato <= 0 or c.prezzo_medio is None or not c.prezzo_medio > 1.0:
             return
         acc = self._riassunti.setdefault((chiave[0], str(c.market_id)), {})
-        voce = acc.setdefault((int(c.selection_id), float(c.handicap), c.lato, c.autore), [0.0, 0.0])
-        voce[0] += float(c.abbinato)
-        voce[1] += float(c.abbinato) * float(c.prezzo_medio)
+        rec.chiave_acc = (int(c.selection_id), float(c.handicap), c.lato, c.autore)
+        voce = acc.setdefault(rec.chiave_acc, [0.0, 0.0])
+        rec.abbinato = float(c.abbinato)
+        rec.somma = float(c.abbinato) * float(c.prezzo_medio)
+        voce[0] += rec.abbinato
+        voce[1] += rec.somma
 
     def _ordini_riassunti(self, market_id: str, modo: str) -> List[OrdineConto]:
         out: List[OrdineConto] = []
@@ -482,6 +550,7 @@ class LibroConto:
                     self._togli((m, bid))
                     n += 1
                 self._riassunti.pop((m, mid), None)
+                self._riassunti_bet.pop((m, mid), None)
                 for k in [k for k in self._mancanze if k[0] == m and k[1] == mid]:
                     self._mancanze.pop(k, None)
             if modo is None:
@@ -491,9 +560,11 @@ class LibroConto:
     # ------------------------------------------------------------ il mercato
     def imposta_mercato(self, market_id: str, *, runner: Optional[Iterable[int]] = None,
                         tipo_scommessa: Optional[str] = None, vincitori: Optional[int] = None,
-                        chiuso: Optional[bool] = None) -> None:
+                        chiuso: Optional[bool] = None,
+                        tipo_mercato: Optional[str] = None) -> None:
         """Dal book (``marketDefinition``): elenco dei runner, ``bettingType``,
-        ``numberOfWinners``, stato chiuso. Solo i valori dati cambiano."""
+        ``numberOfWinners``, ``marketType``, stato chiuso. Solo i valori dati
+        cambiano."""
         with self._lock:
             info = self._mercati.setdefault(str(market_id), _InfoMercato())
             if runner is not None:
@@ -504,6 +575,8 @@ class LibroConto:
                 info.vincitori = int(vincitori)
             if chiuso is not None:
                 info.chiuso = bool(chiuso)
+            if tipo_mercato is not None:
+                info.tipo_mercato = str(tipo_mercato)
 
     def verifica_abbinato(self, market_id: str, selection_id: int, handicap: float,
                           mb: Optional[Sequence[Sequence[float]]],
@@ -614,7 +687,8 @@ class LibroConto:
             mid, modo, ordini,
             runner=runner if runner is not None else info.runner,
             tipo_scommessa=tipo_scommessa if tipo_scommessa is not None else info.tipo_scommessa,
-            vincitori=vincitori if vincitori is not None else info.vincitori)
+            vincitori=vincitori if vincitori is not None else info.vincitori,
+            tipo_mercato=info.tipo_mercato)
         for bid in calcolo.scartati:
             logger.warning("[libro] %s %s: abbinato senza prezzo medio, fuori dal P&L",
                            modo, bid)

@@ -37,6 +37,10 @@ dalla CODA del runner (customerOrderRef di flumine). Da solo NON basta a dire
 ``desktop``: l'attribuzione e' PROVVISORIA (``sconosciuto``, nessun comando sul
 ladder) finche' un indizio non dice un bot o non da' un'evidenza POSITIVA
 dell'utente (riga di coda non di un bot, ack di un comando del desktop).
+SECONDA REVISIONE 09/10: una riga di coda prova SOLO se ha PIAZZATO quell'ordine
+(``AZIONI_CHE_PIAZZANO``; mai cancel/replace) e il suo bet_id si legge anche da
+``result`` (righe ``local<id>`` del ladder); i ritentativi ``ft`` ereditano dal
+genitore; la coda tennis ha ``indizi_da_riga_tennis``.
 
 Entrate: ``OrdineDalConto`` (o i soli ``csr``/``cor``), indizi opzionali,
 regole (di serie quelle di oggi). Uscite: ``Attribuzione`` (autore, motivo,
@@ -328,24 +332,89 @@ def indizio_da_motivo(motivo: str) -> Optional[Indizio]:
     return None
 
 
+#: azioni della coda che PIAZZANO un ordine nuovo: il bet_id del loro ``result``
+#: e' un ordine di chi ha mandato il comando (``live_order_worker._LOCAL_ACTIONS``
+#: + ``place_submin``). ``cancel`` e ``replace`` NON lo sono: l'utente puo'
+#: annullare o spostare un ordine di un bot (seconda revisione 09/10, punto 1c).
+AZIONI_CHE_PIAZZANO: FrozenSet[str] = frozenset({"place", "place_submin", "greenup", "dutch",
+                                                 "cashout_all", "cashout_event"})
+#: prefisso dei ``client_ref`` dei ritentativi del follow-through
+#: (``live_order_worker`` ``ft<rid>m<market>r<n>`` / ``ft<rid>s<sel>r<n>``, con
+#: ``params.ft_parent`` = id della riga genitore)
+PREFISSO_FOLLOW_THROUGH = "ft"
+
+
+def _risultato(riga: Mapping[str, Any]) -> Mapping[str, Any]:
+    """La colonna ``result`` (jsonb: dict; tollerata anche la stringa JSON)."""
+    res = riga.get("result")
+    if isinstance(res, str):
+        import json
+
+        try:
+            res = json.loads(res)
+        except ValueError:
+            logger.warning("[attribuzione] result non JSON: %r", res[:80])
+            return {}
+    return res if isinstance(res, Mapping) else {}
+
+
+def bet_id_della_riga(riga: Mapping[str, Any]) -> Optional[str]:
+    """Il bet_id dell'ordine che la riga ha PIAZZATO: la colonna ``bet_id``
+    (scritta da ``live_order_worker._write_done`` per la coda DB) o
+    ``result.bet_id`` (l'unico posto per le righe ``local<id>`` di
+    ``_record_local_request``, dove la colonna ``bet_id`` e' quella del
+    comando: NULL per un place)."""
+    dal_risultato = _testo(_risultato(riga).get("bet_id"))
+    return dal_risultato or _testo(riga.get("bet_id")) or None
+
+
 def indizi_da_riga_coda(riga: Mapping[str, Any],
-                        regole: Optional[RegoleAttribuzione] = None) -> Tuple[Indizio, ...]:
-    """Una riga di ``betfair_live_order_requests`` (chiavi della tabella:
-    ``client_ref``, ``params``) con QUEL bet_id: il motivo di oggi
+                        regole: Optional[RegoleAttribuzione] = None, *,
+                        bet_id: Optional[str] = None,
+                        genitore: Optional[Mapping[str, Any]] = None) -> Tuple[Indizio, ...]:
+    """Una riga di ``betfair_live_order_requests`` (colonne vere: ``client_ref``,
+    ``action``, ``params``, ``bet_id``, ``result``). Prova SOLO se ha PIAZZATO
+    l'ordine (``AZIONI_CHE_PIAZZANO``) e, con ``bet_id``, solo se e' quello
+    piazzato (``bet_id_della_riga``). Allora: il motivo di oggi
     (``motivo_bot_da_coda``), ``rischio:<client_ref>`` se e' del risk engine,
-    altrimenti un indizio ``utente`` (la riga esiste e non e' di un bot: e' un
-    comando dell'app, ``local<id>``/``ft...``)."""
+    altrimenti ``utente`` (comando dell'app). Un ritentativo ``ft...`` con
+    ``params.ft_parent`` eredita l'autore della riga ``genitore``; senza
+    genitore non prova niente."""
     from Betfair.stream.trading.esposizione_fuori_bot import motivo_bot_da_coda
 
     r = regole or regole_di_oggi()
+    if _testo(riga.get("action")).lower() not in AZIONI_CHE_PIAZZANO:
+        return ()
+    if bet_id is not None and bet_id_della_riga(riga) != _testo(bet_id):
+        return ()
+    cref = _testo(riga.get("client_ref"))
+    params = riga.get("params") if isinstance(riga.get("params"), Mapping) else {}
+    if cref.startswith(PREFISSO_FOLLOW_THROUGH) and params.get("ft_parent") is not None:
+        if genitore is None or str(genitore.get("id")) != str(params.get("ft_parent")):
+            return ()
+        return indizi_da_riga_coda(genitore, r)
     motivo = motivo_bot_da_coda(dict(riga))
     if motivo:
         ind = indizio_da_motivo(motivo)
         return (ind,) if ind is not None else ()
-    cref = _testo(riga.get("client_ref"))
     if cref.startswith(r.prefisso_coda_rischio):
         return (Indizio("coda", f"rischio:{cref}"),)
     return (Indizio("utente", f"coda:{cref}"),)
+
+
+def indizi_da_riga_tennis(riga: Mapping[str, Any],
+                          regole: Optional[RegoleAttribuzione] = None, *,
+                          bet_id: Optional[str] = None) -> Tuple[Indizio, ...]:
+    """Una riga di ``tennis_live_order_queue`` (colonne vere: ``client_ref``,
+    ``payload`` -- il comando, con ``action``, ``comando``/``source`` --,
+    ``result``): la stessa regola di ``indizi_da_riga_coda`` (il ``/order`` del
+    ladder tennis scrive ``local<sid>``, ``tennis_live_order_worker.py:1830``; i
+    comandi del motore ``cmd<id>`` con ``payload.comando``, ``esecutore_tennis.py:266``)."""
+    payload = riga.get("payload") if isinstance(riga.get("payload"), Mapping) else {}
+    vista = {"client_ref": riga.get("client_ref"), "action": payload.get("action"),
+             "params": dict(payload), "result": riga.get("result"),
+             "bet_id": payload.get("bet_id")}
+    return indizi_da_riga_coda(vista, regole, bet_id=bet_id)
 
 
 def indizio_ack_desktop(bet_id: str) -> Indizio:

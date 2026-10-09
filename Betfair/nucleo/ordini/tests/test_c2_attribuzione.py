@@ -324,18 +324,18 @@ def test_indizi_coda_risk_attore_source():
     o = dal_conto(ordine_json("5", "LAY", 2.0, 3.0, csr="live", cor="abc-1"))
     senza = A.attribuisci(o)
     assert (senza.autore, senza.provvisoria) == ("sconosciuto", True)
-    assert A.attribuisci(o, A.indizi_da_riga_coda({"client_ref": "risk12s", "params": {}})).autore == "risk"
+    assert A.attribuisci(o, A.indizi_da_riga_coda({"action": "place", "client_ref": "risk12s", "params": {}})).autore == "risk"
     assert A.attribuisci(o, A.indizi_da_riga_coda(
-        {"client_ref": "local3", "params": {"comando": {"attore": "omega"}}})).autore == "omega"
+        {"action": "place", "client_ref": "local3", "params": {"comando": {"attore": "omega"}}})).autore == "omega"
     assert A.attribuisci(o, A.indizi_da_riga_coda(
-        {"client_ref": "local3", "params": {"source": "scalper"}})).autore == "scalper"
-    assert A.attribuisci(o, A.indizi_da_riga_coda({"client_ref": "mike-t4", "params": {}})).autore == "mike"
+        {"action": "place", "client_ref": "local3", "params": {"source": "scalper"}})).autore == "scalper"
+    assert A.attribuisci(o, A.indizi_da_riga_coda({"action": "place", "client_ref": "mike-t4", "params": {}})).autore == "mike"
     # la riga di coda c'e' e NON e' di un bot: evidenza positiva dell'utente
-    assert A.indizi_da_riga_coda({"client_ref": "local3", "params": {}}) == (
+    assert A.indizi_da_riga_coda({"action": "place", "client_ref": "local3", "params": {}}) == (
         A.Indizio("utente", "coda:local3"),)
-    assert A.indizi_da_riga_coda({"client_ref": "ft3m1.2r0", "params": {}}) == (
+    assert A.indizi_da_riga_coda({"action": "place", "client_ref": "ft3m1.2r0", "params": {}}) == (
         A.Indizio("utente", "coda:ft3m1.2r0"),)
-    a = A.attribuisci(o, A.indizi_da_riga_coda({"client_ref": "local3", "params": {}}))
+    a = A.attribuisci(o, A.indizi_da_riga_coda({"action": "place", "client_ref": "local3", "params": {}}))
     assert (a.autore, a.provvisoria, a.fonte) == ("desktop", False, "indizio")
     assert A.attribuisci(o, [A.indizio_ack_desktop("5")]).autore == "desktop"
     # un indizio di un bot vince sull'evidenza dell'utente (mai annullare un bot)
@@ -361,7 +361,7 @@ def test_rev_g1_ordine_di_bot_dalla_coda_non_e_desktop_ne_annullabile():
     assert L.comandi_ammessi(lib.ordine("100", "live")) == ()
     lib.ricevi_live(dal_conto(ordine_json("101", "BACK", 0.0, 2.0, csr="live",
                                           cor="a1b2c3d4e5f60-78", residuo=5.0)))
-    lib.aggiungi_indizi("101", A.indizi_da_riga_coda({"client_ref": "local9", "params": {}}))
+    lib.aggiungi_indizi("101", A.indizi_da_riga_coda({"action": "place", "client_ref": "local9", "params": {}}))
     assert L.comandi_ammessi(lib.ordine("101", "live")) == ("annulla", "sposta")
 
 

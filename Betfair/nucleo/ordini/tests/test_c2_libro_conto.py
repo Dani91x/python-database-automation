@@ -174,7 +174,7 @@ def test_indizi_riattribuiscono_e_avvisano():
     lib.aggiungi_consumatore(visti.append)
     lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 2.0, 2.0, csr="live", cor="h-1")))
     assert lib.ordine("1", "live").autore == "sconosciuto"
-    lib.aggiungi_indizi("1", A.indizi_da_riga_coda({"client_ref": "risk3s", "params": {}}))
+    lib.aggiungi_indizi("1", A.indizi_da_riga_coda({"action": "place", "client_ref": "risk3s", "params": {}}))
     assert lib.ordine("1", "live").autore == "risk"
     assert lib.attribuzione("1", "live").fonte == "indizio"
     assert [o.autore for o in visti] == ["sconosciuto", "risk"]

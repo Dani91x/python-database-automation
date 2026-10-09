@@ -344,7 +344,7 @@ def test_g1_ack_del_desktop_e_un_indizio_dell_utente():
 
 
 def test_g1_riga_di_coda_del_risk_non_e_dell_utente():
-    assert A.indizi_da_riga_coda({"client_ref": "risk3cp1", "params": {}}) == (
+    assert A.indizi_da_riga_coda({"action": "place", "client_ref": "risk3cp1", "params": {}}) == (
         A.Indizio("coda", "rischio:risk3cp1"),)
 
 

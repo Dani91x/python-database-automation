@@ -94,7 +94,7 @@ def _griglia(seed: int, n: int) -> List[OrdineConto]:
 @pytest.mark.parametrize("seed", range(12))
 def test_se_vince_identico_alla_formula_del_ladder(seed):
     ordini = _griglia(seed, 1 + seed * 3)
-    pos = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", ordini=ordini, runner=[HOME, AWAY, DRAW])
+    pos = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=ordini, runner=[HOME, AWAY, DRAW])
     abb = [(o.selection_id, o.lato, o.abbinato, o.prezzo_medio) for o in ordini]
     for sel in (HOME, AWAY, DRAW):
         assert pos.se_vince[sel] == round(_ts_pnl_se_vince(abb, sel), 2)
@@ -175,7 +175,7 @@ def test_green_up_e_lockedpnl_sulla_stessa_posizione():
 def test_abbinato_e_prezzo_medio_per_lato():
     ordini = [oc("1", HOME, "back", 2.0, 2.0), oc("2", HOME, "back", 6.0, 3.0),
               oc("3", AWAY, "lay", 1.5, 4.0), oc("4", AWAY, "lay", 0.0, None, residuo=2.0)]
-    pos = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", ordini=ordini)
+    pos = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=ordini)
     assert pos.abbinato_back == {HOME: 8.0, AWAY: 0.0}
     assert pos.abbinato_lay == {HOME: 0.0, AWAY: 1.5}
     assert pos.prezzo_medio_back == {HOME: 2.75, AWAY: None}      # (2*2+6*3)/8
@@ -185,19 +185,19 @@ def test_abbinato_e_prezzo_medio_per_lato():
 
 def test_esposizione_massima_con_e_senza_elenco_dei_runner():
     ordini = [oc("1", HOME, "back", 10.0, 2.0)]        # vince HOME +10, altrimenti -10
-    senza = P.calcola(MKT, "live", tipo_scommessa="ODDS", ordini=ordini)
+    senza = P.calcola(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=ordini)
     assert senza.posizione.se_vince == {HOME: 10.0}
     # revisione 09/10 (G2): senza elenco dei runner l'esposizione NON si inventa
     assert senza.esposizione_massima is None and not senza.runner_noti
     assert math.isnan(senza.posizione.esposizione_massima)
     assert "runner_ignoti" in senza.motivi
-    con = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", ordini=ordini, runner=[HOME, AWAY, DRAW])
+    con = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=ordini, runner=[HOME, AWAY, DRAW])
     assert con.se_vince == {HOME: 10.0, AWAY: -10.0, DRAW: -10.0}
     assert con.esposizione_massima == -10.0
-    vuoto = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", ordini=[], runner=[HOME])
+    vuoto = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=[], runner=[HOME])
     assert (vuoto.se_vince, vuoto.esposizione_massima) == ({HOME: 0.0}, 0.0)
     # verde su ogni esito: l'esposizione massima e' zero, mai positiva
-    verde = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", ordini=[oc("1", HOME, "back", 10.0, 3.0),
+    verde = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=[oc("1", HOME, "back", 10.0, 3.0),
                                               oc("2", HOME, "lay", 12.0, 2.0)], runner=[HOME, AWAY])
     assert verde.se_vince == {HOME: 8.0, AWAY: 2.0}
     assert verde.esposizione_massima == 0.0
@@ -205,14 +205,14 @@ def test_esposizione_massima_con_e_senza_elenco_dei_runner():
 
 def test_paper_e_live_mai_sommati_e_mercato_sbagliato():
     with pytest.raises(ValueError, match="mai sommati"):
-        P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", ordini=[oc("1", HOME, "back", 2.0, 2.0),
+        P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=[oc("1", HOME, "back", 2.0, 2.0),
                                           oc("2", HOME, "back", 2.0, 2.0, modo="paper")])
     with pytest.raises(ValueError, match="mercato"):
-        P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", ordini=[oc("1", HOME, "back", 2.0, 2.0, market="1.9")])
+        P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=[oc("1", HOME, "back", 2.0, 2.0, market="1.9")])
 
 
 def test_abbinato_senza_prezzo_medio_fuori_e_dichiarato():
-    c = P.calcola(MKT, "live", tipo_scommessa="ODDS", ordini=[oc("1", HOME, "back", 2.0, None), oc("2", HOME, "back", 2.0, 3.0),
+    c = P.calcola(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=[oc("1", HOME, "back", 2.0, None), oc("2", HOME, "back", 2.0, 3.0),
                                 oc("3", HOME, "back", 2.0, 1.0)])
     assert c.scartati == ("1", "3")                    # nessun prezzo medio, o non > 1
     assert c.posizione.se_vince == {HOME: 4.0}
@@ -221,7 +221,7 @@ def test_abbinato_senza_prezzo_medio_fuori_e_dichiarato():
 def test_mercato_a_linee_handicap():
     ordini = [oc("1", HOME, "back", 10.0, 1.9, handicap=-0.5),
               oc("2", AWAY, "lay", 5.0, 2.1, handicap=0.5)]
-    c = P.calcola(MKT, "live", tipo_scommessa="ODDS", ordini=ordini)
+    c = P.calcola(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=ordini)
     assert c.a_linee and c.posizione.se_vince == {} and c.posizione.se_vince_per_autore == {}
     e = P.esposizioni_per_selezione(ordini)
     assert set(e) == {(HOME, -0.5), (AWAY, 0.5)}
@@ -229,14 +229,14 @@ def test_mercato_a_linee_handicap():
 
 
 def test_commissione_non_applicata():
-    pos = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", ordini=[oc("1", HOME, "back", 10.0, 2.0)], runner=[HOME, AWAY])
+    pos = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=[oc("1", HOME, "back", 10.0, 2.0)], runner=[HOME, AWAY])
     assert pos.se_vince[HOME] == 10.0                  # lordo: nessun 5%
 
 
 def test_per_autore_somma_al_totale_al_centesimo():
     for seed in range(20):
         ordini = _griglia(1000 + seed, 15)
-        pos = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", ordini=ordini, runner=[HOME, AWAY, DRAW])
+        pos = P.posizione_mercato(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=ordini, runner=[HOME, AWAY, DRAW])
         for sel in (HOME, AWAY, DRAW):
             somma = sum(v[sel] for v in pos.se_vince_per_autore.values())
             assert abs(somma - pos.se_vince[sel]) <= 0.005 * len(pos.se_vince_per_autore) + 1e-9
@@ -268,10 +268,10 @@ def test_rev_g2_tennis_back_su_entrambi_esposizione_zero_non_meno_venti():
     Prima (runner ignoti) l'esito fittizio "vince un altro" dava -20,0."""
     a, b = 1001, 1002
     ordini = [oc("1", a, "back", 10.0, 2.2, market=MKT), oc("2", b, "back", 10.0, 2.2)]
-    con = P.calcola(MKT, "live", ordini, runner=[a, b], tipo_scommessa="ODDS")
+    con = P.calcola(MKT, "live", ordini, runner=[a, b], tipo_scommessa="ODDS", vincitori=1)
     assert con.posizione.se_vince == {a: 2.0, b: 2.0}
     assert con.posizione.esposizione_massima == 0.0 and con.esposizione_massima == 0.0
-    senza = P.calcola(MKT, "live", ordini, tipo_scommessa="ODDS")
+    senza = P.calcola(MKT, "live", ordini, tipo_scommessa="ODDS", vincitori=1)
     assert senza.esposizione_massima is None             # mai -20,0 fittizio
     assert senza.posizione.se_vince == {a: 2.0, b: 2.0}
 
@@ -279,7 +279,7 @@ def test_rev_g2_tennis_back_su_entrambi_esposizione_zero_non_meno_venti():
 def test_rev_g2_dutch_su_tutti_i_runner():
     ordini = [oc("1", HOME, "back", 5.0, 3.0), oc("2", AWAY, "back", 5.0, 3.5),
               oc("3", DRAW, "back", 4.0, 4.0)]
-    c = P.calcola(MKT, "live", ordini, runner=[HOME, AWAY, DRAW], tipo_scommessa="ODDS")
+    c = P.calcola(MKT, "live", ordini, runner=[HOME, AWAY, DRAW], tipo_scommessa="ODDS", vincitori=1)
     assert c.posizione.se_vince == {HOME: 1.0, AWAY: 3.5, DRAW: 2.0}
     assert c.esposizione_massima == 0.0
 
@@ -321,7 +321,7 @@ def test_rev_fuzz_contro_forza_bruta_e_composizione_del_blotter():
                      round(rnd.uniform(0.01, 50), 2),
                      rnd.choice([1.01, 1.5, 2.02, 3.35, 9.2, 1000.0]))
                   for i in range(rnd.randint(1, 8))]
-        c = P.calcola(MKT, "live", ordini, runner=[HOME, AWAY, DRAW], tipo_scommessa="ODDS")
+        c = P.calcola(MKT, "live", ordini, runner=[HOME, AWAY, DRAW], tipo_scommessa="ODDS", vincitori=1)
         per = P.esposizioni_per_selezione(ordini)
         for k in (HOME, AWAY, DRAW):
             assert abs(c.posizione.se_vince[k] - _brute(ordini, k)) <= 0.0051

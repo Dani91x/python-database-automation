@@ -33,6 +33,9 @@ e' la somma, linea per linea, della peggiore fra (se vince, se perde) di flumine
 (stima prudente, dichiarata nei ``motivi``). Senza l'elenco dei runner
 l'esposizione NON si calcola (``None``; ``NaN`` nella posizione del contratto):
 mai l'esito fittizio "vince un runner senza ordini". Mai un numero inventato.
+Seconda revisione 09/10: senza ``numberOfWinners`` il modello vale solo per i
+``marketType`` a vincitore unico per definizione (altrimenti ``vincitori_ignoti``);
+``posizione_per_json`` da' la posizione per la UI con ``null`` al posto di ``NaN``.
 
 Entrate: ``OrdineConto`` (dal libro). Uscite: ``PosizioneMercato`` e, come
 estensione dichiarata, ``EsposizioneSelezione`` (se vince / se perde della
@@ -44,10 +47,11 @@ ASCII-only; commenti in italiano.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from Betfair.nucleo.comuni import Modo
 from Betfair.nucleo.ordini.contratto import OrdineConto, PosizioneMercato
@@ -70,6 +74,19 @@ class EsposizioneSelezione:
 #: (revisione 09/10, M4): ``ODDS``. ``LINE``, ``RANGE``, ``ASIAN_HANDICAP_*``
 #: (anche con la sola linea 0,0: push e mezze vincite) NON sono supportati.
 TIPI_UN_VINCITORE = frozenset({"ODDS"})
+#: ``marketDefinition.marketType`` a vincitore unico PER DEFINIZIONE (seconda
+#: revisione 09/10, punto 4): con questi il modello vale anche senza
+#: ``numberOfWinners``. Elenco chiuso e dichiarato nel referto (par. 11): le
+#: partite (1X2, risultato esatto, primo tempo, gol si'/no) e le linee over/under.
+TIPI_MERCATO_UN_VINCITORE = frozenset({"MATCH_ODDS", "CORRECT_SCORE", "HALF_TIME",
+                                       "HALF_TIME_SCORE", "BOTH_TEAMS_TO_SCORE"})
+PREFISSI_MERCATO_UN_VINCITORE = ("OVER_UNDER_", "FIRST_HALF_GOALS_")
+
+
+def vincitore_unico_per_definizione(tipo_mercato: Optional[str]) -> bool:
+    """Il ``marketType`` ha un solo vincitore per definizione?"""
+    t = str(tipo_mercato or "").upper()
+    return t in TIPI_MERCATO_UN_VINCITORE or t.startswith(PREFISSI_MERCATO_UN_VINCITORE)
 
 
 @dataclass(frozen=True)
@@ -177,7 +194,7 @@ def _controlla(market_id: str, modo: Modo, ordini: Sequence[OrdineConto]) -> Non
 
 
 def _non_supportato(tipo_scommessa: Optional[str], vincitori: Optional[int],
-                    a_linee: bool) -> List[str]:
+                    a_linee: bool, tipo_mercato: Optional[str] = None) -> List[str]:
     """Perche' il modello "un solo vincitore" non vale (vuoto = vale)."""
     motivi: List[str] = []
     if tipo_scommessa is None:
@@ -186,6 +203,9 @@ def _non_supportato(tipo_scommessa: Optional[str], vincitori: Optional[int],
         motivi.append(f"tipo_non_supportato:{tipo_scommessa}")
     if vincitori is not None and int(vincitori) != 1:
         motivi.append(f"vincitori:{int(vincitori)}")
+    elif vincitori is None and not vincitore_unico_per_definizione(tipo_mercato):
+        # mercati "piazzati" (piu' vincitori) non si riconoscono dal bettingType
+        motivi.append("vincitori_ignoti")
     if a_linee:
         motivi.append("handicap")
     return motivi
@@ -194,10 +214,13 @@ def _non_supportato(tipo_scommessa: Optional[str], vincitori: Optional[int],
 def calcola(market_id: str, modo: Modo, ordini: Iterable[OrdineConto], *,
             runner: Optional[Iterable[int]] = None,
             tipo_scommessa: Optional[str] = None,
-            vincitori: Optional[int] = None) -> CalcoloPosizione:
+            vincitori: Optional[int] = None,
+            tipo_mercato: Optional[str] = None) -> CalcoloPosizione:
     """La ``PosizioneMercato`` del mercato. Dal book (``marketDefinition``):
     ``runner`` = l'elenco delle selezioni, ``tipo_scommessa`` = ``bettingType``,
-    ``vincitori`` = ``numberOfWinners``.
+    ``vincitori`` = ``numberOfWinners``, ``tipo_mercato`` = ``marketType``
+    (senza ``numberOfWinners`` il modello vale solo per i tipi a vincitore unico
+    per definizione: ``vincitore_unico_per_definizione``).
 
     * modello non supportato (tipo assente o non ``ODDS``, piu' vincitori,
       handicap): ``se_vince`` VUOTO, esposizione prudente linea per linea;
@@ -208,7 +231,7 @@ def calcola(market_id: str, modo: Modo, ordini: Iterable[OrdineConto], *,
     _controlla(market_id, modo, tutti)
     buoni, scartati = _abbinati_validi(tutti)
     a_linee = any(abs(float(o.handicap)) > 1e-9 for o in tutti)
-    motivi = _non_supportato(tipo_scommessa, vincitori, a_linee)
+    motivi = _non_supportato(tipo_scommessa, vincitori, a_linee, tipo_mercato)
     back: Dict[int, List[Tuple[float, float]]] = {}
     lay: Dict[int, List[Tuple[float, float]]] = {}
     for o in buoni:
@@ -255,7 +278,23 @@ def calcola(market_id: str, modo: Modo, ordini: Iterable[OrdineConto], *,
 def posizione_mercato(market_id: str, modo: Modo, ordini: Iterable[OrdineConto], *,
                       runner: Optional[Iterable[int]] = None,
                       tipo_scommessa: Optional[str] = None,
-                      vincitori: Optional[int] = None) -> PosizioneMercato:
+                      vincitori: Optional[int] = None,
+                      tipo_mercato: Optional[str] = None) -> PosizioneMercato:
     """Solo la posizione (vedi ``calcola``)."""
     return calcola(market_id, modo, ordini, runner=runner, tipo_scommessa=tipo_scommessa,
-                   vincitori=vincitori).posizione
+                   vincitori=vincitori, tipo_mercato=tipo_mercato).posizione
+
+
+def _per_json(v: Any) -> Any:
+    if isinstance(v, float) and math.isnan(v):
+        return None
+    if isinstance(v, Mapping):
+        return {str(k): _per_json(x) for k, x in v.items()}
+    return v
+
+
+def posizione_per_json(pos: PosizioneMercato) -> Dict[str, Any]:
+    """La posizione pronta per il JSON della UI (seconda revisione 09/10, punto 5):
+    ``NaN`` (esposizione non calcolabile) -> ``None`` (``null``), chiavi delle
+    selezioni in testo (JSON non ha chiavi numeriche). Nient'altro cambia."""
+    return {f.name: _per_json(getattr(pos, f.name)) for f in dataclasses.fields(pos)}
