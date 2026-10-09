@@ -2,8 +2,9 @@
 ``tests/test_c1_*.py``; poi il file torna identico (sha256).
 
 Uso: ``python falsifica_c1.py <radice del worktree> [ID ...]`` (senza ID: tutte).
-M01-M27 = consegna del 09/10; M28-M47 = correzioni dopo la revisione; V* = mutazioni del
-revisore indipendente (``rev_w1c1/mut.py``) riportate sul codice corretto.
+M01-M27 = consegna del 09/10; M28-M47 = correzioni dopo la prima revisione; M48-M52 =
+correzioni dopo la seconda; V* e S* = mutazioni del revisore indipendente (prima revisione
+``rev_w1c1/mut.py``, seconda ``rev_w1c1_2/mie_mutazioni.py``) riportate sul codice corretto.
 """
 from __future__ import annotations
 
@@ -23,10 +24,9 @@ MUTAZIONI = [
     # ------------------------------------------------------------ consegna 09/10
     ("M01", "dedup tolto", P, "            prima = self._dedup(ref)\n",
      "            self._dedup(ref)\n            prima = None\n"),
-    ("M02", "dedup persistente tolto (archivio e prenotazione ignorati)", P,
-     "        riga = self._dall_archivio(ref)\n        if riga is None:\n"
-     "            if self._archivio.transizione(TABELLA_REF, {\"ref\": ref}, \"\", self._padrone):",
-     "        riga = None\n        if riga is None:\n            if True:"),
+    ("M02", "dedup persistente tolto (archivio ignorato)", P,
+     "            riga = self._archivio.leggi(TABELLA_REF, {\"ref\": ref})",
+     "            riga = None"),
     ("M03", "da_seq tolto (nessuna richiesta al buco)", E,
      "        if self._sorgente is None or self._riparazione_in_corso:", "        if True:"),
     ("M04", "controllo di contiguita' tolto", E,
@@ -114,8 +114,8 @@ MUTAZIONI = [
     ("M32", "consegna dentro il lucchetto (deadlock)", P,
      "            if not self._lock_consegna.acquire(blocking=False):",
      "            if not self._lock_consegna.acquire():"),
-    ("M33", "prenotazione orfana di questa porta mai ripresa (ack fantasma)", P,
-     "        if riga is not None and riga.get(\"stato\") == self._padrone:",
+    ("M33", "ack falso: ref in volo o ignoto risponde accettato", P,
+     "        if ack.accettato and (in_volo or (st is not None and st.fase == \"ignoto\")):",
      "        if False:"),
     ("M34", "archivio KO dopo 'inviato' senza riga di chiusura", P,
      "motivo=f\"{M_ARCHIVIO}: {str(ex)[:160]}\"), chiudi_diario=True)",
@@ -125,11 +125,10 @@ MUTAZIONI = [
     ("M36", "abbinato che cala accettato", P,
      "    return float(ev.abbinato) < float(prima.abbinato) - _EPS", "    return False"),
     ("M37", "seq assegnato fuori dalla sezione che memorizza", P,
-     "        with self._lock:\n            if tipo == \"evento\" and _stantio",
-     "        if True:\n            if tipo == \"evento\" and _stantio"),
-    ("M38", "dedup non atomico fra due porte", P,
-     "            if self._archivio.transizione(TABELLA_REF, {\"ref\": ref}, \"\", self._padrone):",
-     "            if True:"),
+     "        with self._lock:\n            if _stantio(self._stati.get(ev.ref), ev):",
+     "        if True:\n            if _stantio(self._stati.get(ev.ref), ev):"),
+    ("M38", "registro di processo tolto (due porte sullo stesso archivio)", P,
+     "            if self._chiave_archivio in _ARCHIVI_IN_USO:", "            if False:"),
     ("M39", "tennis non portato al minimo", P,
      "        if r.sport == \"tennis\" and not r.riduce_esposizione:", "        if False:"),
     ("M40", "replace con riduzione che scavalca il kill-switch", C,
@@ -144,7 +143,8 @@ MUTAZIONI = [
     ("M43", "contatore che solleva dopo l'invio", P,
      "            except Exception as ex:  # noqa: BLE001 - l'ordine e' partito: l'esito si scrive",
      "            except ZeroDivisionError as ex:  # noqa: BLE001 - l'ordine e' partito: l'esito si scrive"),
-    ("M44", "memoria senza limite", P, "    while len(d) > limite:", "    while False:"),
+    ("M44", "memoria senza limite", P, "        eccesso = len(d) - MAX_IN_MEMORIA",
+     "        eccesso = 0"),
     ("M45", "consumatore: terminale dopo terminale (regola di Safe)", E,
      "if prima is not None and (ev.seq <= prima.seq or terminale(prima)\n",
      "if prima is not None and (ev.seq <= prima.seq or (terminale(prima) and not terminale(ev))\n"),
@@ -156,6 +156,65 @@ MUTAZIONI = [
      "            except Exception as ex:  # noqa: BLE001 - fail-closed: senza diario niente ordine",
      "                                     \"ack\": _ack_in_riga(ack, r.attore, 0)}, durevole=False)\n"
      "            except Exception as ex:  # noqa: BLE001 - fail-closed: senza diario niente ordine"),
+    # ------------------------------------------------------------ seconda revisione (41ea9dcb)
+    ("M48", "l'esito del place salta il controllo di regressione", P,
+     "            if _stantio(self._stati.get(ev.ref), ev):\n                # anche l'ESITO",
+     "            if tipo == \"evento\" and _stantio(self._stati.get(ev.ref), ev):\n                # anche l'ESITO"),
+    ("M49", "la memoria espelle anche gli ordini aperti", P,
+     "            if self._espellibile(ref):", "            if True:"),
+    ("M50", "consumatore: espelle anche gli ordini aperti", E,
+     "    for ref in [k for k, ev in d.items() if terminale(ev)][:eccesso]:",
+     "    for ref in list(d)[:eccesso]:"),
+    ("M51", "chiudi non libera l'archivio", P,
+     "            if _ARCHIVI_IN_USO.get(self._chiave_archivio) == id(self):\n"
+     "                del _ARCHIVI_IN_USO[self._chiave_archivio]",
+     "            if False:\n                del _ARCHIVI_IN_USO[self._chiave_archivio]"),
+    ("M52", "la stessa cartella non riconosciuta (identita' dell'oggetto)", P,
+     "    cartella = getattr(archivio, \"cartella\", None)", "    cartella = None"),
+    # ------------------------------------------------------------ mutazioni del revisore, seconda revisione
+    ("S1", "paper senza contatore proprio usa quello del live", P,
+     "\"live\": contatore, \"paper\": contatore_paper}",
+     "\"live\": contatore, \"paper\": contatore_paper or contatore}"),
+    ("S2", "il paper controllato contro il tetto del live se esiste", P,
+     "        contatore = self._contatori.get(r.modo)\n        if contatore is not None and not contatore.consentito():",
+     "        contatore = self._contatori.get(\"live\") or self._contatori.get(r.modo)\n"
+     "        if contatore is not None and not contatore.consentito():"),
+    ("S3", "params non passati all'esecutore in _esegui", P,
+     "ev = metodo(r, params=params) if params else metodo(r)", "ev = metodo(r)"),
+    ("S4", "params ignorati in _valuta (cap sparisce)", P,
+     "        params = dict(extra.params) if extra is not None and extra.params else {}\n        if params and not getattr(",
+     "        params = {}\n        if params and not getattr("),
+    ("S5", "archivio KO dopo diario -> ordine parte comunque", P,
+     "                return self._rifiuto_dopo_seq(\n                    r, Ack(ref=ref, accettato=False, seq=seq,\n"
+     "                           motivo=f\"{M_ARCHIVIO}: {str(ex)[:160]}\"), chiudi_diario=True)",
+     "                pass"),
+    ("S6", "un rifiuto non chiude 'inviato' alla rilettura (riformulata: riga ridondante tolta)", P,
+     "                self._stati[ref] = StatoOrdine(ref=ref, bet_id=None, fase=\"rifiutato\",",
+     "                self._stati[ref] = StatoOrdine(ref=ref, bet_id=None, fase=\"ignoto\","),
+    ("S7", "diario KO -> ordine parte comunque", P,
+     "                return self._rifiuto_dopo_seq(\n                    r, Ack(ref=ref, accettato=False, seq=seq,\n"
+     "                           motivo=f\"{M.M_DIARIO}: {str(ex)[:160]}\"), chiudi_diario=False)",
+     "                pass"),
+    ("S8", "solo 'abbinato' e' terminale per _stantio", P,
+     "    if prima.fase in FASI_TERMINALI:\n        return True",
+     "    if prima.fase == \"abbinato\":\n        return True"),
+    ("S9", "rilettura del diario senza controllo di regressione", P,
+     "                if not _stantio(self._stati.get(ref), ev):", "                if True:"),
+    ("S10", "_emetti non scarta piu' gli eventi stantii", P,
+     "            if _stantio(self._stati.get(ev.ref), ev):\n                # anche l'ESITO",
+     "            if False:\n                # anche l'ESITO"),
+    ("S11", "blocco dei seq mai prenotato", P, "        if s > self._seq_riservato:", "        if False:"),
+    ("S12", "base dei seq non avanzata all'apertura", P,
+     "            self._base_seq = massimo", "            pass"),
+    ("S13", "da_seq sempre 'completo'", P,
+     "                             completo=int(dal) >= primo - 1)", "                             completo=True)"),
+    ("S14", "tennis: anche le chiusure portate al minimo", P,
+     "        if r.sport == \"tennis\" and not r.riduce_esposizione:", "        if r.sport == \"tennis\":"),
+    ("S15", "tennis: minimo 2,00 invece del minimo .it", P,
+     "            portata = float(MN.porta_al_minimo(lato, chiesto))",
+     "            portata = max(chiesto, 2.0)"),
+    ("S16", "place-and-trim ammesso dalla porta", P,
+     "importo, submin_disponibile=False)", "importo, submin_disponibile=True)"),
     # ------------------------------------------------------------ mutazioni del revisore
     ("V11", "ignoto contato come transazione", P,
      "        if ev.fase == \"ignoto\":\n            return\n        if ev.fase == \"rifiutato\":",

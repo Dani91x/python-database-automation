@@ -36,7 +36,8 @@ Implemento `PortaOrdini` (`PortaLocale`, verificato strutturalmente in `test_la_
    `seq` e' UNO per ack ed eventi come nel motore: chi ripara un buco deve vedere anche gli ack).
 5. Fase "in volo": il contratto non ha `inviato`; uso `accettato` con `bet_id=None` (motore `inviato`) e `accettato` con
    `bet_id` (motore `accettato_betfair`). `errore` del motore -> `rifiutato` se prima dell'invio, `ignoto` dopo (`post_place:`).
-6. Archivio: la porta usa `TABELLA_REF = "ordini_ref_visti"` (chiave `ref`, righe `{ref, stato, attore, accettato, seq,
+6. [SUPERATO dalla seconda revisione, par. 11: niente prenotazione, niente `transizione`, una porta per archivio; righe e
+   colonne aggiornate nella tabella del par. 11] Archivio: la porta usa `TABELLA_REF = "ordini_ref_visti"` (chiave `ref`, righe `{ref, stato, attore, accettato, seq,
    motivo, ts_ms}`, `stato` = `ack` o `riservato:<porta>`) e `TABELLA_SEQ = "ordini_seq"` (chiave `chiave="seq"`, il blocco
    di seq prenotato `fino_a`): tabelle LOCALI da registrare in G1 (regime `stato_denaro`, NON verso il cloud). SEMANTICA
    CHIESTA A G1: `transizione(t, chiave, "", a)` = inserisci la riga `{chiave, stato: a}` SOLO SE ASSENTE, atomica, True se
@@ -238,7 +239,7 @@ V52-V54, V59, V60, R17, parita' tennis) provavano un comportamento gia' giusto e
 | 5 | un `ignoto` chiudeva il ref al riavvio | `_rileggi`: un ref con ultima fase `ignoto` resta in volo; un evento vero lo toglie | `test_ignoto_resta_da_riconciliare_dopo_il_riavvio` | M35 |
 | 6 | stato che regrediva (abbinato che cala, terminale sovrascritto) | `_stantio` in `_emetti` e `_rileggi`; stessa regola nel consumatore | `test_un_terminale_tardivo_non_cancella_un_abbinato`, `test_un_terminale_non_si_sovrascrive_con_un_altro_terminale`, `test_un_evento_vecchio_non_fa_regredire_l_abbinato`, `test_stato_non_regredisce_piu_severo_di_oggi` | M25, M36, M45 |
 | 7 | seq assegnato e memorizzato in due momenti | `_nuovo_seq` + diario + stato + `_memorizza` nella STESSA sezione di `_lock` | `test_memoria_in_ordine_di_seq_sotto_stress`, `test_da_seq_non_dichiara_visto_un_seq_non_ancora_in_memoria` | M37 |
-| 8 | dedup non atomico fra due porte sullo stesso archivio | prenotazione `transizione(.., "", "riservato:<porta>")` (semantica chiesta a G1, par. 2.6); l'altra porta aspetta l'ack (0,5 s) o risponde `ref_gia_visto` senza seq | `test_due_porte_sullo_stesso_archivio_un_solo_ordine` | M38 |
+| 8 | dedup non atomico fra due porte sullo stesso archivio | [SUPERATO, par. 11: la prenotazione non funzionava con l'archivio vero; ora UNA porta per archivio] prenotazione `transizione(.., "", "riservato:<porta>")` (semantica chiesta a G1, par. 2.6); l'altra porta aspetta l'ack (0,5 s) o risponde `ref_gia_visto` senza seq | `test_due_porte_sullo_stesso_archivio_un_solo_ordine` | M38 |
 | 9 | tennis ignorato | apertura al minimo come il motore tennis (divergenza 9) | `test_tennis_apertura_sotto_minimo_portata_al_minimo`, parita' in `test_c1_minimi.py` | M39 |
 | 10a | desktop rifiuta, porta tronca | politica `verdetto_desktop` in `minimi.py` (divergenza 10a) | `test_politica_rifiuta_del_desktop_parita_con_order_exec` | M46 |
 | R07 | eccezione del contatore dopo il place | `_conta` protetto: l'esito si scrive comunque | `test_contatore_che_solleva_dopo_l_invio_lascia_l_esito` | M43 |
@@ -257,7 +258,7 @@ in un riavvio vero).
 
 Restano, dichiarati: l'`EsecutoreRunner` rifa' la riga da `valida_comando` (deterministica) e non rigioca lo specchio; le
 righe `ripresa` del vecchio motore sono ignote ad `apri` (diario della porta separato: un ref li' resta in volo, direzione
-sicura); una prenotazione `riservato:<altra porta>` di una porta morta resta finche' qualcuno non la chiude (la porta risponde
+sicura); [superato, par. 11] una prenotazione `riservato:<altra porta>` di una porta morta resta finche' qualcuno non la chiude (la porta risponde
 `ref_gia_visto` senza seq: mai un secondo ordine, riconciliazione per ref).
 
 Numeri dopo le correzioni: **135 test C1 verdi**; falsificazione **58/58 rosse, 58/58 ripristini sha256**
@@ -265,3 +266,73 @@ Numeri dopo le correzioni: **135 test C1 verdi**; falsificazione **58/58 rosse, 
 della nuova campagna 54/58: M25 e M45 (terminale dopo terminale con lo STESSO abbinato non provato), M28 e M29 (il test del
 paper registrava prima del primo controllo dell'ora, che azzera il contatore come in flumine): test aggiunti/corretti, poi
 rosse.
+
+## 11. Seconda revisione (su `41ea9dcb`): correzioni
+
+Esito della revisione: DA CORREGGERE, con un difetto BLOCCANTE (B). Decisioni del coordinatore applicate senza chiedere altro
+a G1. Prove del revisore in `scratchpad/rev_w1c1_2/` (rilanciate sul codice corretto, risultati sotto). Ogni test nuovo
+e' in `tests/test_c1_revisione.py` (sezione "seconda revisione"), salvo dove indicato.
+
+| Punto | Difetto | Correzione (file:riga) | Test | Mutazione |
+|---|---|---|---|---|
+| **B** (bloccante) | prenotazione con `transizione(t, chiave, "", "riservato:<porta>")` usata come "inserisci se assente": il contratto non la prevede; con l'`ArchivioLocale` VERO di G1 (riga assente -> `False`, colonna `status`) OGNI ordine nuovo usciva `accettato=True, seq=None, "in carico a un'altra porta"` con 0 chiamate a Betfair (ack falso, ordine perso). I miei test passavano perche' il finto faceva cio' che il vero non fa | tolti prenotazione, `_attesa_altrove`, `_padrone`; dedup = memoria + diario + righe `ordini_ref_visti` scritte (`scrivi`) e rilette (`leggi`) dalla porta stessa sotto `_lock_invio` (`porta.py` `_dedup` :459); UNA porta per archivio: registro di processo delle cartelle (`_ARCHIVI_IN_USO`, `_chiave_archivio` :146, controllo nel costruttore :218-222, rilascio in `chiudi` :312-320), seconda porta -> `ArchivioGiaInUso` | `test_ogni_ordine_nuovo_parte_con_la_semantica_vera` (20 ordini nuovi = 20 invii), `test_seconda_porta_sullo_stesso_archivio_rifiutata`, `test_contratto_del_finto_transizione_come_il_vero` | M02, M38, M51, M52 |
+| **B** (finto) | `_ArchivioMemoria` diverso dal vero | riscritto con la semantica di `ArchivioLocale` (W1-G1 `archivio.py:372-435`): `scrivi` = upsert che fonde le colonne, `leggi` = ultima versione o None, `transizione` SOLO su riga esistente con `colonna_stato` (di serie `status`, configurabile) che vale `da`, `cartella` per istanza (`test_c1_porta.py` :52, `transizione` :101) | `test_contratto_del_finto_transizione_come_il_vero` (riga assente -> False, colonna configurabile, fusione) | - |
+| **ACK FALSO** | un ordine dall'esito non certo rispondeva `accettato=True` | `_dedup`: ref ACCETTATO da questa porta -> lo stesso ack (`ref_gia_visto`, idempotenza); ref in volo dopo il riavvio o con esito `ignoto` -> `accettato=False, seq=None, "ref_gia_in_volo: ... riconciliare per ref"` (`M_IN_VOLO`), 0 invii | `test_mai_un_ack_falso` (in volo, ignoto, idempotenza; 0 chiamate), `test_esito_ignoto_mai_ok_mai_ritentato`, `test_riavvio_con_ordine_in_volo` (aggiornati) | M33 |
+| **A6** | `_emetti(tipo="esito")` saltava `_stantio`: lo stream degli ordini arrivato PRIMA della risposta REST veniva sovrascritto (abbinato 4,0 -> parziale 1,0) | `_stantio` anche sugli esiti (`porta.py` `_emetti` :735-739) | `test_esito_del_place_non_sovrascrive_il_flusso_arrivato_prima` (sequenza P2 del revisore) | M48, S10 |
+| **MEMORIA** | `_pota` espelleva anche ref NON terminali (un PERSIST aperto perdeva stato e aggiornamenti) | `_pota_ref` (`porta.py:417`, `_espellibile` :410) espelle solo ref con ordine chiuso (o senza stato e non in volo); tetto pieno di aperti -> si cresce e WARNING; stessa regola nel consumatore (`eventi._pota_eventi`) | `test_un_ordine_aperto_non_si_dimentica` (P1 del revisore, tetto 20), `test_tetto_pieno_di_ordini_aperti_cresce`, `test_memoria_della_porta_limitata`, `test_memoria_del_consumatore_limitata` | M44, M49, M50 |
+| **R9** | mutazione sopravvissuta: `_stantio` tolto da `_rileggi` | test del riavvio con una riga stantia nel diario | `test_riavvio_con_righe_stantie_nel_diario` | S9 |
+| **R6** | mutazione EQUIVALENTE (la riga `inviati.pop` nel ramo `rifiuto` era ridondante: lo stato `rifiutato` gia' toglie il ref dagli in volo) | riga tolta; riformulata come S6 (il rifiuto non registra lo stato `rifiutato`) | `test_archivio_ko_dopo_inviato_chiude_il_ref_nel_diario` | S6 |
+| **LATENZA** | lettura sincrona dell'archivio dentro `_lock_invio` per ogni ordine nuovo | misurata (sotto) | - | - |
+
+**Latenza** (`latenza_archivio_vero.py` in questa cartella: `PortaLocale` sopra l'`ArchivioLocale` VERO di W1-G1 su SQLite
+in file, diario VERO con fsync, esecutore istantaneo, 1.000 ordini; macchina cloud condivisa):
+`invia` di ordini NUOVI p50 1,297 ms, p95 4,489, p99 8,104 (max 25,3); doppioni (dalla memoria) p50 0,012 (p95 0,019) ms;
+la sola `Archivio.leggi` di un ref assente (cio' che la porta aggiunge al motore per ordine) p50 0,014 ms, p95
+0,027 (p99 0,074). Il costo dominante resta il fsync del diario write-ahead, lo stesso del motore di oggi: la lettura
+dell'archivio aggiunge centesimi di millisecondo, ben sotto i "qualche ms" ammessi rispetto al test di latenza logica del
+motore (20 ms). Seconda corsa dello stesso strumento (copia committata, a campagna appena finita, macchina carica): nuovi
+p50 3,814 ms, p95 8,803, p99 11,999; doppioni p50 0,007; `leggi` p50 0,016, p95 0,031: la variabilita' e' tutta del
+fsync, la lettura dell'archivio resta sotto 0,1 ms al p99. **Numero dichiarato**: la porta aggiunge al motore < 0,1 ms per
+ordine nuovo (p99 della `leggi`); l'`invia` intero sta sotto 9 ms al p95 anche sotto carico.
+
+**Prove del revisore rilanciate sul codice corretto**: `b_archivio_vero.py` -> `Ack(accettato=True, seq=..., motivo=None)`,
+1 chiamata a Betfair, `transizione` su riga assente -> False; `p_memoria_race.py` -> P1: `safe-0` resta `parziale` dopo 25
+ordini e la sua notifica `abbinato` passa; P2: stato finale `abbinato 4,0`, un solo evento; `p_malformata.py` -> lato,
+prezzo, importo e selezione malformati rifiutati `parametri_invalidi`, nessuna eccezione.
+
+**All'integrazione** il coordinatore rilancia i test della porta (`test_c1_porta.py`, `test_c1_revisione.py`) contro
+l'`ArchivioLocale` VERO di G1 al posto del finto (il ramo di G1 non e' nel mio). Tabelle LOCALI da registrare in G1
+(regime `stato_denaro`, MAI verso il cloud):
+
+| Tabella | Chiave naturale | Colonne | Scrive / legge |
+|---|---|---|---|
+| `ordini_ref_visti` | `ref` | `ref`, `attore`, `accettato`, `seq`, `motivo`, `ts_ms` | `PortaLocale._registra_ack` / `_rifiuto_dopo_seq` (`scrivi`), `_dedup` (`leggi`) |
+| `ordini_seq` | `chiave` (sempre `"seq"`) | `chiave`, `fino_a` (blocco di seq prenotato) | `_nuovo_seq` (`scrivi`, ogni 1.000 seq), `apri` (`leggi`) |
+
+Nessuna `transizione` e' usata dalla porta.
+
+**sha256 dei file corretti** (quelli che ogni mutazione ripristina, verificati dopo la campagna con `sha256sum -c`, 8/8 OK):
+`porta.py` `c2a615ba3d864cf7ef14273fa6a16507abd129a4328bb06d1860e40e671b0aec`, `eventi.py`
+`ebe614d1ce369d1536f9999df3274dcd1310a69f4f7504430fe11a6289e083ce`; test: `test_c1_porta.py`
+`266a5835dcd1ffed78418e5e22017f89f7922e49929df0084543112e915377ad`, `test_c1_revisione.py`
+`567b6eecd61df942e33d4ba5f554d23b9a56ff0ba0553e300c536c0d4a105c48`. Ogni riga di `falsifica_c1.json` porta lo sha256
+del file ripristinato e il test che l'ha presa.
+
+Nota su M52: nella campagna (pytest `-x` sull'intera cartella) la prima a cadere e' `test_ref_non_valido_non_registrato`,
+per un FALSO POSITIVO della chiave per identita': senza `cartella`, una porta non chiusa e raccolta dal GC lascia la voce e
+un archivio nuovo allo stesso indirizzo viene rifiutato. Il test mirato `test_seconda_porta_sullo_stesso_archivio_rifiutata`
+e' rosso anch'esso (provato a parte: `DID NOT RAISE ArchivioGiaInUso` sul gemello con la stessa cartella, ripristino
+sha256 ok). Residuo dichiarato: un archivio SENZA `cartella` (solo i finti; l'`ArchivioLocale` vero ce l'ha) usa la
+chiave per identita' e un `chiudi` dimenticato puo' dare quel falso positivo, in direzione sicura (rifiuta la porta, mai
+due ordini).
+
+**Numeri**: test C1 **142 verdi**; falsificazione **79/79 rosse, ripristini sha256 79/79**
+(`falsifica_c1.json`, committato: M01-M52, le 11 V della prima revisione, le 16 S della seconda); suite intera (una corsa)
+**11.713 passed, 0 failed**, 87 skipped, 6 xfailed (409 s): questa volta anche il test di latenza del motore
+di oggi (`test_latenza_logica_comando_place_sotto_20_ms`, rosso sotto carico al giro precedente) e' passato.
+
+**Divergenze per l'utente aggiornate**: (13) dopo un riavvio un ref ancora in volo risponde `accettato=False`
+`ref_gia_in_volo` (il motore di oggi rispondeva l'ack del diario, `accettato=True`): un bot che lo leggesse come rifiuto e
+rimandasse con un ref NUOVO creerebbe un secondo ordine; il motivo e' esplicito e il ref va riconciliato (C2). (14) Una porta
+per archivio: due runner (calcio e tennis) devono avere archivi (cartelle) diversi o condividere UNA porta. (15) La memoria
+cresce oltre 5.000 ref se gli ordini APERTI sono tanti (si dice a WARNING): nessun ordine aperto si dimentica.

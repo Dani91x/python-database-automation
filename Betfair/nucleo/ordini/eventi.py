@@ -63,8 +63,18 @@ MAX_REF_IN_MEMORIA = 5000
 
 
 def _pota(d: Dict[str, object], massimo: int = MAX_REF_IN_MEMORIA) -> None:
+    """FIFO (per gli ack)."""
     while len(d) > massimo:
         d.pop(next(iter(d)))
+
+
+def _pota_eventi(d: Dict[str, EventoOrdine], massimo: int = MAX_REF_IN_MEMORIA) -> None:
+    """Espelle i piu' vecchi SOLO se terminali: l'ultimo evento di un ordine aperto resta."""
+    eccesso = len(d) - massimo
+    if eccesso <= 0:
+        return
+    for ref in [k for k, ev in d.items() if terminale(ev)][:eccesso]:
+        del d[ref]
 
 
 def terminale(ev: Optional[EventoOrdine]) -> bool:
@@ -144,7 +154,7 @@ class ConsumatoreEventi:
             return False, buco
         self.eventi.pop(ev.ref, None)
         self.eventi[ev.ref] = ev
-        _pota(self.eventi)
+        _pota_eventi(self.eventi)
         self.conti["eventi"] += 1
         return True, buco
 

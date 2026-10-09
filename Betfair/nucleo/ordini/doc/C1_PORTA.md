@@ -20,7 +20,8 @@ stesso archivio. Sotto, un `Esecutore` iniettato (oggi: il dispatch del runner, 
   `betfair_live_order_requests`, payload della coda tennis `tennis_live_order_queue`.
 - Iniettati: `Esecutore`, `FreniConto` (kill-switch, modo di processo, blocco del modo effettivo, eta' dei settings; quello di
   oggi e' `controlli.FreniDiOggi`), `Archivio` (`nucleo/dati/contratto.py`, tabelle locali `ordini_ref_visti` e
-  `ordini_seq`; `transizione(t, chiave, "", a)` usata come inserisci-se-assente atomico), diario
+  `ordini_seq`, solo `leggi` e `scrivi` con la semantica VERA di G1: nessuna `transizione`; UNA porta per
+  archivio nel processo, la seconda e' rifiutata `ArchivioGiaInUso`), diario
   (`motore_ordini.Diario`), `ContatoreTransazioni`, orologio, verifica della riduzione, guardia d'avvio, fonte della posizione.
 - Eventi consumati: aggiornamenti successivi di un ordine (`PortaLocale.notifica`, dal flusso degli ordini).
 
@@ -29,7 +30,13 @@ stesso archivio. Sotto, un `Esecutore` iniettato (oggi: il dispatch del runner, 
 - `Ack` (accettato/rifiutato, `seq`, motivo con i CODICI del motore: `parametri_invalidi`, `mode_non_servibile`,
   `kill_switch`, `reduces_liability_non_verificabile`, `guardia_avvio`, `settings_stantie`, `comando_scaduto`,
   `diario_non_scrivibile`, `SOTTO_MINIMO_NON_PIAZZABILE`, `ref_gia_visto`; nuovi: `MAX_TRANSACTION_COUNT`,
-  `archivio_non_disponibile`, `azione_composta_sopra_la_porta`, `params_non_serviti`).
+  `archivio_non_disponibile`, `azione_composta_sopra_la_porta`, `params_non_serviti`, `ref_gia_in_volo`).
+  Mai un ack falso: un ref gia' inviato ma dall'esito non certo (in volo dopo il riavvio, oppure `ignoto`) risponde
+  `accettato=False, seq=None, ref_gia_in_volo: ... riconciliare per ref`, 0 invii; un ref ACCETTATO da questa porta
+  risponde lo stesso ack (`ref_gia_visto`, idempotenza).
+- Memoria: oltre 5.000 ref si dimenticano SOLO gli ordini chiusi; se i ref aperti superano il tetto la memoria cresce e lo
+  dice a WARNING (nessun ordine aperto perde stato). Stato monotono anche sull'esito del place (lo stream arrivato prima
+  della risposta REST non viene sovrascritto).
 - `EventoOrdine` per attore: in memoria (500), ai consumatori iscritti (`aggiungi_consumatore`), con `eventi(attore, da_seq)` e
   `da_seq(attore, dal)` (`RispostaDaSeq` con `completo`). Fasi: `FASE_DA_MOTORE` in `esecutori/runner.py`; esito ignoto =
   `ignoto` con `codice_errore="ESITO_IGNOTO"`; tennis: `portata_al_minimo` sull'apertura portata al minimo. Le callback
@@ -52,7 +59,7 @@ Nessun import di supabase, di flumine o di un bot (i bot sono solo ARBITRI nei t
 |---|---|---|---|
 | C-002 | schema del comando, rifiuti identici | `adattatore_comando.richiesta_da_comando` (chiama `valida_comando`) | `test_c1_adattatore_comando.py` (andata e ritorno, piano identico su comandi VERI di Safe, 14 rifiuti identici) |
 | C-003 | ack, `seq` per attore, `da_seq` 500 | `porta.py` `_nuovo_seq` + `_memorizza` (stesso lucchetto), `da_seq`, `eventi`; `eventi.py` | `test_c1_porta.py` (push perso riparato, memoria superata, seq per attore, seq mai indietro); `test_c1_eventi.py` (parita' con `MemoriaComandi`) |
-| C-004 | dedup per ref anche dopo il riavvio e fra due porte | `porta._ref_e_dedup`, `_dedup` (prenotazione), `apri` | `test_c1_porta.py` (stessa vita, riavvio da archivio, riavvio da diario, archivio guasto fail-closed); `test_c1_revisione.py` (due porte, ack fantasma, ignoto dopo il riavvio) |
+| C-004 | dedup per ref anche dopo il riavvio (memoria + diario + righe `ordini_ref_visti` che la porta scrive e rilegge sotto il suo lucchetto; una porta per archivio) | `porta._ref_e_dedup`, `_dedup`, `apri`, registro `_ARCHIVI_IN_USO` | `test_c1_porta.py` (stessa vita, riavvio da archivio, riavvio da diario, archivio guasto fail-closed); `test_c1_revisione.py` (seconda porta rifiutata, ack fantasma, ignoto dopo il riavvio, mai un ack falso, finto = vero) |
 | C-011, C-013 (forma) | riga di coda di Safe, riga del dispatch | `adattatore_comando.riga_coda_da_richiesta` / `richiesta_da_riga_coda` | `test_c1_adattatore_comando.py` (riga VERA di `enqueue_place` con la normalizzazione della RPC; riga = riga del motore) |
 | C-020, C-021, C-028 (decisione) | kill-switch sulle aperture, modo della RIGA | `controlli.controlla` | `test_c1_controlli.py::test_controlla_parita_col_motore` (griglia di 768 casi = `_controlla`); `test_c1_porta.py` |
 | C-022 (rate) | transazioni/ora per CONTO, solo live | `controlli.ContatoreTransazioni` | parita' col control VERO `MaxTransactionCount` e con l'esecuzione VERA di flumine; somma su 3 attori; paper escluso (`test_c1_revisione.py`) |
@@ -93,13 +100,16 @@ di Betfair; client flumine VERI (`clients.BetfairClient`), ordini flumine VERI d
 ## 9. Misure
 
 Nessuna misura di latenza dichiarata come miglioria (la porta e' sincrona e il suo costo dominante e' il fsync del diario, lo
-stesso del motore). Strumento e numeri nel referto par. 4.
+stesso del motore). Strumento e numeri nel referto par. 4; sopra l'`ArchivioLocale` VERO di G1 (1.000 ordini, diario con
+fsync): `invia` di un ordine nuovo p50 1,3 ms, p95 4,5 ms; la lettura dell'archivio che la porta aggiunge p50 0,014 ms
+(referto par. 11).
 
 ## 10. PSB par. 6/7
 
 Sollecitati: par. 6.4 (parziali, FOK, esito ignoto, bet delay sull'orologio della risposta, rifiuto di Betfair, minimo .it e
 punta 0,50, apertura tennis al minimo, eventi in ritardo scartati), 6.6 (concorrenza: un contatore per conto e solo live,
-seq per attore, stesso ref da 8 thread e da 2 porte = 1 ordine, callback che reinvia senza blocco), 6.7 (falsificazione in
+seq per attore, stesso ref da 8 thread = 1 ordine, seconda porta sullo stesso archivio rifiutata, callback che reinvia
+senza blocco), 6.7 (falsificazione in
 `falsifica_c1.py`, numeri nel referto); par. 7 n.1
 (chiavi camelCase lette dalla libreria, mai scritte a mano), n.2 (rifiuto di Betfair letto: `rifiutato`), n.3 (prezzo medio dal
 report, non dal chiesto), n.4 (riconciliazione col ref di piazzamento: il diario lega ref e customerOrderRef VERO), n.7

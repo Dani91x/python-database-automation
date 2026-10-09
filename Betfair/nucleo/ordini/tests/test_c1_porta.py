@@ -50,20 +50,29 @@ class _Orologio:
 
 
 class _ArchivioMemoria:
-    """Il protocollo ``Archivio`` in memoria, con le chiavi naturali delle due tabelle
-    della porta e ``transizione(t, chiave, "", a)`` = inserisci-se-assente ATOMICO (la
-    semantica che la porta chiede a G1). ``guasto_*`` fa sollevare; ``ritardo_lettura_s``
-    simula una lettura che viaggia (fotografia, poi latenza)."""
+    """Il protocollo ``Archivio`` in memoria con la SEMANTICA VERA di ``ArchivioLocale``
+    (W1-G1, ``Betfair/nucleo/dati/archivio.py``): ``scrivi`` = upsert che FONDE le colonne
+    per chiave naturale; ``leggi`` = l'ultima versione o None; ``transizione`` = la
+    ``colonna_stato`` (di serie ``"status"``) passa da ``da`` ad ``a`` SOLO su una riga
+    ESISTENTE che vale ``da``: riga assente -> False (provato da
+    ``test_contratto_del_finto_transizione_come_il_vero``). ``cartella`` come il vero (una
+    per istanza). ``guasto_*`` fa sollevare; ``ritardo_lettura_s`` simula una lettura che
+    viaggia (fotografia, poi latenza)."""
 
     CHIAVI = {PT.TABELLA_REF: ("ref",), getattr(PT, "TABELLA_SEQ", "ordini_seq"): ("chiave",)}
+    _N = 0
 
-    def __init__(self) -> None:
+    def __init__(self, colonna_stato: str = "status") -> None:
         import threading
 
+        _ArchivioMemoria._N += 1
+        self.cartella = f"/finto/archivio-{_ArchivioMemoria._N}"
+        self.colonna_stato = colonna_stato
         self.tabelle: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self.guasto_lettura = False
         self.guasto_scrittura = False
         self.ritardo_lettura_s = 0.0
+        self.letture = 0
         self._lock = threading.Lock()
 
     def _k(self, tabella: str, valori: Mapping[str, Any]) -> str:
@@ -73,10 +82,10 @@ class _ArchivioMemoria:
         if self.guasto_lettura:
             raise OSError("archivio illeggibile")
         with self._lock:
+            self.letture += 1
             riga = self.tabelle.get(tabella, {}).get(self._k(tabella, chiave))
             riga = dict(riga) if riga is not None else None
         if self.ritardo_lettura_s:
-            # la risposta viaggia: chi scrive nel frattempo non e' in questa lettura
             import time
             time.sleep(self.ritardo_lettura_s)
         return riga
@@ -85,20 +94,20 @@ class _ArchivioMemoria:
         if self.guasto_scrittura:
             raise OSError("disco pieno")
         with self._lock:
-            self.tabelle.setdefault(tabella, {})[self._k(tabella, riga)] = dict(riga)
+            t = self.tabelle.setdefault(tabella, {})
+            k = self._k(tabella, riga)
+            t[k] = {**t.get(k, {}), **dict(riga)}         # fusione delle colonne (upsert)
 
     def transizione(self, tabella: str, chiave: Mapping[str, Any], da: str, a: str) -> bool:
         if self.guasto_scrittura:
             raise OSError("disco pieno")
         with self._lock:
             t = self.tabelle.setdefault(tabella, {})
-            k = self._k(tabella, chiave)
-            attuale = t.get(k)
-            if (attuale is None and da == "") or (attuale is not None
-                                                  and attuale.get("stato") == da):
-                t[k] = {**dict(chiave), **(attuale or {}), "stato": a}
-                return True
-            return False
+            riga = t.get(self._k(tabella, chiave))
+            if riga is None or riga.get(self.colonna_stato) != da:
+                return False
+            riga[self.colonna_stato] = a
+            return True
 
 
 class _Freni:
@@ -439,8 +448,9 @@ def test_esito_ignoto_mai_ok_mai_ritentato(tmp_path: Any) -> None:
     ev = list(amb.porta.eventi("safe", a.seq))
     assert [(e.fase, e.codice_errore) for e in ev] == [("ignoto", PT.CODICE_ESITO_IGNOTO)]
     assert len(amb.betfair.chiamate) == 1       # UNA chiamata: nessun ritento
-    b = amb.porta.invia(_r(creato_ms=T0))       # il bot ripete: dedup, nessun ordine
-    assert b.motivo == MO.MOTIVO_REF_GIA_VISTO and len(amb.betfair.chiamate) == 1
+    b = amb.porta.invia(_r(creato_ms=T0))       # il bot ripete: nessun ordine, MAI ok
+    assert (b.accettato, b.seq) == (False, None) and b.motivo.startswith(PT.M_IN_VOLO)
+    assert len(amb.betfair.chiamate) == 1
     assert amb.porta.conti["ignoti"] == 1
 
 
@@ -558,10 +568,13 @@ def test_riavvio_con_ordine_in_volo(tmp_path: Any) -> None:
     prima.esecutore.prima_della_chiamata = _muore
     with pytest.raises(_Crollo):
         prima.porta.invia(_r())
+    prima.porta.chiudi()                         # il processo e' morto: archivio libero
     dopo = _Ambiente(tmp_path, archivio=prima.archivio, orologio=_Orologio(T0 + 1_000))
     assert dopo.porta.in_volo() == ("safe-t1",)
     assert dopo.porta.stato("safe-t1").fase == "ignoto"
-    assert dopo.porta.invia(_r(creato_ms=T0 + 1_000)).motivo == MO.MOTIVO_REF_GIA_VISTO
+    b = dopo.porta.invia(_r(creato_ms=T0 + 1_000))
+    # MAI un ack falso: forse partito, forse no -> accettato=False, riconciliare
+    assert (b.accettato, b.seq) == (False, None) and b.motivo.startswith(PT.M_IN_VOLO)
     assert dopo.betfair.chiamate == []
 
 

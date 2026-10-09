@@ -130,9 +130,10 @@ def test_memoria_del_consumatore_limitata() -> None:
     cons = ConsumatoreEventi("safe")
     for k in range(EV.MAX_REF_IN_MEMORIA + 50):
         cons.ricevi(Ack(ref=f"safe-t{k}", accettato=True, seq=BASE + 2 * k + 1, motivo=None))
-        cons.ricevi(_ev(f"safe-t{k}", BASE + 2 * k + 2, "accettato", 0.0))
+        cons.ricevi(_ev(f"safe-t{k}", BASE + 2 * k + 2, "abbinato" if k else "parziale", 1.0))
     assert len(cons.ack) == EV.MAX_REF_IN_MEMORIA == len(cons.eventi)
-    assert "safe-t0" not in cons.eventi and cons.buchi == 0
+    # si espellono solo i chiusi: l'ordine aperto safe-t0 resta, il chiuso safe-t1 no
+    assert "safe-t0" in cons.eventi and "safe-t1" not in cons.eventi and cons.buchi == 0
 
 
 class _Sorgente:

@@ -92,6 +92,7 @@ def test_params_arrivano_al_dispatch_vero(tmp_path: Any, monkeypatch: Any) -> No
     fl, market = TR._framework()
     es = EsecutoreRunner(fl, {"live": TR._STRAT_LIVE, "paper": TR._STRAT_PAPER})
     amb = _Ambiente(tmp_path)
+    amb.porta.chiudi()                     # questa prova usa la porta sopra l'esecutore vero
     porta = PT.PortaLocale(es, freni=amb.freni, archivio=amb.archivio, diario=amb.diario,
                            orologio_ms=amb.orologio)
     porta._giorni = lambda: [GIORNO]  # type: ignore[method-assign]
@@ -154,6 +155,7 @@ def test_crash_fra_diario_e_archivio_nessun_ack_fantasma(tmp_path: Any) -> None:
     with pytest.raises(_Crollo):
         prima.porta.invia(_r())
     assert prima.betfair.chiamate == []
+    prima.porta.chiudi()
     dopo = _Ambiente(tmp_path, archivio=prima.archivio, orologio=_Orologio(T0 + 1_000))
     b = dopo.porta.invia(_r(creato_ms=T0 + 1_000))
     fantasma = b.accettato and dopo.porta.in_volo() == () and dopo.porta.stato("safe-t1") is None
@@ -182,6 +184,7 @@ def test_ignoto_resta_da_riconciliare_dopo_il_riavvio(tmp_path: Any) -> None:
     prima = _Ambiente(tmp_path)
     prima.betfair.piano = [TimeoutError("timeout dopo placeOrders")]
     prima.porta.invia(_r())
+    prima.porta.chiudi()
     dopo = _Ambiente(tmp_path, archivio=prima.archivio, orologio=_Orologio(T0 + 1_000))
     assert dopo.porta.stato("safe-t1").fase == "ignoto"
     assert dopo.porta.in_volo() == ("safe-t1",)
@@ -285,25 +288,24 @@ def test_da_seq_non_dichiara_visto_un_seq_non_ancora_in_memoria(tmp_path: Any) -
 
 
 # ---------------------------------------------------------------- 8. due porte, un archivio
-def test_due_porte_sullo_stesso_archivio_un_solo_ordine(tmp_path: Any) -> None:
+def test_seconda_porta_sullo_stesso_archivio_rifiutata(tmp_path: Any) -> None:
+    """Decisione del coordinatore: una porta per archivio. Fra processi c'e' il lucchetto
+    esclusivo della cartella (W1-G1); nello stesso processo la seconda e' una
+    misconfigurazione, rifiutata alla costruzione."""
     arc = _ArchivioMemoria()
-    arc.ritardo_lettura_s = 0.05
     a1 = _Ambiente(tmp_path, archivio=arc, cartella="d1")
-    a2 = _Ambiente(tmp_path, archivio=arc, cartella="d2")
-    via = threading.Barrier(2)
-    out: List[Ack] = []
-
-    def _m(a: Any) -> None:
-        via.wait()
-        out.append(a.porta.invia(_r()))
-
-    th = [threading.Thread(target=_m, args=(a,)) for a in (a1, a2)]
-    for t in th:
-        t.start()
-    for t in th:
-        t.join(10)
-    assert len(a1.betfair.chiamate) + len(a2.betfair.chiamate) == 1
-    assert sum((x.motivo or "").startswith(MO.MOTIVO_REF_GIA_VISTO) for x in out) == 1
+    with pytest.raises(PT.ArchivioGiaInUso):
+        _Ambiente(tmp_path, archivio=arc, cartella="d2")
+    a1.porta.invia(_r())
+    a1.porta.chiudi()                                    # liberato: si puo' riaprire
+    a3 = _Ambiente(tmp_path, archivio=arc, cartella="d3", orologio=_Orologio(T0 + 10))
+    b = a3.porta.invia(_r(creato_ms=T0 + 10))
+    assert b.motivo == MO.MOTIVO_REF_GIA_VISTO and b.accettato and a3.betfair.chiamate == []
+    # lo stesso archivio vero ha la stessa cartella anche se e' un altro oggetto
+    gemello = _ArchivioMemoria()
+    gemello.cartella = arc.cartella
+    with pytest.raises(PT.ArchivioGiaInUso):
+        _Ambiente(tmp_path, archivio=gemello, cartella="d4")
 
 
 # ---------------------------------------------------------------- 9. tennis (implementato)
@@ -372,6 +374,7 @@ def test_replace_con_riduce_non_scavalca_il_kill_switch(tmp_path: Any) -> None:
 def test_seq_dopo_il_riavvio_con_orologio_indietro(tmp_path: Any) -> None:
     prima = _Ambiente(tmp_path)
     a = prima.porta.invia(_r(ref="safe-t1"))
+    prima.porta.chiudi()
     dopo = _Ambiente(tmp_path, cartella="d2", archivio=prima.archivio,
                      orologio=_Orologio(T0 - 5_000))
     b = dopo.porta.invia(_r(ref="safe-t2", creato_ms=T0 - 5_000))
@@ -381,6 +384,7 @@ def test_seq_dopo_il_riavvio_con_orologio_indietro(tmp_path: Any) -> None:
 def test_memoria_della_porta_limitata(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(PT, "MAX_IN_MEMORIA", 10)
     amb = _Ambiente(tmp_path)
+    amb.betfair.piano = ["EXECUTION_COMPLETE"] * 30         # ordini CHIUSI: si possono dimenticare
     for i in range(30):
         amb.porta.invia(_r(ref=f"safe-t{i}"))
     p = amb.porta
@@ -447,3 +451,119 @@ def test_notifica_di_un_ref_sconosciuto_ignorata(tmp_path: Any) -> None:
     amb.porta.aggiungi_consumatore("safe", cons.ricevi)
     assert amb.porta.notifica(_parz(1.0, ref="safe-t99")) is None
     assert amb.porta.stato("safe-t99") is None and amb.porta._memoria == {}
+
+
+# ---------------------------------------------------------------- seconda revisione (41ea9dcb)
+def test_contratto_del_finto_transizione_come_il_vero() -> None:
+    """Il finto fa ESATTAMENTE cio' che fa ``ArchivioLocale.transizione`` di W1-G1: riga
+    assente -> False; colonna di stato configurabile (di serie ``status``); scrivi fonde."""
+    a = _ArchivioMemoria()
+    assert a.transizione(PT.TABELLA_REF, {"ref": "safe-x"}, "", "qualsiasi") is False
+    assert a.leggi(PT.TABELLA_REF, {"ref": "safe-x"}) is None
+    a.scrivi(PT.TABELLA_REF, {"ref": "safe-x", "status": "aperto", "seq": 1})
+    a.scrivi(PT.TABELLA_REF, {"ref": "safe-x", "motivo": "m"})
+    assert a.leggi(PT.TABELLA_REF, {"ref": "safe-x"}) == {"ref": "safe-x", "status": "aperto",
+                                                          "seq": 1, "motivo": "m"}
+    assert a.transizione(PT.TABELLA_REF, {"ref": "safe-x"}, "altro", "chiuso") is False
+    assert a.transizione(PT.TABELLA_REF, {"ref": "safe-x"}, "aperto", "chiuso") is True
+    b = _ArchivioMemoria(colonna_stato="stato")
+    b.scrivi(PT.TABELLA_REF, {"ref": "r", "stato": "x", "status": "y"})
+    assert b.transizione(PT.TABELLA_REF, {"ref": "r"}, "y", "z") is False
+    assert b.transizione(PT.TABELLA_REF, {"ref": "r"}, "x", "z") is True
+
+
+def test_ogni_ordine_nuovo_parte_con_la_semantica_vera(tmp_path: Any) -> None:
+    """Il difetto bloccante della seconda revisione: con l'archivio vero ogni ordine nuovo
+    usciva 'in carico a un'altra porta' con 0 chiamate. Ora: 20 ordini nuovi, 20 invii."""
+    amb = _Ambiente(tmp_path)
+    for i in range(20):
+        a = amb.porta.invia(_r(ref=f"safe-n{i}"))
+        assert a.accettato and a.seq is not None and a.motivo is None
+    assert len(amb.betfair.chiamate) == 20
+
+
+def test_mai_un_ack_falso(tmp_path: Any) -> None:
+    """Un ordine mai inviato (o dall'esito non certo) non risponde MAI accettato=True."""
+    amb = _Ambiente(tmp_path)
+    # 1. in volo dopo il riavvio
+    amb.esecutore.prima_della_chiamata = lambda _r: (_ for _ in ()).throw(_Crollo())
+    with pytest.raises(_Crollo):
+        amb.porta.invia(_r(ref="safe-v1"))
+    amb.porta.chiudi()
+    dopo = _Ambiente(tmp_path, archivio=amb.archivio, orologio=_Orologio(T0 + 1_000))
+    a = dopo.porta.invia(_r(ref="safe-v1", creato_ms=T0 + 1_000))
+    assert (a.accettato, a.seq) == (False, None) and a.motivo.startswith(PT.M_IN_VOLO)
+    # 2. esito ignoto nella stessa vita
+    dopo.betfair.piano = [TimeoutError("timeout")]
+    dopo.porta.invia(_r(ref="safe-v2", creato_ms=T0 + 1_000))
+    b = dopo.porta.invia(_r(ref="safe-v2", creato_ms=T0 + 1_000))
+    assert (b.accettato, b.seq) == (False, None) and b.motivo.startswith(PT.M_IN_VOLO)
+    assert len(dopo.betfair.chiamate) == 1                     # solo il primo safe-v2
+    # 3. idempotenza: un ref ACCETTATO da questa porta risponde lo stesso ack
+    c1 = dopo.porta.invia(_r(ref="safe-v3", creato_ms=T0 + 1_000))
+    c2 = dopo.porta.invia(_r(ref="safe-v3", creato_ms=T0 + 1_000))
+    assert (c2.accettato, c2.seq, c2.motivo) == (True, c1.seq, MO.MOTIVO_REF_GIA_VISTO)
+    assert len(dopo.betfair.chiamate) == 2
+
+
+def test_esito_del_place_non_sovrascrive_il_flusso_arrivato_prima(tmp_path: Any) -> None:
+    """P2 del revisore: lo stream degli ordini (abbinato 4,0) arriva PRIMA della risposta
+    REST del place (parziale 1,0): lo stato resta abbinato 4,0."""
+    amb = _Ambiente(tmp_path)
+    amb.betfair.piano = ["PARZIALE"]
+
+    def _prima(r: Any) -> None:
+        amb.porta.notifica(EventoOrdine(ref=r.ref, seq=0, fase="abbinato", bet_id="b1",
+                                        abbinato=4.0, residuo=0.0, prezzo_medio=2.5,
+                                        codice_errore=None, esito_ms=None))
+
+    amb.esecutore.prima_della_chiamata = _prima
+    a = amb.porta.invia(_r(ref="safe-p2", time_in_force=None, persistenza="PERSIST"))
+    st = amb.porta.stato("safe-p2")
+    assert (st.fase, st.abbinato, st.residuo) == ("abbinato", 4.0, 0.0)
+    assert [(e.fase, e.abbinato) for e in amb.porta.eventi("safe", a.seq)] == [("abbinato", 4.0)]
+
+
+def test_un_ordine_aperto_non_si_dimentica(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """P1 del revisore (tetto 20): un PERSIST ancora aperto resta in memoria oltre il tetto
+    e i suoi aggiornamenti arrivano; si dimenticano solo gli ordini chiusi."""
+    monkeypatch.setattr(PT, "MAX_IN_MEMORIA", 20)
+    amb = _Ambiente(tmp_path)
+    amb.betfair.piano = ["PARZIALE"] + ["EXECUTION_COMPLETE"] * 40
+    amb.porta.invia(_r(ref="safe-0", time_in_force=None, persistenza="PERSIST"))
+    for i in range(1, 41):
+        amb.orologio.ms += 1
+        amb.porta.invia(_r(ref=f"safe-{i}", creato_ms=amb.orologio.ms))
+    assert amb.porta.stato("safe-0").fase == "parziale"
+    fine = amb.porta.notifica(EventoOrdine(ref="safe-0", seq=0, fase="abbinato", bet_id="x",
+                                           abbinato=4.0, residuo=0.0, prezzo_medio=2.5,
+                                           codice_errore=None, esito_ms=None))
+    assert fine is not None and amb.porta.stato("safe-0").fase == "abbinato"
+    assert len(amb.porta._stati) <= 21 and len(amb.porta._attore_di_ref) <= 21
+
+
+def test_tetto_pieno_di_ordini_aperti_cresce(tmp_path: Any, monkeypatch: pytest.MonkeyPatch,
+                                            caplog: pytest.LogCaptureFixture) -> None:
+    monkeypatch.setattr(PT, "MAX_IN_MEMORIA", 5)
+    amb = _Ambiente(tmp_path)
+    amb.betfair.piano = ["EXECUTABLE"] * 12
+    for i in range(12):
+        amb.porta.invia(_r(ref=f"safe-a{i}", time_in_force=None, persistenza="PERSIST"))
+    assert len(amb.porta._stati) == 12                         # nessun aperto dimenticato
+    assert any("APERTI oltre il tetto" in r.getMessage() for r in caplog.records)
+
+
+def test_riavvio_con_righe_stantie_nel_diario(tmp_path: Any) -> None:
+    """R9: al riavvio un evento piu' vecchio (abbinato che cala) scritto nel diario dopo
+    quello buono non fa regredire lo stato."""
+    prima = _Ambiente(tmp_path)
+    prima.betfair.piano = ["EXECUTABLE"]
+    prima.porta.invia(_r(time_in_force=None))
+    prima.porta.notifica(_parz(3.0))
+    stantio = _parz(1.0)
+    prima.diario.scrivi({"tipo": "evento", "ref": "safe-t1", "ts_ms": T0,
+                         "evento": dict(stantio.__dict__, seq=prima.porta._seq["safe"] + 1)})
+    prima.porta.chiudi()
+    dopo = _Ambiente(tmp_path, archivio=prima.archivio, orologio=_Orologio(T0 + 1_000))
+    st = dopo.porta.stato("safe-t1")
+    assert (st.fase, st.abbinato) == ("parziale", 3.0)

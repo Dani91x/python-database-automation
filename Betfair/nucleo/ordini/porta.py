@@ -9,14 +9,18 @@ docstring) e nello stesso ordine:
 
   1. il ``ref`` e' ``"<attore>-<id>"`` di al massimo 32 caratteri, l'attore e' ammesso;
      altrimenti rifiuto NON registrato (senza seq, senza dedup), come il motore;
-  2. DEDUP per ``ref``: lo stesso ref = la stessa richiesta, mai un secondo invio; la
-     risposta e' l'ack della PRIMA volta con motivo ``ref_gia_visto``. Vale per tutta la
-     vita del processo (ben oltre i 60 s di Betfair) e SOPRAVVIVE al riavvio tramite
-     l'``Archivio`` iniettato (tabella locale ``TABELLA_REF``) e il diario. Fra DUE porte
-     sullo stesso archivio il ref si PRENOTA con ``Archivio.transizione(TABELLA_REF,
-     {"ref": ref}, "", "riservato:<porta>")`` (inserisci-se-assente atomico: estensione
-     chiesta a G1, referto par. 2): una sola porta lo esegue; la prenotazione orfana di
-     QUESTA porta (stesso diario, crash prima del diario) si riprende;
+  2. DEDUP per ``ref``: lo stesso ref = la stessa richiesta, mai un secondo invio. Vale
+     per tutta la vita del processo (ben oltre i 60 s di Betfair, che a monte deduplica il
+     customerRef) e SOPRAVVIVE al riavvio: memoria, diario e le righe ``TABELLA_REF`` che la
+     porta scrive (``Archivio.scrivi``) e rilegge (``Archivio.leggi``) sotto il suo
+     lucchetto: SOLO le primitive del contratto, con la loro semantica vera. UNA porta per
+     archivio: l'archivio locale ha un lucchetto esclusivo per cartella (un solo processo
+     lo apre, W1-G1) e una seconda ``PortaLocale`` nello stesso processo sullo stesso
+     archivio e' rifiutata alla costruzione (``ArchivioGiaInUso``). MAI un ack falso: un
+     ordine mai inviato non risponde mai ``accettato=True``. Il ref gia' ACCETTATO da
+     questa porta risponde lo stesso ack (idempotenza, ``ref_gia_visto``); un ref ancora
+     in volo o con esito ignoto risponde ``accettato=False`` ``ref_gia_in_volo``
+     (riconciliare per ref, nessun invio);
   3. validazione con ``valida_comando`` di oggi (via ``adattatore_comando``); i ``params``
      del bot arrivano all'esecutore che li dichiara (``accetta_params``), altrimenti la
      richiesta e' RIFIUTATA (``params_non_serviti``): un cap che sparisce in silenzio no;
@@ -40,8 +44,10 @@ docstring) e nello stesso ordine:
   9. un esito IGNOTO (eccezione o timeout dell'esecutore) e' l'evento ``ignoto``: MAI
      trasformato in ``accettato``/``abbinato``, MAI ritentato; un ref ``ignoto`` resta
      ``in_volo`` anche dopo il riavvio finche' un evento vero non lo risolve;
- 10. stato MONOTONO per ref: un terminale non si sovrascrive, l'abbinato non cala (un
-     evento in ritardo si scarta: ordini e mercato arrivano su due sistemi senza ordine).
+ 10. stato MONOTONO per ref, per gli eventi E per l'esito del place (il flusso degli ordini
+     puo' arrivare PRIMA della risposta REST): un terminale non si sovrascrive, l'abbinato
+     non cala; la memoria per ref espelle SOLO ordini chiusi (un ordine aperto non si
+     dimentica: oltre il tetto si cresce e si dice).
 
 I consumatori iscritti ricevono i messaggi FUORI da ogni lucchetto (coda di consegna): un
 consumatore puo' chiamare ``invia`` dalla sua callback senza bloccare nulla.
@@ -77,8 +83,6 @@ logger = logging.getLogger(__name__)
 TABELLA_REF = "ordini_ref_visti"
 #: la tabella LOCALE con il blocco di seq prenotato (chiave: ``chiave="seq"``)
 TABELLA_SEQ = "ordini_seq"
-STATO_RISERVATO = "riservato"
-STATO_ACK = "ack"
 BLOCCO_SEQ = 1000
 MAX_REF = 32
 MEMORIA_EVENTI = 500
@@ -94,7 +98,9 @@ M_ARCHIVIO = "archivio_non_disponibile"
 M_COMPOSTA = "azione_composta_sopra_la_porta"
 M_PARAMS = "params_non_serviti"
 #: un ref prenotato da un'ALTRA porta sullo stesso archivio, senza ack entro l'attesa
-MOTIVO_IN_CARICO_ALTROVE = "in carico a un'altra porta: esito da riconciliare per ref"
+#: un ref gia' inviato con esito non certo (in volo dopo un riavvio, o ignoto): nessun
+#: invio, ``accettato=False``, si riconcilia per ref
+M_IN_VOLO = "ref_gia_in_volo"
 _EPS = 1e-9
 
 
@@ -123,8 +129,24 @@ def _codice_betfair(codice: Optional[str]) -> bool:
 
 
 def _ack_in_riga(ack: Ack, attore: str, ts_ms: int) -> Dict[str, Any]:
-    return {"ref": ack.ref, "stato": STATO_ACK, "attore": attore, "accettato": ack.accettato,
-            "seq": ack.seq, "motivo": ack.motivo, "ts_ms": ts_ms}
+    """La riga di ``TABELLA_REF`` (chiave ``ref``): l'ack dato la prima volta."""
+    return {"ref": ack.ref, "attore": attore, "accettato": ack.accettato, "seq": ack.seq,
+            "motivo": ack.motivo, "ts_ms": ts_ms}
+
+
+class ArchivioGiaInUso(RuntimeError):
+    """Una seconda ``PortaLocale`` nello stesso processo sullo stesso archivio."""
+
+
+#: le cartelle d'archivio con una porta aperta in QUESTO processo (registro di processo)
+_ARCHIVI_IN_USO: Dict[str, int] = {}
+_LOCK_ARCHIVI = threading.Lock()
+
+
+def _chiave_archivio(archivio: Any) -> str:
+    """La cartella dell'archivio (``ArchivioLocale.cartella``), o l'identita' dell'oggetto."""
+    cartella = getattr(archivio, "cartella", None)
+    return f"cartella:{cartella}" if cartella is not None else f"oggetto:{id(archivio)}"
 
 
 def _ack_da_riga(riga: Mapping[str, Any]) -> Ack:
@@ -143,9 +165,9 @@ def _stantio(prima: Optional[StatoOrdine], ev: EventoOrdine) -> bool:
     return float(ev.abbinato) < float(prima.abbinato) - _EPS
 
 
-def _pota(d: "collections.OrderedDict[Any, Any]", massimo: Optional[int] = None) -> None:
-    limite = MAX_IN_MEMORIA if massimo is None else massimo
-    while len(d) > limite:
+def _pota(d: "collections.OrderedDict[Any, Any]", massimo: int) -> None:
+    """Potatura FIFO (solo per strutture che non sono stato di ordini aperti)."""
+    while len(d) > massimo:
         d.popitem(last=False)
 
 
@@ -165,9 +187,7 @@ class PortaLocale:
                  riduzione_verificata: Optional[Callable[[RichiestaOrdine], bool]] = None,
                  guardia_armata: Callable[[], bool] = lambda: False,
                  fonte_posizione: Optional[Callable[[str, Optional[int]], PosizioneConto]] = None,
-                 memoria_eventi: int = MEMORIA_EVENTI,
-                 attesa_altrove_s: float = 0.5,
-                 dormi: Callable[[float], None] = time.sleep) -> None:
+                 memoria_eventi: int = MEMORIA_EVENTI) -> None:
         self._esecutore = esecutore
         self._freni = freni
         self._archivio = archivio
@@ -185,17 +205,21 @@ class PortaLocale:
         self._guardia_armata = guardia_armata
         self._fonte_posizione = fonte_posizione
         self._memoria_max = int(memoria_eventi)
-        self._attesa_altrove_s = float(attesa_altrove_s)
-        self._dormi = dormi
         self._lock = threading.RLock()
         self._lock_invio = threading.Lock()
         self._lock_consegna = threading.Lock()
         self._da_consegnare: Deque[Tuple[str, Messaggio]] = collections.deque()
         self._base_seq = int(orologio_ms())
         self._seq_riservato = 0
-        # chi PRENOTA i ref nell'archivio: il diario identifica la porta (stesso diario
-        # dopo un riavvio = stessa porta; due porte vive = due diari)
-        self._padrone = f"{STATO_RISERVATO}:{getattr(diario, 'cartella', None) or id(self)}"
+        self._soglia_avviso = 0
+        # UNA porta per archivio nel processo (fra processi: il lucchetto di W1-G1)
+        self._chiave_archivio = _chiave_archivio(archivio)
+        with _LOCK_ARCHIVI:
+            if self._chiave_archivio in _ARCHIVI_IN_USO:
+                raise ArchivioGiaInUso(
+                    f"misconfigurazione: l'archivio {self._chiave_archivio} ha gia' una "
+                    f"PortaLocale aperta in questo processo (una porta per archivio)")
+            _ARCHIVI_IN_USO[self._chiave_archivio] = id(self)
         self._seq: Dict[str, int] = {}
         self._memoria: Dict[str, Deque[Messaggio]] = {}
         self._visti: "collections.OrderedDict[str, Ack]" = collections.OrderedDict()
@@ -259,7 +283,7 @@ class PortaLocale:
             if tipo == "inviato":
                 inviati[ref] = rec
             elif tipo == "rifiuto":
-                inviati.pop(ref, None)                   # chiuso: nulla e' partito
+                # chiuso: nulla e' partito (lo stato 'rifiutato' lo toglie dagli in volo)
                 self._stati[ref] = StatoOrdine(ref=ref, bet_id=None, fase="rifiutato",
                                                abbinato=0.0, residuo=0.0, prezzo_medio=None,
                                                ultimo_seq=int((ack or {}).get("seq") or 0))
@@ -286,10 +310,14 @@ class PortaLocale:
         return massimo
 
     def chiudi(self) -> None:
+        """Chiude il diario e libera l'archivio (un'altra porta potra' aprirlo)."""
         try:
             self._diario.chiudi()
         except Exception as ex:  # noqa: BLE001
             logger.error("[porta] chiusura del diario KO: %s", str(ex)[:200])
+        with _LOCK_ARCHIVI:
+            if _ARCHIVI_IN_USO.get(self._chiave_archivio) == id(self):
+                del _ARCHIVI_IN_USO[self._chiave_archivio]
 
     def in_volo(self) -> Tuple[str, ...]:
         """I ref inviati e senza esito certo al riavvio: li riconcilia C2, mai un reinvio."""
@@ -377,7 +405,32 @@ class PortaLocale:
             abbinato=float(ev.abbinato), residuo=float(ev.residuo),
             prezzo_medio=ev.prezzo_medio, ultimo_seq=int(ev.seq))
         self._stati.move_to_end(ev.ref)
-        _pota(self._stati)
+        self._pota_ref(self._stati)
+
+    def _espellibile(self, ref: str) -> bool:
+        """Un ref si puo' dimenticare solo se il suo ordine e' CHIUSO (o non ha stato:
+        visto solo nell'archivio). Un ordine aperto (PERSIST a riposo) MAI."""
+        st = self._stati.get(ref)
+        return (st is None and ref not in self._in_volo) or \
+            (st is not None and st.fase in FASI_TERMINALI)
+
+    def _pota_ref(self, d: "collections.OrderedDict[str, Any]") -> None:
+        """Con ``_lock`` tenuto: oltre ``MAX_IN_MEMORIA`` espelle i ref piu' vecchi CHIUSI;
+        se il tetto e' pieno di ordini aperti cresce e lo dice (WARNING)."""
+        eccesso = len(d) - MAX_IN_MEMORIA
+        if eccesso <= 0:
+            return
+        for ref in list(d.keys()):
+            if eccesso <= 0:
+                break
+            if self._espellibile(ref):
+                del d[ref]
+                eccesso -= 1
+        if eccesso > 0 and len(d) > self._soglia_avviso:
+            self._soglia_avviso = len(d) + MAX_IN_MEMORIA // 10
+            logger.warning("[porta] %d ref ancora APERTI oltre il tetto di %d in memoria: "
+                           "si cresce (nessun ordine aperto si dimentica)", len(d),
+                           MAX_IN_MEMORIA)
 
     def stato(self, ref: str) -> Optional[StatoOrdine]:
         with self._lock:
@@ -394,8 +447,8 @@ class PortaLocale:
         """Ack nel dedup in RAM (con ``_lock`` tenuto)."""
         self._visti[ack.ref] = ack
         self._attore_di_ref[ack.ref] = attore
-        _pota(self._visti)
-        _pota(self._attore_di_ref)
+        self._pota_ref(self._visti)
+        self._pota_ref(self._attore_di_ref)
 
     def _registra_ack(self, attore: str, ack: Ack) -> None:
         """Ack nel dedup: RAM e archivio (persistente). Un errore dell'archivio SALE."""
@@ -403,48 +456,26 @@ class PortaLocale:
             self._ricorda(attore, ack)
         self._archivio.scrivi(TABELLA_REF, _ack_in_riga(ack, attore, int(self._ora_ms())))
 
-    def _dall_archivio(self, ref: str) -> Optional[Mapping[str, Any]]:
-        return self._archivio.leggi(TABELLA_REF, {"ref": ref})
-
-    def _attesa_altrove(self, ref: str) -> Ack:
-        """Il ref e' prenotato da un'altra porta: si aspetta il suo ack (breve), mai un
-        secondo invio. Senza ack: accettato senza seq, esito da riconciliare per ref."""
-        M = _motore()
-        fine = time.monotonic() + self._attesa_altrove_s
-        while True:
-            riga = self._dall_archivio(ref)
-            if riga is not None and riga.get("stato") == STATO_ACK:
-                return dataclasses.replace(_ack_da_riga(riga), motivo=M.MOTIVO_REF_GIA_VISTO)
-            if time.monotonic() >= fine:
-                return Ack(ref=ref, accettato=True, seq=None,
-                           motivo=f"{M.MOTIVO_REF_GIA_VISTO}: {MOTIVO_IN_CARICO_ALTROVE}")
-            self._dormi(0.02)
-
     def _dedup(self, ref: str) -> Optional[Ack]:
-        """L'ack di un ref gia' visto (RAM, archivio, prenotazione di un'altra porta), o
-        None dopo aver PRENOTATO il ref per questa porta. Solleva se l'archivio non
-        risponde (il chiamante rifiuta: fail-closed)."""
+        """La risposta a un ref gia' visto, o None se nuovo. Fonti: memoria, poi la riga
+        che QUESTA porta ha scritto nell'archivio (``leggi``). Solleva se l'archivio non
+        risponde (il chiamante rifiuta: fail-closed). MAI ``accettato=True`` per un ordine
+        il cui esito non e' noto: in volo o ignoto -> ``ref_gia_in_volo``."""
         M = _motore()
         with self._lock:
             ack = self._visti.get(ref)
-        if ack is not None:
-            return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO)
-        riga = self._dall_archivio(ref)
-        if riga is None:
-            if self._archivio.transizione(TABELLA_REF, {"ref": ref}, "", self._padrone):
+            in_volo = ref in self._in_volo
+            st = self._stati.get(ref)
+        if ack is None:
+            riga = self._archivio.leggi(TABELLA_REF, {"ref": ref})
+            if riga is None:
                 return None
-            riga = self._dall_archivio(ref)
-        if riga is not None and riga.get("stato") == self._padrone:
-            # prenotato da QUESTA porta in una vita precedente e mai arrivato al diario
-            # (il diario e' scritto PRIMA di ogni invio e qui non c'e'): nulla e' partito
-            logger.warning("[porta] %s: prenotazione orfana di questa porta ripresa", ref)
-            return None
-        if riga is not None and riga.get("stato") == STATO_ACK:
             ack = _ack_da_riga(riga)
-            with self._lock:
-                self._ricorda(str(riga.get("attore") or ""), ack)
-            return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO)
-        return self._attesa_altrove(ref)
+        if ack.accettato and (in_volo or (st is not None and st.fase == "ignoto")):
+            return Ack(ref=ref, accettato=False, seq=None,
+                       motivo=f"{M_IN_VOLO}: gia' inviato, esito non certo: riconciliare per "
+                              f"ref (nessun nuovo invio)")
+        return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO)
 
     # --------------------------------------------------------------- l'invio
     def _rifiuto_non_registrato(self, ref: str, motivo: str) -> Ack:
@@ -471,7 +502,7 @@ class PortaLocale:
             self._stati[r.ref] = StatoOrdine(ref=r.ref, bet_id=None, fase="rifiutato",
                                              abbinato=0.0, residuo=0.0, prezzo_medio=None,
                                              ultimo_seq=seq)
-            _pota(self._stati)
+            self._pota_ref(self._stati)
             self._memorizza(r.attore, ack)
         return ack
 
@@ -591,10 +622,10 @@ class PortaLocale:
                     r, Ack(ref=ref, accettato=False, seq=seq,
                            motivo=f"{M_ARCHIVIO}: {str(ex)[:160]}"), chiudi_diario=True)
             self._richieste[ref] = da_eseguire
-            _pota(self._richieste)
+            self._pota_ref(self._richieste)
             if extra_eventi:
                 self._extra_eventi[ref] = extra_eventi
-                _pota(self._extra_eventi)
+                self._pota_ref(self._extra_eventi)
             self.conti["accettate"] += 1
             self._memorizza(r.attore, ack)
         return ack
@@ -705,7 +736,8 @@ class PortaLocale:
         """Seq, diario (durevole), stato e memoria nella STESSA sezione di lucchetto. Un
         evento successivo (``tipo="evento"``) che farebbe regredire lo stato si scarta."""
         with self._lock:
-            if tipo == "evento" and _stantio(self._stati.get(ev.ref), ev):
+            if _stantio(self._stati.get(ev.ref), ev):
+                # anche l'ESITO del place: il flusso degli ordini puo' averlo preceduto
                 self.conti["stantii"] += 1
                 logger.info("[porta] %s: evento %s scartato (stato gia' %s)", ev.ref, ev.fase,
                             self._stati[ev.ref].fase)
