@@ -26,6 +26,7 @@ from Betfair.omega import omega_db as _real_db
 from Betfair.omega import omega_market as _real_market
 from Betfair.omega import porta_ordini as _PO
 from Betfair.stream import arresto_ordinato as _AO  # 28/09 (cantiere K): spegnimento ordinato
+from Betfair.monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
 from Betfair.stream import avvio_app as AA
 from Betfair.stream import esiti_ordini_canale as _EO
 from Betfair.stream import local_channel as _lc
@@ -3589,6 +3590,10 @@ def _flumine_enqueue_place(*, db, trade_id: int, event_id: str, market_id: str,
         "persistence": "LAPSE",
         "params": {"source": "omega", "trade_id": int(trade_id)},
     }
+    if _mon.ATTIVO:
+        # 09/10 (T0A "Salute"): ``emesso_ms`` additivo per ``tempi_ordine``
+        # (tratto ``decisione_ms``); nessuno lo legge per decidere
+        _mon.marca_emesso(payload["params"])
     # FOK VERO in LIVE e in PAPER (cantiere C, 28/09, R8): in live e' Betfair a
     # uccidere il residuo non matchato; in paper lo stesso campo arriva al
     # client simulato di flumine, che applica la stessa regola (tutto o
@@ -9140,6 +9145,9 @@ def main() -> None:
         logger.error("[omega] un'altra istanza è già in esecuzione (porta %s) — esco.", _SINGLE_INSTANCE_PORT)
         return
     logger.info("[omega] servizio avviato")
+    # 09/10 (T0A "Salute"): acceso solo con MONITOR_SALUTE=1 (di serie spento)
+    from Betfair.monitor import sonde as _mon
+    _mon.avvia("omega-service", sport="calcio")
     # 02/10/2026 (R1): SIGTERM/SIGBREAK escono dal ciclo come Ctrl-C, cosi' passano
     # dall'arresto ordinato
     from Betfair.safe_strategy import arresto_bot as _AB

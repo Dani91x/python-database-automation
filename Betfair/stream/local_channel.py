@@ -31,6 +31,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Optional
 from urllib.parse import parse_qs, urlsplit
 
+from ..monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
+
 logger = logging.getLogger(__name__)
 
 _ALLOWED_METHODS = frozenset({"order", "snapshot", "board_mercato"})
@@ -190,6 +192,10 @@ class LocalRequest:
     msg_id: Any
     method: str
     params: Dict[str, Any] = field(default_factory=dict)
+    # 09/10 (T0A "Salute"): istante d'arrivo sul canale (ms, orologio da parete),
+    # ADDITIVO e scritto solo a monitor acceso (0 = non misurato). Serve alla
+    # misura dell'attesa in coda (``pop_requests``); nessuno lo legge per decidere.
+    ricevuto_ms: int = 0
 
 
 @dataclass
@@ -443,7 +449,8 @@ class LocalChannel:
                 return
             self._requests.put_nowait(
                 LocalRequest(ws=ws, msg_id=msg_id, method=method,
-                             params=params if isinstance(params, dict) else {})
+                             params=params if isinstance(params, dict) else {},
+                             ricevuto_ms=_mon.ricevuto_ms() if _mon.ATTIVO else 0)
             )
             self._sveglia_motore()
         except queue.Full:
@@ -714,6 +721,8 @@ class LocalChannel:
                 out.append(self._requests.get_nowait())
             except queue.Empty:
                 break
+        if out and _mon.ATTIVO:  # 09/10 (T0A): attesa in coda = drenaggio - arrivo
+            _mon.drenate(out)
         return out
 
     def respond(self, req: LocalRequest, ok: bool, data: Any = None, error: Optional[str] = None) -> None:

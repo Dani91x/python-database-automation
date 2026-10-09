@@ -47,6 +47,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 from betfairlightweight import StreamListener
 from flumine.streams.marketstream import MarketStream
 
+from ...monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
 from ..runner_lifecycle import MSG_HEARTBEAT, classifica_messaggio_stream
 from .mercati_registrati import CHIAVE as _CHIAVE_MERCATI, mercati_extra
 
@@ -451,6 +452,8 @@ class _TennisRecListener(StreamListener):
     """StreamListener tennis: tee del raw nativo, poi parsing normale."""
 
     def on_data(self, raw_data: str):  # type: ignore[override]
+        if _mon.ATTIVO:  # 09/10 (T0A "Salute"): messaggi, rx - pt, connectionsAvailable
+            _mon.osserva_stream("tennis", raw_data)
         try:
             RAW_TEE.write_message(raw_data)
         except Exception as e:  # noqa: BLE001 - il recording non deve MAI rompere lo stream

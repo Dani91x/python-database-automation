@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional, Set
 from betfairlightweight import StreamListener
 from flumine.streams.marketstream import MarketStream
 
+from ..monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
 from .runner_lifecycle import MSG_HEARTBEAT, classifica_messaggio_stream
 
 logger = logging.getLogger(__name__)
@@ -149,6 +150,10 @@ class _RawState:
             }
 
     def write_message(self, raw_data: str) -> None:
+        # 09/10 (T0A "Salute"): ``rx`` = istante di ricezione locale (ms), campo
+        # ADDITIVO nel raw solo a monitor acceso (da' ``rx - pt`` su ogni
+        # messaggio registrato; il replay lo ignora). Spento: raw identico.
+        rx_ms = int(time.time() * 1000) if _mon.ATTIVO else None
         if not self.enabled or not self.dir:
             # R-STREAM-1 (26/09): a registrazione SPENTA il battito dello
             # stream (dati/heartbeat) prima non si aggiornava mai -> il
@@ -209,6 +214,8 @@ class _RawState:
         with self._lock:
             for ev, changes in by_event.items():
                 out = {k: msg[k] for k in ("op", "clk", "pt", "ct") if k in msg}
+                if rx_ms is not None:
+                    out["rx"] = rx_ms
                 out["mc"] = changes
                 line = json.dumps(out, separators=(",", ":")) + "\n"
                 # SELF-HEAL (fix 11/07): un handle rotto (disco, close
@@ -305,6 +312,8 @@ class RawTeeStreamListener(StreamListener):
     """StreamListener che fa il tee del raw nativo e poi parsa normalmente."""
 
     def on_data(self, raw_data: str):  # type: ignore[override]
+        if _mon.ATTIVO:  # 09/10 (T0A): messaggi, rx - pt, connectionsAvailable
+            _mon.osserva_stream("calcio", raw_data)
         try:
             RAW_STATE.write_message(raw_data)
         except Exception as e:  # noqa: BLE001 - il recording NON deve mai rompere lo stream

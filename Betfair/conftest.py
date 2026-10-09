@@ -309,3 +309,17 @@ def _ambiente_neutro_canali_e_db(monkeypatch):
             if getattr(_modulo, _chiave, None):
                 monkeypatch.setattr(_modulo, _chiave, SUPABASE_KEY_FINTA, raising=False)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _monitor_salute_spento(monkeypatch):
+    """09/10 (T0A "Salute", ``Betfair/monitor/``): ``MONITOR_SALUTE=0`` di serie
+    in ogni test, qualunque cosa dica il ``.env`` del PC. Il monitor comunque non
+    si accende sotto pytest (``sonde.in_pytest``) ne' col banco caricato
+    (``sonde.nel_banco``); i test del monitor lo accendono da se'. A fine test,
+    se un test l'ha lasciato acceso, si spegne (nessun handler di log appeso)."""
+    monkeypatch.setenv("MONITOR_SALUTE", "0")
+    yield
+    _m = sys.modules.get("Betfair.monitor.sonde")
+    if _m is not None and getattr(_m, "ATTIVO", False):
+        _m.ferma()
