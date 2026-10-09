@@ -272,7 +272,7 @@ committati: `attribuzione.py` 92e306c569961b70198029d299ec8ee5e42e62c18a745198d8
 `pnl_mercato.py` 6c609783f489b35e231d5a1dc931724d8ad794a51b7e06bcd62bbc0b1524c7fe,
 `riconciliazione.py` c65da0decef50ef8606f8649a92275e824b068d37a3c6269bef0a09b2a594bbd.
 
-Test W1-C2 dopo la revisione: **197 verdi**. Suite intera (una volta, alla fine): <<SUITE3>>
+Test W1-C2 dopo la revisione: **197 verdi**. Suite intera (una volta, alla fine, cima `99e75fbe`): **11.768 verdi, 0 rossi, 87 saltati, 6 xfailed** (391 s).
 
 **Divergenza nuova per l'utente — D9**: un ordine col ref del terminale manuale (`live`/`tennis`) e il
 customerOrderRef di flumine, senza riga di coda ne' ack, oggi e' «dell'utente» per W2 e per R1; qui e' `sconosciuto`
