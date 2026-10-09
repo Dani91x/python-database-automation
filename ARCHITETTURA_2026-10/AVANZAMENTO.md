@@ -83,7 +83,7 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
 
 | Tappa | Contenuto | Chi | Stato |
 |---|---|---|---|
-| T0A | Modulo «Salute» + misure mancanti + referto 24 h | cloud (codice) + PC (migrazione `monitor_metrics`, 24 h app accesa) | parte cloud fatta (`e44032a9`, `6d02e578`, `bd9e37cc`, 09/10); **verificata e FIRMATA dal PC** (09/10, `tappa0/VERIFICA_PC_2026-10-09/`): additiva sotto `MONITOR_SALUTE`, Mike/Safe identici, suite verde; ramo `tappa0-salute-su-master` pronto (solo i 67 file di T0A su `979aac18`, pytest 11.533/0, build ok). Prima dell'ingresso: decisione dell'utente su R-5 (voce di menu visibile a monitor spento); prima della migrazione: R-4 (14 -> 7 giorni). Poi: migrazione, `MONITOR_SALUTE=1`, 24 h, 30 ordini paper, referto (§5) |
+| T0A | Modulo «Salute» + misure mancanti + referto 24 h | cloud (codice) + PC (migrazione `monitor_metrics`, 24 h app accesa) | parte cloud fatta (`e44032a9`, `6d02e578`, `bd9e37cc`, 09/10); **verificata e FIRMATA dal PC** (09/10, `tappa0/VERIFICA_PC_2026-10-09/`): additiva sotto `MONITOR_SALUTE`, Mike/Safe identici, suite verde; ramo `tappa0-salute-su-master` pronto (solo i 67 file di T0A su `979aac18`, pytest 11.533/0, build ok). **SU MASTER SPENTA** (`cf5236f9`, 09/10 23:20, con R-4/R-5/R-6/R-9 chiusi dal cloud in f9084b4c). Poi: migrazione (utente), `MONITOR_SALUTE=1` + build, 24 h, 30 ordini paper, referto (§5) |
 | T0B (1)-(3) | Cantieri 15, 11, 7 del banco | cloud | fatta (fusi su master entro il 09/10, `CRONOSTORIA.md` 08/10) |
 | T0B (4) | Finto di Omega con la firma del vero (`aggregates(..., mode)`), referto prima/dopo | cloud | fatta (`07115d13`, 09/10; referto `tappa0/T0B4_FINTO_OMEGA/`); **FIRMATA dal PC** (09/10: firme identiche al vero, 28/28, mutazione rossa) |
 | T0B (5) | 3-5 partite tennis in `registrazioni_banco/` (U-44) + registrazioni calcio COMPLETE aggiuntive per Mike (U-27) | PC | fatta (`695a62cd`, 09/10): tennis in `registrazioni_banco/tennis/<giorno>/<id>/` (albero del recorder, `TENNIS_RECORD_DIR`): 35790089, 35794049 (COMPLETE), 35795993 (PARTIAL 65,7%), 35797566 senza raw del Match Odds (inutilizzabile, dichiarato); calcio per Mike 35777617, 35768365, 35774000 (stati D11: seconda entrata e re-ingresso; scoperti PRE_LAST_ENTRY_PENDING, SKIPPED, ERROR); sha256 verificati dal coordinatore; fixture della barra di Match Replay generate per le 3 calcio (`6247fbd0`, standard del 07/10: ogni calcio in `registrazioni_banco/` ha la sua fixture); referto `tappa0/T0B5_REGISTRAZIONI/`. Reperti: `validate_recordings` da' COMPLETE 100% a 36006953 ferma al 44'; il feed ri-emette le righe-evento dopo una riconnessione (35774000, gol del 16' ripetuto 6 minuti dopo): il verificatore le dedupe, il test ora conta come lui |
@@ -154,6 +154,17 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
   (`sonde.ATTIVO` falso all'import; la mutazione del PC ora e' rossa). R-6: il finto `update_trade(id, **fields)` come il vero. R-3:
   `CAMPI_ID_OROLOGIO` legato alla tabella del par. 3 di `TOLLERANZE.md` (campo in piu' o in meno = rosso). U-60: confermati 120 ms
   (incertezza 110-150) come proposto dal PC. Ogni test nuovo falsificato (rosso con la mutazione, verde col ripristino).
+
+- 09/10 (PC, 22:10-23:25) - T0A SU MASTER, SPENTA (decisione dell'utente: aspettato l'interruttore di R-5). Rilette sul PC f9084b4c e
+  2255266c (solo perimetro T0A): pytest Betfair/monitor 60/60, vitest shell+monitorSalute+fotografia 70/70, tsc 0, mutazione del
+  coordinatore sull'interruttore (`!== '0'` al posto di `=== '1'`) ROSSA (2 test) e ripristinata. Ramo `tappa0-salute-su-master` =
+  master 30216dac + e44032a9 + 6d02e578 + test CRLF + f9084b4c + 2255266c (referto T0A lasciato fuori da master): pytest 11.535/0,
+  vitest 5.572/0, tsc 0, build ok. PUSH su master in avanzamento veloce: master = `cf5236f9`. Pull e build ad app spenta nel
+  checkout principale (23:22, `.env` senza MONITOR_SALUTE: voce «Salute» assente). U-60: utente CONFERMA 120 ms (incertezza 110-150).
+  Latenza comando->place (test 20 ms, rosso nel cloud sotto carico): sul PC scarico p95 1,92 / 2,53 / 3,12 ms su 3 corse (p50 1,2-1,5,
+  max 13 ms): il tetto di 20 ms regge, il rosso del cloud e' carico della macchina. PROSSIMI PASSI nell'ordine: (1) l'utente applica
+  `migrations/monitor_metrics_2026-10-09.sql` (7 giorni); (2) il PC aggiunge `MONITOR_SALUTE=1` al `.env`; (3) `npm run build` ad app
+  spenta (la voce compare solo cosi'); (4) l'utente riavvia; (5) 24 h di misura; (6) referto T0A §5.
 
 ## Punto di ripresa
 
