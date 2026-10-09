@@ -469,8 +469,9 @@ RPC_SCRIVENTI_ELENCO: Tuple[RpcScrivente, ...] = (
     _r("postino_consegna", ("postino_versioni",), "architettura_uid_ombra_2026-10-09.sql:245",
        "porta generica del postino (W1-G1): scrive postino_versioni e, con EXECUTE dinamico, la tabella "
        "p_tabella (o <p_tabella>_ombra in ombra): SOLO tabelle del registro, perche' il postino consegna "
-       "solo voci di tabelle che l'archivio riconosce (postino.py:306-309, archivio.spec) e il client "
-       "rifiuta le altre; il nome 'public' che la scansione vede e' in ECCEZIONI_DML"),
+       "solo voci di tabelle che l'archivio riconosce e che NON sono solo locali (postino.drena: "
+       "TABELLE_SOLO_LOCALI, poi archivio.spec) e il client rifiuta le altre prima della rete "
+       "(cloud.RPC_CON_TABELLA); il nome 'public' che la scansione vede e' in ECCEZIONI_DML"),
     _r("request_backtest", ("live_backtest_requests",), "live_backtest_rpc.sql:23"),
     _r("request_betfair_live_order", ("betfair_live_order_requests",), "betfair_live_order_queue.sql:201"),
     _r("request_betfair_order", ("betfair_order_requests",), "betfair_order_queue.sql:50"),

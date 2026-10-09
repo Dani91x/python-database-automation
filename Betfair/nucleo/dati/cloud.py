@@ -43,7 +43,7 @@ import threading
 import time
 from dataclasses import dataclass
 from types import ModuleType
-from typing import Any, Callable, Dict, Iterable, Literal, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, FrozenSet, Iterable, Literal, Mapping, Optional, Sequence, Tuple
 
 from .contratto import Operazione
 from .registro import REGISTRO, RegistroTabelle, e_rpc_di_lettura
@@ -60,6 +60,11 @@ ATTESE_BOT_S: Tuple[float, ...] = (0.15, 0.30)
 ENV_INTERRUTTORE = "ARCH_DATI_CLIENT"
 _OPERATORI = frozenset({"gt", "gte", "lt", "lte", "neq", "like", "ilike"})
 _CHIAVI_SPECIALI = frozenset({"select", "order", "limit"})
+#: RPC che scrivono la tabella passata in ``p_tabella`` (EXECUTE dinamico; in ombra
+#: ``<tabella>_ombra``): il client la controlla sul registro come ``scrivi`` (integrazione
+#: W1-G1 + W1-C1, 09/10): una tabella non registrata, o SOLO LOCALE, non parte mai
+RPC_CON_TABELLA: FrozenSet[str] = frozenset({"postino_consegna"})
+SUFFISSO_OMBRA = "_ombra"
 
 
 @dataclass(frozen=True)
@@ -269,7 +274,11 @@ class ClienteCloud:
         return copy.deepcopy(righe) if cache_s > 0 else righe
 
     def rpc(self, nome: str, args: Mapping[str, Any], *, cache_s: float = 0.0) -> Any:
-        """Chiama una RPC. Ritentata (e mettibile in cache) SOLO se di lettura."""
+        """Chiama una RPC. Ritentata (e mettibile in cache) SOLO se di lettura. Una RPC che
+        scrive la tabella di ``p_tabella`` (``RPC_CON_TABELLA``) parte SOLO su una tabella del
+        registro (o la sua ``_ombra``): altrimenti ``ValueError``, prima della rete."""
+        if nome in RPC_CON_TABELLA:
+            self._controlla_tabella_rpc(nome, args)
         ritenta = self.rpc_ritentabile(nome)
         if cache_s > 0 and not ritenta:
             raise ValueError(f"cache_s su una RPC che scrive o non riconosciuta: {nome}")
@@ -334,6 +343,16 @@ class ClienteCloud:
         return colonne == self._registro.spec(tabella).chiave_naturale
 
     # ------------------------------------------------------------------ servizio
+    def _controlla_tabella_rpc(self, nome: str, args: Mapping[str, Any]) -> None:
+        """La tabella di ``p_tabella`` deve essere del registro (in ombra: la sua base)."""
+        tabella = str(args.get("p_tabella") or "")
+        registrate = self._registro.tabelle()
+        base = tabella[:-len(SUFFISSO_OMBRA)] if tabella.endswith(SUFFISSO_OMBRA) else tabella
+        if tabella not in registrate and base not in registrate:
+            # il cloud non riceve righe da tabelle che il registro non conosce (R23)
+            raise ValueError(f"rpc {nome}: tabella non registrata: {tabella!r} "
+                             f"(Betfair/nucleo/dati/registro.py)")
+
     def rpc_ritentabile(self, nome: str) -> bool:
         """True se la RPC e' di sola lettura: non registrata come scrivente, non fra quelle
         NON idempotenti di ``db_client``, e di lettura per nome (get_/list_) o dichiarata."""

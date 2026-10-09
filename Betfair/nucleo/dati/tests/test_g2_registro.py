@@ -780,3 +780,81 @@ def test_l_archivio_vero_tiene_le_solo_locali_sul_pc(tmp_path):
             a.scrivi("tabella_mai_dichiarata", {"id": 1})
     finally:
         a.chiudi()
+
+
+def test_le_solo_locali_stanno_nel_file_denaro_con_synchronous_full(tmp_path):
+    """Verifica dell'integrazione (09/10) sul FILE, non sulla spec: dopo la chiusura le righe
+    sono in ``denaro.sqlite3`` (aperto con ``synchronous=FULL``), NON in ``vivo.sqlite3``, e
+    nessuno dei due file ha voci in outbox per loro."""
+    import sqlite3
+
+    from Betfair.nucleo.dati.archivio import FILE_DB, ArchivioLocale
+
+    a = ArchivioLocale("solo-locali-file", {}, base=tmp_path).apri()
+    try:
+        # PRAGMA synchronous: 2 = FULL (la connessione di scrittura del file denaro)
+        assert a._scrittori["stato_denaro"].execute("PRAGMA synchronous").fetchone()[0] == 2
+        a.scrivi("ordini_ref_visti", {"ref": "safe-2", "attore": "safe", "accettato": False, "seq": 3,
+                                      "motivo": "m", "ts_ms": 1})
+        a.scrivi("ordini_seq", {"chiave": "seq", "fino_a": 2000})
+        assert a.conferma(10.0)
+    finally:
+        a.chiudi()
+    for regime, attese in (("stato_denaro", {"ordini_ref_visti", "ordini_seq"}), ("stato_vivo", set())):
+        conn = sqlite3.connect(f"file:{a.cartella / FILE_DB[regime]}?mode=ro", uri=True)
+        try:
+            assert {r[0] for r in conn.execute("SELECT tabella FROM righe")} == attese, regime
+            assert conn.execute("SELECT COUNT(*) FROM outbox").fetchone()[0] == 0, regime
+        finally:
+            conn.close()
+
+
+def test_il_postino_non_consegna_mai_una_voce_solo_locale(tmp_path):
+    """Difesa in profondita' (integrazione 09/10): una voce di una tabella SOLO LOCALE che si
+    trovasse in outbox (file scritto da un'altra versione, difetto futuro) NON parte: dead_letter
+    ``registro``, ZERO richieste al cloud; la riconciliazione notturna la salta (nessuna lettura
+    del cloud, nessun marcatore). L'archivio la riconosce (``spec``), quindi senza il controllo
+    del postino la voce partirebbe."""
+    import json as _json
+
+    from Betfair.nucleo.dati.tests.test_g1_postino import Banco
+
+    b = Banco(tmp_path)
+    try:
+        a = b.archivio
+        assert a.spec("ordini_seq").regime == "stato_denaro"           # riconosciuta dall'archivio
+        a._esegui_sincrono("stato_denaro", lambda c: c.execute(
+            "INSERT INTO outbox (tabella, op, chiave, json, creato_ms, coalesce) VALUES (?, ?, ?, ?, ?, 0)",
+            ("ordini_seq", "upsert", '["seq"]', _json.dumps({"chiave": "seq", "fino_a": 5}), b.adesso())))
+        prima = len(b.server.richieste)
+        b.postino.drena()
+        assert b.server.richieste[prima:] == []
+        morte = [d for d in a.dead_letter() if d["tabella"] == "ordini_seq"]
+        assert [(d["motivo"], d["codice"]) for d in morte] == [("registro", "registro")]
+        assert a.outbox_pronta("stato_denaro", b.adesso() + 10**9, 100) == []
+        rapporti = b.postino.riconcilia_giorno("2025-10-09", ["ordini_seq", "ordini_ref_visti"])
+        assert rapporti == [] and b.server.richieste[prima:] == []
+        assert a.riconciliazione("ordini_seq", "2025-10-09") is None
+    finally:
+        b.chiudi()
+
+
+def test_il_client_rifiuta_la_consegna_del_postino_su_tabelle_non_registrate():
+    """``ClienteCloud.rpc('postino_consegna')``: ``p_tabella`` (o la sua base in ombra) deve
+    essere del registro; una SOLO LOCALE o sconosciuta e' rifiutata PRIMA della rete."""
+    from Betfair.nucleo.dati import cloud as C
+
+    class _Rete(Exception):
+        pass
+
+    def _rete() -> None:
+        raise _Rete("la richiesta sarebbe partita")
+
+    cliente = C.ClienteCloud("bot", fabbrica_client=_rete)
+    for t in (*R.TABELLE_SOLO_LOCALI, "ordini_seq_ombra", "nessuna", ""):
+        with pytest.raises(ValueError, match="tabella non registrata"):
+            cliente.rpc("postino_consegna", {"p_tabella": t, "p_op": "upsert", "p_righe": []})
+    for t in ("betfair_live_orders", "betfair_live_orders_ombra", "mike_activity"):
+        assert t.removesuffix("_ombra") in R.REGISTRO.tabelle()
+        with pytest.raises(_Rete):                                   # il controllo lascia passare
+            cliente.rpc("postino_consegna", {"p_tabella": t, "p_op": "upsert", "p_righe": []})

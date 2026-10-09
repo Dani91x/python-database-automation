@@ -48,7 +48,9 @@ Regole sugli errori (revisione 09/10, A1-A4, M1, M4)
       ``RIENTRI_MAX_DATO`` rientri diventa ARCHIVIATA (fuori dall'allarme, contata a
       parte in ``stato().archiviate``); una superata da una scrittura piu' nuova della
       stessa chiave non rientra (R2);
-    * voce di una tabella non registrata -> dead_letter ``registro`` (M1);
+    * voce di una tabella non registrata -> dead_letter ``registro`` (M1); anche la voce
+      di una tabella SOLO LOCALE (``registro.TABELLE_SOLO_LOCALI``, che l'archivio
+      riconosce ma che non va MAI al cloud): nessuna chiamata parte per lei;
     * ordine: tabelle padre prima (``dipende_da``); per chiave al massimo UNA voce
       per chiamata; dopo un fallimento di una chiave le voci successive della
       stessa chiave aspettano (M4).
@@ -80,6 +82,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 from .archivio import REGIME_SERVIZIO, REGIMI_SQLITE, ArchivioLocale, Eventi, VoceOutbox, _eventi_nel_log
 from .contratto import (Cloud, EsitoDrenaggio, Operazione, RapportoRiconciliazione, SpecTabella,
                         StatoPostino)
+from .registro import TABELLE_SOLO_LOCALI
 from .schema_locale import (chiave_canonica, firma_file, giorno_utc, leggi_riga_log, tabella_della_riga_log,
                             testo_json)
 
@@ -301,6 +304,9 @@ class PostinoLocale:
             note: List[_Voce] = []
             for v in voci:
                 if v.op == "salta":
+                    continue
+                if v.tabella in TABELLE_SOLO_LOCALI:              # integrazione W1-C1: MAI il cloud
+                    self._morta(v, "registro", f"tabella solo locale: {v.tabella}", giro, "registro")
                     continue
                 try:
                     self.archivio.spec(v.tabella)
@@ -789,6 +795,8 @@ class PostinoLocale:
         da = datetime.strptime(giorno, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         rapporti = []
         for t in tabelle:
+            if t in TABELLE_SOLO_LOCALI:
+                continue                                    # solo locale: nulla da confrontare col cloud
             try:
                 self.archivio.spec(t)
             except (KeyError, ValueError):
