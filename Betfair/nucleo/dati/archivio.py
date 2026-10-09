@@ -40,8 +40,10 @@ Scopo
       nella coalescenza (B2);
     * VERSIONE LOCALE (R1, terza revisione, principio "identico a oggi"): ogni
       scrittura riceve, nel momento in cui e' accodata, un numero di sequenza
-      ``vseq`` MONOTONO del suo file (persistito: ``meta.vseq``, mai riusato) e il
-      file ha una ``origine`` propria (``meta.origine``). Localmente vince SEMPRE
+      ``vseq`` MONOTONO del suo file (persistito: ``meta.vseq``) e l'``origine`` di
+      QUELLA apertura del file (id casuale nuovo a ogni ``apri``, riserva D: dopo una
+      perdita di corrente il vivo puo' riusare vseq gia' consegnate, mai con la stessa
+      origine); ogni voce di outbox tiene la sua origine. Localmente vince SEMPRE
       l'ultima scrittura accodata (come oggi vince l'ultimo upsert): nessuna
       scrittura del bot e' mai scartata e la colonna del bot (``updated_at``) si
       scrive TALE E QUALE. ``vseq`` serve SOLO a riconoscere una voce VECCHIA della
@@ -139,6 +141,9 @@ TENTATIVI_PRIMA_DI_ISOLARE = 3
 ATTESA_RITENTO_BASE_S = 0.5
 #: R3: il log CRITICAL del guasto di codice al piu' una volta ogni tanti secondi
 CRITICO_OGNI_S = 60.0
+#: nota a (terza revisione): gancio dei test chiamato in ``_metti`` fra l'assegnazione
+#: della vseq e l'accodamento (None in produzione): prova che le due cose sono atomiche
+GANCIO_METTI: Optional[Callable[[Optional[int]], None]] = None
 #: M7: righe cancellate per lavoro di pulizia (il lavoro dura millisecondi)
 PULIZIA_PEZZO = 1000
 #: A4: rientro automatico delle dead_letter, per causa (millisecondi)
@@ -225,12 +230,12 @@ _FERMA = object()
 class VoceOutbox:
     """Una voce della outbox letta dal postino (sola lettura)."""
 
-    __slots__ = ("regime", "seq", "tabella", "op", "chiave", "testo", "tentativi", "creato_ms", "vseq")
+    __slots__ = ("regime", "seq", "tabella", "op", "chiave", "testo", "tentativi", "creato_ms", "vseq", "origine")
 
     def __init__(self, regime: str, seq: int, tabella: str, op: str, chiave: Optional[str], testo: str,
-                 tentativi: int, creato_ms: int, vseq: Optional[int] = None) -> None:
+                 tentativi: int, creato_ms: int, vseq: Optional[int] = None, origine: Optional[str] = None) -> None:
         self.regime, self.seq, self.tabella, self.op, self.chiave = regime, seq, tabella, op, chiave
-        self.testo, self.tentativi, self.creato_ms, self.vseq = testo, tentativi, creato_ms, vseq
+        self.testo, self.tentativi, self.creato_ms, self.vseq, self.origine = testo, tentativi, creato_ms, vseq, origine
 
 
 def _percentili(valori: Iterable[float]) -> Dict[str, float]:
@@ -329,7 +334,13 @@ class ArchivioLocale:
                 self._scrittori[regime] = scrittore
                 meta = dict(scrittore.execute("SELECT nome, valore FROM meta").fetchall())
                 self._vseq[regime] = int(meta["vseq"])
-                self._origine[regime] = f"{self.processo}/{regime}/{meta['origine']}"
+                # riserva D (terza revisione): origine NUOVA a ogni apertura. Dopo una perdita di
+                # corrente lo stato_vivo (synchronous=NORMAL) puo' perdere la coda del WAL e con lei
+                # meta.vseq: una vseq gia' consegnata si riusa; con un'origine nuova il cloud non la
+                # confronta con il passato. Le voci rimaste in outbox tengono la LORO origine.
+                nuova = uuid.uuid4().hex
+                scrittore.execute("UPDATE meta SET valore = ? WHERE nome = 'origine'", (nuova,))
+                self._origine[regime] = f"{self.processo}/{regime}/{nuova}"
                 self._lettori[regime] = self._connetti(percorso, regime, autocheckpoint=False)
             self._ripara_log_troncati()
         except BaseException:
@@ -479,7 +490,7 @@ class ArchivioLocale:
             ms = self._ora_ms()
             conn.execute("UPDATE righe SET json = ?, vseq = ?, aggiornato_ms = ? WHERE tabella = ? AND chiave = ?",
                          (testo, mia[0], ms, tabella, k))
-            self._in_outbox(conn, tabella, "upsert", k, testo, ms, spec.coalesce, mia[0])
+            self._in_outbox(conn, tabella, "upsert", k, testo, ms, spec.coalesce, mia[0], self._origine[spec.regime])
             return True
 
         return bool(self._esegui_sincrono(spec.regime, fn, vseq=mia))
@@ -540,13 +551,16 @@ class ArchivioLocale:
             if regime in self._vseq:
                 self._vseq[regime] += 1
                 vseq = self._vseq[regime]
+            if GANCIO_METTI is not None:
+                GANCIO_METTI(vseq)
             voce = crea(n, vseq)
             self._coda.put(voce)
         return voce
 
     def origine(self, regime: str) -> str:
-        """R1: l'origine del file del regime (processo/regime/id del file): il cloud
-        confronta le vseq SOLO fra voci della stessa origine."""
+        """R1 + riserva D: l'origine delle scritture di QUESTA apertura del file del regime
+        (processo/regime/id casuale nuovo a ogni ``apri``): il cloud confronta le vseq SOLO
+        fra voci della stessa origine."""
         return self._origine[regime]
 
     def _prepara(self, spec: SpecTabella, riga: Mapping[str, Any]) -> Dict[str, Any]:
@@ -865,20 +879,23 @@ class ArchivioLocale:
                             (v.tabella, v.chiave)).fetchone()
         if v.op == "delete":
             conn.execute("DELETE FROM righe WHERE tabella = ? AND chiave = ?", (v.tabella, v.chiave))
-            return self._in_outbox(conn, v.tabella, v.op, v.chiave, v.testo, v.ms, v.coalesce, v.vseq)
+            return self._in_outbox(conn, v.tabella, v.op, v.chiave, v.testo, v.ms, v.coalesce, v.vseq,
+                                   self._origine[v.regime])
         if v.op == "insert" and riga is not None:
-            return self._in_outbox(conn, v.tabella, v.op, v.chiave, v.testo, v.ms, v.coalesce, v.vseq)  # idempotente
+            return self._in_outbox(conn, v.tabella, v.op, v.chiave, v.testo, v.ms, v.coalesce, v.vseq,
+                                   self._origine[v.regime])                                     # idempotente
         if riga is not None:
             conn.execute("UPDATE righe SET json = ?, vseq = ?, aggiornato_ms = ? WHERE tabella = ? AND chiave = ?",
                          (testo_json(_fondi(riga[0], json.loads(v.testo))), v.vseq, v.ms, v.tabella, v.chiave))
         elif v.op != "patch":
             conn.execute("INSERT INTO righe (tabella, chiave, json, vseq, aggiornato_ms) VALUES (?, ?, ?, ?, ?)",
                          (v.tabella, v.chiave, v.testo, v.vseq, v.ms))
-        return self._in_outbox(conn, v.tabella, v.op, v.chiave, v.testo, v.ms, v.coalesce, v.vseq)
+        return self._in_outbox(conn, v.tabella, v.op, v.chiave, v.testo, v.ms, v.coalesce, v.vseq,
+                               self._origine[v.regime])
 
     @staticmethod
     def _in_outbox(conn: sqlite3.Connection, tabella: str, op: str, chiave: str, testo: str, ms: int,
-                   coalesce: bool, vseq: Optional[int]) -> int:
+                   coalesce: bool, vseq: Optional[int], origine: Optional[str]) -> int:
         if coalesce and op == "upsert":
             # resta SOLO una voce per chiave, con le colonne FUSE (B2): nessuna colonna di un
             # upsert parziale precedente si perde. Una voce gia' in volo tolta qui non fa danni:
@@ -892,8 +909,9 @@ class ArchivioLocale:
                 fusa.update(json.loads(testo))
                 testo = testo_json(fusa)
                 conn.executemany("DELETE FROM outbox WHERE seq = ?", [(s,) for s, _ in prec])
-        cur = conn.execute("INSERT INTO outbox (tabella, op, chiave, json, creato_ms, coalesce, vseq) "
-                           "VALUES (?, ?, ?, ?, ?, ?, ?)", (tabella, op, chiave, testo, ms, 1 if coalesce else 0, vseq))
+        cur = conn.execute("INSERT INTO outbox (tabella, op, chiave, json, creato_ms, coalesce, vseq, origine) "
+                           "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                           (tabella, op, chiave, testo, ms, 1 if coalesce else 0, vseq, origine))
         return int(cur.lastrowid or 0)
 
     # ------------------------------------------------------------------ log JSONL
@@ -1003,7 +1021,7 @@ class ArchivioLocale:
         """Voci pronte in ordine di seq, FIFO PER CHIAVE (M4): una voce non e' pronta se
         una voce piu' vecchia della stessa chiave aspetta ancora il suo turno."""
         righe = self._leggi_tutti(regime, "SELECT o.seq, o.tabella, o.op, o.chiave, o.json, o.tentativi, o.creato_ms, "
-                                          "o.vseq "
+                                          "o.vseq, o.origine "
                                           "FROM outbox o WHERE o.prossimo_ms <= ? AND NOT EXISTS (SELECT 1 FROM outbox p "
                                           "WHERE p.tabella = o.tabella AND p.chiave = o.chiave AND p.seq < o.seq "
                                           "AND p.prossimo_ms > ?) ORDER BY o.seq LIMIT ?",
@@ -1054,8 +1072,8 @@ class ArchivioLocale:
                 motivo = m[4] if len(m) > 4 else "dato"
                 cur = conn.execute(
                     "INSERT INTO dead_letter (fonte, seq_origine, tabella, op, chiave, json, codice, errore, tentativi, "
-                    "creato_ms, morto_ms, motivo, rientri, prossimo_rientro_ms, vseq, archiviata_ms, nota) "
-                    "SELECT 'outbox', seq, tabella, op, chiave, json, ?, ?, ?, creato_ms, ?, ?, rientri, ?, vseq, "
+                    "creato_ms, morto_ms, motivo, rientri, prossimo_rientro_ms, vseq, origine, archiviata_ms, nota) "
+                    "SELECT 'outbox', seq, tabella, op, chiave, json, ?, ?, ?, creato_ms, ?, ?, rientri, ?, vseq, origine, "
                     "CASE WHEN ? = 'dato' AND rientri >= ? THEN ? END, "
                     "CASE WHEN ? = 'dato' AND rientri >= ? THEN 'rientri esauriti' END FROM outbox WHERE seq = ?",
                     (codice, errore[:1000], tentativi, adesso, motivo, adesso + RIENTRO_MS.get(motivo, 86_400_000),
@@ -1085,11 +1103,11 @@ class ArchivioLocale:
         superate: List[Tuple[str, Optional[str]]] = []
         for regime in REGIMI_SQLITE:
             def fn(conn: sqlite3.Connection) -> int:
-                righe = conn.execute("SELECT id, tabella, op, chiave, json, creato_ms, rientri, vseq FROM dead_letter "
+                righe = conn.execute("SELECT id, tabella, op, chiave, json, creato_ms, rientri, vseq, origine FROM dead_letter "
                                      "WHERE archiviata_ms IS NULL AND prossimo_rientro_ms <= ? ORDER BY id LIMIT ?",
                                      (adesso, massimo)).fetchall()
                 n = 0
-                for i, tabella, op, chiave, testo, creato, rientri, vseq in righe:
+                for i, tabella, op, chiave, testo, creato, rientri, vseq, origine in righe:
                     if vseq is not None and chiave is not None and op != "insert" and conn.execute(
                             "SELECT 1 FROM righe WHERE tabella = ? AND chiave = ? AND vseq > ? UNION ALL "
                             "SELECT 1 FROM outbox WHERE tabella = ? AND chiave = ? AND vseq > ? LIMIT 1",
@@ -1098,8 +1116,9 @@ class ArchivioLocale:
                                      (adesso, NOTA_SUPERATA, i))
                         superate.append((tabella, chiave))
                         continue
-                    conn.execute("INSERT INTO outbox (tabella, op, chiave, json, creato_ms, prossimo_ms, rientri, vseq) "
-                                 "VALUES (?, ?, ?, ?, ?, 0, ?, ?)", (tabella, op, chiave, testo, creato, rientri + 1, vseq))
+                    conn.execute("INSERT INTO outbox (tabella, op, chiave, json, creato_ms, prossimo_ms, rientri, vseq, "
+                                 "origine) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)",
+                                 (tabella, op, chiave, testo, creato, rientri + 1, vseq, origine))
                     conn.execute("DELETE FROM dead_letter WHERE id = ?", (i,))
                     n += 1
                 return n
@@ -1188,18 +1207,18 @@ class ArchivioLocale:
         out: List[Dict[str, Any]] = []
         for regime in REGIMI_SQLITE:
             for r in self._leggi_tutti(regime, "SELECT id, fonte, tabella, op, chiave, json, codice, errore, tentativi, "
-                                               "morto_ms, motivo, rientri, vseq, archiviata_ms, nota FROM dead_letter "
+                                               "morto_ms, motivo, rientri, vseq, archiviata_ms, nota, origine FROM dead_letter "
                                                "ORDER BY id"):
                 out.append({"regime": regime, "id": r[0], "fonte": r[1], "tabella": r[2], "op": r[3], "chiave": r[4],
                             "riga": json.loads(r[5]), "codice": r[6], "errore": r[7], "tentativi": r[8],
                             "morto_ms": r[9], "motivo": r[10], "rientri": r[11], "vseq": r[12],
-                            "archiviata_ms": r[13], "nota": r[14]})
+                            "archiviata_ms": r[13], "nota": r[14], "origine": r[15]})
         adesso = self._ora_ms()
         for s in self.scarti_scrittore():
             vecchio = adesso - int(s.get("ms") or 0) >= SCARTI_IN_ALLARME_MS
             out.append({"regime": "scrittore", "id": None, "fonte": "scrittore", "tabella": s["tabella"], "op": s["op"],
                         "chiave": s["chiave"], "riga": s["testo"], "codice": None, "errore": s["errore"],
-                        "tentativi": 0, "morto_ms": s["ms"], "motivo": "dato", "rientri": 0, "vseq": None,
+                        "tentativi": 0, "morto_ms": s["ms"], "motivo": "dato", "rientri": 0, "vseq": None, "origine": None,
                         "archiviata_ms": int(s["ms"]) + SCARTI_IN_ALLARME_MS if vecchio else None,
                         "nota": "scarto dello scrittore"})
         return out
@@ -1213,12 +1232,12 @@ class ArchivioLocale:
         adesso = self._ora_ms()
 
         def fn(conn: sqlite3.Connection) -> int:
-            r = conn.execute("SELECT tabella, op, chiave, json, creato_ms, vseq FROM dead_letter WHERE id = ?",
+            r = conn.execute("SELECT tabella, op, chiave, json, creato_ms, vseq, origine FROM dead_letter WHERE id = ?",
                              (id_dead_letter,)).fetchone()
             if r is None:
                 return 0
-            cur = conn.execute("INSERT INTO outbox (tabella, op, chiave, json, creato_ms, vseq, prossimo_ms) "
-                               "VALUES (?, ?, ?, ?, ?, ?, ?)", (*r, adesso))
+            cur = conn.execute("INSERT INTO outbox (tabella, op, chiave, json, creato_ms, vseq, origine, prossimo_ms) "
+                               "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (*r, adesso))
             conn.execute("DELETE FROM dead_letter WHERE id = ?", (id_dead_letter,))
             return int(cur.lastrowid or 0)
 

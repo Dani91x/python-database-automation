@@ -18,8 +18,8 @@ Come consegna
       * ``upsert`` -> ``ON CONFLICT ... DO UPDATE`` (fusione delle colonne, come oggi);
       * ``patch``/``delete`` per chiave naturale.
     VERSIONE (R1, terza revisione, "identico a oggi"): ogni voce porta la ``vseq``
-    LOCALE del suo file e la chiamata l'``origine`` del file (``p_origine``,
-    ``p_versioni``). Il cloud confronta le versioni SOLO fra voci della STESSA
+    LOCALE del suo file e l'``origine`` dell'apertura che l'ha scritta; una chiamata
+    porta voci di UNA origine sola (``p_origine``, ``p_versioni``). Il cloud confronta le versioni SOLO fra voci della STESSA
     origine (tabella ``postino_versioni``): una voce vecchia della stessa origine
     (ritento, rientro da dead_letter) torna ``vecchia`` e non tocca la riga; fra
     origini diverse vince l'ultima arrivata, come oggi. La colonna del bot
@@ -195,6 +195,7 @@ class _Voce:
     seq: Optional[int] = None          # outbox: seq; log: offset di FINE riga
     file: Optional[str] = None         # log: nome del file
     vseq: Optional[int] = None         # outbox: versione LOCALE della voce (R1)
+    origine: Optional[str] = None      # outbox: origine dell'apertura che l'ha scritta (riserva D)
 
 
 @dataclass
@@ -395,7 +396,7 @@ class PostinoLocale:
     @staticmethod
     def _da_outbox(v: VoceOutbox) -> _Voce:
         return _Voce(v.tabella, v.op, v.chiave, v.testo, v.creato_ms, v.tentativi, regime=v.regime, seq=v.seq,
-                     vseq=v.vseq)
+                     vseq=v.vseq, origine=v.origine)
 
     def _marcatore_valido(self, percorso: Path) -> int:
         """M2: un marcatore oltre la fine del file o di un file sostituito torna a 0 e si segnala."""
@@ -537,23 +538,30 @@ class PostinoLocale:
     # ------------------------------------------------------------------ consegna
     def _consegna_gruppo(self, spec: SpecTabella, op: str, gruppo: List[_Voce], giro: _Giro, adesso: int) -> None:
         """Pezzi di al massimo ``blocco`` righe, al massimo UNA voce per chiave per chiamata;
-        una voce di una chiave gia' fallita in questo giro aspetta (M4)."""
+        una voce di una chiave gia' fallita in questo giro aspetta (M4). Riserva D: un pezzo
+        porta voci di UNA origine (quelle senza versione vanno con tutte); una voce di
+        un'altra origine passa al pezzo dopo e la sua chiave resta ferma in questo pezzo
+        (l'ordine FIFO per chiave non si rompe)."""
         pendenti = list(gruppo)
         while pendenti and not giro.interrotto:
             n = self._blocco_tabella.get(spec.nome, self._blocco)
             pezzo: List[_Voce] = []
             resto: List[_Voce] = []
             chiavi: Set[Tuple[str, Optional[str]]] = set()
+            origine: Optional[str] = None
             for v in pendenti:
                 k = (v.tabella, v.chiave)
                 if v.chiave is not None and k in giro.chiavi_fallite:
                     self._rimanda(v, giro, adesso, "attende la voce precedente della stessa chiave", contare=False)
                     continue
-                if len(pezzo) < n and (v.chiave is None or k not in chiavi):
+                sua = v.origine if v.vseq is not None else None
+                if len(pezzo) < n and (v.chiave is None or k not in chiavi) and \
+                        (sua is None or origine is None or sua == origine):
                     pezzo.append(v)
-                    chiavi.add(k)
+                    origine = origine or sua
                 else:
                     resto.append(v)
+                chiavi.add(k)
             if not pezzo:
                 return
             if not self._invia(spec, op, pezzo, giro, adesso):
@@ -579,9 +587,8 @@ class PostinoLocale:
             valide.append((v, riga))
         if not valide:
             return True
-        versioni = [v.vseq for v, _ in valide]
-        origine = next((self.archivio.origine(v.regime) for v, _ in valide
-                        if v.vseq is not None and v.regime is not None), None)
+        origine = next((v.origine for v, _ in valide if v.vseq is not None and v.origine is not None), None)
+        versioni = [v.vseq if v.origine == origine else None for v, _ in valide]
         argomenti = {"p_tabella": self.destinazione(spec.nome), "p_op": op,
                      "p_conflitto": list(spec.chiave_naturale), "p_righe": [r for _, r in valide],
                      "p_origine": origine, "p_versioni": versioni if origine is not None else None}

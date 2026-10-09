@@ -117,8 +117,8 @@ def test_R1_ritento_di_una_voce_gia_superata_della_stessa_origine_scartato(tmp_p
         assert a.conferma() and p.drena().consegnate == 1
         # la prima voce ricompare in outbox con la SUA vseq (come dopo un crash fra cloud e conferma)
         a._esegui_sincrono("stato_denaro", lambda c: c.execute(
-            "INSERT INTO outbox (tabella, op, chiave, json, creato_ms, vseq) VALUES (?, ?, ?, ?, ?, ?)",
-            (prima.tabella, prima.op, prima.chiave, prima.testo, prima.creato_ms, prima.vseq)))
+            "INSERT INTO outbox (tabella, op, chiave, json, creato_ms, vseq, origine) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (prima.tabella, prima.op, prima.chiave, prima.testo, prima.creato_ms, prima.vseq, prima.origine)))
         e = p.drena()
         assert e.consegnate == 1 and p.contatori["vecchie"] == 1
         assert _cloud(srv) == [("EXECUTION_COMPLETE", "2026-10-09T09:59:00+00:00")]
@@ -146,8 +146,8 @@ def test_R1_due_processi_vince_l_ultima_arrivata(tmp_path: Path, ora: List[int])
         assert _cloud(srv) == [("CANCELLED", "2026-10-09T10:00:01+00:00")]         # ora A arrivata per ultima
         # il ritento della prima voce di A (superata dalla stessa A) non riporta indietro il cloud
         na.archivio._esegui_sincrono("stato_denaro", lambda c: c.execute(
-            "INSERT INTO outbox (tabella, op, chiave, json, creato_ms, vseq) VALUES (?, ?, ?, ?, ?, ?)",
-            (voce_a.tabella, voce_a.op, voce_a.chiave, voce_a.testo, voce_a.creato_ms, voce_a.vseq)))
+            "INSERT INTO outbox (tabella, op, chiave, json, creato_ms, vseq, origine) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (voce_a.tabella, voce_a.op, voce_a.chiave, voce_a.testo, voce_a.creato_ms, voce_a.vseq, voce_a.origine)))
         assert na.postino.drena().consegnate == 1 and na.postino.contatori["vecchie"] == 1
         assert _cloud(srv) == [("CANCELLED", "2026-10-09T10:00:01+00:00")]
     finally:
@@ -169,7 +169,7 @@ def test_R1_vseq_persistita_mai_riusata_anche_dopo_pulizia_e_riapertura(tmp_path
     a.chiudi()
     b = ArchivioLocale("prova", SPEC, base=tmp_path, orologio_ms=lambda: ora[0]).apri()
     try:
-        assert b.origine("stato_vivo") == origine
+        assert b.origine("stato_vivo") != origine                 # riserva D: origine nuova a ogni apertura
         b.scrivi("live_follow", {"event_id": "e0", "status": "OLD", "updated_at": "2026-10-09T09:00:00+00:00"})
         assert b.conferma()
         assert b.outbox_pronta("stato_vivo", 2 ** 62, 10)[0].vseq == 6

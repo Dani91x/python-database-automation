@@ -136,8 +136,13 @@ dead_letter, voce ripetuta dopo un crash) sovrascriva una voce piu' nuova della 
 
 - **Versione LOCALE (R1)**. Ogni scrittura (`scrivi`, `accoda`, `transizione`) riceve, nel momento in cui e' accodata e
   sotto lo stesso lucchetto dell'accodamento, la `vseq`: un numero MONOTONO del suo file (`denaro`/`vivo`), persistito in
-  `meta.vseq` nella stessa transazione delle righe (mai riusato, nemmeno dopo pulizia e riapertura). Ogni file ha la sua
-  `origine` (`processo/regime/id casuale del file`, `meta.origine`): un file ricreato e' un'origine nuova.
+  `meta.vseq` nella stessa transazione delle righe (mai riusato, nemmeno dopo pulizia e riapertura). L'`origine` cambia a
+  OGNI `apri()` (`processo/regime/id casuale nuovo`, scritto in `meta.origine`; riserva D della quarta revisione: dopo
+  una perdita di corrente lo `stato_vivo`, `synchronous=NORMAL`, puo' perdere la coda del WAL e con lei `meta.vseq`, e
+  una vseq gia' consegnata si riusa: mai con la stessa origine). Ogni voce di outbox e di dead_letter tiene l'origine
+  dell'apertura che l'ha scritta (schema v4); le voci di prima di una riapertura restano davanti alle nuove (FIFO per
+  chiave) e una chiamata della RPC porta voci di UNA origine sola. Il controllo "superata" del rientro confronta la
+  vseq LOCALE del file, monotona fra le aperture, quindi vale anche fra origini diverse.
   In locale vince SEMPRE l'ultima accodata (fusione delle colonne); `updated_at` del bot si scrive TALE E QUALE (niente
   piu' "+1 us", niente scarti per l'orologio). La colonna `rev_colonna` del registro serve solo alla riconciliazione.
 - **Nel cloud** la RPC `postino_consegna(p_tabella, p_op, p_conflitto, p_righe, p_origine, p_versioni)` confronta la
@@ -145,7 +150,10 @@ dead_letter, voce ripetuta dopo un crash) sovrascriva una voce piu' nuova della 
   piu' alta applicata): piu' vecchia -> `vecchia` (riga intatta, evento `dati.riga_vecchia`), uguale -> `ignorata` (era gia'
   applicata: ritento dopo una risposta persa), piu' nuova o origine diversa -> scritta: **fra origini diverse vince
   l'ultima arrivata, come oggi**. La versione registrata e' nella stessa sottotransazione della riga (una riga rifiutata
-  non lascia la sua versione); le versioni di oltre 90 giorni le toglie la RPC stessa (100 per chiamata).
+  non lascia la sua versione); le versioni di oltre 90 giorni le toglie la RPC stessa (100 per chiamata). Nota b della
+  quarta revisione: la RPC scrive le righe di un lotto in ordine di CHIAVE (poi di posizione) e restituisce gli esiti
+  nell'ordine di `p_righe`: due postini con lotti in ordine opposto prendono i lucchetti nello stesso ordine (0
+  deadlock 40P01 nella prova delle due sessioni psql del revisore, prima ~1.000 su 3.000 per sessione).
 - **Rientro delle dead_letter (R2)**: (a) una riga di stato la cui chiave ha gia' una scrittura PIU' NUOVA (vseq piu'
   alta nella riga locale o in outbox) non rientra: resta ARCHIVIATA con la nota "superata" (evento
   `dati.dead_letter_superata`); se la riga locale non c'e' piu', il cloud la scarta comunque come `vecchia` (seconda

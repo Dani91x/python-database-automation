@@ -14,7 +14,9 @@ Le mutazioni sono di tre famiglie:
     o versione che non sale) sul codice nuovo; le V si giudicano come il revisore, su TUTTI i
     test G1 (``-k "not sigkill"``);
   * ``T..`` - le nuove della terza revisione (R1 versione locale, R2 rientro/archiviazione,
-    R3 guasto del codice, R4 disco guasto a processo vivo).
+    R3 guasto del codice, R4 disco guasto a processo vivo) e della quarta (T20-T23: riserva D,
+    origine per apertura; nota a, X3 del revisore con il gancio; S09-S10: nota b, ordine per chiave
+    nella RPC).
 Per ogni mutazione: sha256 del file, UNA sostituzione esatta (deve comparire una volta sola),
 i test indicati devono diventare ROSSI, poi il file torna identico (sha256 confrontato).
 Le mutazioni della migrazione SQL (``S..``, R11, R12) si applicano al PostgreSQL usa-e-getta
@@ -40,7 +42,14 @@ A, P, RC, PE, SC = D + "archivio.py", D + "postino.py", D + "riconcilia.py", D +
 TA, TP, TC = T + "test_g1_archivio.py", T + "test_g1_postino.py", T + "test_g1_crash.py"
 TR, TK, TG = T + "test_g1_revisione.py", T + "test_g1_correzioni.py", T + "test_g1_pg_reale.py"
 T3 = T + "test_g1_terza_revisione.py"
+T4 = T + "test_g1_quarta_revisione.py"
 TUTTI = ["Betfair/nucleo/dati/tests", "-k", "not sigkill"]          # come il revisore: tutti i test G1
+
+# testo di ArchivioLocale._metti e le due versioni di X3 (nota a, quarta revisione)
+METTI_OK = '        with self._cond:\n            self._n += 1\n            n = self._n\n            self._in_volo.add(n)\n            vseq: Optional[int] = None\n            if regime in self._vseq:\n                self._vseq[regime] += 1\n                vseq = self._vseq[regime]\n            if GANCIO_METTI is not None:\n                GANCIO_METTI(vseq)\n            voce = crea(n, vseq)\n            self._coda.put(voce)\n        return voce'
+METTI_X3 = '        with self._cond:\n            self._n += 1\n            n = self._n\n            self._in_volo.add(n)\n        vseq: Optional[int] = None\n        if regime in self._vseq:\n            self._vseq[regime] += 1\n            vseq = self._vseq[regime]\n        if GANCIO_METTI is not None:\n            GANCIO_METTI(vseq)\n        with self._cond:\n            voce = crea(n, vseq)\n            self._coda.put(voce)\n        return voce'
+METTI_X3R = '        with self._cond:\n            self._n += 1\n            n = self._n\n            self._in_volo.add(n)\n        vseq: Optional[int] = None\n        if regime in self._vseq:\n            self._vseq[regime] += 1\n            vseq = self._vseq[regime]\n            time.sleep(0.0005)\n        if GANCIO_METTI is not None:\n            GANCIO_METTI(vseq)\n        with self._cond:\n            voce = crea(n, vseq)\n            self._coda.put(voce)\n        return voce'
+
 
 # (id, file, testo originale, testo mutato, test che devono diventare rossi, cosa prova)
 MUTAZIONI = [
@@ -191,8 +200,8 @@ MUTAZIONI = [
      "R1: la versione INTERA del bot torna a decidere"),
     ("N08", A, '"AND p.prossimo_ms > ?) ORDER BY o.seq LIMIT ?"', '"AND p.prossimo_ms > ? AND 0) ORDER BY o.seq LIMIT ?"',
      [TK + "::test_M4_voce_successiva_non_supera_quella_in_attesa_nei_giri_dopo"], "M4: outbox senza FIFO per chiave"),
-    ("N09", P, "                if len(pezzo) < n and (v.chiave is None or k not in chiavi):",
-     "                if len(pezzo) < n:",
+    ("N09", P, "                if len(pezzo) < n and (v.chiave is None or k not in chiavi) and \\\n",
+     "                if len(pezzo) < n and \\\n",
      [TR + "::test_rev_D11b_upsert_vecchio_ritentato_non_supera_il_nuovo"], "M4: due voci della stessa chiave in una chiamata"),
     ("N10", P, "                if v.chiave is not None and k in giro.chiavi_fallite:", "                if False:",
      [TR + "::test_rev_D11_patch_aspetta_l_upsert_fallito"], "M4: patch che supera l'upsert fallito"),
@@ -256,8 +265,8 @@ MUTAZIONI = [
      "V08 (tolleranza 50 s) TOLTA da R1: qui la versione mandata al cloud torna a essere l'orologio del bot"),
     ("V09r", A, "                self._vseq[regime] += 1", "                self._vseq[regime] += 0", TUTTI,
      "V09 (versione uguale che non sale di 1 us) TOLTA da R1: qui la vseq locale non sale"),
-    ("V10r", A, "            self._in_outbox(conn, tabella, \"upsert\", k, testo, ms, spec.coalesce, mia[0])",
-     "            self._in_outbox(conn, tabella, \"upsert\", k, testo, ms, spec.coalesce, mia[0] - 1)", TUTTI,
+    ("V10r", A, "            self._in_outbox(conn, tabella, \"upsert\", k, testo, ms, spec.coalesce, mia[0], self._origine",
+     "            self._in_outbox(conn, tabella, \"upsert\", k, testo, ms, spec.coalesce, mia[0] - 1, self._origine", TUTTI,
      "V10 (interi con la tolleranza dei tempi) TOLTA da R1: qui la transizione esce con una versione vecchia"),
     ("V11", A, "AND p.seq < o.seq", "AND p.seq > o.seq", TUTTI, "M4: FIFO per chiave rovesciata"),
     ("V12", P, "                if v.chiave is not None and k in giro.chiavi_fallite:", "                if False:", TUTTI,
@@ -268,7 +277,8 @@ MUTAZIONI = [
     ("V14", A, "            if self._in_chiusura and tentativo >= TENTATIVI_PRIMA_DI_ISOLARE:",
      "            if tentativo >= TENTATIVI_PRIMA_DI_ISOLARE:", TUTTI,
      "M6: salvataggio+abbandono anche a processo vivo (SOPRAVVISSUTA alla seconda revisione: R4)"),
-    ("V15", A, "            self._in_outbox(conn, tabella, \"upsert\", k, testo, ms, spec.coalesce, mia[0])\n            return True",
+    ("V15", A, "            self._in_outbox(conn, tabella, \"upsert\", k, testo, ms, spec.coalesce, mia[0], "
+               "self._origine[spec.regime])\n            return True",
      "            return True", TUTTI, "F: transizione senza voce in outbox (riportata)"),
     ("V16", A, "            if d.get(col) != da:\n                return False", "            if d.get(col) is None:\n"
                "                return False", TUTTI, "F: claim che accetta qualunque stato di partenza"),
@@ -285,7 +295,7 @@ MUTAZIONI = [
      '"p_origine": origine, "p_versioni": None}',
      [T3 + "::test_R1_ritento_di_una_voce_gia_superata_della_stessa_origine_scartato"],
      "R1: il postino non manda le versioni (il ritento vecchio riporta indietro il cloud)"),
-    ("T04", P, "        origine = next((self.archivio.origine(v.regime) for v, _ in valide",
+    ("T04", P, "        origine = next((v.origine for v, _ in valide",
      "        origine = next((__import__(\"uuid\").uuid4().hex for v, _ in valide",
      [T3 + "::test_R1_ritento_di_una_voce_gia_superata_della_stessa_origine_scartato"],
      "R1: origine diversa a ogni chiamata (la stessa origine non si riconosce)"),
@@ -345,6 +355,22 @@ MUTAZIONI = [
      "                self.guasto = None",
      [T3 + "::test_R3_errore_di_codice_su_tutte_le_voci_resta_in_coda_critical_una_volta_al_minuto"],
      "R3: l'allarme del guasto del codice non si spegne alla ripresa"),
+    # ------------------------------------------------------------ quarta revisione (riserva D, nota a)
+    ("T20", A, "                nuova = uuid.uuid4().hex", "                nuova = str(meta[\"origine\"])",
+     [T4 + "::test_D_perdita_di_corrente_sul_vivo_la_scrittura_nuova_arriva"],
+     "D: origine FISSA per file (dopo un blackout la vseq riusata e' 'vecchia': CLOSED perso)"),
+    ("T21", A, METTI_OK, METTI_X3, [T4 + "::test_a_ordine_delle_vseq_uguale_ordine_di_coda_anche_fra_thread"],
+     "nota a: vseq assegnata FUORI dal lucchetto dell'accodamento (X3 del revisore, col gancio)"),
+    ("X3r", A, METTI_OK, METTI_X3R, [T4 + "::test_a_ordine_delle_vseq_uguale_ordine_di_coda_anche_fra_thread"],
+     "nota a: X3 del revisore com'era, con la finestra allargata (sleep 0,5 ms)"),
+    ("T22", P, "                if len(pezzo) < n and (v.chiave is None or k not in chiavi) and \\\n"
+               "                        (sua is None or origine is None or sua == origine):",
+     "                if len(pezzo) < n and (v.chiave is None or k not in chiavi):",
+     [T4 + "::test_D_voci_rimaste_in_outbox_tengono_la_loro_origine_e_vanno_prima"],
+     "D: una chiamata con voci di origini diverse (le vecchie confrontate con l'origine nuova)"),
+    ("T23", P, "                chiavi.add(k)", "                chiavi.add(k) if v in pezzo else None",
+     [T4 + "::test_D_voce_rientrata_di_un_altra_origine_resta_davanti_alla_nuova_della_stessa_chiave"],
+     "D: la voce nuova passa davanti alla rientrata di un'altra origine (FIFO per chiave rotto)"),
 ]
 
 MUTAZIONI_SQL = [
@@ -379,6 +405,12 @@ MUTAZIONI_SQL = [
      "            v_guardia := false;",
      [TG + "::test_pg_R2a_dl_stale_il_rientro_non_riporta_indietro_il_cloud"],
      "R2: il rientro di una dead_letter vecchia riporta indietro il cloud (seconda difesa spenta)"),
+    ("S09", SQL, "                ORDER BY ARRAY(SELECT e.value ->> u.c FROM unnest(p_conflitto) WITH ORDINALITY AS u(c, i) "
+                 "ORDER BY u.i),\n                         e.ord LOOP",
+     "                LOOP", [TG + "::test_pg_b_due_postini_lotti_in_ordine_opposto_niente_deadlock"],
+     "nota b: righe nell'ordine d'arrivo (due postini in ordine opposto: deadlock 40P01)"),
+    ("S10", SQL, "jsonb_agg(v_per -> g::text ORDER BY g)", "jsonb_agg(v_per -> g::text ORDER BY -g)", [TG],
+     "nota b: esiti restituiti in un ordine diverso da quello di p_righe"),
     ("S05", SQL, "'postino_consegna: operazione non ammessa: %', p_op USING ERRCODE = 'GP001'",
      "'postino_consegna: operazione non ammessa: %', p_op USING ERRCODE = '22023'",
      [TG + "::test_pg_intestazione_ha_il_suo_sqlstate"], "SQL: errore d'intestazione scambiato per dato"),

@@ -40,7 +40,7 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 
 from .contratto import SpecTabella
 
-VERSIONE_SCHEMA = 3
+VERSIONE_SCHEMA = 4
 
 #: migrazioni in ordine; l'indice + 1 e' la ``user_version`` raggiunta
 MIGRAZIONI: Tuple[Tuple[str, ...], ...] = (
@@ -128,6 +128,12 @@ MIGRAZIONI: Tuple[Tuple[str, ...], ...] = (
         "ALTER TABLE dead_letter ADD COLUMN archiviata_ms INTEGER",
         "ALTER TABLE dead_letter ADD COLUMN nota TEXT",
         "CREATE INDEX dead_letter_archiviata ON dead_letter (archiviata_ms)",
+    ),
+    # v4 (quarta revisione 09/10, riserva D): l'origine cambia a OGNI apertura, quindi ogni voce
+    # di outbox e di dead_letter tiene la SUA origine (quella dell'apertura che l'ha scritta)
+    (
+        "ALTER TABLE outbox ADD COLUMN origine TEXT",
+        "ALTER TABLE dead_letter ADD COLUMN origine TEXT",
     ),
 )
 

@@ -276,7 +276,7 @@ DECLARE
     v_sql       text;
     v_n         bigint;
     v_esito     text;
-    v_esiti     jsonb := '[]'::jsonb;
+    v_per       jsonb := '{}'::jsonb;
     v_stato     text;
     v_msg       text;
 BEGIN
@@ -329,7 +329,12 @@ BEGIN
             WHERE tabella = p_tabella AND aggiornato < now() - interval '90 days' LIMIT 100));
     END IF;
 
-    FOR v_el IN SELECT e.value, e.ord FROM jsonb_array_elements(p_righe) WITH ORDINALITY AS e(value, ord) LOOP
+    -- nota b (quarta revisione): le righe si scrivono in ordine di CHIAVE (poi di posizione), non
+    -- nell'ordine in cui arrivano: due postini con gli stessi lotti in ordine opposto prendono i
+    -- lucchetti nello stesso ordine (niente deadlock 40P01). Gli esiti tornano nell'ordine di p_righe.
+    FOR v_el IN SELECT e.value, e.ord FROM jsonb_array_elements(p_righe) WITH ORDINALITY AS e(value, ord)
+                ORDER BY ARRAY(SELECT e.value ->> u.c FROM unnest(p_conflitto) WITH ORDINALITY AS u(c, i) ORDER BY u.i),
+                         e.ord LOOP
         v_riga := v_el.value;
         BEGIN
             IF jsonb_typeof(v_riga) <> 'object' THEN
@@ -398,14 +403,15 @@ BEGIN
                         SET versione = greatest(pv.versione, EXCLUDED.versione), aggiornato = now();
                 END IF;
             END IF;
-            v_esiti := v_esiti || jsonb_build_array(jsonb_build_object('esito', v_esito));
+            v_per := v_per || jsonb_build_object(v_el.ord::text, jsonb_build_object('esito', v_esito));
         EXCEPTION WHEN OTHERS THEN
             GET STACKED DIAGNOSTICS v_stato = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT;
-            v_esiti := v_esiti || jsonb_build_array(jsonb_build_object(
+            v_per := v_per || jsonb_build_object(v_el.ord::text, jsonb_build_object(
                 'esito', 'errore', 'codice', v_stato, 'messaggio', left(v_msg, 500)));
         END;
     END LOOP;
-    RETURN v_esiti;
+    RETURN coalesce((SELECT jsonb_agg(v_per -> g::text ORDER BY g)
+                     FROM generate_series(1, jsonb_array_length(p_righe)) AS g), '[]'::jsonb);
 END $$;
 
 REVOKE ALL ON FUNCTION public.postino_consegna(text, text, text[], jsonb, text, jsonb) FROM PUBLIC, anon, authenticated;

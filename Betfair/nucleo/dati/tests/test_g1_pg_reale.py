@@ -262,3 +262,83 @@ def test_pg_R11_riga_senza_chiave_naturale_rifiutata(pg) -> None:
                                          "p_righe": [{"kind": "senza_uid", "payload": {}}]})
     assert esiti[0]["esito"] == "errore" and esiti[0]["codice"] == "22023"
     assert righe("mike_activity") == []
+
+
+# ---------------------------------------------------------------- quarta revisione (09/10): riserva D, nota b
+def test_pg_D_perdita_di_corrente_sul_vivo_la_scrittura_nuova_arriva(tmp_path: Path, pg) -> None:
+    """origine_2d.py del revisore sul PostgreSQL vero: dopo il blackout la vseq si riusa, ma con
+    un'origine NUOVA (una per apertura): la scrittura CLOSED arriva, come oggi."""
+    import shutil
+    _, _, srv, ora, _ = pg
+    base = tmp_path / "d"
+
+    def apri() -> Any:
+        a = ArchivioLocale("x", SPEC, base=base, orologio_ms=lambda: ora[0]).apri()
+        return a, PostinoLocale(a, CloudProva(srv), orologio_ms=lambda: ora[0], eventi=lambda n, d: None)
+
+    def segui(stato: str, i: int) -> Dict[str, Any]:
+        return {"event_id": "E1", "home_name": "A", "away_name": "B", "open_date": "2026-10-09T12:00:00+00:00",
+                "status": stato, "updated_at": f"2026-10-09T10:00:0{i}+00:00"}
+
+    a, _ = apri()
+    a.chiudi()
+    shutil.copytree(a.cartella, tmp_path / "durevole")
+    a, p = apri()
+    for i in range(3):
+        a.scrivi("live_follow", segui("STREAMING", i))
+    assert a.conferma() and p.drena().consegnate == 1                      # live_follow coalesce: una voce, vseq 3
+    assert sql("SELECT max(versione) FROM public.postino_versioni WHERE tabella = 'live_follow';") == "3"
+    a.chiudi()
+    shutil.rmtree(a.cartella)
+    shutil.copytree(tmp_path / "durevole", a.cartella)            # il SO ha perso la coda del WAL
+    a, p = apri()
+    try:
+        a.scrivi("live_follow", segui("CLOSED", 5))
+        assert a.conferma() and p.drena().consegnate == 1
+        assert sql("SELECT status FROM public.live_follow WHERE event_id = 'E1';") == "CLOSED"
+        assert p.contatori["vecchie"] == 0
+    finally:
+        a.chiudi()
+
+
+def test_pg_b_due_postini_lotti_in_ordine_opposto_niente_deadlock(pg) -> None:
+    """Nota b: le due sessioni psql del revisore (conc_a.sql / conc_b.sql): 300 chiamate da 10
+    righe, chiavi k0..k9 in una sessione e k9..k0 nell'altra, in parallelo. Prima della
+    correzione ~1.000 esiti 40P01 per sessione su 3.000; ora la RPC scrive in ordine di chiave."""
+    import subprocess
+    assert ARGS is not None
+
+    def copione(nome: str, chiavi: List[str], origine: str) -> str:
+        # deadlock_timeout corto: un deadlock costa 20 ms invece di 1 s (la mutazione S09 resta veloce)
+        righe_sql = ["SET deadlock_timeout = '20ms';", "SET ROLE service_role;", "CREATE TEMP TABLE esiti(c text);"]
+        for giro in range(1, 301):
+            lotto = [{"mode": "paper", "client_order_ref": k, "market_id": "1.2", "selection_id": 1, "side": "back",
+                      "status": f"{nome}{giro}"} for k in chiavi]
+            righe_sql.append(
+                "INSERT INTO esiti SELECT coalesce(e->>'codice', e->>'esito') FROM jsonb_array_elements("
+                "public.postino_consegna('betfair_live_orders', 'upsert', ARRAY['mode','client_order_ref'], "
+                f"$j${json.dumps(lotto)}$j$::jsonb, '{origine}', '{json.dumps([giro] * len(chiavi))}'::jsonb)) e;")
+        righe_sql.append("SELECT c || '|' || count(*) FROM esiti GROUP BY c ORDER BY 1;")
+        return "\n".join(righe_sql) + "\n"
+
+    chiavi = [f"k{i}" for i in range(10)]
+    sessioni = [subprocess.Popen(["psql", *ARGS, "-X", "-q", "-A", "-t"], stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(2)]
+    copioni = [copione("A", chiavi, "A/x/1"), copione("B", chiavi[::-1], "B/x/1")]
+    fili = []
+    uscite: List[Any] = [None, None]
+    import threading
+
+    for i, (s, c) in enumerate(zip(sessioni, copioni)):
+        def parla(i: int = i, s: Any = s, c: str = c) -> None:
+            uscite[i] = s.communicate(c, timeout=600)
+        fili.append(threading.Thread(target=parla))
+    for f in fili:
+        f.start()
+    for f in fili:
+        f.join(620)
+    conteggi = []
+    for (out, err), s in zip(uscite, sessioni):
+        assert s.returncode == 0, err[-500:]
+        conteggi.append(dict(x.split("|") for x in out.split() if "|" in x))
+    assert conteggi == [{"ok": "3000"}, {"ok": "3000"}], conteggi

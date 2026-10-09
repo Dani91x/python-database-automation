@@ -369,3 +369,46 @@ Semantica di `transizione` verificata dal revisore (`transizione.py`) e provata 
   falso); l'unica eccezione e' il lavoro che scade PRIMA di partire: `TimeoutError` "annullato prima di partire (non
   eseguito)", che e' l'esito vero.
 - Le tabelle della porta (`ordini_ref_visti`, `ordini_seq`) vanno REGISTRATE nel registro con regime `stato_denaro`.
+
+
+## 13. Quarta revisione (revisione mirata di `eef92315` su PostgreSQL vero: PASSA, con la riserva D e le note a, b)
+
+Esito del revisore: 8 scenari su 8 identici a oggi, RPC sicura (SECURITY INVOKER), migrazione idempotente, 111/111
+mutazioni mie rosse e 10/11 delle sue rosse. Commit NUOVO sopra `eef92315` (nessuna riscrittura, nessun push).
+Materiale: `scratchpad/rev_w1g1_3/` (`origine.py`, `origine_2d.py`, `ordine_vseq.py`, `mie_mut.py`, `conc_a/b.sql`).
+
+sha256 dei file consegnati (prefisso; gli stessi di `mutazioni.txt`): `archivio.py` `1861f2a7695f5a10`, `postino.py` `a621eee89057ce84`, `schema_locale.py` `28dd4d3b232a5972`, `riconcilia.py` `116e3f38169ba61c` e `percorso.py` `906480ce5510683d` (invariati), migrazione `dc7069ba44cddafc`.
+
+| Punto | Correzione (file:riga) | Test (verde ora) | Mutazioni rosse |
+|---|---|---|---|
+| **D** perdita di corrente sullo `stato_vivo` (NORMAL): vseq riusata con la stessa origine, la scrittura nuova del bot scartata come `vecchia` | `archivio.py:341` `apri()`: origine NUOVA a ogni apertura (id casuale, scritto in `meta.origine`); ogni voce di outbox nasce con l'origine dell'apertura (`:897` `_in_outbox`, colonna `origine` dello schema v4 `schema_locale.py:132`), la dead_letter la copia (`chiudi_voci`), il rientro e `rimetti_in_coda` la conservano; `postino.py:539` `_consegna_gruppo`: una chiamata porta voci di UNA origine (le voci senza versione vanno con tutte); una voce di un'altra origine passa al pezzo dopo e la sua chiave resta FERMA nel pezzo (FIFO per chiave intatto); `:594` `p_origine` e `p_versioni` dalla voce. Il controllo "superata" confronta la vseq LOCALE del file (monotona fra le aperture): vale anche fra origini diverse | `test_g1_quarta_revisione.py::test_D_perdita_di_corrente_sul_vivo_la_scrittura_nuova_arriva` (scenario D del revisore: cartella riportata allo stato di prima del blackout, vseq davvero riusata = 1, il cloud passa a CLOSED con `updated_at` tale e quale; con l'origine fissa e' ROSSO: STREAMING), `test_D_voci_rimaste_in_outbox_*` (le voci di prima vanno prima, con la loro origine e la loro vseq), `test_D_rientro_superato_da_una_scrittura_di_un_altra_apertura`, `test_D_voce_rientrata_di_un_altra_origine_resta_davanti_*`; PostgreSQL vero: `test_pg_D_perdita_di_corrente_*` | T20 (origine fissa), T22, T23 |
+| **nota a** invariante "ordine delle vseq = ordine di coda" sotto thread | `archivio.py:146` `GANCIO_METTI`: gancio dei test (None in produzione) chiamato in `_metti` fra l'assegnazione della vseq e l'accodamento | `test_a_ordine_delle_vseq_uguale_ordine_di_coda_anche_fra_thread` (`ordine_vseq.py` del revisore reso deterministico: il gancio ferma il primo scrittore finche' il secondo non ha finito, al massimo 0,3 s; piu' il carico del revisore 6 x 40) | T21 (X3 col gancio), X3r (X3 del revisore com'era, con lo sleep di 0,5 ms) |
+| **nota b** deadlock 40P01 fra due postini con lotti in ordine opposto | migrazione `:336` la RPC scrive le righe in ordine di CHIAVE (poi di posizione); `:413` gli esiti tornano nell'ordine di `p_righe` | `test_pg_b_due_postini_lotti_in_ordine_opposto_niente_deadlock`: le due sessioni psql del revisore (300 chiamate da 10 righe, k0..k9 contro k9..k0, in parallelo): **0 deadlock, 3.000 ok per sessione** (prima: 1.071 e 953 esiti 40P01); `deadlock_timeout` 20 ms nella prova perche' la mutazione resti veloce | S09 (ordine d'arrivo: deadlock), S10 (esiti in un altro ordine) |
+
+**Mutazioni del revisore** (`mie_mut.py`): 10/11 rosse; la sopravvissuta **X9** ("versione registrata prima della riga")
+e' EQUIVALENTE: l'INSERT della versione anticipato sta nella STESSA sottotransazione (`BEGIN ... EXCEPTION`) della
+scrittura della riga, quindi se la riga fallisce la versione si annulla con lei e, se la riga passa, il risultato e'
+identico. Non c'e' un comportamento osservabile da rendere rosso; la variante NON equivalente (X9b, versione registrata
+nel ramo dell'eccezione) e' uccisa da `test_pg_R12_*` (la riga rifiutata non lascia la sua versione: il ritento passa).
+
+**Mutazioni** (`mutazioni.py --sql`, uscita `mutazioni.txt`): **118/118 ROSSE (106 Python + 12 SQL sul PostgreSQL usa-e-getta)**, ogni file ripristinato con sha256 identico.
+Nuove: T20-T23, X3r, S09, S10; riportate sul codice nuovo: N09, T04, V10r, V15.
+
+**Casi del revisore che restano DICHIARATI** (`origine.py`; nessuna perdita rispetto a oggi):
+- **A** (2a) crash con una voce in outbox e riapertura della stessa cartella: la voce sopravvissuta tiene la sua origine e
+  la sua vseq, va PRIMA della scrittura nuova della stessa chiave (FIFO), la nuova arriva per ultima: nel cloud la nuova,
+  come oggi;
+- **B** (2b) la voce sopravvissuta al crash arriva al cloud DOPO la riga piu' nuova di un ALTRO processo: vince come
+  ultima arrivata (origini diverse). Oggi la voce del crash sarebbe persa e nel cloud resterebbe quella dell'altro
+  processo: e' un dato in piu', non in meno, ma l'ultima arrivata non e' l'ultima scritta (divergenza dichiarata);
+- **C** (2c) cartella cancellata: origine nuova, la outbox vecchia non c'e' piu' (come oggi le righe non ancora
+  inviate di un processo morto); la scrittura nuova arriva.
+**D** si chiude con questa revisione. Resta dichiarato (par. 11) il residuo #20.
+
+**Prova di crash con SIGKILL casuali**: 14 cicli seme 7 -> **4.125 righe confermate, 0 perse**; 14 cicli seme 3 -> **4.900 confermate, 0 perse**; 0 doppioni, 0 dead_letter.
+
+**Test del comparto**: con il PostgreSQL usa-e-getta **136 verdi**; senza **122 verdi + 14 saltati** (i test PG). Migrazione applicata DUE volte senza errori sul PostgreSQL 16 usa-e-getta (ricreato, poi fermato e cancellato).
+
+### 13-bis. Suite intera dopo la quarta revisione
+
+`python -m pytest Betfair/ -q -p no:cacheprovider`, UNA volta alla fine, sul codice definitivo (PostgreSQL gia' fermato): **11.693 passed, 101 skipped, 6 xfailed, 0 failed** in 427 s (i 101 saltati comprendono i 14 di `test_g1_pg_reale.py` senza `G1_PG_PSQL`). Le avvertenze di thread vengono da `cambio-gbp-eur`, fuori dal comparto G.
