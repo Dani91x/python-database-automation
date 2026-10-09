@@ -110,7 +110,10 @@ describe('script verifica_barra_replay.ts lanciato davvero (finto PostgREST su l
     }, TEMPO_MAX_MS);
 
     it('credenziali SOLO da ambiente: senza esce con 2 e lo dice; con la sola chiave anonima chiede anche l\'utente', async () => {
-        const senza = await lancia([], {});
+        // 09/10: il figlio gira con cwd=frontend e vite-node carica `frontend/.env` (sul PC ci sono
+        // VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY): Vite NON sovrascrive una variabile gia' presente
+        // nell'ambiente, quindi si passano VUOTE: il caso 'senza credenziali' e' lo stesso ovunque.
+        const senza = await lancia([], { VITE_SUPABASE_URL: '', SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '', SUPABASE_SERVICE_ROLE_KEY: '' });
         expect(senza.codice).toBe(2);
         expect(senza.err).toContain('Credenziali mancanti');
         const anon = await lancia([], { VITE_SUPABASE_URL: 'http://127.0.0.1:9', VITE_SUPABASE_ANON_KEY: CHIAVE_FINTA });
