@@ -5624,3 +5624,13 @@ degradato dal 08/2026; la run e' creata 5-6 h dopo l'orario) -> Daily alle 07:00
   guasto persistente, rechain del retrain che non fa rossa la run, atlante compatto + controllo «gia' scritto», tetti dei job dalle
   durate misurate. Verifica del coordinatore: 233 test, mutazione mia (ogni POST idempotente -> 3 rossi), prova del trasporto
   acceso/spento. DECISIONE APERTA D-A (atlante 24 MB): ridurre/gzip/separare `h2h_hint` e `by_team`.
+
+### Checkpoint delle 12:56 del 09/10 — audit matematica/Poisson/ML consegnato (sessione SDK a crediti API)
+- Lanciato alle 11:35 con `ARCHITETTURA_2026-10/strumenti/sessione_audit_sdk.py` (nuovo: brief/uscita/tetto da riga di comando, attesa della rete, riapertura automatica, stop su credito finito); consegnato alle 12:44, 36,97 USD su tetto 78.
+- Spostato (ordine dell'utente: audit nuovi tutti nello stesso punto) in `ARCHITETTURA_2026-10/AUDIT_MATEMATICA_ML/`, indicizzato in `ARCHITETTURA_2026-10/README.md`.
+- Reperti ALTI: (1) dutching «variable» con lato LAY piazza BACK (`Betfair/stream/live_order_worker.py:2914-2919`, `dutch_variable` sempre back) — VERIFICATO dal coordinatore sul codice; (2) probabilita' di Safe tennis solo dai giochi, hold uguali (manca serve_data.csv) — da verificare; (3) ML servito senza valore oltre le quote; (4) filtro di affidabilita' ML su ~110 partite contro la moneta. Decisioni: 23 in `DECISIONI_PER_L_UTENTE.md`. Incidente: un delegato ha terminato tutti i grep.exe della macchina verso le 12:00.
+- Da fare: verifica del coordinatore sui reperti 2-4 e sullo stop giornaliero al lordo della commissione; nessun codice toccato.
+- 09/10 12:57-13:05 ATLANTE GLOBALE LEGGERO (decisione dell'utente «partiamo dall'atlante»): ramo `cantiere-atlante-leggero`
+  `da3b17c9` fuso in `e8139617` (0 conflitti, 63 test sulla cima fusa); migrazione `hazard_atlas_globale_leggero_2026-10-09.sql`
+  APPLICATA dall'utente alle 13:04: le 7 versioni in `hazard_atlas` passano da 4,5-6,7 MB a 12-17 kB l'una (chiavi solo global,meta;
+  verificato in sola lettura); `hazard_atlas_leghe` intatta. Da stanotte la action scrive ~125 KB invece di 24 MB.

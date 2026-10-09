@@ -86,6 +86,7 @@ from .config_stream import LADDER_CANALE_MS
 from . import avvio_app as AA
 from . import modo_ordini as _MO
 from .board_worker import board_worker
+from .board_worker import giro_da_parcheggiato as _board_da_parcheggiato
 from .daily_stop_worker import daily_stop_worker
 from .reconcile_worker import (
     attiva_saldo_su_evento,
@@ -1580,6 +1581,51 @@ def _battito_in_attesa(session: Any, adesso: float) -> None:
         _pubblica_battito(session)
 
 
+# 09/10 (programma del giorno, contratto par. 4): un comando del desktop arrivato
+# sul 47331 a runner PARCHEGGIATO e SENZA motore ordini (che altrimenti lo
+# serve lui, con l'aggancio al volo) non ha nessuno che lo drena: prima restava
+# in RAM senza risposta (la pagina andava in timeout a 10 s) e partiva quando il
+# framework nasceva, minuti dopo. Adesso riceve SUBITO il rifiuto col motivo.
+_MOTIVO_PARCHEGGIATO_SENZA_MOTORE = (
+    "runner calcio parcheggiato (nessuna partita agganciata) e senza motore ordini "
+    "attivo: aggancio al volo non disponibile, comando NON eseguito. Apri la partita "
+    "(Trading) e riprova")
+
+
+def _rispondi_comandi_locali_da_parcheggiato() -> int:
+    """09/10: drena la coda ``/order``/``snapshot`` del canale e risponde a ogni
+    richiesta ``ok=False`` col motivo (stessa disciplina di B-1: nessun comando
+    resta in RAM per partire dopo). Solo SENZA motore ordini. Ritorna quante."""
+    ch = _lc.get_channel()
+    if ch is None:
+        return 0
+    gestite = 0
+    while True:
+        reqs = ch.pop_requests()
+        if not reqs:
+            break
+        for req in reqs:
+            gestite += 1
+            ch.respond(req, False, error=_MOTIVO_PARCHEGGIATO_SENZA_MOTORE)
+    if gestite:
+        logger.warning("[runner] %d comandi del desktop rifiutati a runner parcheggiato "
+                       "senza motore ordini", gestite)
+    return gestite
+
+
+def _attesa_board_e_canale(session: Any) -> None:
+    """09/10 - il runner PARCHEGGIATO (ciclo d'attesa, framework non ancora
+    nato) pubblica il BOARD come il ``board_worker`` del framework (stessa
+    funzione, stessa cadenza ``BOARD_POLL_SEC``, stesso stato; zero costo senza
+    desktop) e, senza motore ordini, risponde ai comandi del canale. Mai solleva."""
+    _board_da_parcheggiato(session, "1", BOARD_POLL_SEC or 10.0)
+    if _motore_attivo() is None:
+        try:
+            _rispondi_comandi_locali_da_parcheggiato()
+        except Exception as ex:  # noqa: BLE001 - il ciclo d'attesa non cade mai
+            logger.warning("[runner] risposta ai comandi da parcheggiato KO: %s", str(ex)[:160])
+
+
 def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:  # noqa: ARG001
     """A5 — battito del runner → betfair_live_heartbeat (singleton, realtime).
 
@@ -2786,6 +2832,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     # orologio di cadenza (_LAST_ACCOUNT_TS in reconcile_worker.py): mai
                     # una doppia chiamata REST nel passaggio idle->run o viceversa.
                     run_account_sync_if_due(session)
+                    # 09/10 (programma del giorno): STESSO motivo anche per il board
+                    # (BackgroundWorker): il tabellone parte anche da parcheggiati
+                    _attesa_board_e_canale(session)
                     time.sleep(IDLE_FOLLOW_POLL_SEC)
                     # SESSIONE Betfair .it: scade dopo ~20 min di INATTIVITA' —
                     # senza keepAlive periodico il primo Segui live fallirebbe
@@ -2841,6 +2890,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     # A2 (fix 18/09 sera): stesso motivo del ramo idle sopra — anche
                     # qui framework non esiste ancora (nessun BackgroundWorker vivo).
                     run_account_sync_if_due(session)
+                    _attesa_board_e_canale(session)   # 09/10: board anche da qui
                     time.sleep(15)
                     continue
                 logger.warning("[runner] nessun mercato sottoscrivibile (budget?).")

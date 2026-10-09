@@ -1,0 +1,22 @@
+ROSSO | M01 payload leggero = atlante intero | test_payload_leggero_solo_meta_e_global_sotto_1_mb
+ROSSO | M02 by_league fra le chiavi ammesse | test_payload_leggero_solo_meta_e_global_sotto_1_mb
+ROSSO | M03 RPC con l'atlante intero | test_la_post_della_rpc_non_porta_mai_i_blocchi_derivati
+ROSSO | M04 ripiego diretto con l'atlante intero | test_il_ripiego_diretto_non_porta_mai_i_blocchi_derivati
+ROSSO | M05 global tolto dal payload | test_payload_leggero_solo_meta_e_global_sotto_1_mb
+ROSSO | M06 assembla cambiata (MIN_H2H 3->4) | test_assembla_identico_a_prima_byte_per_byte
+ROSSO | M19 assembla cambiata (K_TEAM 12->13) | test_assembla_identico_a_prima_byte_per_byte
+ROSSO | M20 file domanda cambiato (modo) | test_file_del_modo_domanda_identico_a_prima_byte_per_byte
+ROSSO | M07 scarica non riassembla il payload leggero | test_scarica_riassembla_lo_stesso_file_di_prima
+ROSSO | M08 scarica riassembla anche il payload intero | test_sync_scarica_solo_se_piu_nuovo_e_i_consumatori_ricaricano
+ROSSO | M09 scarica dimentica meta.run | test_scarica_riassembla_lo_stesso_file_di_prima
+ROSSO | M10 scarica senza seme | test_scarica_riassembla_lo_stesso_file_di_prima
+ROSSO | M11 scarica legge solo la prima pagina | test_scarica_legge_tutte_le_pagine_delle_leghe
+ROSSO | M12 scarica in ordine decrescente | test_scarica_riassembla_lo_stesso_file_di_prima
+ROSSO | M13 scarica senza filigrana | test_scarica_riassembla_lo_stesso_file_di_prima
+ROSSO | M14 scarica accetta lettura monca/vuota | test_scarica_senza_leghe_o_monca_non_tocca_il_file
+ROSSO | M15 scarica con la data di adesso | test_scarica_riassembla_lo_stesso_file_di_prima
+ROSSO | M16 migrazione senza WHERE (non idempotente) | test_migrazione_tiene_solo_meta_e_global_idempotente_senza_drop
+ROSSO | M17 migrazione tiene anche h2h_hint | test_migrazione_tiene_solo_meta_e_global_idempotente_senza_drop
+ROSSO | M18 migrazione con VACUUM | test_migrazione_tiene_solo_meta_e_global_idempotente_senza_drop
+ripristino sha256 OK: {'Betfair/stream/scalper/genera_atlante.py': '3931d3ae9574', 'Betfair/stream/scalper/hazard_atlas_sync.py': 'd26985db871b', 'migrations/hazard_atlas_globale_leggero_2026-10-09.sql': 'd4afbb43df04', 'Betfair/stream/scalper/atlante_a_domanda.py': '0273288ff1b4'}
+20 su 20 rosse

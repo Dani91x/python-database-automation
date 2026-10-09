@@ -904,9 +904,29 @@ class ScritturaLegheParziale(RuntimeError):
         self.scritte = scritte
 
 
+# 09/10/2026 (AUDIT_2026-10-09/fallimenti_action/ATLANTE_GLOBALE_LEGGERO.md, decisione
+# dell'utente: "sul database dobbiamo scrivere il piu' leggero possibile; se alcuni dati
+# non servono non c'e' bisogno di scrivere"): la riga globale ``hazard_atlas`` porta nel
+# ``payload`` SOLO queste chiavi (~0,13 MB invece di ~24 MB). ``by_league``, ``by_team``,
+# ``h2h_hint`` e ``v4`` sono DERIVATI dallo stato per lega (``hazard_atlas_leghe``, la
+# fonte, scritta come prima) e nessuno li leggeva dalla riga globale: il PC assembla il suo
+# ``hazard_atlas_live.json`` da ``hazard_atlas_leghe`` (modo 'domanda'; dal 09/10 anche il
+# modo 'scarica', vedi ``hazard_atlas_sync.py``). I conteggi (n_leghe, n_partite,
+# filigrana) restano nelle colonne della riga e in ``meta``. L'atlante assemblato in
+# memoria (``assembla``, file ``--json``) NON cambia.
+CHIAVI_PAYLOAD_GLOBALE: Tuple[str, ...] = ("meta", "global")
+
+
+def payload_globale_leggero(atlas: Dict[str, Any]) -> Dict[str, Any]:
+    """Il payload della riga globale: solo ``CHIAVI_PAYLOAD_GLOBALE`` dell'atlante
+    (stessi oggetti, nessuna copia ne' modifica dell'atlante del chiamante)."""
+    return {k: atlas[k] for k in CHIAVI_PAYLOAD_GLOBALE if k in atlas}
+
+
 class _Scrittore:
     """SCRITTURA su DB: solo la action notturna (``--scrivi-db``). Upsert dello
-    stato delle SOLE leghe toccate + una riga nuova in ``hazard_atlas``;
+    stato delle SOLE leghe toccate + una riga nuova in ``hazard_atlas`` (dal
+    09/10 con il payload LEGGERO: ``payload_globale_leggero``);
     tiene le ultime ``tieni`` versioni.
 
     R-28-2 (28/09): la scrittura andava in HTTP 500 (statement_timeout 57014
@@ -1059,9 +1079,14 @@ class _Scrittore:
         404: migrazione non applicata), si ripiega SUBITO sulla POST diretta
         di oggi (stessa `_req`, stessi ritentativi): il codice puo' andare su
         master prima che la migrazione sia applicata, senza run rosse nel
-        frattempo."""
+        frattempo.
+
+        09/10/2026: sia la RPC sia il ripiego scrivono SOLO il payload leggero
+        (``payload_globale_leggero``: meta + global), mai by_league/by_team/
+        h2h_hint/v4."""
+        leggero = payload_globale_leggero(atlas)
         corpo = {"generated_at": generated_at, "n_leghe": n_leghe, "n_partite": n_partite,
-                "watermark_event_id": watermark_event_id, "payload": atlas}
+                "watermark_event_id": watermark_event_id, "payload": leggero}
 
         def _gia_scritta() -> bool:
             # 09/10: la versione di QUESTA run (stesso generated_at) e' gia' sul DB?
@@ -1077,7 +1102,7 @@ class _Scrittore:
         try:
             self._req("POST", "rpc/hazard_atlas_salva_versione", {
                 "p_generated_at": generated_at, "p_n_leghe": n_leghe, "p_n_partite": n_partite,
-                "p_watermark_event_id": watermark_event_id, "p_payload": atlas}, "return=minimal",
+                "p_watermark_event_id": watermark_event_id, "p_payload": leggero}, "return=minimal",
                 gia_scritto=_gia_scritta)
             return
         except urllib.error.HTTPError as ex:
@@ -1089,7 +1114,7 @@ class _Scrittore:
         self._req("POST", "hazard_atlas", corpo, "return=minimal", gia_scritto=_gia_scritta)
 
     def salva_versione(self, atlas: Dict[str, Any], tieni: int = 7) -> None:
-        """Una riga nuova in ``hazard_atlas`` (atlante assemblato + filigrana);
+        """Una riga nuova in ``hazard_atlas`` (payload leggero dell'atlante + filigrana);
         tiene le ultime ``tieni``. La pulizia delle versioni vecchie e' solo
         manutenzione: se resta KO dopo i ritentativi si dichiara e si
         continua, non deve far sparire la scrittura buona appena fatta."""

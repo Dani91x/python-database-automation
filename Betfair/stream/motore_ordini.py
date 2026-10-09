@@ -131,6 +131,19 @@ AZIONI_CON_AGGANCIO = frozenset({"place", "greenup"})
 #: all'ARRIVO (``ricevuto_ms``), mai sull'attesa dell'aggancio; il prezzo resta
 #: il limite del bot (Safe FOK, Omega limite): un book cambiato non abbina peggio.
 AGGANCIO_MAX_MS_DEFAULT = 10000
+# 09/10 (programma del giorno, contratto par. 4): il ``/order`` del DESKTOP (box
+# quota del tabellone) su un mercato non ancora sottoscritto aggancia al volo
+# con lo STESSO meccanismo dei comandi (``AutoFollow.richiedi``). Ma ``/order``
+# e' richiesta/risposta: la pagina aspetta al piu' ``LOCAL_REQUEST_TIMEOUT_MS``
+# = 10 s (frontend/src/lib/localChannel.ts) e oltre dichiara l'errore di
+# trasporto. Un ordine piazzato DOPO che la pagina ha gia' detto "non riuscito"
+# sarebbe un ordine che il trader non sa di avere: l'attesa del /order resta
+# SEMPRE sotto quel tempo, con margine. Oltre: rifiuto esplicito, nessun ordine.
+AGGANCIO_ORDER_MAX_MS_DEFAULT = 7000
+AGGANCIO_ORDER_MAX_MS_TETTO = 8000
+#: azioni del ``/order`` che agganciano il loro mercato (il resto lavora su ordini
+#: gia' nel blotter, cioe' su mercati gia' seguiti)
+AZIONI_ORDER_CON_AGGANCIO = frozenset({"place"})
 # Estensione del coordinatore (24/09): ack a un ref gia' visto = ``accettato`` e
 # ``seq`` della PRIMA risposta, motivo questa costante.
 MOTIVO_REF_GIA_VISTO = "ref_gia_visto"
@@ -725,6 +738,18 @@ class MotoreOrdini:
             self.aggancio_max_ms = AGGANCIO_MAX_MS_DEFAULT
         if self.aggancio_max_ms <= 0:
             self.aggancio_max_ms = AGGANCIO_MAX_MS_DEFAULT
+        # 09/10: ``/order`` del desktop in attesa dell'aggancio del suo mercato
+        # (chiave progressiva -> {req, market_id, scadenza_ms}), FIFO
+        self._order_in_aggancio: "collections.OrderedDict[int, Dict[str, Any]]" = \
+            collections.OrderedDict()
+        self._n_order_aggancio = 0
+        try:
+            v = int(float(os.getenv("MOTORE_AGGANCIO_ORDER_MAX_MS", "")
+                          or AGGANCIO_ORDER_MAX_MS_DEFAULT))
+        except ValueError:
+            v = AGGANCIO_ORDER_MAX_MS_DEFAULT
+        self.aggancio_order_max_ms = (AGGANCIO_ORDER_MAX_MS_DEFAULT if v <= 0
+                                      else min(v, AGGANCIO_ORDER_MAX_MS_TETTO))
         # 24/09 (banco F4): nel replay il processo e' PAPER per costruzione e non
         # c'e' ne' DB ne' Control Room: ``modo_processo`` vale sul thread durante
         # controlli e dispatch (``LOW._CONTESTO.modo_processo``), ``blocco_modo``
@@ -848,7 +873,7 @@ class MotoreOrdini:
             # (``_SUBMIN_POLL_SEC``): si avanza in RAM, mai un sonno sincrono.
             attesa = LOW._SUBMIN_POLL_SEC if (self._submin or self._sorvegliati
                                               or self._riprezzi) else 0.5
-            if self._in_aggancio:
+            if self._in_aggancio or self._order_in_aggancio:
                 attesa = min(attesa, 0.05)   # 25/09: il primo book si vede entro 50 ms
             self._evento.wait(timeout=attesa)
             self._evento.clear()
@@ -1621,10 +1646,12 @@ class MotoreOrdini:
         servibile, con le guardie RIFATTE adesso (kill-switch, modo, settings);
         oltre la scadenza: evento terminale 'rifiutato' ``in_aggancio``. Mai un
         comando che scade in silenzio."""
+        # 09/10: anche i ``/order`` del desktop in attesa (stesso giro, stessa
+        # servibilita'); i loro rifiuti/esecuzioni sono separati dai comandi
+        n = self.avanza_order_aggancio()
         if not self._in_aggancio:
-            return 0
+            return n
         ora = self._ora_ms()
-        n = 0
         for ref in list(self._in_aggancio.keys()):
             p = self._in_aggancio.get(ref)
             if p is None:
@@ -2261,11 +2288,15 @@ class MotoreOrdini:
             "dal": dal, "fino_a": ultimo, "inviati": len(mancanti), "completo": completo}})
 
     # ----------------------------------------------------------------- /order
-    def _servi_order(self, reqs: List[Any]) -> None:
+    def _servi_order(self, reqs: List[Any], aggancio: bool = True) -> None:
         """Il ``/order`` del desktop di sempre, stesse regole e stesse risposte
         di ``_process_local_requests``; in piu': diario write-ahead e IO DB
-        differito. Guardia armata -> come B-1 (solo ``cancel``)."""
-        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
+        differito. Guardia armata -> come B-1 (solo ``cancel``).
+
+        09/10: ``aggancio`` = un ``place`` su un mercato non ancora servibile
+        aspetta l'aggancio al volo (``_order_da_agganciare``); False quando la
+        richiesta esce dall'attesa (``avanza_order_aggancio``): guardia e regole
+        si rifanno qui, adesso, come per i comandi parcheggiati."""
         ch = self.canale
         if self._guardia_armata():
             annulli = []
@@ -2278,6 +2309,119 @@ class MotoreOrdini:
             reqs = annulli
             if not reqs:
                 return
+        # 09/10: place del desktop su un mercato non ancora servibile (o runner
+        # senza framework): aggancio al volo e attesa, oppure rifiuto esplicito
+        if not aggancio:
+            self._servi_order_pronti(reqs)
+            return
+        reqs = self._order_da_agganciare(reqs)
+        if not reqs:
+            return
+        # 09/10: un errore qui NON deve risalire a ``drena``, che risponderebbe
+        # "NON eseguito" anche alle richieste gia' PARCHEGGIATE di questo giro:
+        # partirebbero dopo, a pagina che ha gia' letto il rifiuto. Si risponde
+        # solo a quelle servite adesso (stesso testo di ``drena``).
+        try:
+            self._servi_order_pronti(reqs)
+        except Exception as ex:  # noqa: BLE001
+            logger.exception("[motore] /order KO")
+            for r in reqs:
+                try:
+                    ch.respond(r, False, error=f"comando NON eseguito: {str(ex)[:120]}")
+                except Exception:  # noqa: BLE001
+                    pass
+
+    def _order_da_agganciare(self, reqs: List[Any]) -> List[Any]:
+        """09/10 - le richieste ``/order`` servibili SUBITO; le altre:
+          * ``place`` su un mercato non servibile (non sottoscritto, book non
+            ancora arrivato, runner senza framework) o dietro a un altro ``place``
+            dello stesso mercato gia' in attesa (FIFO) -> aggancio al volo chiesto
+            all'auto-follow (``richiedi``, lo STESSO dei comandi: stessa
+            connessione, stesso tetto) e richiesta PARCHEGGIATA in RAM fino al
+            primo book nuovo o a ``aggancio_order_max_ms``;
+          * tetto pieno (``richiedi`` rifiuta) -> risposta ``ok=False`` SUBITO con
+            il motivo ``tetto_mercati_pieno``, nessun ordine.
+        Senza auto-follow, o con il processo in OFF: tutto come prima (il rifiuto
+        "non sottoscritto" / "runner senza framework" / "OFF" di sempre)."""
+        ag = self._aggancio
+        if ag is None or not reqs:
+            return reqs
+        LOW = self._low
+        mode = (self._modo_processo_forzato or LOW._modo_processo()).upper()
+        if mode not in ("PAPER", "LIVE"):
+            return reqs
+        pronti: List[Any] = []
+        for r in reqs:
+            p = r.params if isinstance(r.params, dict) else {}
+            mid = str(p.get("market_id") or "")
+            if (r.method != "order" or not mid
+                    or str(p.get("action") or "") not in AZIONI_ORDER_CON_AGGANCIO):
+                pronti.append(r)
+                continue
+            in_fila = any(o["market_id"] == mid for o in self._order_in_aggancio.values())
+            try:
+                if self._flumine is not None and not in_fila and ag.servibile(mid):
+                    pronti.append(r)
+                    continue
+                no = ag.richiedi(mid, motivo="ordine dal desktop")
+            except Exception as ex:  # noqa: BLE001 - auto-follow rotto: rifiuto, mai alla cieca
+                no = f"auto-follow non disponibile: {str(ex)[:160]}"
+            if no is not None:
+                self.conti["rifiutati"] += 1
+                self.canale.respond(r, False, error=(
+                    f"{M_TETTO}: {str(no)[:200]} - ordine NON piazzato"))
+                continue
+            self._n_order_aggancio += 1
+            self._order_in_aggancio[self._n_order_aggancio] = {
+                "req": r, "market_id": mid,
+                "scadenza_ms": int(self._ora_ms()) + int(self.aggancio_order_max_ms)}
+            logger.info("[motore] /order %s su %s in attesa dell'aggancio al volo (%s, al "
+                        "piu' %d ms)", getattr(r, "msg_id", None), mid,
+                        "runner senza framework" if self._flumine is None else
+                        "mercato non sottoscritto", self.aggancio_order_max_ms)
+            self.sveglia()
+        return pronti
+
+    def avanza_order_aggancio(self) -> int:
+        """09/10 - i ``/order`` in attesa: partono (FIFO) quando il loro mercato e'
+        servibile, con guardia e regole RIFATTE adesso (``_servi_order``); oltre
+        la scadenza ricevono il rifiuto ``in_aggancio`` (mai in silenzio, mai un
+        ordine dopo che la pagina ha smesso di aspettare)."""
+        if not self._order_in_aggancio:
+            return 0
+        ora = int(self._ora_ms())
+        n = 0
+        for k in list(self._order_in_aggancio.keys()):
+            o = self._order_in_aggancio.get(k)
+            if o is None:
+                continue
+            ag = self._aggancio
+            mid = o["market_id"]
+            if ag is not None and self._flumine is not None and ag.servibile(mid):
+                del self._order_in_aggancio[k]
+                n += 1
+                try:
+                    self._servi_order([o["req"]], aggancio=False)
+                except Exception as ex:  # noqa: BLE001 - mai una richiesta senza risposta
+                    logger.exception("[motore] /order agganciato KO")
+                    self.canale.respond(o["req"], False,
+                                        error=f"comando NON eseguito: {str(ex)[:120]}")
+            elif ora > int(o["scadenza_ms"]):
+                del self._order_in_aggancio[k]
+                n += 1
+                self.conti["rifiutati"] += 1
+                motivo = (f"{M_IN_AGGANCIO}: mercato {mid} non sottoscritto entro "
+                          f"{self.aggancio_order_max_ms} ms - ordine NON piazzato "
+                          f"(aggancio chiesto al runner: riprova fra qualche secondo)")
+                logger.warning("[motore] /order %s NON eseguito: %s",
+                               getattr(o["req"], "msg_id", None), motivo)
+                self.canale.respond(o["req"], False, error=motivo)
+        return n
+
+    def _servi_order_pronti(self, reqs: List[Any]) -> None:
+        """Il ``/order`` da qui in poi come prima del 09/10 (guardia gia' fatta)."""
+        LOW = self._low  # 25/09: l'esecutore dello sport (calcio: live_order_worker)
+        ch = self.canale
         if self._flumine is None:
             for r in reqs:
                 ch.respond(r, False, error="runner senza framework attivo (nessuna partita "
