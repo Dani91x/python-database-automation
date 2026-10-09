@@ -1,0 +1,152 @@
+# B - STATO DELLA PARTITA (W1-B, ondata 1, 09/10/2026)
+
+Schema del `COSA_FA.md` (04 par. 2.4). Codice: `Betfair/nucleo/stato_partita/`. Contratto (fisso):
+`contratto.py`. Scheda: `ARCHITETTURA_2026-10/03_SCHEDE_COMPONENTI/B_PUNTEGGI_STATO_PARTITA.md`.
+Referto: `ARCHITETTURA_2026-10/ondata1/W1-B/REFERTO.md`.
+
+## 1. Scopo
+
+Lo stato della partita (minuto, tempo, fase, gol, rossi, corner, gialli, set/game del tennis, calcio
+d'inizio, eta' in tre parti, fonte vera, verdetto della condizione 11 sui prezzi) calcolato UNA volta,
+tenuto in memoria e consegnato a evento a chi si iscrive. Oggi lo stesso numero si ricalcola in 9
+punti, il calcio d'inizio ha 4 copie, lo stato viaggia su 5 relay (scheda B par. 3). Qui ogni valore e'
+IL valore di oggi: le funzioni di oggi sono importate, mai copiate; dove le copie di oggi divergono il
+modulo le espone tutte e la divergenza e' scritta per l'utente.
+
+## 2. Entrate
+
+| Entrata | Da dove | File |
+|---|---|---|
+| righe di `safe_strategy_scan` | `ScanRowCache` di oggi (DB, o DB+canale con `PUNTEGGI_CANALE`) | `adattatori/ips.py` `FonteIpsScanner` |
+| feed fresco o IPS diretto (runner calcio) | `fresh_payload` + `BetfairInPlayProvider` | `adattatori/ips.py` `FonteIpsRunner` |
+| feed fresco o `get_scores` diretto (runner tennis) | come `score_and_now_worker` | `adattatori/ips_tennis.py` |
+| API-Football e circuito primario/ripiego | `ApiFootballProvider`, `ScorePoller` di oggi | `adattatori/api_football.py` |
+| sidecar `.scores.jsonl` / `.score.jsonl` | `banco_comune.carica_punteggi` | `adattatori/registrazione.py` |
+| righe e battito dal canale 47336 | `canale_scan.ClientScan`/`CacheScan` | `adattatori/canale.py` |
+| `MarketBook` di un mercato della partita | flumine / betfairlightweight | `servizio.osserva_book` |
+
+Tutte le fonti restituiscono la stessa busta (`adattatori/lettura.py`: `fonte`, `trasporto`, `sport`,
+`riga`, `grezzo`, `grezzi`, `scanner_s`, `stato_scanner`, `istante_ms`, `origine`).
+
+## 3. Uscite
+
+- `ServizioStatoPartita.stato(event_id) -> StatoPartita | None` (contratto): eta' e verdetto del flusso RICALCOLATI
+  all'istante della chiamata (orologio del servizio) dall'ultimo dato ricevuto: un dato che non si rinnova invecchia;
+  `stato_a(event_id, adesso_s)` per un istante dato; `istante_dato_s(event_id)`: quando e' arrivato l'ultimo dato (serve
+  per le fonti senza riga, come l'IPS diretto, le cui eta' restano None come `score_age_sec` di oggi);
+- fonte muta in un giro: calcio = resta l'ultimo stato (come `live_now`), con le eta' che crescono; tennis = stato SENZA
+  punteggio (`set_game` None), come `strat.score = None` del runner tennis (`tennis_runner.py:1641-1661`);
+- "in gioco": con almeno un `MarketBook` osservato (`osserva_book`) vale la regola del runner calcio (`runner.py:358-363`,
+  un mercato in gioco e non CLOSED) per qualunque fonte; senza book vale `payload.inplay` della riga (bot lettori);
+- `iscrivi(cb)` (contratto): `cb(StatoPartita)` a ogni cambio, nessuna SELECT per chi legge;
+- `iscrivi_eventi(cb)` (estensione): `StatoCambiato`, `GolSegnato` (totale che SALE), `FaseCambiata` (solo fra fasi
+  LETTE da uno stato IPS: 'sconosciuta' e le fasi DEDOTTE dal minuto del ripiego non contano, il confronto e' con l'ultima
+  fase letta), `FlussoInterrotto`/`FlussoRipreso` (fra esiti NOTI di `flusso_prezzi.valuta`: un "non noto" non e' prova di
+  ripresa). Quando la fonte tace il verdetto si ricalcola nel giro: stato ed eventi dicono la stessa cosa;
+- giri serializzati (lettura + calcolo sotto `_giro_lock`); le callback NON girano mai sotto un lock del servizio: i giri
+  finiscono in una coda che UN consegnatore alla volta svuota fuori dai lock, nell'ordine di calcolo (anche quando una
+  callback chiama `aggiorna` dallo stesso thread: il giro annidato si accoda). Un dato che fa sollevare il calcolo di una
+  partita non ferma le altre (log al piu' una volta al minuto per partita); idem negli adattatori `ips` e `ips_tennis`;
+- la coda (terza revisione): gli STATI e i `StatoCambiato` non ancora consegnati si COALESCONO per partita (resta l'ultimo,
+  in fondo alla coda: mai uno stato vecchio dopo uno nuovo; il `StatoCambiato` fuso va dal primo "prima" non consegnato
+  all'ultimo "dopo"); gli altri EVENTI (gol, fase, flusso) non si scartano MAI. Oltre `TETTO_CODA` (1000 voci) un WARNING
+  al minuto col nome della callback che blocca; contatori in `stato_servizio()` (coda, massimo, oltre tetto, coalescenze,
+  callback in corso). Destinatari: gli iscritti AL CALCOLO (un nuovo iscritto non riceve le voci calcolate prima), ricontrollati
+  ALLA CONSEGNA (dopo che `disiscrivi()` e' tornata nessuna callback, salvo quella gia' in esecuzione); un giro senza
+  partite o con la fonte giu' svuota comunque la coda (resti di una `BaseException` in una callback);
+- thread di `avvia`: una generazione per volta, ognuna col suo stop; `ferma` torna False se il thread e' ancora dentro
+  un giro (uscira' alla fine, senza rifarne un altro) o se e' chiamata dal thread del giro stesso (es. da una callback).
+  `ferma` NON scarta la coda: stati ed eventi gia' calcolati li consegna il consegnatore attuale (anche il thread fermato,
+  prima di uscire) o il prossimo `aggiorna`;
+- `prezzi_vivi(event_id, mercati)`: `flusso_prezzi.valuta` sull'ultima riga, per i mercati di una decisione.
+- Funzioni pure di `calcolo.py` (stato da grezzo/riga/API-Football/tennis, `ko_epoch_ms`, `KoPerMercato`,
+  `KoUnico`, `fase_partita`, `minuto_da_orologio`) e di `freschezza.py` (`eta_riga_s`, `eta_punteggio_s`,
+  `eta_scanner_da_stato_s`, `calcola_eta`).
+
+## 4. Dipendenze ammesse
+
+Codice di oggi, solo funzioni pure o classi riusate, importate (mai copiate):
+`scores/betfair_inplay.parse_score_dict`, `scores/scan_feed` (`row_age_sec`, `fresh_payload`,
+`IPS_SCORE_LAG_SEC`, `ScanRowCache`), `scores/poller.ScorePoller`, `scores/api_football`
+(`parse_fixture_response`, `ApiFootballProvider`), `scalper/atlante_v4` (`tempo_da_stato_ips`,
+`tempo_da_payload`), `omega/omega_engine` (`mission_phase`, `minute_from_clock`),
+`tennis_scalper/tennis_score` (`parse_tennis_scores`, `TennisScore`), `stream/flusso_prezzi`,
+`backtest/banco_comune.carica_punteggi`. I moduli che all'import aprono qualcosa (`betfair_inplay` ->
+`urllib3` crea un socket di prova IPv6; `api_client` -> `config` legge `.env`) o pesano (`atlante_v4` ->
+`numpy`, `banco_comune`) si importano al primo uso. Nessun import di supabase. NOTA: `mission_phase`
+(Omega), `atlante_v4` (scalper) e `tennis_score` (vecchio pacchetto tennis) stanno oggi in pacchetti di bot:
+si importano come funzioni pure (brief comune regola 3); il trasloco (`tennis_score` ->
+`adattatori/ips_tennis.py`, fase/tempo nel nucleo) e' della tappa T9 vera, con il test di parita' gia' pronto.
+
+## 5. Funzionalita' coperte (id di `01_FUNZIONALITA.md`) e test
+
+| Id | Cosa | Dove | Test |
+|---|---|---|---|
+| B-001, B-002 | tipo dello stato e fonte sostituibile | `contratto.py` (fisso), `adattatori/*` | `test_b_servizio::test_rispetta_il_contratto` |
+| B-003, B-004, B-005 | parser IPS calcio (minuto 0, forme del punteggio, statistiche) | `calcolo.stato_calcio_da_grezzo` | `test_b_calcolo::test_parita_ogni_riga_*`, `test_casi_limite_con_gli_arbitri` |
+| B-007, B-015, A-083 | IPS diretto e provider dal feed | `adattatori/ips.FonteIpsRunner` | `test_b_adattatori::test_runner_sceglie_come_scan_feed` (56 casi) |
+| B-008, B-009 | API-Football | `adattatori/api_football.FonteApiFootball`, `calcolo.stato_calcio_da_api_football` | `test_fonte_api_football`, `test_le_righe_registrate_dicono_la_loro_fonte` |
+| B-010 | circuito primario/ripiego (U-10 invariata) | `adattatori/api_football.FonteCircuitoCalcio` | `test_circuito_identico_al_poller_di_oggi` |
+| B-011, B-012, B-013, A-082, D-014, D-020 | cache per processo, fusione col canale, battito | `adattatori/ips.FonteIpsScanner`, `adattatori/canale.py` | `test_fonte_scanner_da_le_righe_senza_filtro`, `test_canale_righe_battito_e_stato` |
+| B-014 | `fresh_payload` (15 s / scanner vivo 30 s / tetto 180 s) | riusata in `FonteIpsRunner.grezzo_dal_feed` | griglia + `test_zero_a_zero_fermo_con_scanner_vivo_resta_sul_feed` |
+| B-016 | eta' onesta = riga + 3 s | `freschezza.eta_punteggio_s` | `test_b_freschezza`, `test_b_parita_banco` (per tick) |
+| B-018 | `apply_score_state` (numeri della riga) | `calcolo.stato_calcio_da_riga` | `test_b_parita_banco` |
+| B-030, B-031, B-032, E5-060, E5-061 | tennis: `TennisScore`, `key()`, pressione, parser | `calcolo.stato_tennis_*`, `chiave_tennis` | `test_tennis_chiave_e_pressione_uguali_al_parser` (9 casi) |
+| B-034 (parte punteggio) | strada feed/diretto del runner tennis | `adattatori/ips_tennis.py` | `test_tennis_feed_diretto_errore` |
+| B-036, B-037 (valuta), E3-S08 | condizione 11 dentro lo stato | `servizio.esito_flusso`, `prezzi_vivi` | `test_prezzi_vivi_per_i_mercati_della_decisione`, `test_b_parita_banco` |
+| B-045, B-044 | fase e tempo da stato IPS | `calcolo.fase_partita`, `tempo_partita` | sidecar + per tick + divergenze |
+| B-047 | `_ko_epoch_ms` (4 copie) | `calcolo.ko_epoch_ms`, `KoPerMercato`, `KoUnico` | `test_ko_identico_alle_4_copie_sui_book_veri`, `test_ko_bordi_e_divergenza_della_cache_unica`, `test_b_correzioni::test_ko_*` |
+| - | robustezza, eta' oneste, ciclo di vita (correzioni dopo la revisione) | `servizio.py` | `test_b_correzioni.py` (24 test) |
+| B-049 | sidecar per registrazioni (lettura) | `adattatori/registrazione.py` | `test_registrazione_scorre_come_il_banco`, `test_registrazione_tennis` |
+| B-050 | parita' paper/live: una sola strada, nessun ramo per modo | tutto il comparto (nessun parametro di modo) | per costruzione (nessun `mode` nel codice) |
+| D-017 (parte) | punteggio/minuto per chi oggi legge `live_now` | `servizio.iscrivi` | `test_segui_stato_iscrivi_ed_eventi` |
+
+Restano al codice di oggi (ondata 2 o tappa T9): B-006/B-019/B-020/B-025 (timeline), B-017/B-021/B-022/B-023 (poll
+batch dello scanner, lato scanner per ultimo), B-024/B-026/B-027/B-035/A-070/G-011 (scritture `live_now`/`tennis_live_now`),
+B-028/B-029 (upload e curatore), B-033 (pollatori legacy), B-038..B-043/D-015/D-016 (involucri e soglie dei bot: U-08),
+B-046/B-048 (osservatori dello scalper e minuto di telemetria: leggeranno `stato()`, U-11), B-051/B-052/B-053, E3-S07 (scanner).
+
+## 6. Interruttore previsto
+
+`ARCH_STATO_PARTITA=vecchio|ombra|nuovo` (05 T9). L'interruttore NON esiste ancora (nasce con l'aggancio dell'ondata 2):
+oggi nessun codice di produzione importa questo comparto, quindi l'app gira col codice di oggi. Dettaglio dell'aggancio:
+referto par. 8.
+
+## 7. Come si sostituisce
+
+Una fonte nuova = una classe con `nome` e `leggi(event_ids) -> {event_id: busta}` (busta di
+`adattatori/lettura.py`) in `adattatori/`, piu' il suo test di parita'. Il servizio, il calcolo e i bot
+non cambiano. Oggi la stessa sostituzione tocca >= 11 file (scheda B par. 4.5).
+
+## 8. Come si prova da solo
+
+```
+python -m pytest Betfair/nucleo/stato_partita/tests -q -p no:cacheprovider -m "not cert"   # ~20-45 s
+python ARCHITETTURA_2026-10/ondata1/W1-B/mutazioni.py .                                       # 46 mutazioni, tutte rosse
+python -m pytest Betfair/nucleo/stato_partita/tests/test_b_parita_banco.py -q -p no:cacheprovider -s   # cert, ~150 s
+```
+I test leggono le registrazioni da `registrazioni_banco/` (gz) e scompattano in una cartella temporanea:
+nessun file fuori da `tmp`, nessuna rete, nessun DB.
+
+## 9. Misure
+
+Parita' 100% su 220 righe di sidecar e su 17.796 giri per tick dello scanner vero (6.076 + 11.720), 0
+divergenze; numeri e durate nel referto par. 3-5. Latenza: il servizio non aggiunge relay ne' SELECT per
+chi si iscrive (sveglia in processo); la misura del ritardo reale e' dell'ombra (ondata 2).
+
+## 9-bis. Limiti e divergenze da conoscere
+
+- Ripiego API-Football: fase = `mission_phase(status=None, minuto, kickoff, now)`, cioe' quella che Omega calcola OGGI
+  quando il punteggio arriva dal ripiego senza stato IPS (`omega_service.py:1129-1139`, `:1980`); marcata DEDOTTA
+  (`calcolo.StatoPartitaEsteso.fase_dedotta`); tempo None; `status.short` non e' letto. "Fase sconosciuta dal ripiego" e'
+  una possibile decisione dell'utente (cambierebbe la fase con cui Omega decide oggi), non presa.
+- Record IPS con soli `timeElapsedSeconds`: la riga dello scanner dice 25' (minuto calcolato sul record intero), chi
+  riparsa lo `score_raw` spogliato (`strip_volatile_state`) dice None: lo stato riproduce ciascuno dei due.
+- `KoPerMercato`: come le 4 copie di oggi la cache cresce per tutta la vita di chi la usa; il SERVIZIO la pota quando una
+  partita esce da `segui` (`KoPerMercato.dimentica`). Proposta per i bot (quando leggeranno `ko_ms` dallo stato): nessuna
+  cache propria, oppure tetto pari ai mercati sottoscritti (200 per sottoscrizione Betfair).
+- Divergenze di oggi fra copie: referto par. 9.
+
+## 10. PROCESSO_STANDARD_BOT par. 6/7
+
+Referto par. 7.
