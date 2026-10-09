@@ -36,7 +36,7 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
 |---|---|---|---|
 | T0A | Modulo «Salute» + misure mancanti + referto 24 h | cloud (codice) + PC (migrazione `monitor_metrics`, 24 h app accesa) | in corso (cloud, 09/10) |
 | T0B (1)-(3) | Cantieri 15, 11, 7 del banco | cloud | fatta (fusi su master entro il 09/10, `CRONOSTORIA.md` 08/10) |
-| T0B (4) | Finto di Omega con la firma del vero (`aggregates(..., mode)`), referto prima/dopo | cloud | in corso (cloud, 09/10) |
+| T0B (4) | Finto di Omega con la firma del vero (`aggregates(..., mode)`), referto prima/dopo | cloud | fatta (`07115d13`, 09/10; referto `tappa0/T0B4_FINTO_OMEGA/`) |
 | T0B (5) | 3-5 partite tennis in `registrazioni_banco/` (U-44) + registrazioni calcio COMPLETE aggiuntive per Mike (U-27) | PC | da fare (PC) |
 | T0B (6) | Commit dei 4 documenti (U-37) + testo della Base allineato al 25/09 | PC | da fare (PC) |
 | U-62 | Ora di Windows, niente sospensione, avvio al login (app spenta o bot flat) | PC + utente | da fare (PC) |
@@ -50,6 +50,14 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
   avvia in parallelo T0A (modulo Salute), T0B (4) (finto di Omega) e T0C (solo strumenti: cassetta, ombra, tolleranze, congela,
   con prova di innocuita', falsificazione e determinismo; nessuna baseline congelata finche' T0B non e' completa).
   Al PC: U-62, U-60, T0B (5)-(6) (testo nella conversazione e nel blocco del 09/10 di `CRONOSTORIA.md`).
+
+- 09/10 — T0B (4) FATTA e verificata dal coordinatore cloud (`07115d13`): solo il finto del banco
+  (`Betfair/omega/tools/replay_registrazioni.py`), firma identica al vero; CRITICAL «paper e live SOMMATI» 22 -> 0 righe sulla
+  35760084 (24 -> 0 sulla 35797769), stderr altrimenti identico, esiti 22/22 invariati su entrambe; test nuovo 28 rossi prima /
+  28 verdi dopo, mutazione del coordinatore rossa (16); suite 11.503 verdi. Reperti aperti per l'utente: R1 (nessuno scenario di
+  Omega mescola paper e live: proposta di uno scenario «modalita-mista» PRIMA del congelamento), R2 (`omega 35797769 --scenari
+  tutti --worker 3` 1033-1466 s, sopra il tetto dei 600 s, su macchina condivisa), R3 (altri finti di Omega nei test unitari senza
+  `mode`, 12 chiavi contro 19), R4 (parita' della RPC `get_omega_aggregates_modalita` da verificare sul PC col DB in sola lettura).
 
 ## Punto di ripresa
 
