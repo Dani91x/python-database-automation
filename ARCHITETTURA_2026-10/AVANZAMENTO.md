@@ -88,8 +88,12 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
   per le sue verifiche usa una baseline propria dallo stesso commit; (c) R4 sha256 delle `.timeline.jsonl`: si calcolano sui byte
   del repo (`git show`), mai sulla copia di lavoro con `autocrlf`; (d) R5: Omega e Safe si congelano su `tutti`; (e) R6: cassette
   `tutti` nel repo COMPRESSE (~0,4-0,8 MB ciascuna).
-- 09/10 — DECISIONI CHIESTE ALL'UTENTE: (1) scenario «modalita-mista» di Omega prima del congelamento (reperto R1 di T0B4);
-  (2) conservazione di `monitor_metrics` nel DB.
+- 09/10 — DECISE dal coordinatore su delega esplicita dell'utente («devi dirmi tu la soluzione migliore»): (1) scenario
+  «modalita-mista» di Omega SI', aggiunto dal cloud PRIMA del congelamento (solo banco, strategia intatta); (2) `monitor_metrics`:
+  7 giorni nel DB (pulizia con la RPC `monitor_metrics_pulizia`), copia completa sul PC in `_logs/monitor/`; (3) la misura di 24 h
+  di T0A si fa DOPO che il PC ha verificato e firmato T0A e l'utente ha detto si' al suo ingresso su master con
+  `MONITOR_SALUTE=0` (regola dei rami, punto 3): niente copie parallele dell'app; (4) congelamento di T0C dopo B1-B5 del PC e la
+  firma delle tre consegne del cloud.
 
 - 09/10 — Separazione dei rami (ordine dell'utente: «l'architettura e' un argomento a se'»): tutto il lavoro della tappa 0 e'
   sul ramo `claude/architettura-tappa0` (cima `66c19c7d` prima di questa riga). Su master va SOLO `a7cf9fdd` del ramo
@@ -97,7 +101,9 @@ Stato: `da fare` · `in corso (chi)` · `in verifica PC` · `fatta (commit, data
 
 ## Punto di ripresa
 
-Prossima sessione: le tre consegne del 09/10 sono verificate e integrate. Da fare nel cloud: applicare le decisioni tecniche
+Ordine dei lavori: PC -> B1-B5 e verifica/firma di T0A, T0B4, T0C strumenti; cloud -> decisioni tecniche (a)-(e), scenario
+«modalita-mista» di Omega, istruzioni del congelamento; utente -> un si' per l'ingresso di T0A su master (spento); PC -> 24 h
+della Salute e congelamento. Prossima sessione: le tre consegne del 09/10 sono verificate e integrate (sul ramo dell'architettura). Da fare nel cloud: applicare le decisioni tecniche
 (a)-(e) e, se l'utente dice si', lo scenario «modalita-mista» di Omega; leggere i numeri del PC (U-62, U-60, T0B 5-6, T0A 24 h).
 Poi il PC produce le baseline (due giri ciascuna) e il manifesto di T0C sulla sua macchina.
 Dopo T0C: T1/T2/T3 (05 §3, grafo delle dipendenze).
