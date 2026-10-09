@@ -34,7 +34,6 @@
     "Analytics",
     "Report personale",
     "Trade journal",
-    "Salute",
     "Account",
     "Scelta sport",
     "Esci",
@@ -82,7 +81,6 @@
     "shell-voce-analytics",
     "shell-voce-report-personale",
     "shell-voce-trade-journal",
-    "shell-voce-salute",
     "shell-gruppo-account",
     "shell-voce-select-sport",
     "shell-voce-esci",
@@ -228,11 +226,6 @@
       "ruolo": "link",
       "nome": "Trade journal",
       "href": "/trade-journal"
-    },
-    {
-      "ruolo": "link",
-      "nome": "Salute",
-      "href": "/salute"
     },
     {
       "ruolo": "link",
