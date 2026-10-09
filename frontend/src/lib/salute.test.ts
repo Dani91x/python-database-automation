@@ -108,8 +108,10 @@ describe('letture (una RPC sul client che c\'e\' gia\')', () => {
 });
 
 describe('parita\' col Python e con la migrazione', () => {
-    const referto = readFileSync(join(RADICE, 'Betfair', 'monitor', 'referto.py'), 'utf-8');
-    const sql = readFileSync(join(RADICE, 'migrations', 'monitor_metrics_2026-10-09.sql'), 'utf-8');
+    // fine riga normalizzati a LF: sul PC (autocrlf) i file di lavoro sono CRLF e lo split
+    // sul blocco _TRATTI_SPIEGATI non si chiuderebbe (13 prefissi contati invece di 11)
+    const referto = readFileSync(join(RADICE, 'Betfair', 'monitor', 'referto.py'), 'utf-8').replace(/\r\n/g, '\n');
+    const sql = readFileSync(join(RADICE, 'migrations', 'monitor_metrics_2026-10-09.sql'), 'utf-8').replace(/\r\n/g, '\n');
 
     it('stesse soglie di Betfair/monitor/referto.py::OBIETTIVI', () => {
         for (const [k, v] of Object.entries(OBIETTIVI)) {
