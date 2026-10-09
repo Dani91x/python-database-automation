@@ -33,17 +33,20 @@ WF_DIR = os.path.join(ROOT, ".github", "workflows")
 SCRIPT = os.path.join(ROOT, ".github", "scripts", "passa_testimone.sh")
 MIGRAZIONE = os.path.join(ROOT, "migrations", "orologio_action_notturne_2026-10-09.sql")
 
-# ordine della catena (decisione dell'utente del 09/10/2026: Today Predictions
-# subito dopo la Post-Calibration, pronta per le 09:00 italiane)
+# ordine della catena, DEFINITIVO (decisione dell'utente del 09/10/2026, tabelle lette e
+# scritte da ogni script verificate dal coordinatore): il mapper scrive
+# api_coverage_by_season che Today legge; Results scrive gli esiti che Weekly Poisson legge;
+# Hazard e Catchup leggono i dati del Daily; il Retrain allena anche sulle partite chiuse dal
+# Catchup; dopo il Catchup nessuno chiama API-Football.
 CATENA = [
     "daily_yesterday_backfill.yml",
+    "leagues_mapper.yml",
+    "today_predictions_backfill.yml",
+    "predictions_results_backfill.yml",
+    "hazard_atlas.yml",
+    "seasons_catchup.yml",
     "retrain_models.yml",
     "ml_calibration.yml",
-    "today_predictions_backfill.yml",
-    "hazard_atlas.yml",
-    "leagues_mapper.yml",
-    "seasons_catchup.yml",
-    "predictions_results_backfill.yml",
     "weekly_poisson_calibration.yml",
 ]
 LAVORO_STAFFETTA = "passa-testimone"
@@ -124,6 +127,97 @@ def test_catena_una_linea_nell_ordine() -> None:
     assert percorso == CATENA, f"ordine della catena diverso da quello deciso:\n{percorso}"
     # nessun anello fuori dalla linea
     assert set(succ) | set(pred) == set(CATENA)
+
+
+def test_ordine_definitivo_coppie_e_dipendenze() -> None:
+    """Ordine definitivo del 09/10/2026, coppie scritte una per una e lette dai workflow veri
+    (PROSSIMO_ANELLO), non dalla costante CATENA. In particolare il mapper aggiorna
+    api_coverage_by_season e Today Predictions la legge: il mapper gira PRIMA."""
+    tutti = _tutti()
+    succ = {n: _prossimo(d) for n, d in tutti.items()}
+    attesi = {
+        "daily_yesterday_backfill.yml": "leagues_mapper.yml",
+        "leagues_mapper.yml": "today_predictions_backfill.yml",
+        "today_predictions_backfill.yml": "predictions_results_backfill.yml",
+        "predictions_results_backfill.yml": "hazard_atlas.yml",
+        "hazard_atlas.yml": "seasons_catchup.yml",
+        "seasons_catchup.yml": "retrain_models.yml",
+        "retrain_models.yml": "ml_calibration.yml",
+        "ml_calibration.yml": "weekly_poisson_calibration.yml",
+        "weekly_poisson_calibration.yml": None,
+    }
+    for a, b in attesi.items():
+        assert succ.get(a) == b, f"{a}: prossimo anello atteso {b}, trovato {succ.get(a)}"
+    # la dipendenza che giustifica l'ordine esiste davvero nel codice
+    with open(os.path.join(ROOT, "Prediction", "today_predictions_backfill.py"), encoding="utf-8") as f:
+        today = f.read()
+    with open(os.path.join(ROOT, "leagues_mapper.py"), encoding="utf-8") as f:
+        mapper = f.read()
+    assert 'table("api_coverage_by_season")' in today
+    assert 'table("api_coverage_by_season").upsert(' in mapper
+
+
+def test_commenti_dell_ordine_allineati() -> None:
+    """I commenti dell'ordine nei 9 workflow e nella migrazione dicono l'ordine definitivo
+    (un commento vecchio farebbe lanciare a mano l'anello sbagliato per riprendere)."""
+    righe = ["1 Daily Yesterday Backfill -> 2 Leagues Mapping -> 3 Today Predictions Backfill ->",
+             "4 Predictions Results Backfill -> 5 Hazard Atlas -> 6 Seasons Catchup ->",
+             "7 Retrain ML -> 8 ML Post-Calibration ->"]
+    vecchie = ["2 Retrain ML -> 3 ML Post-Calibration", "5 Hazard Atlas -> 6 Leagues Mapping",
+               "4 Leagues Mapping -> 5 Today", "8 Predictions Results Backfill -> 9 Weekly"]
+    with open(MIGRAZIONE, encoding="utf-8") as f:
+        sql = f.read()
+    for nome, testo in [(n, _testo_file(n)) for n in CATENA] + [("migrazione", sql)]:
+        for riga in righe:
+            assert riga in testo, f"{nome}: commento dell'ordine non aggiornato ({riga})"
+        for v in vecchie:
+            assert v not in testo, f"{nome}: ordine vecchio nei commenti ({v})"
+
+
+def test_input_passati_arrivano_all_anello_giusto() -> None:
+    """Ogni chiave=valore passata a passa_testimone.sh deve essere un input dichiarato del
+    PROSSIMO anello (altrimenti GitHub risponde 422 "Unexpected inputs" e la catena si
+    ferma), e le chiavi sono esattamente quelle attese per ogni anello."""
+    attese = {n: ["monte_ok"] for n in CATENA[:-1]}
+    attese["retrain_models.yml"] = ["retrain_eseguito", "monte_ok"]
+    for nome in CATENA[:-1]:
+        d = _carica(nome)
+        passi = [s for s in d["jobs"][LAVORO_STAFFETTA]["steps"] if "passa_testimone.sh" in (s.get("run") or "")]
+        assert len(passi) == 1, f"{nome}: atteso UN passo con passa_testimone.sh"
+        coda = passi[0]["run"].split("passa_testimone.sh", 1)[1]
+        chiavi = re.findall(r"(\w+)=", coda)
+        assert chiavi == attese.get(nome, []), f"{nome}: input passati {chiavi}"
+        prossimo = _prossimo(d)
+        dichiarati = (_on(_carica(prossimo)).get("workflow_dispatch") or {}).get("inputs") or {}
+        for k in chiavi + ["catena"]:
+            assert k in dichiarati, f"{nome} passa {k} a {prossimo}, che non lo dichiara"
+
+
+def test_monte_ok_inoltrato_fino_al_retrain() -> None:
+    """monte_ok (esito del Daily) nasce nel Daily e arriva al Retrain (7o anello) passando per
+    OGNI anello in mezzo: ognuno lo dichiara (stringa, default 'true') e lo inoltra tale e
+    quale. Un anello che lo perde farebbe allenare il Retrain anche dopo un Daily fallito."""
+    for nome in CATENA:
+        inp = (_on(_carica(nome)).get("workflow_dispatch") or {}).get("inputs") or {}
+        assert "monte_ok" in inp, f"{nome}: manca l'input monte_ok"
+        assert str(inp["monte_ok"].get("default")) == "true", f"{nome}: monte_ok deve valere 'true' a mano"
+    daily = _carica(CATENA[0])
+    st = daily["jobs"][LAVORO_STAFFETTA]["steps"][-1]
+    assert st["env"]["MONTE_OK"] == "${{ needs.run-backfill.result == 'success' }}"
+    # dal Daily al Retrain: catena di inoltri senza buchi
+    nome = _prossimo(daily)
+    visti = []
+    while nome != "retrain_models.yml":
+        visti.append(nome)
+        d = _carica(nome)
+        passi = [s for s in d["jobs"][LAVORO_STAFFETTA]["steps"] if "passa_testimone.sh" in (s.get("run") or "")]
+        assert passi[0]["env"].get("MONTE_OK") == "${{ inputs.monte_ok || 'true' }}", f"{nome}: monte_ok non inoltrato"
+        assert 'monte_ok="$MONTE_OK"' in passi[0]["run"], f"{nome}: monte_ok non passato al prossimo anello"
+        nome = _prossimo(d)
+        assert nome is not None and len(visti) < len(CATENA), "il Retrain non e' a valle del Daily"
+    assert visti == CATENA[1:CATENA.index("retrain_models.yml")]
+    r = _carica("retrain_models.yml")
+    assert r["jobs"]["plan"]["if"] == "${{ inputs.monte_ok != 'false' }}"
 
 
 def test_nessun_workflow_run_nella_catena() -> None:
@@ -252,16 +346,25 @@ def test_post_calibration_full_il_lunedi_nella_catena() -> None:
     assert 'compute_ml_post_calibration.py --min-n "$MIN_N" $FULL' in passo["run"]
 
 
-def test_catchup_riserva_solo_per_results_nella_catena() -> None:
-    """D1 (09/10/2026): nella catena il catchup tiene la quota solo per Predictions Results
-    (che gira dopo); a mano la variabile e' vuota = riserva piena."""
+def test_catchup_riserva_nessuna_nella_catena() -> None:
+    """Ordine definitivo (09/10/2026): dopo il catchup girano solo Retrain, Post-Cal e Weekly
+    Poisson, che non chiamano API-Football: nella catena CATCHUP_RISERVA_PER = 'nessuna'
+    (riserva = sola residua); a mano la variabile e' vuota = riserva piena."""
     d = _carica("seasons_catchup.yml")
     env = d["jobs"]["catchup"]["steps"][-1]["env"]
-    assert env["CATCHUP_RISERVA_PER"] == (
-        "${{ inputs.catena == 'true' && 'predictions_results_backfill.yml' || '' }}")
-    # cio' che resta da riservare e' davvero cio' che viene DOPO il catchup nella catena
+    assert env["CATCHUP_RISERVA_PER"] == "${{ inputs.catena == 'true' && 'nessuna' || '' }}"
     i = CATENA.index("seasons_catchup.yml")
-    assert CATENA[i + 1:] == ["predictions_results_backfill.yml", "weekly_poisson_calibration.yml"]
+    dopo = CATENA[i + 1:]
+    assert dopo == ["retrain_models.yml", "ml_calibration.yml", "weekly_poisson_calibration.yml"]
+    # chi viene dopo non ha la chiave di API-Football (senza chiave nessuna chiamata)
+    for nome in dopo:
+        assert "API_FOOTBALL_KEY" not in _testo_file(nome), f"{nome}: ha API_FOOTBALL_KEY ma gira dopo il catchup"
+    # la parola riservata produce davvero la sola residua
+    import sys
+    sys.path.insert(0, ROOT)
+    import seasons_catchup as sc
+    r, _ = sc.riserva_da_catena({"CATCHUP_RISERVA_PER": "nessuna"})
+    assert r == sc.leggi_riserva_residua({}, sc.leggi_riserva({}))
 
 
 def test_weekly_poisson_solo_lunedi_in_catena() -> None:

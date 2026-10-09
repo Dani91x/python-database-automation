@@ -3,7 +3,7 @@ name: Seasons Catchup (buchi di dati)
 # eventi/formazioni/statistiche/quote, solo endpoint con flag di coverage True, dentro la
 # quota API (riserva per le action giornaliere), stop a fine partita / lega-stagione.
 #
-# Catena: Daily Yesterday Backfill -> Leagues Mapping (giornaliero) (ora anche giornaliero,
+# Catena (dal 25/09 al 09/10; ordine attuale sotto): Daily Yesterday Backfill -> Leagues Mapping (giornaliero) (ora anche giornaliero,
 # aggiorna i flag) -> QUESTO. Non gira mai insieme a Daily/Today/Results/Retrain (quota e DB,
 # stesso DB): oltre all'aggancio dopo il mapper, lo script chiede a GitHub prima di ogni
 # lega-stagione (e ogni 2 min durante) se una di quelle action e' in corso o in coda e,
@@ -29,19 +29,24 @@ name: Seasons Catchup (buchi di dati)
 # intera. Mai piu' un traceback per un guasto di rete.
 #
 # 09/10/2026 (cantiere orologio notturno): tolti l'aggancio workflow_run al mapper e il
-# cron delle 13:47 UTC (seconda finestra del giorno). SETTIMO anello della catena
-# notturna: lo lancia Leagues Mapping (passa-testimone). Nessuna finestra di giorno
+# cron delle 13:47 UTC (seconda finestra del giorno). SESTO anello della catena
+# notturna: lo lancia Hazard Atlas (passa-testimone). Nessuna finestra di giorno
 # (decisione dell'utente del 09/10: di giorno l'app e' accesa). Riserva di quota API: ora
-# Daily e Today Predictions girano PRIMA (le loro chiamate sono gia' nel contatore) e
-# Predictions Results DOPO: nella catena CATCHUP_RISERVA_PER tiene la quota SOLO per
-# Results (seasons_catchup.riserva_da_catena); lanciato a mano (catena=false) la variabile
-# e' vuota e la riserva e' PIENA (prudente).
+# Daily, Today Predictions e Predictions Results girano PRIMA (le loro chiamate sono gia'
+# nel contatore) e DOPO vengono solo Retrain, Post-Calibration e Weekly Poisson, che NON
+# chiamano API-Football: nella catena CATCHUP_RISERVA_PER = 'nessuna' e la riserva e' la
+# sola residua (seasons_catchup.riserva_da_catena); lanciato a mano (catena=false) la
+# variabile e' vuota e la riserva e' PIENA (prudente).
 
 on:
-  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine del 09/10/2026:
-  # 1 Daily Yesterday Backfill -> 2 Retrain ML -> 3 ML Post-Calibration ->
-  # 4 Today Predictions Backfill -> 5 Hazard Atlas -> 6 Leagues Mapping ->
-  # 7 Seasons Catchup -> 8 Predictions Results Backfill -> 9 Weekly Poisson (solo lunedi').
+  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine DEFINITIVO del 09/10/2026:
+  # 1 Daily Yesterday Backfill -> 2 Leagues Mapping -> 3 Today Predictions Backfill ->
+  # 4 Predictions Results Backfill -> 5 Hazard Atlas -> 6 Seasons Catchup ->
+  # 7 Retrain ML -> 8 ML Post-Calibration -> 9 Weekly Poisson (solo lunedi').
+  # Perche': Today legge api_coverage_by_season (la scrive il mapper); Hazard e Catchup
+  # leggono i dati del Daily; il Retrain allena anche sulle partite chiuse dal Catchup;
+  # Weekly Poisson legge gli esiti scritti da Results. monte_ok (esito del Daily) viaggia
+  # di anello in anello fino al Retrain. Dopo il Catchup nessuno chiama API-Football.
   # Il primo anello lo lancia l'orologio pg_cron (00:12 UTC); ogni anello lancia il
   # successivo con il job passa-testimone (in fondo al file). Nessun cron GitHub.
   workflow_dispatch:
@@ -51,6 +56,10 @@ on:
         type: choice
         options: ["false", "true"]
         default: "false"
+      monte_ok:
+        description: "USO INTERNO (catena): esito del Daily a monte, inoltrato di anello in anello fino al Retrain ('false' = Daily NON success: il Retrain salta il training). A mano lascia 'true'."
+        type: string
+        default: "true"
 
 concurrency:
   group: seasons-catchup
@@ -95,9 +104,10 @@ jobs:
           # (ognuna ceil(piena/3) = 1000, o `file.yml=N`), mai sopra la piena; dalle 23 UTC niente
           # lavoro nuovo
           API_FOOTBALL_RISERVA_RESIDUA: '300'
-          # action che devono ANCORA girare oggi dopo il catchup: solo nella catena (catena=true)
-          # Predictions Results; a mano vuota = riserva piena
-          CATCHUP_RISERVA_PER: ${{ inputs.catena == 'true' && 'predictions_results_backfill.yml' || '' }}
+          # action che devono ANCORA girare oggi dopo il catchup e chiamano API-Football: nella
+          # catena (catena=true) NESSUNA (dopo vengono Retrain, Post-Cal, Weekly Poisson) =
+          # riserva solo residua; a mano vuota = riserva piena
+          CATCHUP_RISERVA_PER: ${{ inputs.catena == 'true' && 'nessuna' || '' }}
           CATCHUP_ORA_STOP_UTC: '23'
           CATCHUP_MAX_MINUTI: '150'
           # R-CATCHUP-1 (26/09): prima di iniziare aspetta (ricontrollo ogni 2 min, al massimo 90 min)
@@ -142,8 +152,10 @@ jobs:
         with:
           sparse-checkout: .github/scripts
 
-      - name: Passa il testimone a predictions_results_backfill.yml
+      - name: Passa il testimone a retrain_models.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PROSSIMO_ANELLO: predictions_results_backfill.yml
-        run: bash .github/scripts/passa_testimone.sh "$PROSSIMO_ANELLO"
+          PROSSIMO_ANELLO: retrain_models.yml
+          # esito del Daily, inoltrato fino al Retrain (7o anello)
+          MONTE_OK: ${{ inputs.monte_ok || 'true' }}
+        run: bash .github/scripts/passa_testimone.sh "$PROSSIMO_ANELLO" monte_ok="$MONTE_OK"

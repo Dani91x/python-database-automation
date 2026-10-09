@@ -3,6 +3,14 @@
 Cantiere: worktree `C:\Users\Admin\Desktop\PYTHON DATABASE\wt-orologio`, ramo `cantiere-orologio-notturno`
 (da master `3bc6a698`). Niente commit, niente push, nessun workflow lanciato, DB non toccato.
 
+> **Aggiornamento del 09/10/2026 (ordine DEFINITIVO, decisione dell'utente):** Daily -> Leagues
+> Mapping -> Today Predictions -> Predictions Results -> Hazard Atlas -> Seasons Catchup -> Retrain
+> -> Post-Calibration -> Weekly Poisson. `monte_ok` (esito del Daily) e' dichiarato in tutti i 9
+> anelli e inoltrato da ogni staffetta fino al Retrain; nella catena il Catchup ha
+> `CATCHUP_RISERVA_PER=nessuna` (riserva = sola residua 300: dopo di lui nessuno chiama
+> API-Football). Diagramma e tabella degli orari qui sotto sono aggiornati; il resto del referto
+> descrive la prima consegna. Dettaglio: `ORDINE_DEFINITIVO.md` in questa cartella.
+
 ## 0. Cosa cambia rispetto al brief (da leggere per primo)
 
 **La catena NON puo' essere fatta con `workflow_run`.** La documentazione di GitHub
@@ -38,8 +46,8 @@ pg_cron 00:12 UTC ──> lancia_action('daily_yesterday_backfill.yml')   [guard
                          │ POST /actions/workflows/daily_yesterday_backfill.yml/dispatches
                          │ {"ref":"master","inputs":{"catena":"true"}}
                          v
- 1 Daily ─pt─> 2 Retrain ─pt─> 3 Post-Cal ─pt─> 4 Today ─pt─> 5 Hazard ─pt─> 6 Leagues
-   ─pt─> 7 Catchup ─pt─> 8 Results ─pt─> 9 Weekly Poisson (calibra solo il lunedi')
+ 1 Daily -pt-> 2 Leagues -pt-> 3 Today -pt-> 4 Results -pt-> 5 Hazard -pt-> 6 Catchup
+   -pt-> 7 Retrain -pt-> 8 Post-Cal -pt-> 9 Weekly Poisson (calibra solo il lunedi')
  (pt = job passa-testimone: gh workflow run <prossimo> -f catena=true [...])
 
 pg_cron 00:15 UTC ──> verifica_lancio_action()   -> live_alerts ACTION_NON_PARTITA se non 204/200
@@ -99,17 +107,19 @@ testimone costa circa 0,5-1 min (stima mia, non misurata).
 | # | Anello | mediana | max | fine cumulata (mediana) | fine cumulata (max) |
 |---|---|---|---|---|---|
 | 1 | Daily Yesterday Backfill | 10 | 32 | 00:22 | 00:44 |
-| 2 | Retrain ML | 16 | 264 | 00:38 | 05:08 |
-| 3 | ML Post-Calibration | 1 | (n.d., ~1) | 00:39 | 05:09 |
-| 4 | **Today Predictions Backfill** | 67 | 410 | **01:46 UTC (03:46 it.)** | 11:59 |
-| 5 | Hazard Atlas | 2 | 8 | 01:48 | 12:07 |
-| 6 | Leagues Mapping | 2 | (n.d., ~2) | 01:50 | 12:09 |
-| 7 | Seasons Catchup | 38 | 118 | 02:28 | 14:07 |
-| 8 | Predictions Results Backfill | 73 | 113 | 03:41 | 16:00 |
+| 2 | Leagues Mapping | 2 | (n.d., ~2) | 00:24 | 00:46 |
+| 3 | **Today Predictions Backfill** | 67 | 410 | **01:31 UTC (03:31 it.)** | 07:36 |
+| 4 | **Predictions Results Backfill** | 73 | 113 | **02:44 UTC (04:44 it.)** | 09:29 |
+| 5 | Hazard Atlas | 2 | 8 | 02:46 | 09:37 |
+| 6 | Seasons Catchup | 38 | 118 | 03:24 | 11:35 |
+| 7 | Retrain ML | 16 | 264 | 03:40 | 15:59 |
+| 8 | ML Post-Calibration | 1 | (n.d., ~1) | 03:41 | 16:00 |
 | 9 | Weekly Poisson (lunedi') | 18 | n.d. | 03:59 | ~16:18 |
 
-Today Predictions secondo il coordinatore: **mediana +94 min = 01:46 UTC**, **p90 +388 min =
-06:40 UTC = 08:40 italiane**: pronte prima delle 09:00 anche al p90. I tempi lunghi di Today
+Ordine definitivo: Today pronte a **mediana +79 min = 01:31 UTC** (prima +94), Results a
+**mediana +152 min = 02:44 UTC**. Il p90 di Today (+388 min nella prima consegna, con Retrain e
+Post-Calibration davanti) non e' stato ricalcolato: davanti a Today ora ci sono solo Daily e
+mapper, quindi e' atteso piu' basso; la somma dei massimi da' 07:36 UTC = 09:36 italiane. I tempi lunghi di Today
 Predictions (207-410 min) sono stati misurati con 4 action in parallelo sul DB; in fila ci
 aspettiamo meno. Il "max" della tabella somma i peggiori casi, che non sono mai capitati insieme. Un
 Retrain che si rilancia (fino a 8 giri da 240 min) puo' spostare tutto di ore: e' raro, ma va

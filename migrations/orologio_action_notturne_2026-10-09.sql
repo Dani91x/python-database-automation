@@ -1,6 +1,13 @@
 -- =====================================================================
 -- OROLOGIO DELLE ACTION NOTTURNE (09/10/2026) - DA APPLICARE A CURA DELL'UTENTE
 -- =====================================================================
+-- NOTA (09/10/2026, ordine DEFINITIVO della catena, vedi
+-- AUDIT_2026-10-09/orologio_action/ORDINE_DEFINITIVO.md): in questo file cambia SOLO
+-- l'ordine dell'elenco di public._orologio_catena() e del commento qui sotto.
+-- Ri-applicare il file e' FACOLTATIVO: la verifica delle 07:30 cerca la run di
+-- oggi di ognuno dei 9 anelli, uno per uno, e NON dipende dall'ordine (l'ordine
+-- cambia solo l'ordine dei nomi nel testo dell'allarme). Il file e' idempotente
+-- (CREATE OR REPLACE, IF NOT EXISTS, unschedule prima di schedule).
 -- Perche': il cron di GitHub (schedule:) parte con 5-6 ore di ritardo mediano;
 -- il Daily delle 01:12 UTC partiva alle 07:00-07:30 UTC e trascinava 4-5 action
 -- insieme sul DB (Postgres in crash 5 volte il 09/10 fra le 07:28 e le 07:43 UTC).
@@ -12,9 +19,9 @@
 --     (guardia: tabella public.lanci_action, una riga per giorno e workflow);
 --   - ogni anello lancia il successivo da GitHub (job passa-testimone,
 --     .github/scripts/passa_testimone.sh). Catena:
---       1 Daily Yesterday Backfill -> 2 Retrain ML -> 3 ML Post-Calibration ->
---       4 Today Predictions Backfill -> 5 Hazard Atlas -> 6 Leagues Mapping ->
---       7 Seasons Catchup -> 8 Predictions Results Backfill ->
+--       1 Daily Yesterday Backfill -> 2 Leagues Mapping -> 3 Today Predictions Backfill ->
+--       4 Predictions Results Backfill -> 5 Hazard Atlas -> 6 Seasons Catchup ->
+--       7 Retrain ML -> 8 ML Post-Calibration ->
 --       9 Weekly Poisson Calibration (solo il lunedi').
 --   - due verifiche scrivono in public.live_alerts se qualcosa non va:
 --       00:15 UTC  ACTION_NON_PARTITA        (GitHub non ha accettato il lancio)
@@ -158,13 +165,13 @@ LANGUAGE sql IMMUTABLE SET search_path = public, pg_temp
 AS $$
     SELECT ARRAY[
         'daily_yesterday_backfill.yml',
+        'leagues_mapper.yml',
+        'today_predictions_backfill.yml',
+        'predictions_results_backfill.yml',
+        'hazard_atlas.yml',
+        'seasons_catchup.yml',
         'retrain_models.yml',
         'ml_calibration.yml',
-        'today_predictions_backfill.yml',
-        'hazard_atlas.yml',
-        'leagues_mapper.yml',
-        'seasons_catchup.yml',
-        'predictions_results_backfill.yml',
         'weekly_poisson_calibration.yml'
     ]::text[];
 $$;
