@@ -83,6 +83,19 @@ Restano al codice di oggi: A-017/A-018 (prodotto «Aggiorna quote» e la sua cod
 
 `ARCH_SESSIONE=vecchio|ombra|nuovo` (A P1 `SESSIONE_UNICA`), di serie `vecchio`. Dettaglio per punto nel referto par. 8.
 
+## 6-bis. Contratto d'uso per chi chiama (W1-A2 stream, comparto C ordini)
+
+- **`rifai_login(errore, generazione_vista)`**: la `generazione_vista` va CATTURATA quando la connessione (stream) parte
+  (`gen = sessione.generazione` subito dopo `client()`), NON letta al momento dell'errore. Letta all'errore, 5 errori
+  scaglionati della stessa connessione fanno 5 login invece di 1 (`test_a1_correzioni::test_contratto_d_uso_generazione_catturata_alla_connessione`).
+  `rifai_login` non fa login durante il backoff del custode (`in_backoff()`).
+- **`segnala_errore(errore)`** e' la strada del custode di oggi (`auth.py:214-224`): anticipa il giro dopo ad ADESSO e
+  scavalca il backoff (parita' con oggi; divergenza fra le due strade da decidere all'utente, referto par. 9 punto 14).
+- **Mutazione caduta per timeout DOPO l'esecuzione su Betfair**: A1 manda UNA richiesta e rilancia l'eccezione; non
+  riconcilia e non ripete. Sapere se l'ordine c'e' e' compito del comparto C: riconciliazione per `customerOrderRef`
+  (stream degli ordini del conto, `listCurrentOrders`), MAI un secondo invio.
+- **Dopo ogni mutazione tornata** l'adattatore dell'aggancio chiama `_segnala_saldo("ordine")` come `call_mutating` oggi.
+
 ## 7. Come si sostituisce
 
 Un altro `ClienteRest`/`Sessione` deve far passare `tests/test_a1_*.py` (contratto, parita', limiti, concorrenza,

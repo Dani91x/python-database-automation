@@ -167,3 +167,90 @@ def test_generazione_non_riparte_dopo_chiudi(finto):
     assert s.generazione == 2 and visti == []                # riaprire non e' un relogin
     assert s.rifai_login(_aping("INVALID_SESSION_INFORMATION"), 1) is True    # generazione vecchia: gia' nuova
     assert finto.conta("login") == 2
+
+
+# ---------------------------------------------------------------------------
+# seconda revisione: X05, X06, X07 (mutanti sopravvissuti del revisore) e contratto d'uso di rifai_login
+# ---------------------------------------------------------------------------
+def _rinnova_in_volo(finto, s, ritardo: float = 1.0):
+    """Avvia un keepAlive dovuto in un thread e ritorna quando la richiesta e' sul filo."""
+    import threading
+    import time
+
+    finto.ora.avanza(s.periodo_keepalive_s + 1)
+    finto.ritardo_s["keepAlive"] = ritardo
+    t = threading.Thread(target=s.rinnova)
+    t.start()
+    limite = time.monotonic() + 5
+    while finto.conta("keepAlive") < 1 and time.monotonic() < limite:
+        time.sleep(0.005)
+    assert finto.conta("keepAlive") == 1
+    return t
+
+
+def test_stato_e_conto_non_aspettano_un_keepalive_in_volo(finto):
+    """X05: ``rinnova`` non deve tenere il lucchetto dei campi durante l'HTTP."""
+    import time
+
+    s = S.SessioneBetfair(ora=finto.ora)
+    s.client()
+    t = _rinnova_in_volo(finto, s)
+    t0 = time.monotonic()
+    st = s.stato()
+    conto = s.conto
+    attesa = time.monotonic() - t0
+    t.join(5)
+    assert st["connessa"] is True and conto == "conto_finto"
+    assert attesa < 0.5, f"stato()/conto hanno aspettato {attesa:.2f}s il keepAlive"
+
+
+def test_chiudi_aspetta_il_keepalive_in_volo_prima_del_logout(finto):
+    """X06: ``chiudi`` prende il lucchetto del custode: il logout parte solo DOPO che
+    il keepAlive in volo e' tornato (mai un logout incrociato con un rinnovo)."""
+    s = S.SessioneBetfair(ora=finto.ora)
+    s.client()
+    t = _rinnova_in_volo(finto, s)
+    s.chiudi()
+    assert not t.is_alive(), "chiudi e' tornato con il keepAlive ancora in volo"
+    t.join(5)
+    assert finto.tipi()[-2:] == ["keepAlive", "logout"]
+    assert s.stato()["connessa"] is False
+
+
+def test_ban_di_un_conto_non_frena_un_altro_conto_sullo_stesso_orologio(finto):
+    """X07: la chiave del freno di processo comprende il CONTO."""
+    from Betfair.stream import auth
+
+    def _secondo_conto():
+        c = auth.build_client(login=False)
+        c.username = "conto_due"
+        return c
+
+    a = S.SessioneBetfair(ora=finto.ora)
+    a.client()
+    finto.invalida_tutti()
+    finto.guasta("login", L.CODICE_BAN_LOGIN)
+    assert a.rifai_login(_aping("INVALID_SESSION_INFORMATION"), a.generazione) is False
+    assert a.freno.stato()["ban_per_altri_s"] is not None
+    n = finto.conta("login")
+    b = S.SessioneBetfair(ora=finto.ora, fabbrica_client=_secondo_conto)
+    b.client()                                            # l'altro conto entra
+    assert finto.conta("login") == n + 1
+    assert b.freno is not a.freno and b.freno.stato()["ban_per_altri_s"] is None
+
+
+def test_contratto_d_uso_generazione_catturata_alla_connessione(finto):
+    """Contratto per chi usa ``rifai_login`` (lo stream di W1-A2): la generazione va
+    CATTURATA quando la connessione parte, non letta quando arriva l'errore. Cinque
+    errori scaglionati della stessa connessione = UN login; letta all'errore = cinque."""
+    s = S.SessioneBetfair(ora=finto.ora)
+    s.client()
+    gen_alla_connessione = s.generazione
+    err = _aping("NO_SESSION")
+    n = finto.conta("login")
+    assert [s.rifai_login(err, gen_alla_connessione) for _ in range(5)] == [True] * 5
+    assert finto.conta("login") == n + 1                  # contratto rispettato: un login
+    n = finto.conta("login")
+    for _ in range(5):                                    # contratto VIOLATO: generazione letta all'errore
+        s.rifai_login(err, s.generazione)
+    assert finto.conta("login") == n + 5

@@ -66,6 +66,11 @@ finto applica le regole di Betfair con una tabella SUA (non importa `limiti.py`)
 
 ## 5. Test e falsificazioni
 
+- **Ultimo commit (dopo la seconda revisione)**: test W1-A1 **222 verdi** (correzioni 17 -> 21); falsificazione rilanciata
+  per intero sui file finali: **117 mutazioni, 117 rosse** (le 103 qui sotto + le 14 del revisore X01-X14; X05, X06, X07, che
+  prima sopravvivevano, ora rosse con i loro tre test nuovi), ripristini con sha256 identico, **88/88 funzioni** e
+  **222/222 casi** visti rossi; `falsificazione.json` e' questo giro. sha256 cambiati: `sessione.py` bb954f9f...d6cdb205
+  (solo docstring), `test_a1_correzioni.py` b6865428...3150ea3f. Suite intera non rilanciata (solo test, doc e docstring).
 - Test W1-A1 (seconda consegna): **218 verdi** (finto 5, limiti 31, sessione 22, rest 115, revisore 28, correzioni 17).
 - Falsificazione (rilancio FINALE sui file del commit di correzione): **103 mutazioni, 103 rosse** (le 86 della prima
   consegna, con le stringhe aggiornate dove il codice e' cambiato, piu' 17 sulle correzioni: R28-R34, S27-S34, L21-L22),
@@ -119,11 +124,25 @@ identico. Lo script di falsificazione conta come vista anche una mutazione che b
 | MEDIA-6 | fattore d/3 sotto il peso base per d<3; un mercato oltre 200 = `ValueError` locale; finto con la stessa formula (prova circolare) | fattore `max(1, d/3)`; oltre 200 punti stimati: un mercato per richiesta e decide Betfair (`BetfairLimitHit` se rifiuta); finto con la lettura LETTERALE e piu' generosa (solo la quota delle migliori offerte scala, anche sotto 1) | `test_un_mercato_oltre_200_punti_...`, `test_profondita_sotto_3_...`; L21, R32 |
 | BASSE | `market_ids` stringa spezzata in caratteri; periodo non validato; profondita' bool/decimale accettata; ban senza margine; `chiudi` azzerava la generazione; `customerRef` della ripetizione non dichiarato; testi illeggibili inghiottiti senza log | stringa -> `[stringa]`; `0 < periodo <= 1080 s` (`ValueError`); profondita' solo intera >= 1; ban 1200 + 30 s; generazione che non riparte mai (connessa = custode presente); ripetizione con gli STESSI parametri (stesso `customerRef` se passato; non imposto: la richiesta rifiutata non e' arrivata all'exchange) e test; `logger.debug` col motivo | revisore `test_misura_market_ids_stringa_...`, `test_periodo_keepalive_oltre_...`; `test_a1_correzioni`; R31, S30, S31, S32, L22 |
 
-Conseguenza sul comportamento (dichiarata): dopo un login fallito del custode, per 15/30/60 s NESSUN relogin parte, nemmeno
-su richiesta del REST: le letture e le mutazioni in quel tempo falliscono con l'errore di sessione invece di tentare un login
+Conseguenza sul comportamento (dichiarata): dopo un login fallito del custode, per 15/30/60 s nessun relogin parte da
+`rifai_login` (cioe' su richiesta del REST): «mai durante il backoff» vale SOLO per `rifai_login`. La strada
+`segnala_errore` (quella del custode di oggi, `auth.py:214-224`, usata da `safe_strategy/service.py`) invece anticipa il
+giro dopo ad ADESSO e SCAVALCA il backoff: parita' con oggi tenuta apposta, divergenza fra le due strade per l'utente
+(par. 9 punto 14). Durante il backoff: le letture e le mutazioni in quel tempo falliscono con l'errore di sessione invece di tentare un login
 (oggi `odds_refresh`/`call` rifarebbero subito il login a ogni chiamata). E' il backoff del custode di oggi applicato a tutti.
 Il primo login (`client()`) non ha backoff, come `build_client` oggi: lo limita il tetto dei TENTATIVI del freno
 (`test_freno_tetto_dei_tentativi_al_minuto`).
+
+## 5-quater. Seconda revisione (`4935fed5`: PASSA) - ultimo commit
+
+- Tre test per le tre mutazioni del revisore sopravvissute (`test_a1_correzioni.py`): X05
+  (`test_stato_e_conto_non_aspettano_un_keepalive_in_volo`), X06 (`test_chiudi_aspetta_il_keepalive_in_volo_prima_del_logout`),
+  X07 (`test_ban_di_un_conto_non_frena_un_altro_conto_sullo_stesso_orologio`); piu' il test del contratto d'uso di
+  `rifai_login` (par. 9 punto 16).
+- Le 14 mutazioni del revisore (X01-X14) sono in `mutazioni_a1.py`: tutte rosse (numeri al par. 5).
+- Solo test, documentazione e docstring: nessuna riga di codice eseguibile cambiata (`sessione.py`: solo la docstring del
+  modulo e di `segnala_errore`), quindi la suite intera non e' stata rilanciata (indicazione del coordinatore).
+- Referto: par. 5-ter (backoff: vale solo per `rifai_login`), par. 9 punti 12 (13 processi, due opzioni), 14, 15, 16.
 
 ## 6. Funzionalita' di `01_FUNZIONALITA.md`
 
@@ -243,10 +262,25 @@ lucchetto (`msvcrt.locking`) in `_logs/`.
     agenti e risultava troncato (anche il mio script di mutazioni li' e' stato sovrascritto da un altro agente: rifatto in una
     sottocartella mia). La suite e' stata rilanciata una seconda volta, a fine lavoro (par. 5-bis).
 12. **Freno dei login (MEDIA-5)**: il freno e' per CONTO dentro UN processo (10 riusciti e 20 tentativi al minuto di
-    serie). Con N processi che fanno login, il tetto del conto (100/min) e' rispettato solo se N <= 10: oggi i processi che
-    fanno login sono runner calcio, runner tennis, scanner, servizi dei bot e una sessione per ogni scalper; con piu' di 10
-    processi attivi insieme la somma potrebbe superare 100 (in pratica ogni processo fa 1 login ogni ~18 minuti, i 10/min
-    servono solo per i cicli impazziti). I login del codice VECCHIO (`build_client(login=True)`, `BetfairClient`,
-    `odds_refresh`) NON passano dal freno: in ombra il freno non li vede e non li conta. La soluzione vera e' la sessione
-    unica dell'app (par. 8.5).
+    serie, `tetto_login_per_processo(10)`). I processi che oggi possono fare login INSIEME sono fino a **13**, non 10:
+    gli 8 servizi sotto watchdog avviati da `desktop/main.js:419-480` (runner calcio, runner tennis, scalper-service,
+    tennis-bot-service, safe-strategy-service, omega-service, safe-strategy-bot, mike-service; il backtest-worker non tocca
+    Betfair), il job `betfair_tennis_odds.py` (`main.js`, `tennis-odds`) e fino a 4 processi scalper figli
+    (`Betfair/stream/scalper/auto_mode.py:71-72`, `TETTO_MASSIMO = 4`). Con 13 processi x 10 = 130 > 100 il tetto del
+    conto e' garantito solo se non tutti girano in un ciclo impazzito nello stesso minuto (a regime ogni processo fa 1 login
+    ogni ~18 minuti). I login del codice VECCHIO (`build_client(login=True)`, `BetfairClient`, `odds_refresh`) NON passano
+    dal freno: in ombra il freno non li vede e non li conta. **Due opzioni per l'utente** (il valore NON l'ho cambiato):
+    (a) la sessione unica dell'app (par. 8.5: 1 login per tutta l'app, il problema sparisce); (b) quota per processo
+    `tetto_login_per_processo(13)` = 7 login riusciti al minuto (13 x 7 = 91 <= 100).
 13. **Backoff esteso al REST (ALTA-2)**: vedi par. 5-ter, «Conseguenza sul comportamento».
+14. **Due strade di relogin con regole diverse sul backoff** (da decidere): `rifai_login` (REST, nuovo) rispetta il backoff
+    del custode; `segnala_errore` (stream, parita' con `auth.CustodeSessione.segnala_errore` di oggi) lo scavalca: un errore
+    di sessione dello stream durante il backoff fa partire subito un login. Non l'ho cambiato (parita' con oggi, usata da
+    `safe_strategy/service.py`); l'utente decide se uniformarle (proposta: anche `segnala_errore` rispetta il backoff).
+15. **Mutazione caduta per timeout DOPO l'esecuzione su Betfair**: A1 non la riconcilia ne' la ripete (una sola richiesta
+    sul filo, l'eccezione risale al chiamante). Sapere se l'ordine c'e' e' compito del comparto C: riconciliazione per
+    `customerOrderRef` (stream degli ordini del conto / `listCurrentOrders`), MAI un secondo invio.
+16. **Contratto d'uso di `rifai_login` per chi lo chiama (W1-A2, stream)**: la `generazione_vista` va CATTURATA quando la
+    connessione parte, non letta al momento dell'errore; altrimenti 5 errori scaglionati della stessa connessione fanno 5
+    login invece di 1 (`test_contratto_d_uso_generazione_catturata_alla_connessione`; prova del revisore
+    `scratchpad/rev_w1a1_2/prove/test_e2.py`).

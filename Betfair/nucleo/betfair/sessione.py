@@ -25,8 +25,14 @@ UNA sessione per processo:
   * ``INVALID_SESSION_INFORMATION``/``NO_SESSION`` visti dal REST o dallo stream:
     ``rifai_login(errore, generazione_vista)`` rifa' il login UNA volta anche se
     piu' thread vedono lo stesso errore insieme (contatore di generazione, che
-    non riparte mai) e MAI durante il backoff del custode dopo un fallimento
-    (credenziali rifiutate: nessuna raffica di login falliti verso Betfair);
+    non riparte mai; la generazione va CATTURATA quando la connessione parte, non
+    letta all'errore) e MAI durante il backoff del custode dopo un fallimento
+    (credenziali rifiutate: nessuna raffica di login falliti verso Betfair).
+    ATTENZIONE: ``segnala_errore(errore)`` invece e' quella del custode di oggi
+    (``auth.CustodeSessione.segnala_errore``, ``auth.py:214-224``, usata da
+    ``safe_strategy/service.py``): anticipa il giro dopo a ADESSO e SCAVALCA il
+    backoff. Parita' con oggi tenuta apposta; divergenza fra le due strade
+    dichiarata nel referto (decisione dell'utente);
   * due lucchetti: ``client()`` con la sessione gia' fatta non prende lucchetti
     (una cancellazione non aspetta un keepAlive in volo); il lucchetto del custode
     serializza keepAlive e login, quello di stato protegge solo i campi;
@@ -348,7 +354,10 @@ class SessioneBetfair:
 
     def segnala_errore(self, exc: BaseException) -> bool:
         """Un errore visto altrove (stream): se e' di sessione il prossimo giro
-        rifa' il login. True se preso in carico."""
+        rifa' il login. True se preso in carico. Come oggi (``auth.py:214-224``)
+        il giro dopo diventa ADESSO anche durante il backoff: a differenza di
+        ``rifai_login``, questa strada SCAVALCA il backoff (parita' con oggi,
+        divergenza nel referto)."""
         custode = self._custode
         if custode is None:
             return False
