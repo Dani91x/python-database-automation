@@ -919,6 +919,8 @@ cosa fa il piano in assenza di risposta (mai un cambio di strategia per difetto)
 | U-59 | H dec. 6 | Approvare le 3 sole normalizzazioni dell'ombra (tempi; hash del codice; id d'orologio) | definisce «stessa identica cosa» | `TOLLERANZE.md` con falsificazione | ombra a tolleranza zero assoluta: rischio di falsi rossi sui tempi |
 | U-60 | H dec. 8 | Misurare i 120 ms assunti per le letture REST nel banco o confermarli | ogni referto li eredita (`banco_comune.py:1844`) | misura con `storia_operazioni.py` sulle sole letture | resta l'assunzione per tutta la migrazione (dichiarata nel manifesto) |
 
+**DECISE dall'utente il 09/10/2026: tutte e 7 SI'** (U-60: misurare). Stato dei lavori: `AVANZAMENTO.md`.
+
 ### 8.2 Servono per le tappe T1-T8
 
 | U | Origine | Decisione | Effetto | Proposta tecnica | Se non decide |

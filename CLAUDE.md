@@ -48,6 +48,12 @@ scenari → paper come specchio della realtà → live solo se il paper conferma
   coordinatore non si fida del referto: rilegge il diff, rilancia test e replay, falsifica in
   entrambe le direzioni. Regola completa: `~/.claude/rules/sessione-coordinatore-cronostoria.md`.
 
+## Migrazione all'architettura nuova (avviata il 09/10/2026, ordine dell'utente)
+
+Prima di ogni lavoro leggere `ARCHITETTURA_2026-10/AVANZAMENTO.md` (stato delle tappe, decisioni gia' prese, punto di ripresa)
+e ripartire da li': il piano (`05_PIANO_DI_MIGRAZIONE.md`) e le decisioni prese non si rimettono in discussione ne' si richiedono
+all'utente. Ogni funzionalita' o bot nuovo nasce solo nella struttura nuova (`Betfair/nucleo/`, `Betfair/bots/`).
+
 ## Vincoli operativi
 
 - Mai `git add -A` (c'è un log da 3 GB). `git fetch` prima di ogni push: lavorano più

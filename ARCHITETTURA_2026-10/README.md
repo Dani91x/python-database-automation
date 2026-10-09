@@ -4,6 +4,7 @@ Brief: `BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 vale su tutto). Solo doc
 
 | Documento | Contenuto |
 |---|---|
+| `AVANZAMENTO.md` | **Migrazione avviata il 09/10**: stato delle tappe, decisioni prese, registro e punto di ripresa (leggere per primo in ogni sessione) |
 | `06_RIEPILOGO_PER_L_UTENTE.md` | **Da leggere per primo**: cosa cambia, cosa resta, tempi, decisioni che servono |
 | `00_INVENTARIO.md` | Mappa di oggi generata da script (`strumenti/inventario/`): righe, import, DB, duplicati, processi, UI, cartelle |
 | `01_FUNZIONALITA.md` | 970 funzionalita' con `file:riga`, generate dalle schede (`strumenti/f01_assembla_funzionalita.py`) |
