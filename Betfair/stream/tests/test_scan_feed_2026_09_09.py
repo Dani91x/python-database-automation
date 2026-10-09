@@ -148,7 +148,10 @@ def test_board_riga_dal_payload_scanner():
     assert row["market_id"] == "1.9" and row["inplay"] is True and row["status"] == "OPEN"
     assert row["total_matched"] == 12345.5
     assert [s["selection_id"] for s in row["selections"]] == [11, 22, 33]
-    assert row["selections"][0] == {"selection_id": 11, "name": "Nord", "back": 1.5, "lay": 1.52, "ltp": 1.51}
+    # 09/10 (contratto par. 1): + importo al miglior prezzo; assente nel feed = None
+    assert row["selections"][0] == {"selection_id": 11, "name": "Nord", "back": 1.5, "lay": 1.52,
+                                    "ltp": 1.51, "back_size": 10, "lay_size": 5}
+    assert row["selections"][1]["back_size"] is None and row["selections"][1]["lay_size"] is None
 
 
 def test_board_payload_incompleto_va_al_fallback_rest():

@@ -12,8 +12,8 @@ drenata dal THREAD del live_order_worker (un solo thread tocca flumine per gli
 ordini, come oggi). Il canale è best-effort: se cade, la UI ricade sul path DB.
 
 Protocollo (JSON, una riga per messaggio):
-  push  server→client : {"t": <topic>, "d": <payload>}   topic: hello|ladder|now|order|position|board
-  req   client→server : {"id": <int>, "m": "order"|"snapshot", "p": {...}}
+  push  server->client : {"t": <topic>, "d": <payload>}   topic: hello|ladder|now|order|position|board|board_mercato
+  req   client->server : {"id": <int>, "m": "order"|"snapshot"|"board_mercato", "p": {...}}
   res   server→client : {"id": <int>, "ok": bool, "d": {...}} | {"id",..,"ok":false,"e": "msg"}
 """
 from __future__ import annotations
@@ -33,7 +33,13 @@ from urllib.parse import parse_qs, urlsplit
 
 logger = logging.getLogger(__name__)
 
-_ALLOWED_METHODS = frozenset({"order", "snapshot"})
+_ALLOWED_METHODS = frozenset({"order", "snapshot", "board_mercato"})
+# 09/10 (programma del giorno, contratto par. 3): ``board_mercato`` e' di SOLA
+# LETTURA. Non entra nella coda dei comandi (che il thread ordini drena) e non
+# chiede il token: il canale risponde SUBITO dal suo thread chiamando il board
+# worker dello sport (``set_board_mercato``), che registra il tipo di mercato
+# scelto in RAM. Non esegue nulla e non porta parametri d'ordine.
+METODO_BOARD_MERCATO = "board_mercato"
 
 # ---------------------------------------------------------------------------
 # C1 (24/09) - ORIGINE + TOKEN DI SESSIONE.
@@ -239,6 +245,8 @@ class LocalChannel:
         self._hello_extra: Dict[str, Any] = {}
         # F6 (18/09): chi va avvisato quando la pagina manda una SVEGLIA.
         self._su_sveglia: Optional[Any] = None
+        # 09/10: chi serve la richiesta di sola lettura ``board_mercato``
+        self._su_board_mercato: Optional[Any] = None
         # F2/F3 (24/09): il motore ordini registra qui la sua sveglia: ogni
         # comando (``/order`` di sempre o ``/comando/<attore>``) la chiama
         # appena messo in coda, cosi' il thread ordini non dorme 1 s.
@@ -429,6 +437,10 @@ class LocalChannel:
                 self._rifiuta_senza_token(ws, msg_id, method)
                 return
             params = msg.get("p")
+            if method == METODO_BOARD_MERCATO:
+                # 09/10: sola lettura, risposta subito, MAI in coda comandi
+                self._servi_board_mercato(ws, msg_id, params)
+                return
             self._requests.put_nowait(
                 LocalRequest(ws=ws, msg_id=msg_id, method=method,
                              params=params if isinstance(params, dict) else {})
@@ -439,6 +451,30 @@ class LocalChannel:
                             "e": "coda locale piena: comando NON accettato (riprova)"})
         except Exception as ex:  # noqa: BLE001 - messaggio malformato
             logger.debug("[local-ws] messaggio malformato: %s", str(ex)[:120])
+
+    def _servi_board_mercato(self, ws: Any, msg_id: Any, params: Any) -> None:
+        """09/10: richiesta ``board_mercato`` (thread del loop). Il board worker
+        registrato decide (RAM, zero I/O): ``{ok: true}`` o ``{ok: false, e}``.
+        Nessun board nel processo -> rifiuto dichiarato. Mai solleva."""
+        cb = self._su_board_mercato
+        if cb is None:
+            self._send(ws, {"id": msg_id, "ok": False,
+                            "e": "board non attivo su questo canale"})
+            return
+        try:
+            ok, motivo = cb(params if isinstance(params, dict) else {})
+        except Exception as ex:  # noqa: BLE001 - una lettura non ferma il canale
+            ok, motivo = False, f"board_mercato non servito: {str(ex)[:120]}"
+        risposta: Dict[str, Any] = {"id": msg_id, "ok": bool(ok)}
+        if not ok:
+            risposta["e"] = str(motivo or "richiesta rifiutata")[:300]
+        self._send(ws, risposta)
+
+    def set_board_mercato(self, cb: Optional[Any]) -> None:
+        """09/10: registra chi serve ``board_mercato`` (il board worker dello
+        sport): ``cb(params) -> (ok, motivo)``, chiamata dal thread del loop,
+        DEVE essere senza I/O. ``None`` = nessun board (richiesta rifiutata)."""
+        self._su_board_mercato = cb
 
     def _sveglia_motore(self) -> None:
         cb = self._su_comando
