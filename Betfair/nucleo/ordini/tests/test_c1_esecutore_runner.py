@@ -147,7 +147,10 @@ def test_rifiuto_dei_control_e_rifiutato(amb: Any) -> None:
     assert ev.fase == "rifiutato" and ev.bet_id is None
 
 
-def test_eccezione_dentro_place_order_e_esito_ignoto(amb: Any) -> None:
+@pytest.mark.parametrize("tipo_archivio", ["finto", "vero"])
+def test_eccezione_dentro_place_order_e_esito_ignoto(amb: Any, tipo_archivio: str) -> None:
+    """Integrazione W1-G1 + W1-C1 (09/10): la porta gira col finto E con l'``ArchivioLocale``
+    VERO di W1-G1 (cartella temporanea, chiuso alla fine)."""
     amb.market.solleva = True
     with pytest.raises(RuntimeError, match="post_place"):
         amb.es.place(_r())
@@ -165,14 +168,21 @@ def test_eccezione_dentro_place_order_e_esito_ignoto(amb: Any) -> None:
         def eta_settings_s(self) -> float:
             return 0.0
 
-    from Betfair.nucleo.ordini.tests.test_c1_porta import _ArchivioMemoria
+    from Betfair.nucleo.ordini.tests.test_c1_porta import _ArchivioMemoria, _ArchivioVero
 
-    porta = PT.PortaLocale(amb.es, freni=_Freni(), archivio=_ArchivioMemoria(),
-                           diario=MO.Diario(str(amb.tmp / "p"), giorno=lambda: GIORNO),
-                           orologio_ms=lambda: 1)
-    a = porta.invia(_r(ref="safe-t7"))
-    assert a.accettato and porta.stato("safe-t7").fase == "ignoto"
-    assert len([c for c in amb.market.chiamate if c[0] == "place"]) == 2   # nessun ritento
+    archivio: Any = (_ArchivioMemoria() if tipo_archivio == "finto"
+                     else _ArchivioVero("runner", base=amb.tmp / "archivio").apri())
+    try:
+        porta = PT.PortaLocale(amb.es, freni=_Freni(), archivio=archivio,
+                               diario=MO.Diario(str(amb.tmp / "p"), giorno=lambda: GIORNO),
+                               orologio_ms=lambda: 1)
+        a = porta.invia(_r(ref="safe-t7"))
+        assert a.accettato and porta.stato("safe-t7").fase == "ignoto"
+        assert len([c for c in amb.market.chiamate if c[0] == "place"]) == 2   # nessun ritento
+        porta.chiudi()
+        assert archivio.tabelle[PT.TABELLA_REF] != {}                    # il ref e' nell'archivio
+    finally:
+        archivio.chiudi()
 
 
 def test_cancel_per_bet_id(amb: Any) -> None:

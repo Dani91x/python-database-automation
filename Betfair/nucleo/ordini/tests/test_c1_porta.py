@@ -31,6 +31,7 @@ import os
 import sqlite3
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Union
 
 import pytest
@@ -39,7 +40,11 @@ from betfairlightweight.resources.bettingresources import (CancelOrders, PlaceOr
 
 from Betfair.nucleo.dati import archivio as ARCH
 from Betfair.nucleo.dati.archivio import ArchivioChiuso, ArchivioLocale
+from Betfair.nucleo.dati.contratto import SpecTabella
 from Betfair.nucleo.dati.registro import TABELLE_SOLO_LOCALI
+# alias: un nome che comincia per ``test`` sarebbe raccolto da pytest come un test
+from Betfair.nucleo.dati.schema_locale import chiave_canonica
+from Betfair.nucleo.dati.schema_locale import testo_json as _json_vero
 from Betfair.nucleo.ordini import adattatore_comando as AC
 from Betfair.nucleo.ordini import controlli as CT
 from Betfair.nucleo.ordini import porta as PT
@@ -74,17 +79,21 @@ class _ArchivioMemoria:
         ``sqlite3.OperationalError``);
       * ``guasto_scrittura`` (disco che rifiuta i commit): ``scrivi`` NON solleva (il vero
         accoda e il suo thread ritenta finche' il disco torna; ``leggi`` vede la riga in
-        coda); ``transizione`` (sincrona) ASPETTA che il disco torni, poi l'esito vero;
+        coda); ``transizione`` (sincrona) ASPETTA che il disco torni, poi l'esito vero
+        (oltre ``_attesa_transizione_s`` = 30 s, come il vero: ``TimeoutError``, non eseguita);
       * ``chiudi()``: archivio chiuso -> ``leggi``/``scrivi``/``transizione`` sollevano
         ``ArchivioChiuso`` (l'UNICO modo in cui lo ``scrivi`` del vero solleva, oltre a una
         tabella non registrata: ``KeyError``);
       * ``ritardo_lettura_s`` simula una lettura che viaggia (fotografia, poi latenza)."""
 
     _N = 0
+    #: l'attesa del vero per un lavoro sincrono non ancora partito (``ArchivioLocale.
+    #: _esegui_sincrono``, ``timeout_s`` di serie): poi ``TimeoutError``, lavoro NON eseguito
+    _attesa_transizione_s = 30.0
 
     def __init__(self, colonna_stato: str = "status") -> None:
         _ArchivioMemoria._N += 1
-        self.cartella = f"/finto/archivio-{_ArchivioMemoria._N}"
+        self.cartella = Path(f"/finto/archivio-{_ArchivioMemoria._N}")
         self.colonna_stato = colonna_stato
         self._righe: Dict[str, Dict[str, str]] = {}
         self.guasto_lettura = False
@@ -98,18 +107,19 @@ class _ArchivioMemoria:
     def aperto(self) -> bool:
         return self._aperto
 
-    def chiudi(self) -> None:
+    def chiudi(self, timeout_s: float = 30.0) -> None:
         self._aperto = False
 
-    def _controlla(self, tabella: str) -> None:
-        if tabella not in TABELLE_SOLO_LOCALI:
+    @staticmethod
+    def _spec(tabella: str) -> SpecTabella:
+        s = TABELLE_SOLO_LOCALI.get(tabella)
+        if s is None:
             raise KeyError(f"tabella non registrata nell'archivio: {tabella}")
+        return s
+
+    def _controlla_aperto(self) -> None:
         if not self._aperto:
             raise ArchivioChiuso("archivio finto non aperto")
-
-    @staticmethod
-    def _k(tabella: str, valori: Mapping[str, Any]) -> str:
-        return json.dumps([valori[c] for c in TABELLE_SOLO_LOCALI[tabella].chiave_naturale])
 
     @property
     def tabelle(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
@@ -117,39 +127,51 @@ class _ArchivioMemoria:
         with self._lock:
             return {t: {k: json.loads(j) for k, j in d.items()} for t, d in self._righe.items() if d}
 
+    # L'ORDINE dei controlli e' quello del vero (contratto: test_c1_contratto_archivio.py):
+    # leggi = tabella, aperto, chiave; scrivi = aperto, tabella, chiave; transizione =
+    # tabella, chiave, aperto. Chiave e JSON con le funzioni VERE di W1-G1 (chiave_canonica,
+    # testo_json: un valore non JSON, es. datetime, diventa testo come nel vero).
     def leggi(self, tabella: str, chiave: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
-        self._controlla(tabella)
+        spec = self._spec(tabella)
+        self._controlla_aperto()
+        k = chiave_canonica(spec, chiave)
         if self.guasto_lettura:
             raise sqlite3.OperationalError("disk I/O error")
         with self._lock:
             self.letture += 1
-            testo = self._righe.get(tabella, {}).get(self._k(tabella, chiave))
+            testo = self._righe.get(tabella, {}).get(k)
         if self.ritardo_lettura_s:
             time.sleep(self.ritardo_lettura_s)
         return None if testo is None else json.loads(testo)
 
     def scrivi(self, tabella: str, riga: Mapping[str, Any]) -> None:
-        self._controlla(tabella)
+        self._controlla_aperto()
+        spec = self._spec(tabella)
+        k = chiave_canonica(spec, riga)
+        nuova = json.loads(_json_vero(dict(riga)))
         with self._lock:                               # col disco guasto: in coda, visibile
             t = self._righe.setdefault(tabella, {})
-            k = self._k(tabella, riga)
             prima = json.loads(t[k]) if k in t else {}
-            t[k] = json.dumps({**prima, **dict(riga)})  # fusione delle colonne (upsert)
+            t[k] = _json_vero({**prima, **nuova})       # fusione delle colonne (upsert)
 
     def transizione(self, tabella: str, chiave: Mapping[str, Any], da: str, a: str) -> bool:
-        self._controlla(tabella)
+        spec = self._spec(tabella)
+        k = chiave_canonica(spec, chiave)
+        self._controlla_aperto()
+        fine = time.monotonic() + self._attesa_transizione_s
         while self.guasto_scrittura:                   # sincrona: aspetta il disco
+            if time.monotonic() >= fine:
+                raise TimeoutError("archivio: lavoro annullato prima di partire (non eseguito)")
             time.sleep(0.01)
         with self._lock:
             t = self._righe.setdefault(tabella, {})
-            k = self._k(tabella, chiave)
             if k not in t:
                 return False
             riga = json.loads(t[k])
             if riga.get(self.colonna_stato) != da:
                 return False
             riga[self.colonna_stato] = a
-            t[k] = json.dumps(riga)
+            t[k] = _json_vero(riga)
             return True
 
 
