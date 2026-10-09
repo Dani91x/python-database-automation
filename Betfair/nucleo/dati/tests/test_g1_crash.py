@@ -13,6 +13,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List
@@ -100,8 +101,9 @@ def test_scrittore_ucciso_a_meta_zero_confermati_persi(tmp_path: Path, ritardo: 
     a = ArchivioLocale("prova", SPEC, base=tmp_path).apri()
     try:
         p = PostinoLocale(a, CloudProva(srv))
-        while p.drena(500).consegnate:
-            pass
+        for _ in range(200):                                                # R10: tetto di giri
+            if not p.drena(500).consegnate:
+                break
         assert p.stato().in_coda == 0 and p.stato().dead_letter == 0
         uid_cloud = [x["uid"] for x in srv.tabelle["mike_activity"].righe]
         assert len(uid_cloud) == len(set(uid_cloud)) == len(log)
@@ -160,10 +162,141 @@ def test_postino_ucciso_fra_risposta_e_conferma_zero_duplicati(tmp_path: Path) -
     try:
         p = PostinoLocale(b, CloudProva(srv))
         assert p.stato().in_coda == 25                                           # l'outbox non sapeva nulla
-        while p.drena(500).consegnate:
-            pass
+        for _ in range(200):                                                # R10: tetto di giri
+            if not p.drena(500).consegnate:
+                break
         assert len(srv.tabelle["mike_activity"].righe) == 20                     # 0 duplicati
         assert len(srv.tabelle["betfair_live_orders"].righe) == 5
         assert p.contatori["ignorate"] == presenti
     finally:
         b.chiudi()
+
+
+
+# ---------------------------------------------------------------------------
+# C1 del revisore: SIGKILL casuali su archivio + postino + riconciliazione + pulizia insieme
+# ---------------------------------------------------------------------------
+FIGLIO_SIGKILL = r"""
+import json, os, sys, threading, time, uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+os.environ.setdefault("SUPABASE_URL", "http://127.0.0.1:9"); os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "x")
+os.environ.setdefault("SUPABASE_KEY", "x")
+from Betfair.nucleo.dati.archivio import ArchivioLocale
+from Betfair.nucleo.dati.postino import PostinoLocale
+from Betfair.nucleo.dati.tests.test_g1_finti import SPEC, CloudProva, PostgrestFinto
+
+base, cloudfile, ackfile, inc, modo = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4], sys.argv[5]
+SPAZIO = uuid.UUID("6f1c3b4e-8a51-4c7a-9a5e-0d2f3c4b5a69")
+
+
+class Persistente(PostgrestFinto):
+    def __init__(self):
+        super().__init__()
+        if cloudfile.exists():
+            d = json.loads(cloudfile.read_text())
+            for n, righe in d["righe"].items():
+                self.tabelle[n].righe = righe
+                self.tabelle[n].prossimo_id = d["id"][n]
+
+    def consegna(self, *a):
+        esiti = super().consegna(*a)
+        d = {"righe": {n: t.righe for n, t in self.tabelle.items()}, "id": {n: t.prossimo_id for n, t in self.tabelle.items()}}
+        tmp = cloudfile.with_suffix(".tmp")
+        tmp.write_text(json.dumps(d))
+        os.replace(tmp, cloudfile)
+        return esiti
+
+
+srv = Persistente()
+a = ArchivioLocale("prova", SPEC, base=base, checkpoint_ogni_s=0.2, pulizia_ogni_s=1e9).apri()
+p = PostinoLocale(a, CloudProva(srv))
+p.avvia(intervallo_s=0.02, max_righe=50, ora_riconciliazione_utc=None)
+
+_ultimo = [datetime.now(timezone.utc)]
+def ts():
+    n = datetime.now(timezone.utc)
+    _ultimo[0] = max(n, _ultimo[0] + timedelta(microseconds=1))
+    return _ultimo[0].isoformat()
+
+def manutenzione():
+    while True:
+        time.sleep(0.15)
+        try:
+            oggi = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            p.riconcilia_giorno(oggi, ["mike_activity", "betfair_live_orders", "live_follow"])
+            a.pulisci(adesso_ms=int(time.time() * 1000) + 5 * 86_400_000)
+        except Exception as exc:
+            sys.stderr.write("manutenzione: %r\n" % (exc,))
+
+if modo == "finale":
+    for _ in range(600):
+        st = p.stato()
+        if st.in_coda == 0:
+            break
+        time.sleep(0.1)
+    print(json.dumps({"in_coda": p.stato().in_coda, "dead": len(a.dead_letter()), "segn": [s["tipo"] for s in a.segnalazioni()]}))
+    p.ferma(); a.chiudi()
+    sys.exit(0)
+
+threading.Thread(target=manutenzione, daemon=True).start()
+print("pronto", flush=True)
+k = 0
+pend = []
+while True:
+    uid = str(uuid.uuid5(SPAZIO, f"{inc}-{k}"))
+    a.scrivi("mike_activity", {"kind": "giro", "payload": {"k": k}, "event_id": "1", "uid": uid})
+    ref = f"r{inc}-{k % 20}"
+    st = "S%06d" % k
+    a.scrivi("betfair_live_orders", {"mode": "paper", "client_order_ref": ref, "market_id": "1.2", "selection_id": 1,
+                                     "side": "back", "price": 2.0, "size": 2.0, "status": st, "updated_at": ts()})
+    ev = f"e{inc}-{k % 7}"
+    a.scrivi("live_follow", {"event_id": ev, "home_name": "A", "away_name": "B", "status": st,
+                             "open_date": "2026-10-09T18:00:00+00:00", "updated_at": ts()})
+    pend.append({"uid": uid, "ref": ref, "st": st, "ev": ev})
+    k += 1
+    if k % 25 == 0:
+        if a.conferma(30):
+            with open(ackfile, "a") as f:
+                for r in pend:
+                    f.write(json.dumps(r) + "\n")
+                f.flush(); os.fsync(f.fileno())
+        pend = []
+        time.sleep(0.002)
+"""
+
+
+def test_sigkill_casuali_nessuna_riga_confermata_persa(tmp_path: Path) -> None:
+    """C1 del revisore (asserzioni invariate). Unica differenza dichiarata: l'attesa a caso
+    (0,4-2,2 s) parte quando il figlio e' PRONTO (archivio aperto, postino avviato): l'avvio
+    del figlio (import di supabase) qui dura ~2,3 s e con l'attesa dal lancio i figli
+    morivano prima di scrivere, e la prova passava a vuoto."""
+    import random
+    base, cloud, ack = tmp_path / "base", tmp_path / "cloud.json", tmp_path / "ack.jsonl"
+    rnd = random.Random(int(os.environ.get("G1_SEME", "7")))
+    cicli = int(os.environ.get("G1_CICLI", "6"))
+    for c in range(cicli):
+        p = subprocess.Popen([sys.executable, "-c", FIGLIO_SIGKILL, str(base), str(cloud), str(ack), f"c{c}", "scrivi"],
+                             cwd=RADICE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert p.stdout.readline().strip() == "pronto"
+        time.sleep(rnd.uniform(0.4, 2.2))
+        p.kill()                                                         # SIGKILL (TerminateProcess su Windows)
+        err = p.communicate()[1]
+        assert "Traceback" not in err, err[-1500:]
+    r = subprocess.run([sys.executable, "-c", FIGLIO_SIGKILL, str(base), str(cloud), str(ack), "fin", "finale"],
+                       cwd=RADICE, capture_output=True, text=True, timeout=180)
+    esito = json.loads(r.stdout.strip().splitlines()[-1])
+    assert esito["in_coda"] == 0 and esito["dead"] == 0, esito
+    d = json.loads(cloud.read_text())["righe"]
+    uids = [x["uid"] for x in d["mike_activity"]]
+    assert len(uids) == len(set(uids)), "duplicati nel cloud"
+    ordini = {x["client_order_ref"]: x["status"] for x in d["betfair_live_orders"]}
+    eventi = {x["event_id"]: x["status"] for x in d["live_follow"]}
+    acked = [json.loads(x) for x in ack.read_text().splitlines()]
+    assert len(acked) > 500, len(acked)
+    mancanti_uid = [r["uid"] for r in acked if r["uid"] not in set(uids)]
+    mancanti_ref = [r["ref"] for r in acked if r["ref"] not in ordini or ordini[r["ref"]] < r["st"]]
+    mancanti_ev = [r["ev"] for r in acked if r["ev"] not in eventi or eventi[r["ev"]] < r["st"]]
+    print("confermate", len(acked), "uid mancanti", len(mancanti_uid), "ref mancanti/indietro", len(mancanti_ref),
+          "ev", len(mancanti_ev))
+    assert not mancanti_uid and not mancanti_ref and not mancanti_ev

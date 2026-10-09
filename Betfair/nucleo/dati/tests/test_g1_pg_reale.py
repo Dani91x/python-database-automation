@@ -104,7 +104,7 @@ def test_pg_versione_mai_indietro(pg) -> None:
     esiti = srv.rpc("postino_consegna", {"p_tabella": "betfair_live_orders", "p_op": "upsert",
                                          "p_conflitto": ["mode", "client_order_ref"], "p_rev": "updated_at",
                                          "p_righe": [riga_ordine("r1", "EXECUTABLE", "2025-10-09T10:00:01+00:00")]})
-    assert esiti == [{"esito": "ignorata"}]
+    assert esiti == [{"esito": "vecchia"}]                                   # M3: scartata e DETTA
     assert righe("betfair_live_orders")[0]["status"] == "EXECUTION_COMPLETE"
     a.scrivi("betfair_live_orders", riga_ordine("r1", "CANCELLED", "2025-10-09T10:00:10+00:00"))
     assert a.conferma() and p.drena().consegnate == 1
@@ -144,3 +144,68 @@ def test_pg_riconcilia(pg) -> None:
     sql("UPDATE public.betfair_live_orders SET updated_at = '2025-10-09T09:00:00Z';")
     assert len(p.riconcilia("mike_activity", da).mancanti_nel_cloud) == 1
     assert p.riconcilia("betfair_live_orders", da).diverse == ('["paper", "r1"]',)
+
+
+
+# ---------------------------------------------------------------- correzioni dopo la revisione (09/10)
+def test_pg_R12_patch_con_versione_piu_vecchia_non_tocca_il_cloud(pg) -> None:
+    a, p, srv, ora, _ = pg
+    a.accoda("betfair_live_orders", "upsert", None, riga_ordine("r1", "EXECUTION_COMPLETE", "2025-10-09T10:00:09+00:00"))
+    assert p.drena().consegnate == 1
+    base = {"p_tabella": "betfair_live_orders", "p_op": "patch", "p_conflitto": ["mode", "client_order_ref"],
+            "p_rev": "updated_at"}
+    vecchia = srv.rpc("postino_consegna", {**base, "p_righe": [
+        {"mode": "paper", "client_order_ref": "r1", "status": "EXECUTABLE", "updated_at": "2025-10-09T10:00:01+00:00"}]})
+    assert vecchia == [{"esito": "vecchia"}]
+    assert righe("betfair_live_orders")[0]["status"] == "EXECUTION_COMPLETE"
+    nuova = srv.rpc("postino_consegna", {**base, "p_righe": [
+        {"mode": "paper", "client_order_ref": "r1", "status": "CANCELLED", "updated_at": "2025-10-09T10:00:10+00:00"}]})
+    assert nuova == [{"esito": "ok"}] and righe("betfair_live_orders")[0]["status"] == "CANCELLED"
+
+
+def test_pg_A1_carattere_nullo_rifiutato_dal_jsonb_bisezione(pg) -> None:
+    a, p, srv, ora, _ = pg
+    for i in range(8):
+        a.scrivi("mike_activity", riga_attivita(i, kind="a\x00b" if i == 5 else "giro"))
+    assert a.conferma()
+    e = p.drena()
+    assert (e.consegnate, e.dead_letter) == (7, 1)
+    assert sorted(r["payload"]["i"] for r in righe("mike_activity")) == [0, 1, 2, 3, 4, 6, 7]
+    assert a.dead_letter()[0]["codice"] == "22P05"
+
+
+def test_pg_A1_nan_mai_inviato_le_altre_passano(pg) -> None:
+    a, p, srv, ora, _ = pg
+    a.scrivi("mike_activity", riga_attivita(0, payload={"x": float("nan")}))
+    a.scrivi("mike_activity", riga_attivita(1))
+    assert a.conferma()
+    e = p.drena()
+    assert (e.consegnate, e.dead_letter) == (1, 1) and a.dead_letter()[0]["codice"] == "valore_non_json"
+
+
+def test_pg_A4_colonna_sconosciuta_blocca_la_tabella_niente_dead_letter(pg) -> None:
+    a, p, srv, ora, eventi = pg
+    for i in range(5):
+        a.scrivi("mike_activity", riga_attivita(i, colonna_nuova=1))
+    assert a.conferma()
+    e = p.drena()
+    assert e.dead_letter == 0 and p.stato().in_coda == 5 and eventi.count("dati.postino_bloccato") == 1
+
+
+def test_pg_intestazione_ha_il_suo_sqlstate(pg) -> None:
+    from Betfair.nucleo.dati.postino import classe_riga
+    from Betfair.nucleo.dati.tests.test_g1_finti import ErrorePg
+    a, p, srv, ora, _ = pg
+    with pytest.raises(ErrorePg) as e:
+        srv.rpc("postino_consegna", {"p_tabella": "mike_activity", "p_op": "fondi", "p_conflitto": ["uid"],
+                                     "p_rev": None, "p_righe": []})
+    assert e.value.codice == "GP001" and classe_riga("GP001") == "schema"
+
+
+
+def test_pg_R11_riga_senza_chiave_naturale_rifiutata(pg) -> None:
+    a, p, srv, ora, _ = pg
+    esiti = srv.rpc("postino_consegna", {"p_tabella": "mike_activity", "p_op": "insert", "p_conflitto": ["uid"],
+                                         "p_rev": None, "p_righe": [{"kind": "senza_uid", "payload": {}}]})
+    assert esiti[0]["esito"] == "errore" and esiti[0]["codice"] == "22023"
+    assert righe("mike_activity") == []

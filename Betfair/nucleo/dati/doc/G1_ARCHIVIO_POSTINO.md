@@ -76,10 +76,10 @@ scrive SOLO su `<tabella>_ombra` (`PostinoLocale(..., ombra=True)`); confronto c
 
 ## 8. Come si prova da solo
 
-`python -m pytest Betfair/nucleo/dati/tests -q -p no:cacheprovider -k g1` (55 verdi + 5 saltati senza PostgreSQL; 60 verdi con).
+`python -m pytest Betfair/nucleo/dati/tests -q -p no:cacheprovider -k g1` (102 verdi + 11 saltati senza PostgreSQL; 113 verdi con).
 Con un PostgreSQL usa-e-getta e la migrazione applicata: `G1_PG_PSQL="-h /tmp -p 54329 -U postgres"` accende
-`test_g1_pg_reale.py` (stesse prove sul SQL vero). Falsificazione: `ARCHITETTURA_2026-10/ondata1/W1-G1/mutazioni_g1.py
-[--sql]`. Misure: `ARCHITETTURA_2026-10/ondata1/W1-G1/misura_g1.py <tmp> 3000 3`.
+`test_g1_pg_reale.py` (stesse prove sul SQL vero). Falsificazione: `ARCHITETTURA_2026-10/ondata1/W1-G1/mutazioni.py
+[--sql]` (73 mutazioni). Crash con SIGKILL casuali: `G1_CICLI=14 G1_SEME=7` su `test_g1_crash.py -k sigkill`. Misure: `ARCHITETTURA_2026-10/ondata1/W1-G1/misura_g1.py <tmp> 3000 3`.
 
 ## 9. Misure
 
@@ -90,8 +90,40 @@ rilanciano sul PC con lo stesso strumento.
 ## 10. Voci di `PROCESSO_STANDARD_BOT.md` par. 6/7
 
 Sollecitate: 6.3 (riavvio con stato su disco: crash con `os._exit`), 6.5 (colonne vere e CHECK veri: finti dalle
-migrazioni e PostgreSQL vero), 6.6 (concorrenza: claim con 8 thread, uno scrittore), 6.7 (falsificazione 30
-mutazioni Python + 3 SQL), 6.8 (referto riproducibile: comandi e strumenti); 7 n.18 (scrittura fallita mai warning: dead_letter +
+migrazioni e PostgreSQL vero), 6.6 (concorrenza: claim con 8 thread, uno scrittore), 6.7 (falsificazione: 73
+mutazioni, 66 Python + 7 SQL, tutte rosse), 6.8 (referto riproducibile: comandi e strumenti); 7 n.18 (scrittura fallita mai warning: dead_letter +
 evento), n.19 (stato sopravvive al riavvio), n.21 (paper e live: `mode` e' nella chiave naturale, mai sommati qui),
 n.27 (finti con chiavi e tipi veri: client supabase vero), n.29-30 (test che sanno diventare rossi). Le altre sono
 ⊘ per il comparto (nessun ordine, nessun bot, nessun mercato): elenco con la causa nel referto par. 7.
+
+## 11. Regole dopo la revisione indipendente (09/10)
+
+Metro: (a) il cloud non perde NESSUN dato rispetto a oggi; (b) il DB locale e' invisibile e totalmente automatico.
+
+- **Upsert = fusione delle colonne** (B2, scelta dichiarata): come l'upsert di PostgREST di oggi, le colonne non scritte
+  restano; vale per la riga locale, per `leggi` e per la coalescenza (una voce per chiave con le colonne FUSE). Un upsert
+  parziale e' quindi sicuro; nessun rifiuto in `scrivi`.
+- **Versione per riga** (M3, scelta dichiarata): versione piu' nuova -> passa; UGUALE o piu' vecchia di al massimo 5 s
+  (`TOLLERANZA_OROLOGIO_US`, l'orologio di Windows che torna indietro) -> diventa "precedente + 1 us" e VINCE, come vince
+  oggi l'ultimo upsert; piu' vecchia oltre 5 s (versione intera: qualunque regressione) -> dato stantio, scartato con
+  l'evento `dati.riga_vecchia`. Nel cloud la RPC risponde `vecchia` (evento per riga) quando la riga c'e' con una
+  versione piu' nuova. Il SQL resta con `>` stretto: le versioni arrivano gia' monotone dall'archivio.
+- **Scrittore** (A2, M5, M6): tre unita' indipendenti per lotto (log, denaro, vivo); la voce impossibile da salvare
+  (intero oltre 2^63, chiave con un surrogato) va in `scarti_scrittore.jsonl` (fsync) e il resto prosegue; gli errori
+  di I/O si ritentano per sempre; alla chiusura con il disco guasto le voci accettate vanno in `salvataggio-*.jsonl` e
+  rientrano all'apertura dopo; `conferma()` e' una soglia contigua; un lavoro sincrono scaduto prima di partire si
+  annulla (esito vero: non avvenuto), se e' partito si aspetta il suo esito vero.
+- **Postino** (A1, A4, M1, M4): valore non JSON (NaN, Infinity, surrogato) -> dead_letter prima della chiamata; errore di
+  dato su tutta la chiamata (\u0000, classe 22) -> bisezione fino alla riga sola; per riga: classe 22 e 23 (tranne 23503)
+  -> dead_letter `dato`; classe 42/0A e intestazione `GP001` -> tabella bloccata, segnalata UNA volta, riga in coda;
+  tutto il resto -> transitorio, ~6 h di ritenti (360 tentativi, attese fino a 60 s), poi dead_letter `transitorio`.
+  **Rientro automatico** delle dead_letter: transitorie ogni 15 min, `dato` e `registro` ogni 24 h, senza tetto di
+  rientri (contatore `rientri`): una migrazione che corregge un CHECK fa rientrare da sola le righe (PSB 7 n.18).
+  Voce di una tabella non registrata -> dead_letter `registro`. Per chiave: al massimo una voce per chiamata, FIFO
+  fra un giro e l'altro (`outbox_pronta`), le voci dopo una chiave fallita aspettano.
+- **Log** (A3, M2, B7): riparazione della riga troncata cercando l'ultimo `\n` a blocchi fino all'inizio del file;
+  marcatore con la firma della prima riga: oltre la fine del file o file sostituito -> torna a 0 (ritento sicuro con
+  `uid`) e si segnala; conteggio della coda incrementale in `stato()`.
+- **Manutenzione** (M7, B1): pulizia a pezzi di 1.000 righe (lavori di millisecondi); `auto_vacuum=INCREMENTAL`
+  effettivo (VACUUM una tantum) e spazio restituito a pezzi.
+- `apri()` puo' sollevare `OSError` (cartella non creabile) o `ArchivioOccupato` (B3): l'aggancio resta su "vecchio".

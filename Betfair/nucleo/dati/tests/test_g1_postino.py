@@ -241,7 +241,8 @@ def test_riga_vecchia_tardiva_non_riporta_indietro_il_cloud(banco: Banco) -> Non
                           [riga_ordine("r1", "EXECUTION_COMPLETE", "2025-10-09T10:00:09+00:00")])
     a.accoda("betfair_live_orders", "upsert", None, riga_ordine("r1", "EXECUTABLE", "2025-10-09T10:00:01+00:00"))
     e = p.drena()
-    assert e.consegnate == 1 and p.contatori["ignorate"] == 1
+    assert e.consegnate == 1 and p.contatori["vecchie"] == 1
+    assert "dati.riga_vecchia" in banco.nomi()                                  # un evento per riga scartata
     assert banco.righe("betfair_live_orders")[0]["status"] == "EXECUTION_COMPLETE"
     # e la nuova invece passa
     a.scrivi("betfair_live_orders", riga_ordine("r1", "CANCELLED", "2025-10-09T10:00:10+00:00"))
@@ -327,8 +328,9 @@ def test_tetto_di_disco_segnale_di_ripiego_mai_perdita(tmp_path: Path) -> None:
         assert st.in_coda == 400                                                 # niente scartato
         b.server.offline = False
         b.avanza(61)
-        while b.postino.drena().consegnate:
-            pass
+        for _ in range(200):                                                # R10: tetto di giri
+            if not b.postino.drena().consegnate:
+                break
         assert len(b.righe("mike_activity")) == 400
     finally:
         b.chiudi()
@@ -400,8 +402,9 @@ def test_nessuna_fonte_affama_le_altre(banco: Banco) -> None:
     assert e.consegnate == 30
     assert len(banco.righe("mike_activity")) == 5 and len(banco.righe("betfair_live_orders")) == 1
     assert len(banco.righe("live_follow")) == 24
-    while p.drena(200).consegnate:
-        pass
+    for _ in range(200):                                                    # R10: tetto di giri
+        if not p.drena(200).consegnate:
+            break
     assert len(banco.righe("live_follow")) == 300 and p.stato().in_coda == 0
 
 

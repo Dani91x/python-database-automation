@@ -184,11 +184,12 @@ def test_leggi_vede_subito_e_versione_mai_indietro(tmp_path: Path) -> None:
         a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTION_COMPLETE", "2026-10-09T10:00:05+00:00"))
         assert a.leggi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r1"})["status"] == \
             "EXECUTION_COMPLETE"                                          # prima del commit
-        a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTABLE", "2026-10-09T10:00:01+00:00"))
+        # piu' vecchia OLTRE la tolleranza dell'orologio (5 s): dato stantio, scartato con un evento
+        a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTABLE", "2026-10-09T09:59:00+00:00"))
         assert a.conferma()
         assert a.leggi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r1"})["status"] == \
             "EXECUTION_COMPLETE"
-        assert a.contatori["righe_vecchie_ignorate"] == 1
+        assert a.contatori["righe_vecchie_scartate"] == 1
         assert len(a.outbox_pronta("stato_denaro", 2 ** 62, 10)) == 1     # la vecchia non va in coda
         with pytest.raises(ValueError):
             a.scrivi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r2", "status": "X"})

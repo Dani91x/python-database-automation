@@ -1,0 +1,77 @@
+# mutazioni Python: 66
+M01  ROSSO                              3.7s sha256 uguale cc7b8e1e1aace38f | senza flush le righe di log confermate si perdono al crash
+M02  ROSSO                             17.6s sha256 uguale cc7b8e1e1aace38f | riga e outbox fuori da una transazione comune
+M03  ROSSO                              2.6s sha256 uguale cc7b8e1e1aace38f | versione locale che torna indietro
+M04  ROSSO                              2.7s sha256 uguale cc7b8e1e1aace38f | coalescenza spenta
+M05  ROSSO                              2.7s sha256 uguale cc7b8e1e1aace38f | claim non atomico
+M06  ROSSO                              2.6s sha256 uguale cc7b8e1e1aace38f | riga troncata non tagliata
+M07  ROSSO                              2.8s sha256 uguale cc7b8e1e1aace38f | pulizia dei log senza riconciliazione
+M08  ROSSO                              2.8s sha256 uguale cc7b8e1e1aace38f | istante dell'evento non timbrato
+M09  ROSSO                              2.8s sha256 uguale 90129c99867c11f1 | uid generato alla consegna invece che alla scrittura -> il ritento duplica (G par. 5 n.2)
+M10  ROSSO                              2.8s sha256 uguale 90129c99867c11f1 | cloud fermo non riconosciuto come offline
+M11  ROSSO                              2.8s sha256 uguale 90129c99867c11f1 | nessuna attesa crescente
+M12  ROSSO                              3.1s sha256 uguale 90129c99867c11f1 | CHECK ritentato invece di dead_letter (G par. 5 n.5)
+M13  ROSSO                              3.2s sha256 uguale 90129c99867c11f1 | 23503 trattato come definitivo (R06)
+M14  ROSSO                              2.8s sha256 uguale 90129c99867c11f1 | figlio prima del padre
+M15  ROSSO                              2.4s sha256 uguale 90129c99867c11f1 | ombra che scrive sulle tabelle vere (R21)
+M16  ROSSO                              2.5s sha256 uguale 90129c99867c11f1 | RPC assente che uccide le righe
+M17  ROSSO                              2.8s sha256 uguale 90129c99867c11f1 | offline che fa avanzare i log
+M18  ROSSO                              3.1s sha256 uguale 90129c99867c11f1 | nessun segnale al tetto di disco
+M19  ROSSO                              3.3s sha256 uguale 90129c99867c11f1 | il difetto vero trovato dalla misura
+M20  ROSSO                              2.7s sha256 uguale 90129c99867c11f1 | 57014 senza riduzione del blocco
+M21  ROSSO                              2.9s sha256 uguale 90129c99867c11f1 | permessi / colonna sconosciuta che uccidono le righe (A4)
+M22  ROSSO                              2.7s sha256 uguale 116e3f38169ba61c | riga in viaggio contata come persa
+M23  ROSSO                              2.6s sha256 uguale 116e3f38169ba61c | versioni diverse non viste
+M24  ROSSO                              2.4s sha256 uguale 906480ce5510683d | archivio dentro il repo
+M25  ROSSO                              2.6s sha256 uguale 92a42e260004a391 | schema piu' nuovo toccato da codice vecchio
+M26  ROSSO                              2.8s sha256 uguale cc7b8e1e1aace38f | uid non generato nel punto di scrittura
+M27  ROSSO                              2.8s sha256 uguale cc7b8e1e1aace38f | riga alterata nel trasporto (i None tolti)
+M28  ROSSO                              2.8s sha256 uguale 90129c99867c11f1 | una fonte affama le altre
+M29  ROSSO                              2.7s sha256 uguale 90129c99867c11f1 | riga piu' lunga del blocco: file bloccato
+M30  ROSSO                              3.2s sha256 uguale 90129c99867c11f1 | riconciliazione del giorno sbagliato
+R1   ROSSO                              3.0s sha256 uguale cc7b8e1e1aace38f | pulizia dei JSONL non ancora consegnati
+R2   ROSSO                              2.5s sha256 uguale cc7b8e1e1aace38f | pulizia di righe ancora in outbox
+R3   ROSSO                              2.5s sha256 uguale cc7b8e1e1aace38f | coalescenza che fonde chiavi diverse
+R4   ROSSO                              2.7s sha256 uguale cc7b8e1e1aace38f | log ritentati persi (marcatore avanza)
+R5   ROSSO                              2.9s sha256 uguale 90129c99867c11f1 | rimandate cancellate come consegnate
+R6   ROSSO                              4.1s sha256 uguale cc7b8e1e1aace38f | conferma() non e' una barriera
+R7   ROSSO                              2.6s sha256 uguale 90129c99867c11f1 | lettura di righe di log a meta' scrittura
+R8   ROSSO                              2.5s sha256 uguale cc7b8e1e1aace38f | unita' di log fallita: file non riavvolto (doppioni)
+R9   ROSSO                              4.1s sha256 uguale 906480ce5510683d | nessun lucchetto
+R10  ROSSO                              2.8s sha256 uguale 90129c99867c11f1 | marcatore fermo all'inizio dell'ultima riga
+R13  ROSSO                              2.8s sha256 uguale cc7b8e1e1aace38f | leggi(): la riga in attesa stantia vince
+R14  ROSSO                              2.6s sha256 uguale 90129c99867c11f1 | esito errore per riga contato come consegnato
+N01  ROSSO                             17.7s sha256 uguale cc7b8e1e1aace38f | A2: nessun isolamento, lo scrittore si pianta su una voce
+N02  ROSSO                             17.6s sha256 uguale cc7b8e1e1aace38f | A2: errore di dato trattato come I/O (ritento eterno)
+N03  ROSSO                              2.6s sha256 uguale cc7b8e1e1aace38f | A3: \n cercato solo nell'ultimo MiB
+N04  ROSSO                              2.9s sha256 uguale 90129c99867c11f1 | M2: marcatore oltre la fine non azzerato
+N05  ROSSO                              3.3s sha256 uguale 90129c99867c11f1 | M2: file sostituito non riconosciuto
+N06  ROSSO                              2.6s sha256 uguale cc7b8e1e1aace38f | M3: nessuna tolleranza dell'orologio
+N07  ROSSO                              2.7s sha256 uguale cc7b8e1e1aace38f | M3: versione uguale scartata
+N08  ROSSO                              3.0s sha256 uguale cc7b8e1e1aace38f | M4: outbox senza FIFO per chiave
+N09  ROSSO                              2.7s sha256 uguale 90129c99867c11f1 | M4: due voci della stessa chiave in una chiamata
+N10  ROSSO                              2.7s sha256 uguale 90129c99867c11f1 | M4: patch che supera l'upsert fallito
+N11  ROSSO                              0.6s sha256 uguale 90129c99867c11f1 | A1: nessuna validazione prima della chiamata
+N12  ROSSO                              2.6s sha256 uguale 90129c99867c11f1 | A1: nessuna bisezione
+N13  ROSSO                              2.9s sha256 uguale 90129c99867c11f1 | A4: nessun rientro automatico
+N14  ROSSO                              3.1s sha256 uguale 90129c99867c11f1 | A4: tetto di ~10 min (D10)
+N15  ROSSO                              2.9s sha256 uguale 90129c99867c11f1 | M1: voce sconosciuta saltata
+N16  ROSSO                             12.7s sha256 uguale cc7b8e1e1aace38f | M5: lavoro scaduto eseguito lo stesso
+N17  ROSSO                              2.8s sha256 uguale cc7b8e1e1aace38f | M5: unita' non indipendenti (claim rieseguito dopo il commit)
+N18  ROSSO                              2.7s sha256 uguale cc7b8e1e1aace38f | M6: righe accettate perse alla chiusura
+N19  ROSSO                              2.6s sha256 uguale cc7b8e1e1aace38f | B2: coalescenza che sostituisce
+N20  ROSSO                              3.0s sha256 uguale cc7b8e1e1aace38f | B2: riga locale sostituita, non fusa
+N21  ROSSO                              2.7s sha256 uguale 92a42e260004a391 | B1: auto_vacuum mai effettivo
+N22  ROSSO                              2.7s sha256 uguale 90129c99867c11f1 | B7: conteggio incrementale sbagliato
+N23  ROSSO                              0.7s sha256 uguale 90129c99867c11f1 | M3: riga scartata dal cloud senza evento
+N24  ROSSO                             17.6s sha256 uguale cc7b8e1e1aace38f | M7: pulizia in un pezzo solo
+# mutazioni SQL (PostgreSQL usa-e-getta): 7
+S01  ROSSO                              3.3s sha256 uguale 14492e4f19ad5604 | upsert senza versione (R02)
+S02  ROSSO                              3.4s sha256 uguale 14492e4f19ad5604 | nessun esito per riga
+S03  ROSSO                              3.0s sha256 uguale 14492e4f19ad5604 | insert senza ON CONFLICT
+R11  ROSSO                              3.1s sha256 uguale 14492e4f19ad5604 | SQL: riga senza chiave naturale accettata
+R12  ROSSO                              3.2s sha256 uguale 14492e4f19ad5604 | SQL: patch senza guardia di versione
+S04  ROSSO                              3.7s sha256 uguale 14492e4f19ad5604 | SQL: riga scartata per versione non detta
+S05  ROSSO                              3.3s sha256 uguale 14492e4f19ad5604 | SQL: errore d'intestazione scambiato per dato
+# ROSSE 73/73
+rc=0

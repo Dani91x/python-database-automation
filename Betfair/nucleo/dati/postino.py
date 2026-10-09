@@ -3,10 +3,11 @@
 Scopo
     Portare al cloud, DOPO la decisione e fuori dal ciclo, ogni riga che
     l'archivio locale ha in coda: la outbox dei due file SQLite (``denaro`` e
-    ``vivo``) e i file JSONL dei log (letti a offset). Ordine dell'utente: il
+    ``vivo``) e i file JSONL dei log (letti a offset). Ordini dell'utente: il
     cloud non perde NESSUN dato rispetto a oggi (stessa tabella, stesse
-    colonne, senza doppioni); cio' che non si puo' consegnare resta in coda con
-    un allarme, MAI scartato in silenzio.
+    colonne, senza doppioni); il DB locale e' invisibile e totalmente
+    automatico: cio' che non si puo' consegnare resta in coda con un allarme,
+    MAI scartato in silenzio, e rientra da solo.
 
 Come consegna
     UNA RPC generica del cloud, ``postino_consegna`` (migrazione
@@ -16,39 +17,41 @@ Come consegna
         (log con ``uid``: il ritento non duplica);
       * ``upsert`` -> ``ON CONFLICT ... DO UPDATE ... WHERE excluded.rev > t.rev``
         quando la tabella ha ``rev_colonna``: una riga vecchia arrivata tardi
-        non riporta MAI indietro il cloud (R02);
+        non riporta MAI indietro il cloud (R02); torna ``vecchia`` con un evento;
       * ``patch``/``delete`` per chiave naturale, con la stessa regola di versione.
-    La RPC risponde con un esito PER RIGA (``ok`` | ``ignorata`` | ``errore`` con
-    SQLSTATE): una riga guasta non ferma le altre del blocco.
+    La RPC risponde con un esito PER RIGA (``ok`` | ``ignorata`` | ``vecchia`` |
+    ``errore`` con SQLSTATE): una riga guasta non ferma le altre del blocco.
 
-Regole sugli errori
+Regole sugli errori (revisione 09/10, A1-A4, M1, M4)
+    * valore non JSON (NaN, Infinity, surrogato isolato): la riga va in dead_letter
+      PRIMA della chiamata (oggi httpx la rifiuta e la riga si perde con un warning);
     * errore di rete/gateway su tutta la chiamata (``db_client.classifica_guasto_rete``,
-      riuso) -> OFFLINE: niente si muove, attese 2-4-8-16-32 s con tetto 60 s
-      (G par. 4.2), evento ``dati.postino_offline(da)`` una volta, la coda cresce;
-    * 57014 su tutta la chiamata -> il blocco di quella tabella si dimezza (come
-      ``stream/db.py`` fa oggi), poi si riprova;
-    * altro errore su tutta la chiamata (RPC assente, permessi, colonna di
-      conflitto senza indice unico...) -> la TABELLA e' ``bloccata``: righe ferme in
-      coda, evento ``dati.postino_bloccato``; MAI dead_letter (non e' colpa della riga);
-    * esito per riga 23503 (chiave esterna) e gli altri SQLSTATE transitori ->
-      ritento con tetto (R06), poi ``dead_letter`` con allarme;
-    * qualunque altro errore per riga (CHECK 23514, NOT NULL 23502, tipo 22P02,
-      colonna sconosciuta 42703...) -> ``dead_letter`` subito, evento
-      ``dati.dead_letter(tabella, riga, errore)``: mai un warning (PSB par. 7 n.18).
-    Ordine padre -> figlio da ``SpecTabella.dipende_da``: in un giro le tabelle
-    padre partono prima; se un padre non e' andato a buon fine, i figli
-    aspettano il giro dopo.
+      riuso) -> OFFLINE: niente si muove, attese 2-4-8-16-32 s con tetto 60 s;
+    * 57014 su tutta la chiamata -> il blocco della tabella si dimezza;
+    * errore di DATO su tutta la chiamata (classe 22/23 tranne 23503, corpo non
+      valido, \\u0000 rifiutato dal jsonb) -> BISEZIONE fino alla riga singola,
+      dead_letter di quella sola, le altre passano;
+    * altro errore su tutta la chiamata (RPC assente, permessi, schema) -> la TABELLA
+      e' bloccata (segnalata UNA volta), si ritenta piu' tardi; MAI dead_letter;
+    * esito per riga: classe 22 e 23 (tranne 23503) -> dead_letter subito (dato non
+      valido); classe 42 e 0A (colonna sconosciuta, permessi) -> tabella bloccata,
+      riga in coda; tutto il resto (23503, 08, 25006, 40, 53, 55, 57...) ->
+      transitorio, ritento con tetto ``TETTO_TENTATIVI_RIGA`` (~6 h), poi dead_letter
+      ``transitorio``;
+    * le dead_letter RIENTRANO DA SOLE (archivio ``rientro_dead_letter``): transitorie
+      ogni 15 min, dato e registro ogni 24 h, senza tetto di rientri;
+    * voce di una tabella non registrata -> dead_letter ``registro`` (M1);
+    * ordine: tabelle padre prima (``dipende_da``); per chiave al massimo UNA voce
+      per chiamata; dopo un fallimento di una chiave le voci successive della
+      stessa chiave aspettano (M4).
 
 Disco
     ``tetto_disco_mb``: oltre il tetto, evento ``dati.tetto_disco`` e
-    ``ripiego_diretto`` vero: il SEGNALE esplicito per l'aggancio dell'ondata 2
-    di tornare alla scrittura diretta di oggi (con lo stesso ``uid``/``rev``:
-    nessun doppione quando il postino recupera). L'archivio NON smette di
-    scrivere: niente si perde.
+    ``ripiego_diretto`` vero (segnale per l'aggancio di tornare alla scrittura di
+    oggi con lo stesso ``uid``/``rev``). L'archivio NON smette di scrivere.
 
 Ombra
-    ``ombra=True`` -> ogni riga va su ``<tabella>_ombra`` (stessa forma, creata
-    dalla migrazione): mai due scrittori sulle chiavi del vecchio (R02, R21).
+    ``ombra=True`` -> ogni riga va su ``<tabella>_ombra`` (R02, R21).
 
 Cosa NON fa
     Nessun thread all'import; il thread ``postino`` nasce solo con ``avvia()``.
@@ -69,24 +72,29 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 from .archivio import REGIME_SERVIZIO, REGIMI_SQLITE, ArchivioLocale, Eventi, VoceOutbox, _eventi_nel_log
 from .contratto import (Cloud, EsitoDrenaggio, Operazione, RapportoRiconciliazione, SpecTabella,
                         StatoPostino)
-from .schema_locale import chiave_canonica, giorno_utc, leggi_riga_log, tabella_della_riga_log
+from .schema_locale import (chiave_canonica, firma_file, giorno_utc, leggi_riga_log, tabella_della_riga_log,
+                            testo_json)
 
 logger = logging.getLogger(__name__)
 
 RPC_CONSEGNA = "postino_consegna"
-#: SQLSTATE per riga che passano ritentando (con tetto): chiave esterna (R06),
-#: serializzazione, stallo, lock, connessioni, database in arresto
-TRANSITORI_RIGA = frozenset({"23503", "40001", "40P01", "55P03", "53300", "57P01", "57P03"})
-#: SQLSTATE per riga che NON sono colpa della riga (permessi): la tabella si blocca,
-#: le righe restano in coda (mai dead_letter)
-BLOCCANTI_RIGA = frozenset({"42501"})
-TETTO_TENTATIVI_RIGA = 12
+#: ~6 h di ritenti (attese fino a 60 s) prima che una riga transitoria diventi dead_letter
+#: (che poi rientra da sola ogni 15 min): un padre scritto da un altro processo ha tempo (D10)
+TETTO_TENTATIVI_RIGA = 360
 TETTO_ATTESA_S = 60.0
 ATTESE_PREDEFINITE_S: Tuple[float, ...] = (2.0, 4.0, 8.0, 16.0, 32.0)   # G par. 4.2 = db_client.ATTESE_RETE_S
 BLOCCO_PREDEFINITO = 200
 LETTURA_LOG_BYTE = 1_048_576
 #: dopo quest'ora UTC il thread del postino riconcilia il giorno prima (pulizia abilitata)
 ORA_RICONCILIAZIONE_UTC = 3
+#: ogni quanto il postino fa rientrare le dead_letter scadute
+RIENTRO_CONTROLLO_MS = 60_000
+#: SQLSTATE delle intestazioni della RPC (errori di chiamata, mai della riga)
+CODICE_INTESTAZIONE = "GP001"
+
+
+class RispostaInattesa(RuntimeError):
+    """La RPC ha risposto con una forma diversa da quella attesa (mai colpa delle righe)."""
 
 
 def _attese_rete() -> Tuple[float, ...]:
@@ -99,8 +107,18 @@ def _attese_rete() -> Tuple[float, ...]:
         return ATTESE_PREDEFINITE_S
 
 
+def classe_riga(codice: str) -> str:
+    """A4: 'dato' (dead_letter subito) | 'schema' (tabella bloccata) | 'transitorio'."""
+    c = (codice or "").strip()
+    if c.startswith("22") or (c.startswith("23") and c != "23503"):
+        return "dato"
+    if c.startswith("42") or c.startswith("0A") or c == CODICE_INTESTAZIONE:
+        return "schema"
+    return "transitorio"
+
+
 def classifica_errore_chiamata(exc: BaseException) -> str:
-    """'rete' | 'statement_timeout' | 'bloccante' per un errore su TUTTA la chiamata.
+    """'rete' | 'statement_timeout' | 'dati' | 'bloccante' per un errore su TUTTA la chiamata.
 
     La classe di rete viene da ``db_client.classifica_guasto_rete`` (riuso, nessuna
     copia): 5xx/HTML del gateway, connessione terminata, timeout, connessione."""
@@ -108,18 +126,35 @@ def classifica_errore_chiamata(exc: BaseException) -> str:
     messaggio = str(getattr(exc, "message", "") or exc)
     if codice == "57014" or "statement timeout" in messaggio.lower():
         return "statement_timeout"
+    if isinstance(exc, RispostaInattesa):
+        return "bloccante"
     try:
         from db_client import classifica_guasto_rete
     except Exception as imp:  # senza il classificatore vero non si inventa: si blocca e si dice
         logger.error("[postino] classifica_guasto_rete non importabile: %s", imp)
         return "bloccante"
-    return "rete" if classifica_guasto_rete(exc) is not None else "bloccante"
+    if classifica_guasto_rete(exc) is not None:
+        return "rete"
+    if not codice and isinstance(exc, (ValueError, UnicodeError, TypeError, OverflowError)):
+        return "dati"                                        # il client non sa codificare il corpo
+    if codice == "PGRST102" or (codice != CODICE_INTESTAZIONE and classe_riga(codice) == "dato"):
+        return "dati"
+    return "bloccante"
 
 
 def _attesa(tentativi: int, attese: Sequence[float]) -> float:
     if tentativi <= 0:
         return 0.0
     return min(TETTO_ATTESA_S, attese[min(tentativi, len(attese)) - 1] if tentativi <= len(attese) else TETTO_ATTESA_S)
+
+
+def _valida_json(riga: Any) -> Optional[str]:
+    """Come httpx codifica il corpo (``allow_nan=False``, UTF-8): None se va, altrimenti il motivo."""
+    try:
+        json.dumps(riga, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        return None
+    except (ValueError, UnicodeError, TypeError, OverflowError) as exc:
+        return f"{type(exc).__name__}: {exc}"[:300]
 
 
 @dataclass
@@ -133,7 +168,7 @@ class _Voce:
     creato_ms: int
     tentativi: int
     regime: Optional[str] = None       # outbox: regime del file
-    seq: Optional[int] = None          # outbox: seq
+    seq: Optional[int] = None          # outbox: seq; log: offset di FINE riga
     file: Optional[str] = None         # log: nome del file
 
 
@@ -145,11 +180,12 @@ class _Giro:
     errore: Optional[str] = None
     interrotto: bool = False
     fallite: Set[str] = field(default_factory=set)
+    chiavi_fallite: Set[Tuple[str, Optional[str]]] = field(default_factory=set)
     # esiti per fonte
     ok_seq: Dict[str, List[int]] = field(default_factory=dict)
     rimandate: Dict[str, List[Tuple[int, int, int, str]]] = field(default_factory=dict)
-    morte_seq: Dict[str, List[Tuple[int, str, str, int]]] = field(default_factory=dict)
-    log_morte: Dict[str, List[Tuple[str, str, str, str, int, str, str, int]]] = field(default_factory=dict)
+    morte_seq: Dict[str, List[Tuple[int, str, str, int, str]]] = field(default_factory=dict)
+    log_morte: Dict[str, List[Tuple[Any, ...]]] = field(default_factory=dict)
     log_ritenti: Dict[str, List[Tuple[str, str, str, str, int, int, int, str]]] = field(default_factory=dict)
 
 
@@ -174,7 +210,9 @@ class PostinoLocale:
         self._lock = threading.Lock()                # un giro alla volta
         self._guasti_di_fila = 0
         self._prossimo_giro_ms = 0
+        self._prossimo_rientro_ms = 0
         self._bloccate: Dict[str, Tuple[int, int, str]] = {}   # tabella -> (prossimo_ms, tentativi, errore)
+        self._cache_log: Dict[str, Tuple[int, int, Counter[str], Optional[int]]] = {}
         self.offline_da: Optional[datetime] = None
         self.ultimo_errore: Optional[str] = None
         self.ripiego_diretto = False
@@ -198,14 +236,17 @@ class PostinoLocale:
         adesso = self._ora_ms()
         per: Counter[str] = Counter()
         vecchio: Optional[int] = None
-        morti = 0
+        morti = len(self.archivio.scarti_scrittore())
         for regime in REGIMI_SQLITE:
             p, v, m = self.archivio.conteggi_outbox(regime)
             per.update(p)
             morti += m
             if v is not None:
                 vecchio = v if vecchio is None else min(vecchio, v)
-        for percorso in self.archivio.file_log():
+        file = self.archivio.file_log()
+        for nome in [n for n in self._cache_log if n not in {f.name for f in file}]:
+            del self._cache_log[nome]
+        for percorso in file:
             p, v = self._conta_log(percorso)
             per.update(p)
             if v is not None:
@@ -223,9 +264,21 @@ class PostinoLocale:
             if adesso < self._prossimo_giro_ms:
                 return EsitoDrenaggio(0, 0, 0, f"in attesa ({(self._prossimo_giro_ms - adesso) / 1000.0:.1f} s): "
                                                f"{self.ultimo_errore}")
+            if adesso >= self._prossimo_rientro_ms:
+                self._prossimo_rientro_ms = adesso + RIENTRO_CONTROLLO_MS
+                self.archivio.rientro_dead_letter(adesso)
             voci = self._raccogli(max(1, int(max_righe)), adesso)
             giro = _Giro()
-            for tabella, op, gruppo in self._ordina(voci):
+            note: List[_Voce] = []
+            for v in voci:
+                if v.op == "salta":
+                    continue
+                try:
+                    self.archivio.spec(v.tabella)
+                    note.append(v)
+                except (KeyError, ValueError) as exc:                       # M1: mai saltata, mai un blocco
+                    self._morta(v, "registro", f"tabella non registrata: {exc}"[:300], giro, "registro")
+            for tabella, op, gruppo in self._ordina(note):
                 if giro.interrotto:
                     break
                 spec = self.archivio.spec(tabella)
@@ -315,9 +368,25 @@ class PostinoLocale:
     def _da_outbox(v: VoceOutbox) -> _Voce:
         return _Voce(v.tabella, v.op, v.chiave, v.testo, v.creato_ms, v.tentativi, regime=v.regime, seq=v.seq)
 
+    def _marcatore_valido(self, percorso: Path) -> int:
+        """M2: un marcatore oltre la fine del file o di un file sostituito torna a 0 e si segnala."""
+        offset, firma = self.archivio.marcatore_log(percorso.name)
+        if offset == 0:
+            return 0
+        dimensione = percorso.stat().st_size
+        firma_ora = firma_file(percorso)
+        if offset > dimensione or (firma is not None and firma_ora != firma):
+            self.archivio.azzera_marcatore(percorso.name, {"file": percorso.name, "offset": offset,
+                                                           "dimensione": dimensione,
+                                                           "firma_cambiata": firma is not None and firma_ora != firma})
+            self.contatori["marcatori_azzerati"] += 1
+            return 0
+        return offset
+
     def _leggi_log(self, percorso: Path, quante: int) -> List[_Voce]:
-        """Righe COMPLETE dopo il marcatore; una riga guasta si segnala e si salta."""
-        offset = self.archivio.offset_log(percorso.name)
+        """Righe COMPLETE dopo il marcatore; una riga non leggibile si segnala e si salta;
+        la riga di una tabella non registrata diventa una voce (dead_letter ``registro``)."""
+        offset = self._marcatore_valido(percorso)
         voci: List[_Voce] = []
         with open(percorso, "rb") as f:
             f.seek(offset)
@@ -334,10 +403,6 @@ class PostinoLocale:
             fine = pos + len(linea)
             try:
                 tabella, op, ms, riga = leggi_riga_log(linea.decode("ascii"))
-                spec = self.archivio.spec(tabella)
-                voci.append(_Voce(tabella, op, chiave_canonica(spec, riga),
-                                  json.dumps(riga, ensure_ascii=False, separators=(",", ":")), ms, 0,
-                                  file=percorso.name, seq=fine))
             except (ValueError, KeyError, UnicodeDecodeError) as exc:
                 dettagli = {"file": percorso.name, "offset": pos, "errore": str(exc)[:200],
                             "anteprima": linea[:200].decode("ascii", "replace")}
@@ -345,38 +410,79 @@ class PostinoLocale:
                 self.archivio.segnala("riga_log_guasta", dettagli)
                 self._evento("dati.riga_troncata", dettagli)
                 voci.append(_Voce("", "salta", None, "", 0, 0, file=percorso.name, seq=fine))
+                pos = fine
+                continue
+            try:
+                chiave: Optional[str] = chiave_canonica(self.archivio.spec(tabella), riga)
+            except (KeyError, ValueError):
+                chiave = None                             # tabella sconosciuta o chiave mancante: la decide drena
+            voci.append(_Voce(tabella, op, chiave, testo_json(riga), ms, 0, file=percorso.name, seq=fine))
             pos = fine
         return voci
 
     def _conta_log(self, percorso: Path) -> Tuple[Counter[str], Optional[int]]:
-        per: Counter[str] = Counter()
-        primo: Optional[int] = None
-        offset = self.archivio.offset_log(percorso.name)
+        """B7: conteggio INCREMENTALE della coda di un file (si legge solo cio' che e'
+        cambiato dall'ultima volta: le righe nuove e quelle appena consegnate)."""
+        nome = percorso.name
+        marcatore = self.archivio.offset_log(nome)
         try:
-            with open(percorso, "rb") as f:
-                f.seek(offset)
-                for linea in f:
-                    if not linea.endswith(b"\n"):
-                        break
-                    testo = linea.decode("ascii", "replace")
-                    t = tabella_della_riga_log(testo)
-                    if t:
-                        per[t] += 1
-                        if primo is None:
-                            try:
-                                primo = leggi_riga_log(testo)[2]
-                            except (ValueError, KeyError):
-                                primo = None
+            dimensione = percorso.stat().st_size
         except FileNotFoundError:
-            pass
-        return per, primo
+            self._cache_log.pop(nome, None)
+            return Counter(), None
+        c = self._cache_log.get(nome)
+        if c is None or marcatore < c[0] or marcatore > c[1] or dimensione < c[1]:
+            conta, fine = self._scansiona(percorso, marcatore, dimensione)
+            primo = self._primo_ms(percorso, marcatore, fine)
+        else:
+            conta, fine, primo = Counter(c[2]), c[1], c[3]
+            if marcatore > c[0]:
+                via, _ = self._scansiona(percorso, c[0], marcatore)
+                conta.subtract(via)
+                conta = +conta
+                primo = self._primo_ms(percorso, marcatore, fine)
+            if dimensione > fine:
+                nuove, fine = self._scansiona(percorso, fine, dimensione)
+                conta.update(nuove)
+                if primo is None:
+                    primo = self._primo_ms(percorso, marcatore, fine)
+        self._cache_log[nome] = (marcatore, fine, conta, primo)
+        return Counter(conta), primo
+
+    @staticmethod
+    def _scansiona(percorso: Path, da: int, a: int) -> Tuple[Counter[str], int]:
+        """Righe complete in [da, a): conteggio per tabella e fine dell'ultima riga completa."""
+        conta: Counter[str] = Counter()
+        fine = da
+        with open(percorso, "rb") as f:
+            f.seek(da)
+            dati = f.read(max(0, a - da))
+        for linea in dati.splitlines(keepends=True):
+            if not linea.endswith(b"\n"):
+                break
+            fine += len(linea)
+            t = tabella_della_riga_log(linea.decode("ascii", "replace"))
+            if t:
+                conta[t] += 1
+        return conta, fine
+
+    @staticmethod
+    def _primo_ms(percorso: Path, da: int, a: int) -> Optional[int]:
+        if a <= da:
+            return None
+        with open(percorso, "rb") as f:
+            f.seek(da)
+            linea = f.readline()
+        try:
+            return leggi_riga_log(linea.decode("ascii", "replace"))[2]
+        except (ValueError, KeyError):
+            return None
 
     def _ordina(self, voci: Sequence[_Voce]) -> List[Tuple[str, str, List[_Voce]]]:
         """Gruppi = corse consecutive (tabella, op) nell'ordine di arrivo; tabelle padre prima."""
         per_tabella: Dict[str, List[_Voce]] = {}
         for v in voci:
-            if v.op != "salta":
-                per_tabella.setdefault(v.tabella, []).append(v)
+            per_tabella.setdefault(v.tabella, []).append(v)
         profondita = {t: self._profondita(t, set()) for t in per_tabella}
         gruppi: List[Tuple[str, str, List[_Voce]]] = []
         for tabella in sorted(per_tabella, key=lambda t: profondita[t]):
@@ -395,60 +501,117 @@ class PostinoLocale:
             return 0                                        # ciclo dichiarato: nessun ordine imposto
         try:
             padri = self.archivio.spec(tabella).dipende_da
-        except KeyError:
+        except (KeyError, ValueError):
             return 0
         return 1 + max((self._profondita(p, visti | {tabella}) for p in padri), default=-1)
 
     # ------------------------------------------------------------------ consegna
     def _consegna_gruppo(self, spec: SpecTabella, op: str, gruppo: List[_Voce], giro: _Giro, adesso: int) -> None:
-        i = 0
-        while i < len(gruppo):
-            if giro.interrotto:
-                return
+        """Pezzi di al massimo ``blocco`` righe, al massimo UNA voce per chiave per chiamata;
+        una voce di una chiave gia' fallita in questo giro aspetta (M4)."""
+        pendenti = list(gruppo)
+        while pendenti and not giro.interrotto:
             n = self._blocco_tabella.get(spec.nome, self._blocco)
-            pezzo = gruppo[i:i + n]
-            argomenti = {"p_tabella": self.destinazione(spec.nome), "p_op": op,
-                         "p_conflitto": list(spec.chiave_naturale), "p_rev": spec.rev_colonna,
-                         "p_righe": [json.loads(v.testo) for v in pezzo]}
-            try:
-                esiti = self.cloud.rpc(RPC_CONSEGNA, argomenti)
-                if not isinstance(esiti, list) or len(esiti) != len(pezzo):
-                    raise ValueError(f"risposta inattesa di {RPC_CONSEGNA}: {str(esiti)[:200]}")
-            except Exception as exc:
-                self._errore_chiamata(spec, pezzo, exc, giro, adesso)
+            pezzo: List[_Voce] = []
+            resto: List[_Voce] = []
+            chiavi: Set[Tuple[str, Optional[str]]] = set()
+            for v in pendenti:
+                k = (v.tabella, v.chiave)
+                if v.chiave is not None and k in giro.chiavi_fallite:
+                    self._rimanda(v, giro, adesso, "attende la voce precedente della stessa chiave", contare=False)
+                    continue
+                if len(pezzo) < n and (v.chiave is None or k not in chiavi):
+                    pezzo.append(v)
+                    chiavi.add(k)
+                else:
+                    resto.append(v)
+            if not pezzo:
+                return
+            if not self._invia(spec, op, pezzo, giro, adesso):
                 if not giro.interrotto:
                     bloc = self._bloccate.get(spec.nome)
                     pronta = bloc[0] if bloc is not None else adesso
-                    for v in gruppo[i + len(pezzo):]:
+                    for v in resto:
                         self._rimanda(v, giro, pronta, "tabella ferma in questo giro", contare=False)
                     giro.fallite.add(spec.nome)
                 return
-            self._in_linea()
-            self._bloccate.pop(spec.nome, None)
-            for v, esito in zip(pezzo, esiti):
-                self._esito_riga(spec, v, esito, giro, adesso)
-            i += len(pezzo)
+            pendenti = resto
+
+    def _invia(self, spec: SpecTabella, op: str, pezzo: List[_Voce], giro: _Giro, adesso: int) -> bool:
+        """Una chiamata. Falso = la tabella si ferma in questo giro (le voci del pezzo sono
+        gia' state rimandate, o il giro e' interrotto perche' offline)."""
+        valide: List[Tuple[_Voce, Any]] = []
+        for v in pezzo:
+            riga = json.loads(v.testo)
+            motivo = _valida_json(riga)
+            if motivo is not None:                      # A1: NaN, Infinity, surrogato isolato
+                self._morta(v, "valore_non_json", motivo, giro, "dato")
+                continue
+            valide.append((v, riga))
+        if not valide:
+            return True
+        argomenti = {"p_tabella": self.destinazione(spec.nome), "p_op": op,
+                     "p_conflitto": list(spec.chiave_naturale), "p_rev": spec.rev_colonna,
+                     "p_righe": [r for _, r in valide]}
+        try:
+            esiti = self.cloud.rpc(RPC_CONSEGNA, argomenti)
+            if not isinstance(esiti, list) or len(esiti) != len(valide):
+                raise RispostaInattesa(f"risposta inattesa di {RPC_CONSEGNA}: {str(esiti)[:200]}")
+        except Exception as exc:
+            if classifica_errore_chiamata(exc) != "dati":
+                self._errore_chiamata(spec, [v for v, _ in valide], exc, giro, adesso)
+                return False
+            descr = f"{type(exc).__name__}: {getattr(exc, 'code', '') or ''} {getattr(exc, 'message', '') or exc}"[:300]
+            if len(valide) == 1:                         # A1: la riga velenosa e' isolata
+                self._morta(valide[0][0], str(getattr(exc, "code", "") or "dato"), descr, giro, "dato")
+                return True
+            self.contatori["bisezioni"] += 1
+            meta = len(valide) // 2
+            prima, seconda = [v for v, _ in valide[:meta]], [v for v, _ in valide[meta:]]
+            if not self._invia(spec, op, prima, giro, adesso):
+                if not giro.interrotto:
+                    bloc = self._bloccate.get(spec.nome)
+                    for v in seconda:
+                        self._rimanda(v, giro, bloc[0] if bloc else adesso, "tabella ferma in questo giro",
+                                      contare=False)
+                return False
+            return self._invia(spec, op, seconda, giro, adesso)
+        self._in_linea()
+        prima = self.contatori["tabelle_bloccate"]
+        for (v, _), esito in zip(valide, esiti):
+            self._esito_riga(spec, v, esito, giro, adesso)
+        if self.contatori["tabelle_bloccate"] == prima and self._bloccate.pop(spec.nome, None) is not None:
+            self._evento("dati.postino_sbloccato", {"tabella": spec.nome})     # sblocco solo se nessuna riga ribloccata
+        return True
 
     def _esito_riga(self, spec: SpecTabella, v: _Voce, esito: Any, giro: _Giro, adesso: int) -> None:
         tipo = esito.get("esito") if isinstance(esito, dict) else None
-        if tipo in ("ok", "ignorata"):
+        if tipo in ("ok", "ignorata", "vecchia"):
             giro.consegnate += 1
-            self.contatori["consegnate" if tipo == "ok" else "ignorate"] += 1
+            self.contatori["consegnate" if tipo == "ok" else ("vecchie" if tipo == "vecchia" else "ignorate")] += 1
+            if tipo == "vecchia":                        # M3: un evento per ogni riga scartata dal cloud
+                self._evento("dati.riga_vecchia", {"tabella": v.tabella, "chiave": v.chiave,
+                                                   "destinazione": self.destinazione(v.tabella)})
             if v.file is None and v.regime is not None and v.seq is not None:
                 giro.ok_seq.setdefault(v.regime, []).append(v.seq)
             return
         codice = str((esito or {}).get("codice") or "") if isinstance(esito, dict) else ""
         messaggio = str((esito or {}).get("messaggio") or esito) if isinstance(esito, dict) else str(esito)
         errore = f"{codice} {messaggio}".strip()[:500]
-        giro.fallite.add(spec.nome)
-        if codice in BLOCCANTI_RIGA:
+        classe = classe_riga(codice)
+        giro.fallite.add(spec.nome)                      # i figli aspettano il giro dopo
+        if classe == "dato":
+            self._morta(v, codice, errore, giro, "dato")
+            return
+        giro.chiavi_fallite.add((v.tabella, v.chiave))
+        if classe == "schema":                           # A4: colonna sconosciuta, permessi: la tabella
             self._blocca(spec, errore, 1, adesso)
             self._rimanda(v, giro, self._bloccate[spec.nome][0], errore, contare=False)
             return
-        if codice in TRANSITORI_RIGA and v.tentativi + 1 < self._tetto_riga:
+        if v.tentativi + 1 < self._tetto_riga:
             self._rimanda(v, giro, adesso, errore, contare=True)
             return
-        self._morta(v, codice or "risposta", errore, giro)
+        self._morta(v, codice or "risposta", errore, giro, "transitorio")
 
     def _errore_chiamata(self, spec: SpecTabella, pezzo: List[_Voce], exc: BaseException, giro: _Giro,
                          adesso: int) -> None:
@@ -480,7 +643,8 @@ class PostinoLocale:
             self._rimanda(v, giro, self._bloccate[spec.nome][0], descr, contare=False)
 
     def _blocca(self, spec: SpecTabella, descr: str, righe: int, adesso: int) -> None:
-        """La tabella si ferma (attesa crescente, tetto 60 s): righe in coda, allarme visibile."""
+        """La tabella si ferma (attesa crescente, tetto 60 s): righe in coda; l'allarme
+        parte UNA volta per episodio (non a ogni giro)."""
         prec = self._bloccate.get(spec.nome)
         if prec is not None and prec[0] > adesso:
             return                                          # gia' bloccata in questo giro
@@ -488,8 +652,9 @@ class PostinoLocale:
         self._bloccate[spec.nome] = (adesso + int(_attesa(tentativi, self._attese) * 1000), tentativi, descr)
         self.contatori["tabelle_bloccate"] += 1
         self.ultimo_errore = f"{spec.nome}: {descr}"
-        self._evento("dati.postino_bloccato", {"tabella": spec.nome, "destinazione": self.destinazione(spec.nome),
-                                               "errore": descr, "righe_ferme": righe})
+        if prec is None:
+            self._evento("dati.postino_bloccato", {"tabella": spec.nome, "destinazione": self.destinazione(spec.nome),
+                                                   "errore": descr, "righe_ferme": righe})
 
     def _in_linea(self) -> None:
         if self.offline_da is not None:
@@ -517,21 +682,21 @@ class PostinoLocale:
         for v in gruppo:
             self._rimanda(v, giro, adesso, errore, contare=False)
 
-    def _morta(self, v: _Voce, codice: str, errore: str, giro: _Giro) -> None:
+    def _morta(self, v: _Voce, codice: str, errore: str, giro: _Giro, motivo: str) -> None:
         giro.morte += 1
         self.contatori["dead_letter"] += 1
         if v.file is not None:
             giro.log_morte.setdefault(v.file, []).append(
-                (v.tabella, v.op, v.chiave or "", v.testo, v.creato_ms, codice, errore, v.tentativi + 1))
+                (v.tabella, v.op, v.chiave or "", v.testo, v.creato_ms, codice, errore, v.tentativi + 1, motivo))
         elif v.regime is not None and v.seq is not None:
-            giro.morte_seq.setdefault(v.regime, []).append((v.seq, codice, errore, v.tentativi + 1))
+            giro.morte_seq.setdefault(v.regime, []).append((v.seq, codice, errore, v.tentativi + 1, motivo))
         self._evento("dati.dead_letter", {"tabella": v.tabella, "destinazione": self.destinazione(v.tabella),
-                                          "riga": json.loads(v.testo), "errore": errore})
+                                          "motivo": motivo, "riga": json.loads(v.testo), "errore": errore})
 
     def _chiudi_giro(self, voci: Sequence[_Voce], giro: _Giro) -> None:
         for regime in REGIMI_SQLITE:
             ok = giro.ok_seq.get(regime, [])
-            rim = [r for r in giro.rimandate.get(regime, [])]
+            rim = list(giro.rimandate.get(regime, []))
             morte = giro.morte_seq.get(regime, [])
             if ok or rim or morte:
                 self.archivio.chiudi_voci(regime, ok, rim, morte)
@@ -542,7 +707,8 @@ class PostinoLocale:
             if v.file is not None and v.seq is not None:
                 fine_per_file[v.file] = max(fine_per_file.get(v.file, 0), v.seq)
         for nome, fine in fine_per_file.items():
-            self.archivio.chiudi_log(nome, fine, giro.log_morte.get(nome, []), giro.log_ritenti.get(nome, []))
+            self.archivio.chiudi_log(nome, fine, giro.log_morte.get(nome, []), giro.log_ritenti.get(nome, []),
+                                     firma=firma_file(self.archivio.cartella_log() / nome))
 
     # ------------------------------------------------------------------ disco, eventi, riconcilia
     def _controlla_disco(self) -> None:
@@ -584,6 +750,10 @@ class PostinoLocale:
         da = datetime.strptime(giorno, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         rapporti = []
         for t in tabelle:
+            try:
+                self.archivio.spec(t)
+            except (KeyError, ValueError):
+                continue                                    # tabella non piu' registrata: nessun marcatore
             r = self._riconciliatore_pronto().confronta(t, da, da + timedelta(days=1))
             esito = "ok" if not (r.mancanti_nel_cloud or r.in_piu_nel_cloud or r.diverse) else "differenze"
             self.archivio.scrivi_riconciliazione(t, giorno, esito, {
@@ -602,5 +772,5 @@ class PostinoLocale:
             logger.error("[postino] ascoltatore dell'evento %s: %s", nome, exc)
 
 
-__all__ = ["PostinoLocale", "classifica_errore_chiamata", "RPC_CONSEGNA", "TRANSITORI_RIGA", "giorno_utc",
+__all__ = ["PostinoLocale", "classifica_errore_chiamata", "classe_riga", "RPC_CONSEGNA", "giorno_utc",
            "REGIME_SERVIZIO"]

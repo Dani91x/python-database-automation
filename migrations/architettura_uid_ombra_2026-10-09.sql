@@ -36,6 +36,15 @@
 -- identificatori citati con %I (niente SQL iniettabile).
 --
 -- IDEMPOTENTE (si puo' rilanciare). La applica l'utente (SQL Editor, ruolo postgres).
+--
+-- NOTA OPERATIVA (revisione B5): gli indici unici su uid/trade_uid si creano con CREATE UNIQUE INDEX
+-- normale (il SQL Editor esegue lo script in UNA transazione, dove CONCURRENTLY non e' ammesso): sulle
+-- tabelle di oggi (al massimo ~93.000 righe, scalper_activity) il blocco delle scritture dura frazioni di
+-- secondo, ma va applicata FUORI dagli orari di trading, con l'app ferma o tutti i bot flat. Chi preferisce
+-- CONCURRENTLY puo' lanciare a mano, PRIMA di questo file e una per volta fuori da una transazione:
+--   CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS mike_activity_uid_key ON public.mike_activity (uid);
+-- (dopo aver aggiunto la colonna); questo file poi le trova gia' create (IF NOT EXISTS).
+-- Gli errori d'intestazione delle RPC usano lo SQLSTATE proprio GP001 (mai confusi con un dato non valido).
 -- Provata su un PostgreSQL 16 usa-e-getta (referto ARCHITETTURA_2026-10/ondata1/W1-G1/REFERTO.md).
 
 -- ============================================================================
@@ -223,18 +232,19 @@ DECLARE
     v_dove      text;
     v_sql       text;
     v_n         bigint;
+    v_vecchia   boolean;
     v_esiti     jsonb := '[]'::jsonb;
     v_stato     text;
     v_msg       text;
 BEGIN
     IF p_op IS NULL OR p_op NOT IN ('insert', 'upsert', 'patch', 'delete') THEN
-        RAISE EXCEPTION 'postino_consegna: operazione non ammessa: %', p_op USING ERRCODE = '22023';
+        RAISE EXCEPTION 'postino_consegna: operazione non ammessa: %', p_op USING ERRCODE = 'GP001';
     END IF;
     IF p_righe IS NULL OR jsonb_typeof(p_righe) <> 'array' THEN
-        RAISE EXCEPTION 'postino_consegna: p_righe deve essere un array' USING ERRCODE = '22023';
+        RAISE EXCEPTION 'postino_consegna: p_righe deve essere un array' USING ERRCODE = 'GP001';
     END IF;
     IF coalesce(cardinality(p_conflitto), 0) = 0 THEN
-        RAISE EXCEPTION 'postino_consegna: chiave naturale vuota' USING ERRCODE = '22023';
+        RAISE EXCEPTION 'postino_consegna: chiave naturale vuota' USING ERRCODE = 'GP001';
     END IF;
     v_rel := to_regclass(format('public.%I', p_tabella));
     IF v_rel IS NULL THEN
@@ -321,7 +331,15 @@ BEGIN
             END IF;
             EXECUTE v_sql USING v_riga;
             GET DIAGNOSTICS v_n = ROW_COUNT;
-            v_esiti := v_esiti || jsonb_build_array(jsonb_build_object('esito', CASE WHEN v_n > 0 THEN 'ok' ELSE 'ignorata' END));
+            v_vecchia := false;
+            IF v_n = 0 AND p_rev IS NOT NULL AND p_op IN ('upsert', 'patch') THEN
+                -- revisione M3: la riga c'e' con una versione PIU' NUOVA: "vecchia" (il postino lo segnala)
+                EXECUTE format('SELECT EXISTS (SELECT 1 FROM public.%I AS t, jsonb_populate_record(NULL::public.%I, $1) AS r '
+                               'WHERE %s AND t.%I > r.%I)', p_tabella, p_tabella, v_dove, p_rev, p_rev)
+                    INTO v_vecchia USING v_riga;
+            END IF;
+            v_esiti := v_esiti || jsonb_build_array(jsonb_build_object('esito',
+                CASE WHEN v_n > 0 THEN 'ok' WHEN v_vecchia THEN 'vecchia' ELSE 'ignorata' END));
         EXCEPTION WHEN OTHERS THEN
             GET STACKED DIAGNOSTICS v_stato = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT;
             v_esiti := v_esiti || jsonb_build_array(jsonb_build_object(

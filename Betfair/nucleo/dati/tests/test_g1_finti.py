@@ -153,6 +153,10 @@ class PostgrestFinto:
         if self.offline:
             raise httpx.ConnectError("[Errno 111] Connection refused", request=req)
         rotta = req.url.path.replace("/rest/v1", "")
+        if b"\\u0000" in (req.content or b""):
+            # come PostgreSQL: il jsonb non ammette \u0000 (22P05), TUTTA la chiamata fallisce
+            return httpx.Response(400, json={"code": "22P05", "details": "\\u0000 cannot be converted to text.",
+                                             "hint": None, "message": "unsupported Unicode escape sequence"})
         corpo = json.loads(req.content or b"null")
         self.richieste.append((rotta, corpo))
         azione = self.copione.pop(0) if self.copione else None
@@ -196,7 +200,7 @@ class PostgrestFinto:
     def consegna(self, tabella: str, op: str, conflitto: List[str], rev: Optional[str],
                  righe: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if op not in ("insert", "upsert", "patch", "delete"):
-            raise ErrorePg("22023", f"operazione non ammessa: {op}")
+            raise ErrorePg("GP001", f"operazione non ammessa: {op}")
         t = self.tabelle.get(tabella)
         if t is None:
             raise ErrorePg("42P01", f"postino_consegna: tabella public.{tabella} assente")
@@ -207,12 +211,12 @@ class PostgrestFinto:
         esiti = []
         for r in righe:
             try:
-                esiti.append({"esito": "ok" if self._una(t, op, conflitto, rev, r) else "ignorata"})
+                esiti.append({"esito": self._una(t, op, conflitto, rev, r)})
             except ErrorePg as exc:
                 esiti.append({"esito": "errore", "codice": exc.codice, "messaggio": exc.messaggio})
         return esiti
 
-    def _una(self, t: TabellaFinta, op: str, conflitto: List[str], rev: Optional[str], r: Dict[str, Any]) -> bool:
+    def _una(self, t: TabellaFinta, op: str, conflitto: List[str], rev: Optional[str], r: Dict[str, Any]) -> str:
         ignote = sorted(set(r) - set(t.colonne))
         if ignote:
             raise ErrorePg("42703", f"colonne sconosciute in {t.nome}: {ignote}")
@@ -226,28 +230,35 @@ class PostgrestFinto:
         def piu_nuova(nuova: Any, vecchia: Any) -> bool:
             return vecchia is None or (nuova is not None and rev_ordinabile(nuova) > rev_ordinabile(vecchia))
 
+        def vecchia() -> str:
+            # come la RPC: la riga c'e' con una versione PIU' NUOVA -> "vecchia", altrimenti "ignorata"
+            if rev and esistente is not None and esistente.get(rev) is not None and r.get(rev) is not None \
+                    and rev_ordinabile(esistente[rev]) > rev_ordinabile(r[rev]):
+                return "vecchia"
+            return "ignorata"
+
         if op == "delete":
             if esistente is None or (rev and r.get(rev) is not None and esistente.get(rev) is not None
                                      and rev_ordinabile(r[rev]) < rev_ordinabile(esistente[rev])):
-                return False
+                return "ignorata"
             t.righe.remove(esistente)
-            return True
+            return "ok"
         if op == "patch":
             if esistente is None or (rev and not piu_nuova(r.get(rev), esistente.get(rev))):
-                return False
+                return vecchia()
             nuova = {**esistente, **r}
             self._vincoli(t, nuova)
             esistente.update(r)
-            return True
+            return "ok"
         if esistente is not None:
             if op == "insert" or set(r) <= set(conflitto):
-                return False
+                return "ignorata"
             if rev and not piu_nuova(r.get(rev), esistente.get(rev)):
-                return False
+                return vecchia()
             nuova = {**esistente, **r}
             self._vincoli(t, nuova)
             esistente.update(r)
-            return True
+            return "ok"
         nuova = {c: None for c in t.colonne}
         if "id" in t.colonne and "id" not in conflitto:
             nuova["id"] = t.prossimo_id
@@ -260,7 +271,7 @@ class PostgrestFinto:
         if "id" in t.colonne and "id" not in conflitto:
             t.prossimo_id += 1
         t.righe.append(nuova)
-        return True
+        return "ok"
 
     def _vincoli(self, t: TabellaFinta, r: Mapping[str, Any]) -> None:
         for nome, ok in t.check:
@@ -406,7 +417,7 @@ def test_finto_semantica_versione_e_vincoli() -> None:
         riga_ordine("r1", "EXECUTABLE", "2026-10-09T10:00:02+00:00"),
         riga_ordine("r1", "PENDING", "2026-10-09T10:00:01+00:00"),
         riga_ordine("r2", "EXECUTABLE", "2026-10-09T10:00:01+00:00", side="BACK")])
-    assert [x["esito"] for x in a] == ["ok", "ignorata", "errore"]
+    assert [x["esito"] for x in a] == ["ok", "vecchia", "errore"]
     assert a[2]["codice"] == "23514"
     assert srv.tabelle["betfair_live_orders"].righe[0]["status"] == "EXECUTABLE"
     b = srv.consegna("live_alerts", "insert", ["uid"], None, [

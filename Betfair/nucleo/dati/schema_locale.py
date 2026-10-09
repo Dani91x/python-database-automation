@@ -40,7 +40,7 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 
 from .contratto import SpecTabella
 
-VERSIONE_SCHEMA = 1
+VERSIONE_SCHEMA = 2
 
 #: migrazioni in ordine; l'indice + 1 e' la ``user_version`` raggiunta
 MIGRAZIONI: Tuple[Tuple[str, ...], ...] = (
@@ -102,6 +102,16 @@ MIGRAZIONI: Tuple[Tuple[str, ...], ...] = (
                ts_ms          INTEGER NOT NULL
            )""",
     ),
+    # v2 (revisione 09/10): causa e rientro automatico delle dead_letter (A4), firma del
+    # file nei marcatori dei log (M2), rientri contati anche in outbox
+    (
+        "ALTER TABLE dead_letter ADD COLUMN motivo TEXT NOT NULL DEFAULT 'dato'",
+        "ALTER TABLE dead_letter ADD COLUMN rientri INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE dead_letter ADD COLUMN prossimo_rientro_ms INTEGER NOT NULL DEFAULT 0",
+        "CREATE INDEX dead_letter_rientro ON dead_letter (prossimo_rientro_ms)",
+        "ALTER TABLE outbox ADD COLUMN rientri INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE consegna ADD COLUMN firma TEXT",
+    ),
 )
 
 assert len(MIGRAZIONI) == VERSIONE_SCHEMA
@@ -122,9 +132,7 @@ def applica_schema(conn: sqlite3.Connection) -> int:
     partenza = versione(conn)
     if partenza > VERSIONE_SCHEMA:
         raise SchemaPiuNuovo(f"schema locale v{partenza} piu' nuovo di questo codice (v{VERSIONE_SCHEMA})")
-    if partenza == 0:
-        # deve precedere la prima tabella: poi la pulizia libera spazio a pezzi
-        conn.execute("PRAGMA auto_vacuum = INCREMENTAL")
+    assicura_auto_vacuum(conn)
     for n in range(partenza, VERSIONE_SCHEMA):
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -136,6 +144,16 @@ def applica_schema(conn: sqlite3.Connection) -> int:
             conn.execute("ROLLBACK")
             raise
     return partenza
+
+
+def assicura_auto_vacuum(conn: sqlite3.Connection) -> None:
+    """``auto_vacuum=INCREMENTAL`` EFFETTIVO (revisione B1): con il WAL gia' acceso il
+    PRAGMA da solo non cambia nulla; serve un ``VACUUM`` (istantaneo su un file nuovo,
+    una volta sola su un file vecchio). Poi la pulizia restituisce spazio a pezzi."""
+    if int(conn.execute("PRAGMA auto_vacuum").fetchone()[0]) == 2:
+        return
+    conn.execute("PRAGMA auto_vacuum = INCREMENTAL")
+    conn.execute("VACUUM")
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +194,33 @@ def rev_ordinabile(valore: Any) -> int:
 def iso_utc(ms: int) -> str:
     """Istante ISO UTC con millisecondi (``2026-10-09T10:00:00.123+00:00``)."""
     return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).isoformat(timespec="milliseconds")
+
+
+def iso_da_us(us: int) -> str:
+    """Istante ISO UTC con microsecondi da microsecondi dall'epoca (versione corretta)."""
+    from datetime import timedelta
+    return (datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(microseconds=us)).isoformat(timespec="microseconds")
+
+
+def testo_json(valore: Any) -> str:
+    """JSON compatto e SOLO ASCII per i file SQLite e JSONL (revisione A1/A2): un surrogato
+    isolato diventa ``\\ud800`` e si conserva; nessuna riga diventa impossibile da salvare."""
+    return json.dumps(valore, ensure_ascii=True, separators=(",", ":"), default=str)
+
+
+def firma_file(percorso: Any) -> Optional[str]:
+    """Impronta della PRIMA riga del file (fino a 4 KiB): se cambia, il file e' stato
+    sostituito e il marcatore di consegna non vale piu' (revisione M2)."""
+    import hashlib
+    try:
+        with open(percorso, "rb") as f:
+            testa = f.read(4096)
+    except OSError:
+        return None
+    fine = testa.find(b"\n")
+    if fine < 0:
+        return None
+    return hashlib.sha1(testa[:fine]).hexdigest()
 
 
 def giorno_utc(ms: int) -> str:

@@ -20,14 +20,27 @@ Scopo
     di ``scrivi`` paga solo copia + JSON + accodamento. Riga e outbox nascono
     nella STESSA transazione. ``transizione`` e' un claim atomico eseguito dal
     thread di scrittura (vede tutte le scritture accodate prima).
-    Il checkpoint del WAL e' spento nei commit (``wal_autocheckpoint=0``) e lo
-    fa il thread di manutenzione (``archivio-manutenzione``) con una sua
-    connessione: fuori dal percorso caldo e fuori dal thread di scrittura.
-    La pulizia toglie da sola cio' che e' consegnato E riconciliato (mai le
-    ``dead_letter``, mai cio' che e' in coda).
-    Ripresa dopo crash: un file JSONL che non finisce con ``\\n`` ha una riga
-    troncata: si taglia, si SEGNALA (tabella ``segnalazioni`` + evento
-    ``dati.riga_troncata``), non e' una ``dead_letter`` (05 T8 rettifica 4).
+
+    Revisione del 09/10 (referto W1-G1, "Correzioni dopo la revisione"):
+    * ogni lotto e' diviso in TRE unita' indipendenti (log, denaro, vivo): ognuna
+      si conferma da sola; se un commit fallisce si ritenta SOLO quell'unita'
+      (un claim gia' confermato non si riesegue, M5); la barriera ``conferma`` e'
+      una soglia contigua (nessun numero piu' basso ancora in volo);
+    * una voce che non si puo' salvare per un errore DETERMINISTICO (intero oltre
+      2^63, chiave con un surrogato...) si isola: va nel file
+      ``scarti_scrittore.jsonl`` (dead_letter locale su file, fsync) e il resto del
+      lotto prosegue (A2). Gli errori di I/O (disco pieno) si ritentano per sempre;
+    * alla chiusura con il disco in errore le voci accettate vanno in
+      ``salvataggio-*.jsonl`` e rientrano da sole all'apertura dopo (M6);
+    * upsert = FUSIONE delle colonne (come l'upsert di PostgREST di oggi), anche
+      nella coalescenza (B2); versione per riga: una versione uguale o piu'
+      vecchia di non oltre ``TOLLERANZA_OROLOGIO_US`` (orologio che torna
+      indietro) viene portata a "precedente + 1 us" e VINCE; piu' vecchia
+      oltre la tolleranza e' un dato stantio: scartata con un evento (M3);
+    * outbox letta in ordine FIFO PER CHIAVE: una voce non parte prima di una
+      voce piu' vecchia della stessa chiave (M4);
+    * dead_letter con CAUSA e rientro automatico (A4); pulizia a pezzi (M7);
+      riparazione dei log troncati a blocchi fino all'inizio del file (A3).
 
 Entrate
     ``ArchivioLocale(processo, registro, ...)``; ``apri()``; ``scrivi``,
@@ -43,7 +56,9 @@ Uscite
 Cosa NON fa
     Mai la rete (il cloud e' del postino). Nessun thread e nessun file
     all'import: tutto nasce in ``apri()`` e muore in ``chiudi()``. Non decide
-    nulla sulle righe: ne' soglie ne' stati dei bot.
+    nulla sulle righe: ne' soglie ne' stati dei bot. ``apri()`` puo' sollevare
+    ``OSError`` (cartella non creabile, disco) o ``ArchivioOccupato``: l'aggancio
+    resta allora sulla scrittura di oggi ("vecchio") con un allarme (B3).
 """
 from __future__ import annotations
 
@@ -57,14 +72,15 @@ import time
 import uuid
 from collections import Counter, deque
 from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FuturoScaduto
 from pathlib import Path
 from typing import (Any, Callable, Deque, Dict, Iterable, List, Mapping, Optional, Sequence,
                     Tuple, Union)
 
-from .contratto import Operazione, Regime, SpecTabella
+from .contratto import Operazione, SpecTabella
 from .percorso import Lucchetto, cartella_processo, prepara_cartella
-from .schema_locale import (applica_schema, chiave_canonica, giorno_utc, iso_utc, riga_log,
-                            rev_ordinabile, tabella_della_riga_log)
+from .schema_locale import (applica_schema, chiave_canonica, giorno_utc, iso_da_us, iso_utc, riga_log,
+                            rev_ordinabile, tabella_della_riga_log, testo_json)
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +92,8 @@ FILE_DB = {"stato_denaro": "denaro.sqlite3", "stato_vivo": "vivo.sqlite3"}
 SINCRONIA = {"stato_denaro": "FULL", "stato_vivo": "NORMAL"}
 #: dove vivono marcatori dei log, segnalazioni e dead_letter dei log
 REGIME_SERVIZIO = "stato_vivo"
+FILE_SCARTI = "scarti_scrittore.jsonl"
+PREFISSO_SALVATAGGIO = "salvataggio-"
 
 #: colonne chiave generate nel punto di scrittura se mancano (U-50)
 COLONNE_UID = ("uid", "trade_uid")
@@ -101,6 +119,17 @@ CONSERVA_GIORNI_PREDEFINITI: Mapping[str, float] = {"stato_denaro": 30.0, "stato
 CONSERVA_SEGNALAZIONI_GIORNI = 30.0
 _MISURE_MAX = 200_000
 
+#: M3: un orologio che torna indietro fino a 5 s (passo dell'NTP di Windows: 0,84 s
+#: misurato, AVANZAMENTO U-62) non fa perdere l'aggiornamento: la versione diventa
+#: "precedente + 1 us" e vince, come vince oggi l'ultimo upsert. Oltre: dato stantio.
+TOLLERANZA_OROLOGIO_US = 5_000_000
+#: A2: tentativi di un lotto prima di isolare la voce velenosa
+TENTATIVI_PRIMA_DI_ISOLARE = 3
+#: M7: righe cancellate per lavoro di pulizia (il lavoro dura millisecondi)
+PULIZIA_PEZZO = 1000
+#: A4: rientro automatico delle dead_letter, per causa (millisecondi)
+RIENTRO_MS: Mapping[str, int] = {"transitorio": 15 * 60_000, "dato": 24 * 3_600_000, "registro": 24 * 3_600_000}
+
 
 def _ora_ms() -> int:
     return time.time_ns() // 1_000_000
@@ -110,25 +139,44 @@ class ArchivioChiuso(RuntimeError):
     """Scrittura su un archivio non aperto (o in chiusura)."""
 
 
+def errore_di_dato(exc: BaseException) -> bool:
+    """Errore DETERMINISTICO della voce (rifarlo da' lo stesso errore): si isola."""
+    return isinstance(exc, (UnicodeError, OverflowError, ValueError, TypeError, sqlite3.InterfaceError,
+                            sqlite3.IntegrityError, sqlite3.DataError, sqlite3.ProgrammingError))
+
+
+def errore_di_io(exc: BaseException) -> bool:
+    """Errore del disco o del file (pieno, I/O, bloccato): si ritenta per sempre."""
+    return isinstance(exc, (sqlite3.OperationalError, OSError)) and not isinstance(exc, UnicodeError)
+
+
 # ---------------------------------------------------------------------------
 # voci della coda del thread di scrittura
 # ---------------------------------------------------------------------------
 class _Scrittura:
-    __slots__ = ("n", "regime", "tabella", "op", "chiave", "testo", "rev", "coalesce", "ms", "t_ns", "futuro")
+    __slots__ = ("n", "regime", "tabella", "op", "chiave", "testo", "rev", "rev_col", "coalesce", "ms", "t_ns",
+                 "futuro", "avviata")
 
     def __init__(self, n: int, regime: str, tabella: str, op: str, chiave: str, testo: str,
-                 rev: Optional[int], coalesce: bool, ms: int, t_ns: int,
+                 rev: Optional[int], rev_col: Optional[str], coalesce: bool, ms: int, t_ns: int,
                  futuro: Optional["Future[int]"] = None) -> None:
         self.n, self.regime, self.tabella, self.op, self.chiave = n, regime, tabella, op, chiave
-        self.testo, self.rev, self.coalesce, self.ms, self.t_ns = testo, rev, coalesce, ms, t_ns
+        self.testo, self.rev, self.rev_col, self.coalesce, self.ms, self.t_ns = testo, rev, rev_col, coalesce, ms, t_ns
         self.futuro = futuro
+        self.avviata = False
+
+    def salvabile(self) -> Dict[str, Any]:
+        return {"regime": self.regime, "tabella": self.tabella, "op": self.op, "chiave": self.chiave,
+                "testo": self.testo, "rev": self.rev, "rev_col": self.rev_col, "coalesce": self.coalesce,
+                "ms": self.ms}
 
 
 class _Lavoro:
-    __slots__ = ("n", "regime", "fn", "futuro")
+    __slots__ = ("n", "regime", "fn", "futuro", "avviata")
 
     def __init__(self, n: int, regime: str, fn: Callable[[sqlite3.Connection], Any], futuro: "Future[Any]") -> None:
         self.n, self.regime, self.fn, self.futuro = n, regime, fn, futuro
+        self.avviata = False
 
 
 _FERMA = object()
@@ -163,6 +211,13 @@ def _eventi_nel_log(nome: str, dati: Mapping[str, Any]) -> None:
     logger.log(livello, "[%s] %s", nome, json.dumps(dict(dati), default=str)[:600])
 
 
+def _fondi(vecchio: Optional[str], nuovo: Mapping[str, Any]) -> Dict[str, Any]:
+    """Fusione delle colonne (semantica dell'upsert di oggi: le colonne non scritte restano)."""
+    d = json.loads(vecchio) if vecchio else {}
+    d.update(nuovo)
+    return d
+
+
 class ArchivioLocale:
     """Implementazione di ``contratto.Archivio`` (vedi docstring del modulo)."""
 
@@ -190,10 +245,10 @@ class ArchivioLocale:
 
         self._lucchetto = Lucchetto(self.cartella)
         self._coda: "queue.SimpleQueue[Any]" = queue.SimpleQueue()
-        self._n = 0
-        self._n_lock = threading.Lock()
-        self._confermato = 0
         self._cond = threading.Condition()
+        self._n = 0
+        self._in_volo: set[int] = set()            # numeri accodati e non ancora risolti
+        self._soglia_annunciata = 0
         self._in_attesa: Dict[Tuple[str, str], Tuple[int, Optional[str], Optional[int]]] = {}
         self._attesa_lock = threading.Lock()
         self._scrittori: Dict[str, sqlite3.Connection] = {}
@@ -205,6 +260,7 @@ class ArchivioLocale:
         self._stop_manutenzione = threading.Event()
         self._aperto = False
         self._in_chiusura = False
+        self._ultimo_errore_unita: Optional[BaseException] = None
         self.guasto: Optional[str] = None
         self.contatori: Counter[str] = Counter()
         self._lat_accoda: Deque[int] = deque(maxlen=_MISURE_MAX)
@@ -215,7 +271,8 @@ class ArchivioLocale:
     # ------------------------------------------------------------------ ciclo di vita
     def apri(self) -> "ArchivioLocale":
         """Crea la cartella, prende il lucchetto, aggiorna lo schema, ripara i log
-        troncati, avvia i due thread. Idempotente."""
+        troncati, avvia i due thread, fa rientrare un eventuale salvataggio. Idempotente.
+        Puo' sollevare ``OSError``/``ArchivioOccupato`` (B3): l'aggancio resta su "vecchio"."""
         if self._aperto:
             return self
         prepara_cartella(self.cartella)
@@ -240,10 +297,12 @@ class ArchivioLocale:
         self._manutenzione = threading.Thread(target=self._ciclo_manutenzione, name="archivio-manutenzione",
                                               daemon=True)
         self._manutenzione.start()
+        self._riprendi_salvataggi()
         return self
 
     def chiudi(self, timeout_s: float = 30.0) -> None:
-        """Scrive tutto cio' che e' in coda, ferma i thread, checkpoint finale, rilascia."""
+        """Scrive tutto cio' che e' in coda, ferma i thread, checkpoint finale, rilascia.
+        Con il disco in errore le voci accettate vanno nel file di salvataggio (M6)."""
         if not self._aperto:
             return
         self._in_chiusura = True
@@ -256,7 +315,10 @@ class ArchivioLocale:
             if self._thread.is_alive():
                 logger.error("[archivio] il thread di scrittura non si e' fermato entro %.0f s", timeout_s)
         for f in self._file_log.values():
-            f.close()
+            try:
+                f.close()
+            except OSError as exc:
+                logger.error("[archivio] chiusura di un file di log: %s", exc)
         self._file_log.clear()
         for regime, conn in self._scrittori.items():
             try:
@@ -308,10 +370,9 @@ class ArchivioLocale:
         return s
 
     def scrivi(self, tabella: str, riga: Mapping[str, Any]) -> None:
-        """Accoda la riga (upsert per lo stato, insert per i log con ``uid``).
-
-        Il chiamante paga: copia, uid/timbro se mancano, chiave, JSON, accodamento.
-        La riga e' durevole quando ``conferma()`` torna vero."""
+        """Accoda la riga (upsert = fusione delle colonne per lo stato, insert per i log
+        con ``uid``). Il chiamante paga: copia, uid/timbro se mancano, chiave, JSON,
+        accodamento. La riga e' durevole quando ``conferma()`` torna vero."""
         t0 = time.perf_counter_ns()
         self._controlla_aperto()
         spec = self.spec(tabella)
@@ -319,21 +380,18 @@ class ArchivioLocale:
         chiave = chiave_canonica(spec, r)
         rev = self._rev_di(spec, r)
         op = "upsert" if spec.regime != "log" or spec.chiave_naturale not in (("uid",),) else "insert"
-        testo = json.dumps(r, ensure_ascii=False, separators=(",", ":"), default=str)
+        testo = testo_json(r)
         ms = self._ora_ms()
         n = self._prossimo_n()
         if spec.regime != "log":
-            with self._attesa_lock:
-                prec = self._in_attesa.get((tabella, chiave))
-                if rev is None or prec is None or prec[2] is None or rev > prec[2]:
-                    self._in_attesa[(tabella, chiave)] = (n, testo, rev)
-        self._coda.put(_Scrittura(n, spec.regime, tabella, op, chiave, testo, rev, spec.coalesce, ms, t0))
+            self._in_attesa_aggiorna(tabella, chiave, n, r, rev, r.get(spec.rev_colonna) if spec.rev_colonna else None)
+        self._coda.put(_Scrittura(n, spec.regime, tabella, op, chiave, testo, rev, spec.rev_colonna,
+                                  spec.coalesce, ms, t0))
         self._lat_accoda.append(time.perf_counter_ns() - t0)
 
     def leggi(self, tabella: str, chiave: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
-        """L'ultima versione per chiave naturale (anche se non ancora su disco).
-
-        Solo regimi di stato: i log non si rileggono per chiave (``ValueError``)."""
+        """L'ultima versione per chiave naturale (anche se non ancora su disco): la riga
+        su disco con sopra le colonne ancora in coda. Solo regimi di stato."""
         spec = self.spec(tabella)
         if spec.regime == "log":
             raise ValueError(f"tabella {tabella}: i log non si leggono per chiave")
@@ -341,16 +399,17 @@ class ArchivioLocale:
         k = chiave_canonica(spec, chiave)
         with self._attesa_lock:
             p = self._in_attesa.get((tabella, k))
-        if p is not None:
-            return None if p[1] is None else json.loads(p[1])
         riga = self._leggi_uno(spec.regime, "SELECT json FROM righe WHERE tabella = ? AND chiave = ?", (tabella, k))
-        return None if riga is None else json.loads(riga[0])
+        if p is None:
+            return None if riga is None else json.loads(riga[0])
+        return _fondi(riga[0] if riga else None, json.loads(p[1] or "{}"))
 
     def transizione(self, tabella: str, chiave: Mapping[str, Any], da: str, a: str) -> bool:
         """Claim atomico: ``colonna_stato`` passa da ``da`` ad ``a`` solo se vale ``da``.
 
         Eseguito dal thread di scrittura (dopo tutte le scritture accodate prima);
-        riga e outbox nella stessa transazione; la versione di riga sale."""
+        riga e outbox nella stessa transazione; la versione di riga sale. L'esito che
+        torna e' quello VERO anche se scade l'attesa o se un commit va ritentato (M5)."""
         spec = self.spec(tabella)
         if spec.regime == "log":
             raise ValueError(f"tabella {tabella}: nessuna transizione sui log")
@@ -366,7 +425,7 @@ class ArchivioLocale:
                 return False
             d[col] = a
             rev = self._sali_rev(spec, d, riga[1])
-            testo = json.dumps(d, ensure_ascii=False, separators=(",", ":"), default=str)
+            testo = testo_json(d)
             ms = self._ora_ms()
             conn.execute("UPDATE righe SET json = ?, rev = ?, aggiornato_ms = ? WHERE tabella = ? AND chiave = ?",
                          (testo, rev, ms, tabella, k))
@@ -380,7 +439,7 @@ class ArchivioLocale:
                coalesce: bool = False, timeout_s: float = 30.0) -> int:
         """Applica ``op`` alla riga locale e mette la voce in outbox, STESSA transazione,
         e aspetta il commit. Ritorna il ``seq`` della outbox (per i log: l'offset in
-        byte della riga nel file del giorno)."""
+        byte della riga nel file del giorno; 0 = riga vecchia scartata)."""
         if op not in ("upsert", "insert", "patch", "delete"):
             raise ValueError(f"operazione non ammessa: {op}")
         self._controlla_aperto()
@@ -388,20 +447,19 @@ class ArchivioLocale:
         r = self._prepara(spec, riga) if op in ("upsert", "insert") else dict(riga)
         k = chiave if chiave is not None else chiave_canonica(spec, r)
         rev = self._rev_di(spec, r) if op != "delete" or (spec.rev_colonna and spec.rev_colonna in r) else None
-        testo = json.dumps(r, ensure_ascii=False, separators=(",", ":"), default=str)
-        ms = self._ora_ms()
         futuro: "Future[int]" = Future()
-        self._coda.put(_Scrittura(self._prossimo_n(), spec.regime, tabella, op, k, testo, rev,
-                                  bool(coalesce or spec.coalesce), ms, time.perf_counter_ns(), futuro))
-        return futuro.result(timeout_s)
+        self._coda.put(_Scrittura(self._prossimo_n(), spec.regime, tabella, op, k, testo_json(r), rev,
+                                  spec.rev_colonna, bool(coalesce or spec.coalesce), self._ora_ms(),
+                                  time.perf_counter_ns(), futuro))
+        return int(self._attendi(futuro, timeout_s))
 
     def conferma(self, timeout_s: float = 10.0) -> bool:
-        """Barriera: vero quando tutto cio' che e' stato accodato FINO A QUI e' su disco."""
-        with self._n_lock:
-            obiettivo = self._n
+        """Barriera: vero quando tutto cio' che e' stato accodato FINO A QUI e' su disco
+        (o, se impossibile da salvare, isolato nel file degli scarti)."""
         fine = time.monotonic() + timeout_s
         with self._cond:
-            while self._confermato < obiettivo:
+            obiettivo = self._n
+            while self._in_volo and min(self._in_volo) <= obiettivo:
                 resto = fine - time.monotonic()
                 if resto <= 0:
                     return False
@@ -414,8 +472,9 @@ class ArchivioLocale:
             raise ArchivioChiuso(f"archivio {self.processo} non aperto")
 
     def _prossimo_n(self) -> int:
-        with self._n_lock:
+        with self._cond:
             self._n += 1
+            self._in_volo.add(self._n)
             return self._n
 
     def _prepara(self, spec: SpecTabella, riga: Mapping[str, Any]) -> Dict[str, Any]:
@@ -436,6 +495,19 @@ class ArchivioLocale:
             raise ValueError(f"tabella {spec.nome}: manca la versione di riga '{spec.rev_colonna}'")
         return rev_ordinabile(r[spec.rev_colonna])
 
+    def _in_attesa_aggiorna(self, tabella: str, chiave: str, n: int, r: Mapping[str, Any], rev: Optional[int],
+                            valore_rev: Any) -> None:
+        """Vista per ``leggi`` prima del commit, con la STESSA regola dello scrittore."""
+        with self._attesa_lock:
+            prec = self._in_attesa.get((tabella, chiave))
+            if prec is None:
+                self._in_attesa[(tabella, chiave)] = (n, testo_json(r), rev)
+                return
+            if rev is not None and prec[2] is not None and _stantia(rev, prec[2], valore_rev):
+                return                                       # lo scrittore la scartera'
+            nuova_rev = rev if rev is None or prec[2] is None or rev > prec[2] else prec[2] + 1
+            self._in_attesa[(tabella, chiave)] = (n, testo_json(_fondi(prec[1], r)), nuova_rev)
+
     def _sali_rev(self, spec: SpecTabella, d: Dict[str, Any], rev_prec: Optional[int]) -> Optional[int]:
         """Versione nuova per una transizione: intero +1, istante = adesso (mai indietro)."""
         if not spec.rev_colonna:
@@ -444,11 +516,21 @@ class ArchivioLocale:
         if isinstance(d.get(col), int) and not isinstance(d.get(col), bool):
             d[col] = int(d[col]) + 1
             return d[col]
-        ms = self._ora_ms()
-        if rev_prec is not None and ms * 1000 <= rev_prec:
-            ms = rev_prec // 1000 + 1
-        d[col] = iso_utc(ms)
-        return rev_ordinabile(d[col])
+        us = self._ora_ms() * 1000
+        if rev_prec is not None and us <= rev_prec:
+            us = rev_prec + 1
+        d[col] = iso_da_us(us)
+        return us
+
+    def _attendi(self, futuro: "Future[Any]", timeout_s: float) -> Any:
+        """M5: allo scadere, se il lavoro non e' partito si annulla (esito vero: non
+        avvenuto); se e' partito si aspetta l'esito vero, non un'eccezione falsa."""
+        try:
+            return futuro.result(timeout_s)
+        except FuturoScaduto:
+            if futuro.cancel():
+                raise TimeoutError("archivio: lavoro annullato prima di partire (non eseguito)") from None
+            return futuro.result()
 
     # ------------------------------------------------------------------ thread di scrittura
     def _ciclo_scrittore(self) -> None:
@@ -471,142 +553,274 @@ class ArchivioLocale:
                 v = self._coda.get_nowait()
             except queue.Empty:
                 break
-            if isinstance(v, (_Lavoro, _Scrittura)) and v.futuro is not None:
+            if isinstance(v, (_Lavoro, _Scrittura)) and v.futuro is not None and not v.futuro.done():
                 v.futuro.set_exception(ArchivioChiuso("archivio in chiusura"))
 
     def _esegui_con_ritento(self, lotto: List[Any]) -> None:
+        rimasti = lotto
         tentativo = 0
         while True:
-            try:
-                self._esegui_lotto(lotto)
+            rimasti = self._esegui_unita(rimasti)
+            if rimasti and (errore_di_dato(self._ultimo_errore_unita) or tentativo + 1 >= TENTATIVI_PRIMA_DI_ISOLARE):
+                rimasti = self._isola(rimasti)
+            if not rimasti:
                 if self.guasto is not None:
                     self._evento("dati.archivio_ripreso", {"processo": self.processo, "dopo_tentativi": tentativo})
                     self.guasto = None
                 return
-            except Exception as exc:  # disco pieno, I/O: si ritenta, MAI si scarta
-                tentativo += 1
-                self.guasto = f"{type(exc).__name__}: {exc}"[:300]
-                self.contatori["guasti_scrittura"] += 1
-                self._evento("dati.archivio_guasto", {"processo": self.processo, "errore": self.guasto,
-                                                       "tentativo": tentativo, "voci": len(lotto)})
-                if self._in_chiusura and tentativo >= 3:
-                    logger.critical("[archivio] chiusura con %d voci NON scritte dopo %d tentativi: %s",
-                                    len(lotto), tentativo, self.guasto)
-                    for v in lotto:
-                        if v.futuro is not None and not v.futuro.done():
-                            v.futuro.set_exception(exc)
-                    return
-                time.sleep(min(30.0, 0.5 * (2 ** min(tentativo, 6))))
+            tentativo += 1
+            exc = self._ultimo_errore_unita
+            self.guasto = f"{type(exc).__name__}: {exc}"[:300]
+            self.contatori["guasti_scrittura"] += 1
+            self._evento("dati.archivio_guasto", {"processo": self.processo, "errore": self.guasto,
+                                                   "tentativo": tentativo, "voci": len(rimasti)})
+            if self._in_chiusura and tentativo >= TENTATIVI_PRIMA_DI_ISOLARE:
+                self._salva(rimasti, exc)
+                return
+            time.sleep(min(30.0, 0.5 * (2 ** min(tentativo, 6))))
 
-    def _esegui_lotto(self, lotto: List[Any]) -> None:
-        aperte: List[str] = []
+    def _esegui_unita(self, voci: List[Any]) -> List[Any]:
+        """Tre unita' indipendenti (log, denaro, vivo). Ritorna le voci delle unita' fallite."""
+        unita: Dict[str, List[Any]] = {}
+        for v in voci:
+            unita.setdefault(v.regime, []).append(v)
+        falliti: List[Any] = []
+        for regime in ("log", *REGIMI_SQLITE):
+            gruppo = unita.get(regime)
+            if not gruppo:
+                continue
+            try:
+                esiti = self._unita_log(gruppo) if regime == "log" else self._unita_sqlite(regime, gruppo)
+            except Exception as exc:
+                self._ultimo_errore_unita = exc
+                falliti.extend(gruppo)
+                continue
+            self._dopo_unita(gruppo, esiti)
+        falliti.sort(key=lambda v: v.n)
+        return falliti
+
+    def _unita_sqlite(self, regime: str, voci: List[Any]) -> List[Tuple[Any, Any, Optional[BaseException]]]:
+        conn = self._scrittori[regime]
+        esiti: List[Tuple[Any, Any, Optional[BaseException]]] = []
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for v in voci:
+                if not self._parte(v):
+                    esiti.append((v, None, None))
+                    continue
+                if isinstance(v, _Scrittura):
+                    esiti.append((v, self._applica(conn, v), None))
+                    continue
+                conn.execute("SAVEPOINT lavoro")
+                try:
+                    valore = v.fn(conn)
+                except Exception as exc:  # l'errore torna al chiamante del lavoro
+                    conn.execute("ROLLBACK TO lavoro")
+                    conn.execute("RELEASE lavoro")
+                    esiti.append((v, None, exc))
+                else:
+                    conn.execute("RELEASE lavoro")
+                    esiti.append((v, valore, None))
+            t = time.perf_counter_ns()
+            conn.execute("COMMIT")
+            self._lat_commit[regime].append(time.perf_counter_ns() - t)
+        except BaseException:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error as exc:
+                logger.error("[archivio] rollback di %s: %s", regime, exc)
+            raise
+        return esiti
+
+    def _unita_log(self, voci: List[Any]) -> List[Tuple[Any, Any, Optional[BaseException]]]:
         posizioni: Dict[str, int] = {}
         esiti: List[Tuple[Any, Any, Optional[BaseException]]] = []
         try:
-            for v in lotto:
-                if isinstance(v, _Scrittura) and v.regime == "log":
-                    esiti.append((v, self._scrivi_log(v, posizioni), None))
+            for v in voci:
+                if not self._parte(v):
+                    esiti.append((v, None, None))
                     continue
-                conn = self._scrittori[v.regime]
-                if v.regime not in aperte:
-                    conn.execute("BEGIN IMMEDIATE")
-                    aperte.append(v.regime)
-                if isinstance(v, _Scrittura):
-                    esiti.append((v, self._applica(conn, v), None))
-                else:
-                    conn.execute("SAVEPOINT lavoro")
-                    try:
-                        valore = v.fn(conn)
-                    except Exception as exc:  # l'errore torna al chiamante del lavoro
-                        conn.execute("ROLLBACK TO lavoro")
-                        conn.execute("RELEASE lavoro")
-                        esiti.append((v, None, exc))
-                    else:
-                        conn.execute("RELEASE lavoro")
-                        esiti.append((v, valore, None))
-            t_log = time.perf_counter_ns()
+                esiti.append((v, self._scrivi_log(v, posizioni), None))
+            t = time.perf_counter_ns()
             for nome in posizioni:
                 self._file_log[nome].flush()
             if posizioni:
-                self._lat_commit["log"].append(time.perf_counter_ns() - t_log)
-            for regime in sorted(aperte):            # denaro prima di vivo
-                t = time.perf_counter_ns()
-                self._scrittori[regime].execute("COMMIT")
-                self._lat_commit[regime].append(time.perf_counter_ns() - t)
+                self._lat_commit["log"].append(time.perf_counter_ns() - t)
         except BaseException:
-            for regime in aperte:
-                try:
-                    self._scrittori[regime].execute("ROLLBACK")
-                except sqlite3.Error as exc:
-                    logger.error("[archivio] rollback di %s: %s", regime, exc)
             self._riavvolgi_log(posizioni)
             raise
-        self._dopo_commit(lotto, esiti)
+        return esiti
 
-    def _dopo_commit(self, lotto: List[Any], esiti: List[Tuple[Any, Any, Optional[BaseException]]]) -> None:
+    @staticmethod
+    def _parte(v: Any) -> bool:
+        """Una voce con un futuro annullato (attesa scaduta prima che partisse) non si esegue."""
+        if v.futuro is None or v.avviata:
+            return True
+        v.avviata = True
+        return bool(v.futuro.set_running_or_notify_cancel())
+
+    def _isola(self, voci: List[Any]) -> List[Any]:
+        """A2: voce per voce. Una voce che fallisce per un errore che NON e' di I/O e'
+        velenosa: va negli scarti su file e il resto prosegue. Un errore di I/O ferma
+        l'isolamento: le voci restano per il ritento (mai buttate)."""
+        rimasti = list(voci)
+        while rimasti:
+            v = rimasti[0]
+            if not self._esegui_unita([v]):
+                rimasti.pop(0)
+                continue
+            exc = self._ultimo_errore_unita
+            if exc is not None and errore_di_io(exc):
+                return rimasti
+            try:
+                self._veleno(v, exc)
+            except OSError as err:                           # nemmeno il file degli scarti: e' I/O, si ritenta
+                self._ultimo_errore_unita = err
+                return rimasti
+            rimasti.pop(0)
+        return []
+
+    def _veleno(self, v: Any, exc: Optional[BaseException]) -> None:
+        errore = f"{type(exc).__name__}: {exc}"[:500]
+        if isinstance(v, _Scrittura):
+            riga = {"ms": self._ora_ms(), "errore": errore, **v.salvabile()}
+            with open(self.cartella / FILE_SCARTI, "a", encoding="ascii") as f:   # un OSError qui = I/O: si ritenta
+                f.write(testo_json(riga) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            self.contatori["scarti_scrittore"] += 1
+            self._evento("dati.dead_letter", {"tabella": v.tabella, "fonte": "scrittore", "motivo": "dato",
+                                              "errore": errore})
+        if v.futuro is not None and not v.futuro.done():
+            v.futuro.set_exception(exc if exc is not None else RuntimeError(errore))
+        self._risolti([v])
+
+    def _salva(self, voci: List[Any], exc: Optional[BaseException]) -> None:
+        """M6: chiusura con il disco in errore: le scritture accettate vanno in un file di
+        salvataggio (rientra all'apertura); i lavori sincroni falliscono col motivo."""
+        scritture = [v for v in voci if isinstance(v, _Scrittura)]
+        if scritture:
+            nome = self.cartella / f"{PREFISSO_SALVATAGGIO}{time.time_ns()}.jsonl"
+            try:
+                with open(nome, "w", encoding="ascii") as f:
+                    for v in scritture:
+                        f.write(testo_json(v.salvabile()) + "\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+                self._evento("dati.archivio_salvataggio", {"file": nome.name, "voci": len(scritture),
+                                                           "errore": f"{exc}"[:300]})
+            except OSError as err:
+                logger.critical("[archivio] chiusura: %d voci NON salvate (%s; poi %s)", len(scritture), exc, err)
+        for v in voci:
+            if v.futuro is not None and not v.futuro.done():
+                v.futuro.set_exception(exc if exc is not None else ArchivioChiuso("archivio in chiusura"))
+        self._risolti(voci)
+
+    def _riprendi_salvataggi(self) -> None:
+        for percorso in sorted(self.cartella.glob(PREFISSO_SALVATAGGIO + "*.jsonl")):
+            voci = []
+            for linea in percorso.read_text(encoding="ascii").splitlines():
+                if not linea.strip():
+                    continue
+                d = json.loads(linea)
+                voci.append(_Scrittura(self._prossimo_n(), d["regime"], d["tabella"], d["op"], d["chiave"],
+                                       d["testo"], d["rev"], d["rev_col"], bool(d["coalesce"]), int(d["ms"]),
+                                       time.perf_counter_ns()))
+            for v in voci:
+                self._coda.put(v)
+            if self.conferma(120):
+                percorso.unlink()
+                self._evento("dati.archivio_salvataggio_ripreso", {"file": percorso.name, "voci": len(voci)})
+            else:
+                logger.error("[archivio] salvataggio %s non ancora ripreso: resta per l'apertura dopo", percorso.name)
+
+    def _dopo_unita(self, voci: List[Any], esiti: List[Tuple[Any, Any, Optional[BaseException]]]) -> None:
         adesso = time.perf_counter_ns()
         with self._attesa_lock:
-            for v in lotto:
+            for v in voci:
                 if isinstance(v, _Scrittura):
                     self._lat_durevole[v.regime].append(adesso - v.t_ns)
                     p = self._in_attesa.get((v.tabella, v.chiave))
-                    if p is not None and p[0] == v.n:
+                    if p is not None and p[0] <= v.n:
                         del self._in_attesa[(v.tabella, v.chiave)]
-        massimo = max(v.n for v in lotto)
-        with self._cond:
-            if massimo > self._confermato:
-                self._confermato = massimo
-            self._cond.notify_all()
         for v, valore, exc in esiti:
             if v.futuro is not None and not v.futuro.done():
                 if exc is not None:
                     v.futuro.set_exception(exc)
                 else:
                     v.futuro.set_result(valore)
-        if self._alla_conferma is not None:
+        self._risolti(voci)
+
+    def _risolti(self, voci: Sequence[Any]) -> None:
+        with self._cond:
+            for v in voci:
+                self._in_volo.discard(v.n)
+            soglia = (min(self._in_volo) - 1) if self._in_volo else self._n
+            nuova = soglia > self._soglia_annunciata
+            if nuova:
+                self._soglia_annunciata = soglia
+            self._cond.notify_all()
+        if nuova and self._alla_conferma is not None:
             try:
-                self._alla_conferma(massimo)
+                self._alla_conferma(soglia)
             except Exception as exc:  # il gancio dei test/misure non ferma lo scrittore
                 logger.error("[archivio] gancio alla_conferma: %s", exc)
 
+    def _versione(self, conn: sqlite3.Connection, v: _Scrittura, nuova: Dict[str, Any],
+                  prec: Optional[int]) -> Optional[int]:
+        """M3. Ritorna la versione da salvare, o None se la riga e' stantia (scartata)."""
+        if v.rev is None or prec is None or v.rev > prec:
+            return v.rev
+        if _stantia(v.rev, prec, nuova.get(v.rev_col)):
+            self.contatori["righe_vecchie_scartate"] += 1
+            self._evento("dati.riga_vecchia", {"tabella": v.tabella, "chiave": v.chiave, "versione": nuova.get(v.rev_col),
+                                               "versione_locale": prec})
+            return None
+        rev = prec + 1
+        if v.rev_col is not None:
+            nuova[v.rev_col] = rev if isinstance(nuova.get(v.rev_col), int) else iso_da_us(rev)
+        self.contatori["versioni_corrette"] += 1
+        return rev
+
     def _applica(self, conn: sqlite3.Connection, v: _Scrittura) -> int:
-        """Riga locale + outbox (stessa transazione). Ritorna il seq (0 = riga vecchia ignorata)."""
-        if v.op in ("upsert", "insert"):
-            if v.op == "insert":
-                sql = ("INSERT INTO righe (tabella, chiave, json, rev, aggiornato_ms) VALUES (?, ?, ?, ?, ?) "
-                       "ON CONFLICT (tabella, chiave) DO NOTHING")
-            else:
-                sql = ("INSERT INTO righe (tabella, chiave, json, rev, aggiornato_ms) VALUES (?, ?, ?, ?, ?) "
-                       "ON CONFLICT (tabella, chiave) DO UPDATE SET json = excluded.json, rev = excluded.rev, "
-                       "aggiornato_ms = excluded.aggiornato_ms "
-                       "WHERE righe.rev IS NULL OR excluded.rev IS NULL OR excluded.rev > righe.rev")
-            cur = conn.execute(sql, (v.tabella, v.chiave, v.testo, v.rev, v.ms))
-            if cur.rowcount == 0 and v.op == "upsert":
-                self.contatori["righe_vecchie_ignorate"] += 1      # mai indietro, come nel cloud
-                return 0
-        elif v.op == "patch":
-            riga = conn.execute("SELECT json, rev FROM righe WHERE tabella = ? AND chiave = ?",
-                                (v.tabella, v.chiave)).fetchone()
-            if riga is not None:
-                if v.rev is not None and riga[1] is not None and v.rev <= riga[1]:
-                    self.contatori["righe_vecchie_ignorate"] += 1
-                    return 0
-                d = json.loads(riga[0])
-                d.update(json.loads(v.testo))
-                conn.execute("UPDATE righe SET json = ?, rev = ?, aggiornato_ms = ? WHERE tabella = ? AND chiave = ?",
-                             (json.dumps(d, ensure_ascii=False, separators=(",", ":")), v.rev if v.rev is not None
-                              else riga[1], v.ms, v.tabella, v.chiave))
-        else:
+        """Riga locale + outbox (stessa transazione). Ritorna il seq (0 = riga stantia scartata)."""
+        riga = conn.execute("SELECT json, rev FROM righe WHERE tabella = ? AND chiave = ?",
+                            (v.tabella, v.chiave)).fetchone()
+        if v.op == "delete":
             conn.execute("DELETE FROM righe WHERE tabella = ? AND chiave = ?", (v.tabella, v.chiave))
-        return self._in_outbox(conn, v.tabella, v.op, v.chiave, v.testo, v.ms, v.coalesce)
+            return self._in_outbox(conn, v.tabella, v.op, v.chiave, v.testo, v.ms, v.coalesce)
+        nuova = json.loads(v.testo)
+        if v.op == "insert" and riga is not None:
+            return self._in_outbox(conn, v.tabella, v.op, v.chiave, v.testo, v.ms, v.coalesce)   # idempotente
+        rev = self._versione(conn, v, nuova, riga[1] if riga else None)
+        if rev is None and v.rev is not None:
+            return 0
+        testo = testo_json(nuova)
+        if riga is not None:
+            conn.execute("UPDATE righe SET json = ?, rev = ?, aggiornato_ms = ? WHERE tabella = ? AND chiave = ?",
+                         (testo_json(_fondi(riga[0], nuova)), rev if rev is not None else riga[1], v.ms,
+                          v.tabella, v.chiave))
+        elif v.op != "patch":
+            conn.execute("INSERT INTO righe (tabella, chiave, json, rev, aggiornato_ms) VALUES (?, ?, ?, ?, ?)",
+                         (v.tabella, v.chiave, testo, rev, v.ms))
+        return self._in_outbox(conn, v.tabella, v.op, v.chiave, testo, v.ms, v.coalesce)
 
     @staticmethod
     def _in_outbox(conn: sqlite3.Connection, tabella: str, op: str, chiave: str, testo: str, ms: int,
                    coalesce: bool) -> int:
         if coalesce and op == "upsert":
-            # resta SOLO l'ultima versione per chiave; una voce gia' in volo che viene
-            # tolta qui non fa danni: la conferma del postino cancella per seq
-            conn.execute("DELETE FROM outbox WHERE tabella = ? AND chiave = ? AND op = 'upsert'", (tabella, chiave))
+            # resta SOLO una voce per chiave, con le colonne FUSE (B2): nessuna colonna di un
+            # upsert parziale precedente si perde. Una voce gia' in volo tolta qui non fa danni:
+            # la conferma del postino cancella per seq
+            prec = conn.execute("SELECT seq, json FROM outbox WHERE tabella = ? AND chiave = ? AND op = 'upsert' "
+                                "ORDER BY seq", (tabella, chiave)).fetchall()
+            if prec:
+                fusa: Dict[str, Any] = {}
+                for _, j in prec:
+                    fusa.update(json.loads(j))
+                fusa.update(json.loads(testo))
+                testo = testo_json(fusa)
+                conn.executemany("DELETE FROM outbox WHERE seq = ?", [(s,) for s, _ in prec])
         cur = conn.execute("INSERT INTO outbox (tabella, op, chiave, json, creato_ms, coalesce) VALUES (?, ?, ?, ?, ?, ?)",
                            (tabella, op, chiave, testo, ms, 1 if coalesce else 0))
         return int(cur.lastrowid or 0)
@@ -633,37 +847,49 @@ class ArchivioLocale:
             self._file_log.pop(nome).close()
 
     def _riavvolgi_log(self, posizioni: Mapping[str, int]) -> None:
-        """Lotto fallito: i byte scritti nei file del giorno si tolgono (niente meta' righe)."""
+        """Unita' di log fallita: i byte scritti si tolgono (niente meta' righe, niente doppioni)."""
         for nome, pos in posizioni.items():
-            f = self._file_log.get(nome)
+            f = self._file_log.pop(nome, None)
             try:
                 if f is not None:
-                    f.flush()
-                    f.seek(pos)
-                    f.truncate()
+                    try:
+                        f.close()                          # il buffer non svuotato non deve finire nel file
+                    except OSError:
+                        pass
+                with open(self.cartella_log() / nome, "rb+") as g:
+                    g.truncate(pos)
             except OSError as exc:
                 logger.error("[archivio] riavvolgimento di %s a %d: %s", nome, pos, exc)
 
     def _ripara_log_troncati(self) -> None:
-        """Ripresa dopo crash: una riga finale senza ``\\n`` si taglia e si SEGNALA."""
+        """Ripresa dopo crash: una riga finale senza ``\\n`` si taglia e si SEGNALA.
+
+        A3: l'ultimo ``\\n`` si cerca all'indietro a blocchi fino all'inizio del file;
+        si taglia a 0 SOLO se il file non ne contiene nessuno (tutto il file e' il frammento)."""
         for percorso in sorted(self.cartella_log().glob("*.jsonl")):
             dim = percorso.stat().st_size
             if dim == 0:
                 continue
             with open(percorso, "rb+") as f:
-                f.seek(max(0, dim - 1))
+                f.seek(dim - 1)
                 if f.read(1) == b"\n":
                     continue
-                inizio = max(0, dim - 1_048_576)
-                f.seek(inizio)
-                coda = f.read()
-                ultimo = coda.rfind(b"\n")
-                taglio = inizio + ultimo + 1 if ultimo >= 0 else 0
-                frammento = coda[ultimo + 1:] if ultimo >= 0 else coda
+                taglio = 0
+                fine = dim
+                while fine > 0:
+                    inizio = max(0, fine - 1_048_576)
+                    f.seek(inizio)
+                    blocco = f.read(fine - inizio)
+                    i = blocco.rfind(b"\n")
+                    if i >= 0:
+                        taglio = inizio + i + 1
+                        break
+                    fine = inizio
                 f.seek(taglio)
-                f.truncate()
-            dettagli = {"file": percorso.name, "offset": taglio, "byte": len(frammento),
-                        "anteprima": frammento[:200].decode("ascii", "replace")}
+                anteprima = f.read(200)
+                f.truncate(taglio)
+            dettagli = {"file": percorso.name, "offset": taglio, "byte": dim - taglio,
+                        "anteprima": anteprima.decode("ascii", "replace")}
             self.contatori["righe_log_troncate"] += 1
             self._segnala_diretto("riga_log_troncata", dettagli)
             self._evento("dati.riga_troncata", dettagli)
@@ -671,7 +897,7 @@ class ArchivioLocale:
     def _segnala_diretto(self, tipo: str, dettagli: Mapping[str, Any]) -> None:
         conn = self._scrittori[REGIME_SERVIZIO]
         conn.execute("INSERT INTO segnalazioni (tipo, dettagli, ts_ms) VALUES (?, ?, ?)",
-                     (tipo, json.dumps(dict(dettagli), default=str), self._ora_ms()))
+                     (tipo, testo_json(dict(dettagli)), self._ora_ms()))
 
     # ------------------------------------------------------------------ lavori sincroni
     def _esegui_sincrono(self, regime: str, fn: Callable[[sqlite3.Connection], Any], timeout_s: float = 30.0) -> Any:
@@ -679,7 +905,7 @@ class ArchivioLocale:
             raise ArchivioChiuso(f"archivio {self.processo} non aperto")
         futuro: "Future[Any]" = Future()
         self._coda.put(_Lavoro(self._prossimo_n(), regime, fn, futuro))
-        return futuro.result(timeout_s)
+        return self._attendi(futuro, timeout_s)
 
     def _leggi_uno(self, regime: str, sql: str, args: Sequence[Any]) -> Optional[Tuple[Any, ...]]:
         with self._lettori_lock[regime]:
@@ -691,8 +917,13 @@ class ArchivioLocale:
 
     # ------------------------------------------------------------------ API per il postino e riconcilia
     def outbox_pronta(self, regime: str, adesso_ms: int, limite: int) -> List[VoceOutbox]:
-        righe = self._leggi_tutti(regime, "SELECT seq, tabella, op, chiave, json, tentativi, creato_ms FROM outbox "
-                                          "WHERE prossimo_ms <= ? ORDER BY seq LIMIT ?", (adesso_ms, int(limite)))
+        """Voci pronte in ordine di seq, FIFO PER CHIAVE (M4): una voce non e' pronta se
+        una voce piu' vecchia della stessa chiave aspetta ancora il suo turno."""
+        righe = self._leggi_tutti(regime, "SELECT o.seq, o.tabella, o.op, o.chiave, o.json, o.tentativi, o.creato_ms "
+                                          "FROM outbox o WHERE o.prossimo_ms <= ? AND NOT EXISTS (SELECT 1 FROM outbox p "
+                                          "WHERE p.tabella = o.tabella AND p.chiave = o.chiave AND p.seq < o.seq "
+                                          "AND p.prossimo_ms > ?) ORDER BY o.seq LIMIT ?",
+                                  (adesso_ms, adesso_ms, int(limite)))
         return [VoceOutbox(regime, *r) for r in righe]
 
     def conteggi_outbox(self, regime: str) -> Tuple[Counter[str], Optional[int], int]:
@@ -703,45 +934,95 @@ class ArchivioLocale:
         return per, (vecchio[0] if vecchio else None), int(morti[0] if morti else 0)
 
     def chiudi_voci(self, regime: str, consegnate: Sequence[int], rimandate: Sequence[Tuple[int, int, int, str]],
-                    morte: Sequence[Tuple[int, str, str, int]]) -> None:
+                    morte: Sequence[Tuple[Any, ...]]) -> None:
         """Esito di un giro del postino: cancella le consegnate, rimanda (tentativi,
-        prossimo, errore), sposta le morte in ``dead_letter``: UNA transazione."""
+        prossimo, errore), sposta le morte in ``dead_letter`` con la CAUSA (``motivo``,
+        default ``dato``) e la data del rientro automatico: UNA transazione."""
         adesso = self._ora_ms()
 
         def fn(conn: sqlite3.Connection) -> None:
             conn.executemany("DELETE FROM outbox WHERE seq = ?", [(s,) for s in consegnate])
             conn.executemany("UPDATE outbox SET tentativi = ?, prossimo_ms = ?, ultimo_errore = ? WHERE seq = ?",
                              [(t, p, e[:500], s) for s, t, p, e in rimandate])
-            for seq, codice, errore, tentativi in morte:
+            for m in morte:
+                seq, codice, errore, tentativi = m[:4]
+                motivo = m[4] if len(m) > 4 else "dato"
                 conn.execute("INSERT INTO dead_letter (fonte, seq_origine, tabella, op, chiave, json, codice, errore, "
-                             "tentativi, creato_ms, morto_ms) SELECT 'outbox', seq, tabella, op, chiave, json, ?, ?, ?, "
-                             "creato_ms, ? FROM outbox WHERE seq = ?", (codice, errore[:1000], tentativi, adesso, seq))
+                             "tentativi, creato_ms, morto_ms, motivo, rientri, prossimo_rientro_ms) SELECT 'outbox', seq, "
+                             "tabella, op, chiave, json, ?, ?, ?, creato_ms, ?, ?, rientri, ? FROM outbox WHERE seq = ?",
+                             (codice, errore[:1000], tentativi, adesso, motivo, adesso + RIENTRO_MS.get(motivo, 86_400_000),
+                              seq))
                 conn.execute("DELETE FROM outbox WHERE seq = ?", (seq,))
 
         self._esegui_sincrono(regime, fn)
+
+    def rientro_dead_letter(self, adesso_ms: Optional[int] = None, massimo: int = 500) -> int:
+        """A4: rientro AUTOMATICO delle dead_letter scadute (transitorie ogni 15 min, dato e
+        registro ogni 24 h), nessun tetto di rientri: tornano in outbox con i tentativi a zero
+        e il contatore ``rientri`` +1. Ritorna quante sono rientrate."""
+        adesso = self._ora_ms() if adesso_ms is None else adesso_ms
+        totale = 0
+        for regime in REGIMI_SQLITE:
+            def fn(conn: sqlite3.Connection) -> int:
+                righe = conn.execute("SELECT id, tabella, op, chiave, json, creato_ms, rientri FROM dead_letter "
+                                     "WHERE prossimo_rientro_ms <= ? ORDER BY id LIMIT ?", (adesso, massimo)).fetchall()
+                for i, tabella, op, chiave, testo, creato, rientri in righe:
+                    conn.execute("INSERT INTO outbox (tabella, op, chiave, json, creato_ms, prossimo_ms, rientri) "
+                                 "VALUES (?, ?, ?, ?, ?, 0, ?)", (tabella, op, chiave, testo, creato, rientri + 1))
+                    conn.execute("DELETE FROM dead_letter WHERE id = ?", (i,))
+                return len(righe)
+
+            totale += int(self._esegui_sincrono(regime, fn))
+        if totale:
+            self.contatori["rientri_dead_letter"] += totale
+            self._evento("dati.dead_letter_rientro", {"righe": totale})
+        return totale
 
     def file_log(self) -> List[Path]:
         return sorted(self.cartella_log().glob("*.jsonl"))
 
     def offset_log(self, nome: str) -> int:
-        r = self._leggi_uno(REGIME_SERVIZIO, "SELECT offset FROM consegna WHERE fonte = ?", ("log/" + nome,))
-        return int(r[0]) if r else 0
+        return self.marcatore_log(nome)[0]
+
+    def marcatore_log(self, nome: str) -> Tuple[int, Optional[str]]:
+        """(offset consegnato, firma della prima riga del file quando l'offset e' stato scritto)."""
+        r = self._leggi_uno(REGIME_SERVIZIO, "SELECT offset, firma FROM consegna WHERE fonte = ?", ("log/" + nome,))
+        return (int(r[0]), r[1]) if r else (0, None)
+
+    def azzera_marcatore(self, nome: str, dettagli: Mapping[str, Any]) -> None:
+        """M2: il file non e' piu' quello del marcatore (troncato, sostituito): si riparte da 0
+        (il ritento e' sicuro: ``uid`` + ``ON CONFLICT DO NOTHING``) e si segnala."""
+        testo = testo_json(dict(dettagli))
+
+        def fn(conn: sqlite3.Connection) -> None:
+            conn.execute("DELETE FROM consegna WHERE fonte = ?", ("log/" + nome,))
+            conn.execute("INSERT INTO segnalazioni (tipo, dettagli, ts_ms) VALUES ('marcatore_log_azzerato', ?, ?)",
+                         (testo, self._ora_ms()))
+
+        self._esegui_sincrono(REGIME_SERVIZIO, fn)
+        self._evento("dati.marcatore_azzerato", dettagli)
 
     def chiudi_log(self, nome: str, nuovo_offset: int,
-                   morte: Sequence[Tuple[str, str, str, str, int, str, str, int]],
-                   ritenti: Sequence[Tuple[str, str, str, str, int, int, int, str]]) -> None:
+                   morte: Sequence[Tuple[Any, ...]],
+                   ritenti: Sequence[Tuple[str, str, str, str, int, int, int, str]],
+                   firma: Optional[str] = None) -> None:
         """Avanza il marcatore del file e, NELLA STESSA transazione, mette le righe
         rifiutate in ``dead_letter`` e quelle da ritentare nella outbox del vivo."""
         adesso = self._ora_ms()
 
         def fn(conn: sqlite3.Connection) -> None:
-            conn.execute("INSERT INTO consegna (fonte, offset, aggiornato_ms) VALUES (?, ?, ?) ON CONFLICT (fonte) "
-                         "DO UPDATE SET offset = excluded.offset, aggiornato_ms = excluded.aggiornato_ms "
-                         "WHERE excluded.offset > consegna.offset", ("log/" + nome, int(nuovo_offset), adesso))
-            for tabella, op, chiave, testo, ms, codice, errore, tentativi in morte:
+            conn.execute("INSERT INTO consegna (fonte, offset, aggiornato_ms, firma) VALUES (?, ?, ?, ?) "
+                         "ON CONFLICT (fonte) DO UPDATE SET offset = excluded.offset, aggiornato_ms = "
+                         "excluded.aggiornato_ms, firma = coalesce(excluded.firma, consegna.firma) "
+                         "WHERE excluded.offset > consegna.offset", ("log/" + nome, int(nuovo_offset), adesso, firma))
+            for m in morte:
+                tabella, op, chiave, testo, ms, codice, errore, tentativi = m[:8]
+                motivo = m[8] if len(m) > 8 else "dato"
                 conn.execute("INSERT INTO dead_letter (fonte, seq_origine, tabella, op, chiave, json, codice, errore, "
-                             "tentativi, creato_ms, morto_ms) VALUES ('log', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                             (tabella, op, chiave, testo, codice, errore[:1000], tentativi, ms, adesso))
+                             "tentativi, creato_ms, morto_ms, motivo, prossimo_rientro_ms) "
+                             "VALUES ('log', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                             (tabella, op, chiave, testo, codice, errore[:1000], tentativi, ms, adesso, motivo,
+                              adesso + RIENTRO_MS.get(motivo, 86_400_000)))
             for tabella, op, chiave, testo, ms, tentativi, prossimo, errore in ritenti:
                 conn.execute("INSERT INTO outbox (tabella, op, chiave, json, creato_ms, tentativi, prossimo_ms, "
                              "ultimo_errore) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -750,7 +1031,7 @@ class ArchivioLocale:
         self._esegui_sincrono(REGIME_SERVIZIO, fn)
 
     def segnala(self, tipo: str, dettagli: Mapping[str, Any]) -> None:
-        testo = json.dumps(dict(dettagli), default=str)
+        testo = testo_json(dict(dettagli))
         self._esegui_sincrono(REGIME_SERVIZIO, lambda c: c.execute(
             "INSERT INTO segnalazioni (tipo, dettagli, ts_ms) VALUES (?, ?, ?)", (tipo, testo, self._ora_ms())))
 
@@ -758,19 +1039,30 @@ class ArchivioLocale:
         return [{"id": i, "tipo": t, "dettagli": json.loads(d), "ts_ms": ts} for i, t, d, ts in
                 self._leggi_tutti(REGIME_SERVIZIO, "SELECT id, tipo, dettagli, ts_ms FROM segnalazioni ORDER BY id")]
 
+    def scarti_scrittore(self) -> List[Dict[str, Any]]:
+        """Le voci che lo scrittore non ha potuto salvare (A2): visibili, mai cancellate da sole."""
+        percorso = self.cartella / FILE_SCARTI
+        if not percorso.exists():
+            return []
+        return [json.loads(x) for x in percorso.read_text(encoding="ascii").splitlines() if x.strip()]
+
     def dead_letter(self) -> List[Dict[str, Any]]:
-        """Tutte le righe morte dei due file (visibili, mai cancellate da sole)."""
+        """Tutte le righe morte dei due file e degli scarti dello scrittore (visibili)."""
         out: List[Dict[str, Any]] = []
         for regime in REGIMI_SQLITE:
             for r in self._leggi_tutti(regime, "SELECT id, fonte, tabella, op, chiave, json, codice, errore, tentativi, "
-                                               "morto_ms FROM dead_letter ORDER BY id"):
+                                               "morto_ms, motivo, rientri FROM dead_letter ORDER BY id"):
                 out.append({"regime": regime, "id": r[0], "fonte": r[1], "tabella": r[2], "op": r[3], "chiave": r[4],
                             "riga": json.loads(r[5]), "codice": r[6], "errore": r[7], "tentativi": r[8],
-                            "morto_ms": r[9]})
+                            "morto_ms": r[9], "motivo": r[10], "rientri": r[11]})
+        for s in self.scarti_scrittore():
+            out.append({"regime": "scrittore", "id": None, "fonte": "scrittore", "tabella": s["tabella"], "op": s["op"],
+                        "chiave": s["chiave"], "riga": s["testo"], "codice": None, "errore": s["errore"],
+                        "tentativi": 0, "morto_ms": s["ms"], "motivo": "dato", "rientri": 0})
         return out
 
     def rimetti_in_coda(self, regime: str, id_dead_letter: int) -> int:
-        """Dopo la correzione (es. migrazione applicata): la riga torna in outbox."""
+        """Rientro immediato di UNA riga (il rientro periodico e' gia' automatico)."""
         adesso = self._ora_ms()
 
         def fn(conn: sqlite3.Connection) -> int:
@@ -788,6 +1080,8 @@ class ArchivioLocale:
     def righe_finestra(self, tabella: str, da_ms: int, a_ms: Optional[int]) -> List[Tuple[str, str]]:
         """(chiave, json) delle righe di stato aggiornate in [da, a)."""
         spec = self.spec(tabella)
+        if spec.regime == "log":
+            raise ValueError(f"tabella {tabella}: i log non hanno righe di stato")
         return [(k, j) for k, j in self._leggi_tutti(
             spec.regime, "SELECT chiave, json FROM righe WHERE tabella = ? AND aggiornato_ms >= ? AND aggiornato_ms < ?",
             (tabella, int(da_ms), int(a_ms if a_ms is not None else 2 ** 62)))]
@@ -828,7 +1122,7 @@ class ArchivioLocale:
         return sorted(trovate)
 
     def scrivi_riconciliazione(self, tabella: str, giorno: str, esito: str, dettagli: Mapping[str, Any]) -> None:
-        testo = json.dumps(dict(dettagli), default=str)
+        testo = testo_json(dict(dettagli))
         regime = self.spec(tabella).regime
         regime = regime if regime != "log" else REGIME_SERVIZIO
         self._esegui_sincrono(regime, lambda c: c.execute(
@@ -891,27 +1185,47 @@ class ArchivioLocale:
         Righe di stato: aggiornate prima del limite, senza voci in outbox, giorno
         riconciliato ``ok``. File di log: giorno prima del limite, consegnati
         fino all'ultimo byte, ogni tabella del file riconciliata ``ok`` quel giorno.
-        Mai le ``dead_letter``. Ritorna i conteggi."""
+        Mai le ``dead_letter``. M7: a pezzi di ``PULIZIA_PEZZO`` righe, ciascuno un lavoro
+        di millisecondi: le scritture e i claim passano fra un pezzo e l'altro."""
         adesso = self._ora_ms() if adesso_ms is None else adesso_ms
         conteggi: Dict[str, int] = {}
         for regime in REGIMI_SQLITE:
             limite = adesso - int(self._conserva.get(regime, 30.0) * 86_400_000)
-
-            def fn(conn: sqlite3.Connection, limite: int = limite) -> int:
-                cur = conn.execute(
-                    "DELETE FROM righe WHERE aggiornato_ms < ? AND NOT EXISTS (SELECT 1 FROM outbox o WHERE "
-                    "o.tabella = righe.tabella AND o.chiave = righe.chiave) AND EXISTS (SELECT 1 FROM riconciliazioni r "
-                    "WHERE r.tabella = righe.tabella AND r.esito = 'ok' AND "
-                    "r.giorno = strftime('%Y-%m-%d', righe.aggiornato_ms / 1000, 'unixepoch'))", (limite,))
-                conn.execute("DELETE FROM segnalazioni WHERE ts_ms < ?",
-                             (adesso - int(CONSERVA_SEGNALAZIONI_GIORNI * 86_400_000),))
-                return int(cur.rowcount or 0)
-
-            conteggi[regime] = int(self._esegui_sincrono(regime, fn))
-            self._esegui_sincrono(regime, lambda c: c.execute("PRAGMA incremental_vacuum(2000)").fetchall())
+            conteggi[regime] = self._pulisci_righe(regime, limite)
+            self._esegui_sincrono(regime, lambda c: c.execute(
+                "DELETE FROM segnalazioni WHERE ts_ms < ?",
+                (adesso - int(CONSERVA_SEGNALAZIONI_GIORNI * 86_400_000),)))
+            for _ in range(200):                             # spazio restituito a pezzi (auto_vacuum INCREMENTAL)
+                liberi = self._leggi_uno(regime, "PRAGMA freelist_count", ())
+                if not liberi or int(liberi[0]) == 0:
+                    break
+                self._esegui_sincrono(regime, lambda c: c.execute("PRAGMA incremental_vacuum(500)").fetchall())
         conteggi["file_log"] = self._pulisci_log(adesso)
         self.contatori["pulizie"] += 1
         return conteggi
+
+    def _pulisci_righe(self, regime: str, limite: int) -> int:
+        tolte = 0
+        cursore = ("", "")
+        while True:
+            candidate = self._leggi_tutti(
+                regime, "SELECT tabella, chiave FROM righe WHERE (tabella, chiave) > (?, ?) AND aggiornato_ms < ? "
+                        "ORDER BY tabella, chiave LIMIT ?", (*cursore, limite, PULIZIA_PEZZO))
+            if not candidate:
+                return tolte
+            cursore = (candidate[-1][0], candidate[-1][1])
+
+            def fn(conn: sqlite3.Connection, pezzo: List[Tuple[Any, ...]] = candidate) -> int:
+                prima = conn.total_changes
+                conn.executemany(
+                    "DELETE FROM righe WHERE tabella = ? AND chiave = ? AND aggiornato_ms < ? AND NOT EXISTS ("
+                    "SELECT 1 FROM outbox o WHERE o.tabella = righe.tabella AND o.chiave = righe.chiave) AND EXISTS ("
+                    "SELECT 1 FROM riconciliazioni r WHERE r.tabella = righe.tabella AND r.esito = 'ok' AND "
+                    "r.giorno = strftime('%Y-%m-%d', righe.aggiornato_ms / 1000, 'unixepoch'))",
+                    [(t, k, limite) for t, k in pezzo])
+                return conn.total_changes - prima
+
+            tolte += int(self._esegui_sincrono(regime, fn))
 
     def _pulisci_log(self, adesso: int) -> int:
         limite = giorno_utc(adesso - int(self._conserva.get("log", 3.0) * 86_400_000))
@@ -962,3 +1276,13 @@ class ArchivioLocale:
             self._eventi(nome, dati)
         except Exception as exc:  # un ascoltatore guasto non ferma l'archivio, ma si vede
             logger.error("[archivio] ascoltatore dell'evento %s: %s", nome, exc)
+
+
+def _stantia(rev: int, prec: int, valore: Any) -> bool:
+    """M3: versione piu' vecchia OLTRE la tolleranza dell'orologio (intero: qualunque
+    regressione; uguale = stessa versione, vince l'ultima scritta)."""
+    if rev >= prec:
+        return False
+    if isinstance(valore, int) and not isinstance(valore, bool):
+        return True
+    return prec - rev > TOLLERANZA_OROLOGIO_US
