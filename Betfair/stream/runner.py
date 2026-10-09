@@ -1613,11 +1613,53 @@ def _rispondi_comandi_locali_da_parcheggiato() -> int:
     return gestite
 
 
+def _attesa_impostazioni() -> None:
+    """09/10 (correzione "modo ordini da parcheggiato") - il runner PARCHEGGIATO
+    rilegge ``betfair_live_settings`` come il worker della coda del framework.
+
+    Difetto: la lettura dei settings (kill-switch, "Ordini reali") e l'uscita
+    del topic ``modo_ordini`` (anche in ``hello.modo_ordini``) vivevano SOLO nei
+    BackgroundWorker di flumine (``live_order_worker._process_once``): da
+    parcheggiati nessuno li faceva, il tabellone mostrava "ORDINI: NON NOTA" con
+    la conferma spenta e il motore ordini, all'aggancio al volo, trovava una
+    copia dei settings vecchia (kill-switch non letto, modo scaduto -> OFF).
+
+    Qui: STESSA funzione (``_refresh_settings``, che pubblica il modo al
+    cambio), STESSO orologio di cadenza del worker (``_throttled
+    ("settings_refresh", 1.0)``: nel passaggio parcheggiato -> framework il
+    primo giro del worker NON rilegge), STESSO cancello (tetto OFF -> inerte,
+    come il worker), STESSA dichiarazione d'avvio del worker guardato
+    (``_dichiara_modo_ordini_all_avvio``: no-op quando gia' fatta, suo
+    orologio). Nessun thread nuovo. Mai solleva."""
+    try:
+        if _LOW._modo_processo() not in ("PAPER", "LIVE"):
+            return  # come il worker: OFF (o ignoto) -> inerte, nessuna lettura
+        if not _GUARDIA_AVVIO.blocca_aperture:
+            _dichiara_modo_ordini_all_avvio()  # come _live_order_worker_guardato
+        try:
+            from db_client import get_supabase_client
+
+            sb = get_supabase_client()
+        except Exception as ex:  # noqa: BLE001 - come il worker: si salta il giro
+            logger.warning("[runner] settings da parcheggiato: supabase non disponibile: %s",
+                           str(ex)[:160])
+            return
+        if not _LOW._throttled("settings_refresh", 1.0):
+            _LOW._refresh_settings(sb)
+    except Exception as ex:  # noqa: BLE001 - il ciclo d'attesa non cade mai
+        logger.warning("[runner] settings da parcheggiato KO: %s", str(ex)[:160])
+
+
 def _attesa_board_e_canale(session: Any) -> None:
     """09/10 - il runner PARCHEGGIATO (ciclo d'attesa, framework non ancora
     nato) pubblica il BOARD come il ``board_worker`` del framework (stessa
     funzione, stessa cadenza ``BOARD_POLL_SEC``, stesso stato; zero costo senza
-    desktop) e, senza motore ordini, risponde ai comandi del canale. Mai solleva."""
+    desktop) e, senza motore ordini, risponde ai comandi del canale. Mai solleva.
+
+    Correzione 09/10: PRIMA rilegge i settings come il worker della coda
+    (``_attesa_impostazioni``): ``modo_ordini`` sul canale e nell'hello anche da
+    parcheggiato, kill-switch e modo effettivo freschi per il motore ordini."""
+    _attesa_impostazioni()
     _board_da_parcheggiato(session, "1", BOARD_POLL_SEC or 10.0)
     if _motore_attivo() is None:
         try:

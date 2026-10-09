@@ -251,3 +251,104 @@ parcheggiati.
 
 ## 6. Commit
 Ramo del worktree, commit unico (vedi messaggio). Non pushato.
+
+## 7. Correzione: modo ordini da parcheggiato (revisione del coordinatore)
+
+DIFETTO (trovato in revisione): il tabellone abilita il box quota solo se conosce il modo
+ordini EFFETTIVO dal canale (topic `modo_ordini` o `hello.modo_ordini`; `hello.mode` e' il solo
+tetto del .env). Entrambi i runner rileggevano i settings e pubblicavano il modo SOLO dentro i
+worker di flumine: calcio `live_order_worker._process_once` -> `_refresh_settings` ->
+`_pubblica_modo_ordini_se_cambiato`; tennis `tennis_live_order_worker` ->
+`guardie_tennis.aggiorna_impostazioni` -> `pubblica_modo_ordini_se_cambiato`. Col runner
+PARCHEGGIATO (il caso normale del tennis, e del calcio senza auto-follow) nessuno li leggeva:
+«ORDINI: NON NOTA», conferma spenta, dal tabellone non si puntava mai.
+VERIFICA della freschezza (stesso difetto, confermato sul codice di 69a4ca7f):
+- tennis: `servi_comandi_da_parcheggiato` decideva con `_low._SETTINGS` mai letto
+  (kill-switch = False di default: un place a freno tirato chiedeva l'aggancio) e con
+  «Ordini reali» non letto (= PAPER di default: una scelta OFF non fermava l'aggancio);
+- calcio: la copia dei settings che il motore ordini controlla all'uscita dall'aggancio
+  (`eta_settings_s`, kill-switch, `modo_ordini.valore_db`) era quella dell'avvio (o nessuna):
+  dopo 30 s il modo scadeva a OFF e l'eta' superava i 10 s del motore (rifiuto `M_SETTINGS`
+  finche' il worker della coda non rileggeva). Fail-closed, ma il tabellone non lo sapeva.
+
+CORREZIONE (nessun thread/processo nuovo, nessuna lettura in piu' col framework):
+- Calcio `Betfair/stream/runner.py:1616` `_attesa_impostazioni`, chiamata per PRIMA da
+  `_attesa_board_e_canale` (`:1662`, gia' nei due rami del ciclo d'attesa `:2879`, `:2935`):
+  STESSO cancello del worker (`_LOW._modo_processo()` OFF -> inerte, nessuna lettura), STESSA
+  dichiarazione d'avvio del worker guardato a guardia disarmata (`:1638`
+  `_dichiara_modo_ordini_all_avvio`, no-op quando gia' fatta, suo orologio da 10 s), STESSA
+  funzione `_LOW._refresh_settings(sb)` (che pubblica `modo_ordini` + hello al cambio) con lo
+  STESSO orologio di cadenza del worker (`:1647` `_LOW._throttled("settings_refresh", 1.0)`):
+  nel passaggio parcheggiato -> framework il primo giro del worker NON rilegge (e viceversa).
+  Supabase non disponibile -> giro saltato come nel worker; ogni eccezione contenuta e loggata.
+- Tennis `Betfair/stream/tennis_live/tennis_runner.py:3156` `_attesa_impostazioni`, chiamata
+  da `_attesa_board_e_canale` (`:3151`) PRIMA di `servi_comandi_da_parcheggiato` (kill-switch e
+  modo freschi per la decisione): STESSO cancello (`_runner_mode()` OFF -> inerte), STESSA
+  funzione e STESSO orologio del worker ordini tennis (`:3177`
+  `_gt.aggiorna_impostazioni(tennis_db.get_tennis_client())`, `_IMPOSTAZIONI_RILETTE` da 1 s),
+  che pubblica lo stato del TENNIS (`stato_tennis`, `sport: "tennis"`), mai quello del calcio
+  (la funzione del calcio non pubblica fuori dal 47331). Eccezioni contenute e loggate.
+
+TEST nuovi: `Betfair/stream/tests/test_modo_ordini_parcheggiato_2026_10_09.py` (13 test).
+Harness del 09/10 riusati (`setup_and_run` VERO fermato al primo sonno, `_Canale` =
+`LocalChannel` vero col publish registrato); riga di `get_live_settings` con le chiavi del vero,
+RPC `live_order_mode_avvio` come in `test_modo_ordini_ui_2026_09_24`.
+- `test_runner_calcio_parcheggiato_pubblica_modo_ordini`: `setup_and_run` calcio PAPER, nessuna
+  partita -> dopo un giro d'attesa topic `modo_ordini` e `hello.modo_ordini` con `effettivo`
+  PAPER letto, `hello.mode` resta il tetto; chiamate DB = dichiarazione d'avvio + UNA lettura.
+- `test_calcio_parcheggiato_kill_switch_e_modo_freschi`: freno della UI letto
+  (`_db_kill_switch`), eta' < 1 s, modo effettivo letto; rilascio + OFF visti al giro dopo.
+- `test_calcio_nessuna_doppia_lettura_nel_passaggio_al_framework`: due giri d'attesa nello stesso
+  secondo = 1 lettura; poi il `_process_once` VERO del worker della coda non rilegge.
+- `test_calcio_dichiarazione_d_avvio_riprovata_da_parcheggiato`: dichiarazione d'avvio fallita
+  all'avvio -> a guardia armata non si dichiara (modo OFF), a guardia disarmata si'.
+- `test_runner_tennis_parcheggiato_pubblica_modo_ordini`: `setup_and_run` tennis col tetto LIVE
+  e «Ordini reali» LIVE in questo avvio -> `modo_ordini` `effettivo` LIVE (senza lettura sarebbe
+  PAPER di default), `sport: "tennis"`, nell'hello.
+- `test_tennis_parcheggiato_kill_switch_e_modo_dai_settings` [freno tirato / OFF]: il place da
+  parcheggiato (con aggancio disponibile) e' rifiutato col motivo, nessun aggancio chiesto.
+- `test_tennis_nessuna_doppia_lettura_nel_passaggio_al_framework`: la riga del worker ordini
+  tennis subito dopo il giro d'attesa non rilegge.
+- `test_calcio_tetto_off_nessuna_lettura`, `test_tennis_tetto_off_nessuna_lettura`,
+  `test_calcio_ciclo_d_attesa_non_cade`, `test_tennis_ciclo_d_attesa_non_cade`,
+  `test_calcio_e_tennis_non_si_mischiano` (47332 solo il tennis col suo tetto, 47331 solo il
+  calcio).
+
+FALSIFICAZIONI
+A) Test nuovi sul codice di 69a4ca7f (sorgenti dei due runner da `git show HEAD:`, test nuovi):
+   **9 rossi su 13** (i 2 `setup_and_run` pubblica-modo, kill/modo calcio, kill/modo tennis x2,
+   doppia lettura calcio e tennis, dichiarazione d'avvio, non-si-mischiano). Messaggi: «runner
+   calcio parcheggiato: modo_ordini mai pubblicato (NON NOTA)», «runner tennis parcheggiato:
+   modo_ordini mai pubblicato (NON NOTA)», `assert 0 == 1` sulle letture. I 4 verdi sono le
+   guardie di regressione gia' vere prima (tetto OFF x2, ciclo che non cade x2), falsificate
+   dalle mutazioni M4, M5, M11, M12 qui sotto.
+B) 13 mutazioni sul codice NUOVO, **13 rosse**, sorgenti verificati identici dopo ogni giro
+   (`python AUDIT_2026-10-09/programma_del_giorno/falsificazione_modo_parcheggiato.py`):
+   M1 calcio senza rilettura · M2 orologio diverso dal worker · M3 nessuna cadenza · M4 nessun
+   cancello OFF · M5 eccezione che esce dal ciclo · M6 dichiarazione d'avvio non riprovata ·
+   M7 dichiarazione anche a guardia armata · M8 tennis senza rilettura · M9 settings riletti
+   DOPO i comandi · M10 orologio scavalcato (`forza=True`) · M11 nessun cancello OFF · M12
+   eccezione che esce dal ciclo · M13 tennis con la funzione del calcio (pubblica solo sul 47331).
+
+NUMERI
+- file toccati + vicini (nuovo, board 09/10 x2, punto 6, modo UI, modo tennis, R3 freno):
+  176 passati.
+- `test_modo_ordini_parcheggiato_2026_10_09.py`: 13 passati.
+- suite intera `python -m pytest Betfair/ -q -p no:cacheprovider` (codice finale):
+  **11453 passati, 87 saltati, 6 xfailed, 0 falliti** (378 s; = 11440 di prima + 13 nuovi).
+
+LIMITI / RISCHI RESIDUI
+1. Tetto OFF: come col framework (worker inerti) nessuna lettura e nessun `modo_ordini`: il
+   tabellone resta «NON NOTA» (il box sarebbe comunque inutile, ogni ordine e' rifiutato). Se si
+   vuole «OFF» esplicito serve una scelta (pubblicare senza leggere), non fatta.
+2. Ramo «follow presenti ma nessun mercato» del ciclo d'attesa: dorme 15 s, quindi li' la copia
+   dei settings puo' avere fino a ~15 s (> 10 s del motore). Il modo resta valido (30 s) sul
+   tabellone; all'aggancio il worker della coda rilegge al suo primo giro (cadenza scaduta), il
+   caso peggiore e' un rifiuto `M_SETTINGS` dichiarato, mai un ordine con dati vecchi.
+3. Calcio, guardia d'avvio ARMATA (ripresa fallita all'avvio): da parcheggiato la ripresa NON si
+   riprova (difetto preesistente, fuori da questo incarico: la riprova la fa solo il worker
+   guardato); i settings si leggono comunque (lo fanno anche risk/daily-stop col framework), la
+   dichiarazione d'avvio no (come il worker guardato). Da valutare a parte.
+4. Il giro d'attesa del calcio ora fa una RPC `get_live_settings` ogni ~2 s (cadenza del ciclo,
+   sotto il tetto di 1/s del worker) solo con tetto PAPER/LIVE: e' la stessa lettura che il
+   worker fa ogni secondo col framework vivo.

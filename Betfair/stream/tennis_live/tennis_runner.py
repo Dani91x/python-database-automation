@@ -3147,8 +3147,36 @@ def _attesa_board_e_canale(session: Any) -> None:
     from ..board_worker import giro_da_parcheggiato
     from .tennis_live_order_worker import servi_comandi_da_parcheggiato
 
+    # correzione 09/10: i settings PRIMA dei comandi (kill-switch e modo freschi)
+    _attesa_impostazioni()
     giro_da_parcheggiato(session, "2")
     servi_comandi_da_parcheggiato(session)
+
+
+def _attesa_impostazioni() -> None:
+    """09/10 (correzione "modo ordini da parcheggiato") - il runner tennis
+    PARCHEGGIATO rilegge ``betfair_live_settings`` come il worker ordini tennis.
+
+    Difetto: la lettura (kill-switch, "Ordini reali" di questo avvio) e l'uscita
+    del topic ``modo_ordini`` del TENNIS (anche in ``hello.modo_ordini``) le
+    faceva SOLO ``tennis_live_order_worker`` (BackgroundWorker di flumine): da
+    parcheggiati (il caso normale del tennis) nessuno, il tabellone restava
+    "ORDINI: NON NOTA" e ``servi_comandi_da_parcheggiato`` decideva con un
+    kill-switch e un modo vecchi o di default.
+
+    Qui: STESSA funzione (``guardie_tennis.aggiorna_impostazioni``, che pubblica
+    lo stato del TENNIS, mai quello del calcio), STESSO orologio di cadenza
+    (``_IMPOSTAZIONI_RILETTE``, 1 s: nel passaggio parcheggiato -> framework il
+    primo giro del worker NON rilegge), STESSO cancello (tetto OFF -> inerte,
+    come il worker). Nessun thread nuovo. Mai solleva."""
+    try:
+        from .tennis_live_order_worker import _runner_mode
+
+        if _runner_mode() not in ("PAPER", "LIVE"):
+            return  # come il worker: OFF (o ignoto) -> inerte, nessuna lettura
+        _gt.aggiorna_impostazioni(tennis_db.get_tennis_client())
+    except Exception as e:  # noqa: BLE001 - il ciclo d'attesa non cade mai
+        logger.warning("[tennis-runner] impostazioni da parcheggiato KO: %s", str(e)[:160])
 
 
 def _attiva_saldo_su_evento(framework: Any, trading: Any) -> None:
