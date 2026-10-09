@@ -765,3 +765,166 @@ def test_risottoscrizione_di_un_piano_vecchio_non_vince_su_quella_nuova():
     assert c.risottoscrivi({"1.1", "1.2"}, 5) is True
     assert c.risottoscrivi({"1.1"}, 4) is False
     assert c.mercati == {"1.1", "1.2"} and mandati == [["1.1", "1.2"]]
+
+
+def _chiudi_forte(srv: Any, n: int) -> None:
+    """Il server chiude la connessione n come un RST (shutdown, poi close): il client lo vede subito."""
+    import socket as _socket
+    c = srv._conn.get(n)
+    if c is not None:
+        try:
+            c.shutdown(_socket.SHUT_RDWR)
+        except OSError:
+            pass
+    srv.chiudi_connessione(n)
+
+
+# ---------------------------------------------------------------------------
+# terza revisione: F1 (durata dalla CONNESSIONE), F2 (mai clk con filtro nuovo), invio vero fallito
+# ---------------------------------------------------------------------------
+def test_risottoscrizioni_frequenti_non_azzerano_la_durata_della_connessione():
+    """(F1) Connessione su 61 s con un cambio di mercati a 59 s (auto-follow in gioco):
+    la durata conta dalla CONNESSIONE, non dall'ultima risottoscrizione."""
+    ora = Orologio(1000.0)
+    tieni: Dict[str, Any] = {}
+    msg = dict(immagine(["1.1"], 1), id=7)
+
+    class StreamFinto:
+        def __init__(self, li: Any) -> None:
+            self.li = li
+            self.running = False
+
+        def subscribe_to_markets(self, **kw: Any) -> int:
+            self.li.register_stream(7, "marketSubscription")
+            return 7
+
+        def start(self) -> None:
+            self.running = True
+            self.li.on_data(json.dumps(msg))
+            ora.t += 59.0
+            assert tieni["c"].risottoscrivi({"1.1", "1.2"}) is True
+            ora.t += 2.0
+            raise ConnectionError("caduta")
+
+        def stop(self) -> None:
+            self.running = False
+    g = _gestore_con(ora, StreamFinto)
+    c = F._Connessione(g, 1, {"1.1"})
+    tieni["c"] = c
+    c._pausa = _PausaFinta(c, 7)
+    c._ciclo()
+    assert c._pausa.attese == AZZERATO
+
+
+def test_su_a_lungo_con_risottoscrizioni_ogni_0_4_s_riparte_dal_minimo(server_stream, monkeypatch):
+    """(F1, scenario 1d del revisore) Tempesta, poi una connessione su 2,6 s (> VIVA_DOPO_S =
+    1 s nel test) con un cambio di mercati ogni 0,4 s: alla caduta il backoff riparte da 0,05."""
+    monkeypatch.setattr(F, "BACKOFF_MIN_S", 0.05)
+    monkeypatch.setattr(F, "BACKOFF_MAX_S", 0.4)
+    monkeypatch.setattr(F, "VIVA_DOPO_S", 1.0)
+
+    def risposta(n: int, m: Dict[str, Any], k: int) -> List[Any]:
+        if k <= 3:
+            return [immagine(m["marketFilter"]["marketIds"], k), CHIUDI]
+        if k == 4:
+            threading.Timer(2.6, _chiudi_forte, [srv, n]).start()
+        return [immagine(m["marketFilter"]["marketIds"], k)]
+    srv = server_stream(risposta)
+    g = _gestore()
+    try:
+        g.imposta_mercati(_ids(0, 3))
+        assert attendi(lambda: len(srv.sottoscrizioni) >= 4, 20)
+        t0 = time.monotonic()
+        i = 3
+        while time.monotonic() - t0 < 2.4:
+            time.sleep(0.4)
+            g.imposta_mercati(_ids(0, 3 + i))
+            i += 1
+        assert attendi(lambda: len(g.stato()["frammenti"][0]["ultime_attese_s"]) >= 4, 10)
+        a = g.stato()["frammenti"][0]["ultime_attese_s"]
+        assert a[:4] == [0.05, 0.1, 0.2, 0.05], a
+    finally:
+        g.ferma()
+
+
+def test_cambio_di_mercati_durante_il_ricollegamento_mai_clk_col_filtro_nuovo(server_stream,
+                                                                             monkeypatch):
+    """(F2, scenario 3e del revisore) La ripresa con clk e' gia' decisa quando i mercati
+    cambiano: la sottoscrizione parte da immagine piena, MAI clk con il filtro nuovo."""
+    monkeypatch.setattr(F, "BACKOFF_MIN_S", 0.05)
+    monkeypatch.setattr(F, "BACKOFF_MAX_S", 0.2)
+    blocca = threading.Event()
+    sbloccato = threading.Event()
+    stato = {"crea": 0}
+
+    def crea(client: Any, uid: int, li: Any) -> Any:
+        stato["crea"] += 1
+        if stato["crea"] == 2:
+            blocca.set()
+            assert sbloccato.wait(10)
+        return F._crea_stream_libreria(client, uid, li)
+
+    def risposta(n: int, m: Dict[str, Any], k: int) -> List[Any]:
+        if k == 1:
+            threading.Timer(0.3, _chiudi_forte, [srv, n]).start()
+        return [immagine(m["marketFilter"]["marketIds"], k)]
+    srv = server_stream(risposta)
+    g = _gestore(crea_stream=crea)
+    try:
+        g.imposta_mercati(_ids(0, 3))
+        assert blocca.wait(10)                          # ricollegamento in corso, ripresa decisa
+        g.imposta_mercati(_ids(0, 3) + _ids(10, 12))    # insieme nuovo MENTRE si ricollega
+        sbloccato.set()
+        assert attendi(lambda: all(g.book(m) is not None for m in _ids(10, 12)))
+        dopo = [m for n, m in srv.sottoscrizioni[1:]]
+        assert dopo, srv.sottoscrizioni
+        assert all(m.get("clk") is None and m.get("initialClk") is None for m in dopo), [
+            (m.get("clk"), len(m["marketFilter"]["marketIds"])) for m in dopo]
+        assert sorted(dopo[-1]["marketFilter"]["marketIds"]) == sorted(_ids(0, 3) + _ids(10, 12))
+    finally:
+        sbloccato.set()
+        g.ferma()
+
+
+def test_invio_vero_fallito_con_econnreset_riparte_da_immagine_piena(server_stream):
+    """(scenario 3c del revisore) Il cammino REALE di ``_abbandona``: ``BetfairStream`` vero,
+    ECONNRESET su ``sendall`` (la libreria fa ``stop`` e solleva ``SocketError`` DOPO aver
+    gia' registrato la sottoscrizione nuova)."""
+    srv = server_stream(_risposta_immagine)
+    g = _gestore()
+    try:
+        g.imposta_mercati(_ids(0, 5))
+        assert attendi(lambda: g.stato()["conti"]["book"] >= 5, 10)
+        s = g._vive()[0].stream
+
+        class Rotto:
+            def __init__(self, vero: Any) -> None:
+                self.vero = vero
+
+            def sendall(self, *a: Any, **k: Any) -> None:
+                raise OSError(104, "Connection reset by peer")
+
+            def __getattr__(self, n: str) -> Any:
+                return getattr(self.vero, n)
+        s._socket = Rotto(s._socket)
+        assert g.imposta_mercati(_ids(0, 9)) == set()      # nessuna eccezione
+        assert attendi(lambda: len(srv.sottoscrizioni) >= 2, 10)
+        assert attendi(lambda: g.book(_ids(8, 9)[0]) is not None, 10)
+        ultima = srv.sottoscrizioni[-1][1]
+        assert ultima["initialClk"] is None and ultima["clk"] is None
+        assert len(ultima["marketFilter"]["marketIds"]) == 9
+        assert g.stato()["conti"]["risottoscrizioni_fallite"] == 1
+    finally:
+        g.ferma()
+
+
+def test_disponibili_con_istante_dice_quando_e_stato_letto():
+    ora = Orologio(1000.0)
+    g = _gestore("runner_tennis", orologio=ora)
+    c = F._Connessione(g, 1, {"1.1"})                        # il thread NON parte
+    g._connessioni = [c]
+    assert g.disponibili_con_istante() == (None, None)
+    ora.t = 1005.0
+    c.listener.on_data(json.dumps({"op": "status", "id": 1, "statusCode": "SUCCESS",
+                                   "connectionClosed": False, "connectionsAvailable": 3}))
+    assert g.disponibili_con_istante() == (3, 1005.0)

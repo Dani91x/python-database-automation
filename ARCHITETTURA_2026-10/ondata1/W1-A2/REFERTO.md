@@ -397,3 +397,64 @@ ripristino sarebbe stato in CRLF; lo sha256 lo avrebbe detto).
 - test del comparto: 164, tutti verdi (erano 138: i 6 test che fissavano le regole vecchie di backoff e slot riscritti sulle nuove, piu' i test nuovi della tabella; i veloci in ~3 min su macchina carica perche' i test sul server TLS aspettano backoff reali);
 - parita' di serie: VERDI nella suite finale (`test_payload_e_firma_identici_su_ogni_book[35760084]` e `[35797769]` 1 su 7, `test_sequenza_del_topic_identica_al_worker_di_oggi[calcio]` e `[tennis]`, `test_cadenza_20ms_contro_200ms_su_registrazione`; rapporto junit letto riga per riga);
 - suite intera (UNA volta, alla fine): **11.756 verdi, 1 rosso, 65 saltati, 6 xfail** in 639 s; l'unico rosso e' ancora la guardia K1 (`test_valuta_k1_2026_09_26.py::test_contratto_ogni_fonte_di_book_dello_stream_e_convertita`), da sbloccare con le due righe del par. 10 all'integrazione.
+
+## 12. Terza revisione (09/10, revisione mirata di 9befd673: DA CORREGGERE, 2 difetti in `flusso.py` + slot + 1 test)
+
+Commit nuovo sopra 9befd673 (storia non riscritta, nessun push). Nessun file esistente toccato. Righe sul codice finale.
+
+| Punto | Correzione (file:riga) | Test (file::nome) | Mutazioni rosse |
+|---|---|---|---|
+| F1 durata dal COLLEGAMENTO | `flusso.py:285` `connessa_dal_mono`, impostato UNA volta per collegamento in `_collega_e_leggi` (`:444`) e mai toccato da `risottoscrivi`; `_sana` lo usa (`:400`); `sottoscritta_mono` resta solo per il watchdog dei messaggi. Il watchdog dei prezzi azzera solo `sottoscritta_mono` (`:704`): `sana_al_watchdog` del modulo dei prezzi e' TOLTO (ridondante: la durata non dipende piu' dal watchdog; nel modulo ordini resta, li' non ci sono risottoscrizioni) | FL::`test_risottoscrizioni_frequenti_non_azzerano_la_durata_della_connessione` (orologio finto: su 61 s con un cambio di mercati a 59 s -> 2 s a ogni ripresa), `::test_su_a_lungo_con_risottoscrizioni_ogni_0_4_s_riparte_dal_minimo` (scenario 1d del revisore sul server TLS: attese 0,05/0,1/0,2/**0,05**); entrambi ROSSI sul codice di 9befd673 (attese 2/4/8/..., e 0,4 al quarto) | W1, W1b, Z2 (testo nuovo: il watchdog che azzera la durata), V5b |
+| F2 mai clk con filtro nuovo | `flusso.py:373` `_sottoscrivi(s, ripresa, versione)`: insieme e decisione nello STESSO lock; se i mercati sono cambiati da quando la ripresa e' stata decisa, immagine piena (`:382`); chiamata `:443` | FL::`test_cambio_di_mercati_durante_il_ricollegamento_mai_clk_col_filtro_nuovo` (scenario 3e: ROSSO su 9befd673, il server vedeva `CLK-1` con 5 mercati; ora ogni sottoscrizione dopo la prima e' senza clk) | W2 |
+| SLOT valore piu' recente | `flusso_ordini_conto.py:785` `_libere_adesso`: vince il valore PIU' RECENTE fra la NOSTRA ultima autenticazione (`_su_connessioni` `:841`, con l'istante) e `disponibili()`; `disponibili` puo' dare `(valore, istante)` (`GestoreFlussi.disponibili_con_istante` `flusso.py:758`, stesso orologio monotono) o il solo valore (istante = quando lo si e' visto cambiare). Il nostro valore non conta la nostra connessione, che quando si decide e' giu': +1 (`:805`). `_slot_libero` `:754`; stato: `connessioni_libere_usate`, `connessioni_libere_fonte` ("propria" / "prezzi") | O::`test_slot_vale_il_valore_piu_recente_fra_la_propria_autenticazione_e_i_prezzi`, `::test_slot_con_valore_senza_istante_vale_il_momento_in_cui_e_cambiato`, `::test_zero_libere_vecchio_le_riprese_non_pagano_l_attesa_di_slot[9/0]` (scenari 2b/2c: `disponibili` fermo a 0, UNA attesa all'avvio, nessuna alle riprese; ROSSO su 9befd673: 3 attese) | W3, W3b, W4, W5, W6, V4 |
+| invio vero fallito | (nessun codice) test del cammino REALE di `_abbandona`: `BetfairStream` vero, ECONNRESET su `sendall` (la libreria fa `stop` e solleva `SocketError` DOPO `register_stream`, quindi `initial_clk` e' gia' None) | FL::`test_invio_vero_fallito_con_econnreset_riparte_da_immagine_piena` (scenario 3c) | W7 |
+
+**Semantica dello slot (par. 11 aggiornato)**: le libere sono il valore piu' recente fra (a) la risposta alla NOSTRA
+ultima autenticazione + 1 (la nostra connessione, caduta, ha liberato il suo slot; interpretazione: Betfair conta la
+connessione appena autenticata fra quelle usate) e (b) l'ultimo `connectionsAvailable` letto dagli stream dei prezzi. Con
+>= 1 o ignoto si apre; con 0 UNA attesa di `ATTESA_SLOT_S` per tentativo e poi si prova; rifiuto = backoff. In pratica:
+all'avvio decide il valore dei prezzi; dopo una caduta decide il nostro, a meno che un flusso dei prezzi si sia autenticato
+dopo di noi.
+
+**Mutazioni**: **114 mutazioni, 114 rosse, 114 ripristinate** (sha256 prima = dopo per ognuna;
+`falsifica_esito.jsonl`, giro completo sul codice finale). Aggiunte: le 8 del revisore (`mut3.py` V1-V7 con V5a/V5b, sui
+NOSTRI test; V5b adeguata: nel modulo dei prezzi il watchdog non tocca piu' la durata, la mutazione equivalente oggi e' "il
+watchdog azzera `connessa_dal_mono`") e 9 nuove (W1, W1b, W2, W3, W3b, W4, W5, W6, W7). Z2 riscritta per lo stesso motivo
+(lo scambio di righe di prima sarebbe stato equivalente sul codice nuovo).
+
+**Numeri** (rieseguiti di persona sul codice finale):
+- test del comparto: 173, tutti verdi (9 nuovi: 3 sullo slot, di cui uno a 2 casi, 5 sul gestore dei prezzi; i test di rete nuovi ripetuti 4 volte: verdi);
+- parita' di serie: VERDI nella suite finale (payload e firma su 35760084 e su 35797769 a 1 su 7, sequenza del topic calcio e tennis, cadenza 20/200 ms; rapporto junit letto riga per riga);
+- suite intera (UNA volta, alla fine): **11.765 verdi, 1 rosso, 65 saltati, 6 xfail** in 651 s; l'unico rosso e' ancora la guardia K1 (`test_valuta_k1_2026_09_26.py::test_contratto_ogni_fonte_di_book_dello_stream_e_convertita`), da sbloccare con le due righe del par. 10.
+
+### 12.1 Connessioni: oggi e con lo stream ordini del conto (per l'utente)
+
+Fatto verificato (revisore, ricontrollato nel codice): OGNI processo flumine in LIVE apre gia' oggi il PROPRIO stream
+ordini reale, senza filtro di strategia: runner calcio (`Betfair/stream/runner.py:2253`, `order_stream=True`,
+`paper_trade=False`), runner tennis (`Betfair/stream/tennis_live/tennis_runner.py:159`), ogni sessione scalper LIVE
+(`Betfair/stream/scalper/scalper_session.py:940`, `paper_trade=False`). In PAPER flumine apre un `SimulatedOrderStream`
+che NON usa connessioni (`runner.py:2276`, `tennis_runner.py:177`, scalper in demo). Lo stream ordini del conto e' UNA
+connessione in piu' sulle 10 per app key.
+
+| Caso peggiore | Prezzi calcio | Ordini calcio | Prezzi tennis | Ordini tennis | Scanner | Scalper LIVE (per sessione: prezzi + ordini) | Ordini del conto | Totale |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| oggi, LIVE (referto 8.1, A par. 1.3) | 3 | 1 | 1 | 1 | 4 | 0 | 0 | **10/10** (ogni sessione scalper LIVE +2: oltre) |
+| nuovo, aggiunto e basta | 3 | 1 | 1 | 1 | 4 | 0 | 1 | **11/10 (oltre)** |
+| nuovo, PROPOSTA ondata 2: lo stream del conto SOSTITUISCE gli stream ordini di flumine | 3 | 0 | 1 | 0 | 4 | 0 (+1 per sessione: solo prezzi) | 1 | **9/10** |
+| oggi, PAPER | 3 | 0 | 1 | 0 | 4 | 0 | 0 | 8/10 |
+| nuovo, PAPER | 3 | 0 | 1 | 0 | 4 | 0 | 1 | 9/10 |
+
+**Proposta (NON applicata)**: all'aggancio (ondata 2) gli stream ordini di flumine dei processi LIVE si sostituiscono con
+questo (un order stream per conto, tappa C: flumine riceve gli ordini dal nucleo invece di aprire il suo), liberando una
+connessione per processo LIVE (2 oggi, piu' una per sessione scalper LIVE). Fino ad allora, nel caso peggiore, lo stream del
+conto e' di troppo: le opzioni B-E del par. 8.1 restano la scelta dell'utente.
+
+**Effetti sugli altri flussi quando lo stream ordini prende l'ultima connessione** (regola dello slot del par. 11, decisa dal
+coordinatore, DIVERGENZA da confermare):
+- calcio (`GestoreFrammenti`): il frammento nuovo e' rifiutato (`MAX_CONNECTION_LIMIT_EXCEEDED`), la capacita' scende e per
+  `PAUSA_RIFIUTO_S` = 300 s nessuna connessione nuova (`Betfair/stream/frammenti_mercato.py:37-40`, `:96`, `:452-457`): le
+  partite oltre la capacita' restano senza prezzi in streaming; se e' la PRIMA connessione del calcio a essere rifiutata,
+  il calcio resta senza prezzi finche' uno slot non si libera;
+- scanner (`Betfair/safe_strategy/stream.py`): lo shard rifiutato non consegna book e i suoi mercati tornano al poll REST di
+  ripiego (`:21`, `:524`), piu' lento;
+- tennis e scalper (stream di flumine): senza prezzi finche' lo slot non si libera (flumine ritenta la connessione).

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from typing import Any, Dict, List
 
 import pytest
@@ -509,3 +510,86 @@ def test_mercato_chiuso_nello_stato():
     li.on_data(ocm([mercato(MID, [runner(19, [uo("1")])], full=True)], ct="SUB_IMAGE"))
     li.on_data(ocm([mercato(MID, [], closed=True)], pt=PT0 + 1))
     assert f.stato()["mercati_chiusi"] == [MID]
+
+
+def _chiudi_forte(srv: Any, n: int) -> None:
+    """Il server chiude la connessione n come un RST (shutdown, poi close): il client lo vede subito."""
+    import socket as _socket
+    c = srv._conn.get(n)
+    if c is not None:
+        try:
+            c.shutdown(_socket.SHUT_RDWR)
+        except OSError:
+            pass
+    srv.chiudi_connessione(n)
+
+
+# ---------------------------------------------------------------------------
+# terza revisione: lo slot usa il valore PIU' RECENTE (propria autenticazione o prezzi)
+# ---------------------------------------------------------------------------
+def test_slot_vale_il_valore_piu_recente_fra_la_propria_autenticazione_e_i_prezzi():
+    """``disponibili`` con l'istante (``GestoreFlussi.disponibili_con_istante``): vince il
+    valore piu' recente. Il nostro (risposta alla NOSTRA autenticazione) non conta la
+    nostra connessione, che dopo la caduta e' di nuovo libera: +1."""
+    ora = _Orologio(1000.0)
+    letto: Dict[str, Any] = {"v": (0, 990.0)}
+    f = FOC.FlussoOrdiniContoBetfair(SessioneFinta(), disponibili=lambda: letto["v"],
+                                     orologio_mono=ora)
+    f._su_connessioni(0)                     # nostra autenticazione a 1000: avevamo l'ultima
+    assert f._slot_libero() is None
+    st = f.stato()
+    assert st["connessioni_libere_fonte"] == "propria" and st["connessioni_libere_usate"] == 1
+    letto["v"] = (0, 1001.0)                 # i prezzi si sono autenticati DOPO: 0 libere
+    ora.t = 1002.0
+    assert f._slot_libero() == FOC.ATTESA_SLOT_S
+    st = f.stato()
+    assert st["connessioni_libere_fonte"] == "prezzi" and st["connessioni_libere_usate"] == 0
+
+
+def test_slot_con_valore_senza_istante_vale_il_momento_in_cui_e_cambiato():
+    """``disponibili`` che torna solo il numero: il suo istante e' quando lo si e' visto
+    cambiare; un valore fermo a 0 piu' vecchio della nostra autenticazione non blocca."""
+    ora = _Orologio(1000.0)
+    letto = {"v": 0}
+    f = FOC.FlussoOrdiniContoBetfair(SessioneFinta(), disponibili=lambda: letto["v"],
+                                     orologio_mono=ora)
+    assert f._slot_libero() == FOC.ATTESA_SLOT_S     # 0 visto a 1000, nessuna nostra autenticazione
+    assert f._slot_libero() is None                  # un'attesa sola, poi si prova
+    ora.t = 1010.0
+    f._su_connessioni(4)                             # nostra autenticazione a 1010
+    ora.t = 1020.0
+    assert f._slot_libero() is None and f.stato()["connessioni_libere_fonte"] == "propria"
+    letto["v"] = 3
+    ora.t = 1030.0                                   # i prezzi cambiano dopo: vale il loro
+    assert f._slot_libero() is None and f.stato()["connessioni_libere_fonte"] == "prezzi"
+
+
+@pytest.mark.parametrize("libere_nostre", [9, 0])
+def test_zero_libere_vecchio_le_riprese_non_pagano_l_attesa_di_slot(server_stream, monkeypatch,
+                                                                    libere_nostre):
+    """(scenari 2b/2c del revisore) ``disponibili`` fermo a 0: la PRIMA apertura aspetta
+    una volta; le riprese dopo una caduta usano il valore della nostra autenticazione
+    (piu' recente) e non pagano piu' ``ATTESA_SLOT_S`` a ogni giro."""
+    monkeypatch.setattr(FOC, "ATTESA_SLOT_S", 2.0)
+    monkeypatch.setattr(FOC, "BACKOFF_MIN_S", 0.05)
+    monkeypatch.setattr(FOC, "BACKOFF_MAX_S", 0.4)
+    istanti: List[float] = []
+
+    def risposta(n: int, m: Dict[str, Any], k: int) -> List[Any]:
+        istanti.append(time.monotonic())
+        if k <= 2:
+            threading.Timer(0.5, _chiudi_forte, [srv, n]).start()
+        return [_immagine(k)]
+    srv = server_stream(risposta, autentica=lambda n: {
+        "op": "status", "statusCode": "SUCCESS", "connectionClosed": False,
+        "connectionsAvailable": libere_nostre})
+    f = FOC.FlussoOrdiniContoBetfair(SessioneFinta(), disponibili=lambda: 0)
+    f.avvia()
+    try:
+        assert attendi(lambda: len(istanti) >= 3, secondi=10.0)
+        intervalli = [b - a for a, b in zip(istanti, istanti[1:])]
+        assert f.conti["attese_di_slot"] == 1
+        assert max(intervalli[:2]) < 2.0, intervalli
+        assert f.stato()["connessioni_libere_fonte"] == "propria"
+    finally:
+        f.ferma()

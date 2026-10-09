@@ -25,10 +25,12 @@ Le regole (tutte nei test ``tests/test_a2_flusso*.py``):
   ``GestoreFrammenti.massimo_adesso`` (``connessioni_concesse``, confrontata).
 * RIPRESA: dopo una caduta la connessione si riapre con ``initialClk``/``clk``
   (``RESUB_DELTA``: solo i cambi), backoff 2..60 s azzerato SOLO dopo una
-  connessione rimasta su oltre ``VIVA_DOPO_S`` (valutato anche PRIMA che il
-  watchdog la chiuda), mai dopo ``ferma``/chiusura; ``INVALID_CLOCK``, un messaggio
-  non applicabile, un cambio di mercati durante la caduta o una risottoscrizione
-  fallita = immagine piena (i criteri della ripresa devono essere IDENTICI).
+  connessione rimasta su oltre ``VIVA_DOPO_S`` dal COLLEGAMENTO
+  (``connessa_dal_mono``: ne' le risottoscrizioni ne' il watchdog lo toccano), mai
+  dopo ``ferma``/chiusura; ``INVALID_CLOCK``, un messaggio non applicabile, un cambio
+  di mercati durante la caduta o il ricollegamento, o una risottoscrizione fallita =
+  immagine piena (i criteri della ripresa devono essere IDENTICI: mai ``initialClk``/
+  ``clk`` con un filtro diverso).
 * RISOTTOSCRIZIONE: ``imposta_mercati`` non solleva MAI per un errore di rete:
   la connessione si chiude e riparte da immagine piena con l'insieme nuovo; se la
   libreria ricollega lo stream fermato DENTRO l'invio (``BetfairStream._send``),
@@ -276,9 +278,11 @@ class _Connessione:
         self.rifiutata = False
         self.riconnessioni = 0
         self.aperta_mono = gestore._ora()
+        #: ultima sottoscrizione (anche una risottoscrizione): base del watchdog dei messaggi
         self.sottoscritta_mono: Optional[float] = None
-        #: il watchdog l'ha chiusa quando era SANA (valutato prima di azzerare)
-        self.sana_al_watchdog = False
+        #: quando la connessione CORRENTE si e' collegata (UNA volta per collegamento, mai
+        #: toccato da ``risottoscrivi``): base della durata che azzera il backoff
+        self.connessa_dal_mono: Optional[float] = None
         #: insieme PIANIFICATO dal gestore (sotto il suo lock): base dei mercati coperti
         self.piano: Set[str] = set(mercati)
         #: generazione del piano gia' applicata (una risottoscrizione vecchia non vince)
@@ -366,11 +370,17 @@ class _Connessione:
         except Exception as e:  # noqa: BLE001 - si chiude comunque
             logger.warning("[flusso] stop della connessione %d: %s", self.numero, e)
 
-    def _sottoscrivi(self, s: Any, ripresa: bool) -> None:
+    def _sottoscrivi(self, s: Any, ripresa: bool, versione: Optional[int] = None) -> bool:
+        """Manda la sottoscrizione dell'insieme corrente. Con ``versione``: se i mercati
+        sono cambiati da quando la ripresa e' stata decisa, si parte da immagine piena
+        (mai ``initialClk``/``clk`` con un filtro diverso); insieme e decisione si leggono
+        nello STESSO lock. Ritorna la ripresa davvero chiesta."""
         li = self.listener
         p = self.g.profilo
         with self._lock:
             ids = sorted(self.mercati)
+            if ripresa and versione is not None and self._versione != versione:
+                ripresa = False
         self.id_sottoscrizione = int(s.subscribe_to_markets(
             market_filter=streaming_market_filter(market_ids=ids),
             market_data_filter=filtro_dati(p),
@@ -381,11 +391,13 @@ class _Connessione:
             segmentation_enabled=True,
         ))
         self.sottoscritta_mono = self.g._ora()
+        return ripresa
 
     def _sana(self) -> bool:
-        """Rimasta su oltre ``VIVA_DOPO_S`` dalla sottoscrizione (azzera il backoff).
+        """Rimasta su oltre ``VIVA_DOPO_S`` dal COLLEGAMENTO (azzera il backoff): le
+        risottoscrizioni (auto-follow in gioco, anche ogni pochi secondi) non contano.
         Ricevere dati NON basta: immagine e chiusura a ogni giro = tempesta."""
-        dal = self.sottoscritta_mono
+        dal = self.connessa_dal_mono
         if dal is None:
             return False
         return self.g._ora() - dal > VIVA_DOPO_S
@@ -403,10 +415,10 @@ class _Connessione:
                     break
                 if self._dopo_errore(e):
                     break
-                # durata valutata PRIMA di azzerare il riferimento (anche dal watchdog)
-                sana = self._sana() or self.sana_al_watchdog
-                self.sana_al_watchdog = False
+                # durata dal collegamento: il watchdog e le risottoscrizioni non la toccano
+                sana = self._sana()
                 self.sottoscritta_mono = None
+                self.connessa_dal_mono = None
                 if sana:
                     tentativo = 0
                 tentativo += 1
@@ -427,7 +439,9 @@ class _Connessione:
         s = self.g._crea_stream(client, self.id_sottoscrizione, li)
         with self._invio:                      # connessione e autenticazione: rete, senza _lock
             self.stream = s
-            self._sottoscrivi(s, ripresa)
+            # la ripresa decisa prima vale solo se i mercati non sono cambiati nel frattempo
+            ripresa = self._sottoscrivi(s, ripresa, versione)
+            self.connessa_dal_mono = self.sottoscritta_mono
             with self._lock:
                 cambiata = self._versione != versione
                 self._forza_immagine = False
@@ -687,8 +701,8 @@ class GestoreFlussi:
                 logger.warning("[flusso] %s: connessione %d MUTA da %.1f s (soglia %.1f s): "
                                "chiudo e riprendo", self.profilo.nome, c.numero, muto,
                                self._soglia_s(c))
-                # A3-2: la durata si valuta PRIMA di azzerare il riferimento
-                c.sana_al_watchdog = c._sana()
+                # A3-2: si azzera SOLO il riferimento dei messaggi; la durata del collegamento
+                # (``connessa_dal_mono``) resta: il ciclo la valuta alla caduta
                 c.sottoscritta_mono = None
                 c.ferma_lettura()
                 riavviate.append(c.numero)
@@ -739,13 +753,20 @@ class GestoreFlussi:
 
     def _disponibili(self) -> Optional[int]:
         """L'ultimo ``connectionsAvailable`` letto da una delle connessioni."""
+        return self.disponibili_con_istante()[0]
+
+    def disponibili_con_istante(self) -> Tuple[Optional[int], Optional[float]]:
+        """(ultimo ``connectionsAvailable`` letto, istante della lettura sull'orologio del
+        gestore): per lo stream ordini, che confronta col SUO valore (vince il piu' recente;
+        stesso orologio monotono)."""
         migliore: Optional[int] = None
-        quando = -1.0
+        quando: Optional[float] = None
         for c in self._vive():
             li = c.listener
-            if li.connessioni_disponibili is not None and li.connessioni_lette_mono > quando:
+            if li.connessioni_disponibili is not None and (
+                    quando is None or li.connessioni_lette_mono > quando):
                 migliore, quando = li.connessioni_disponibili, li.connessioni_lette_mono
-        return migliore
+        return migliore, quando
 
     def _viva_da_poco(self, c: _Connessione, ora: float) -> bool:
         u = c.listener.ultimo_msg_mono

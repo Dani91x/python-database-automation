@@ -159,3 +159,16 @@ Correzioni (dettaglio, file:riga, test e mutazioni nel referto par. 11):
   senza book e senza meta non si riprova (aspetta il push), con book e senza meta si riprova a 0,2 s e poi a intervalli
   doppi fino a 5 s, e un book nuovo fa riprovare subito (M3); dopo un riparo il contatore dei saltati si rilegge a
   ripubblicazione finita, cosi' un client lento non tiene il riparo in un ciclo (M5).
+
+## 13. Dopo la terza revisione (09/10)
+
+- **Durata del collegamento** (gestore dei prezzi): conta da `connessa_dal_mono`, impostato UNA volta per collegamento;
+  le risottoscrizioni (auto-follow in gioco) e il watchdog non la toccano. `sottoscritta_mono` resta il riferimento del
+  watchdog dei messaggi.
+- **Mai clk con un filtro diverso**: la ripresa decisa prima del collegamento vale solo se i mercati non sono cambiati;
+  insieme e decisione si leggono nello stesso lock dentro `_sottoscrivi`.
+- **Slot dello stream ordini**: vince il valore PIU' RECENTE fra la nostra ultima autenticazione (+1: la nostra connessione
+  e' giu') e `disponibili()` (meglio `GestoreFlussi.disponibili_con_istante`): dopo una caduta le riprese non pagano piu'
+  l'attesa di slot per un valore vecchio.
+- **Connessioni**: lo stream ordini del conto e' una connessione in piu'; proposta di sostituire con lui gli stream ordini
+  di flumine all'aggancio (referto par. 12.1).

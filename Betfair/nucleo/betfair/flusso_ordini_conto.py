@@ -72,12 +72,15 @@ diventa muta riparte dal backoff minimo, A3-2).
 Connessioni (decisione del coordinatore, 09/10, DIVERGENZA da confermare con
 l'utente): lo stream ordini usa UNA connessione e la riserva degli stream di mercato
 NON vale per lui. Se chi crea il flusso passa ``disponibili`` (``connectionsAvailable``
-letto da un'altra connessione): apre con libere >= 1 o valore ignoto; con 0 aspetta
+letto da un'altra connessione, meglio con l'istante:
+``GestoreFlussi.disponibili_con_istante``), le libere sono il valore PIU' RECENTE fra
+quello e la risposta alla NOSTRA ultima autenticazione (+1: la nostra connessione,
+caduta, ha liberato il suo slot): apre con libere >= 1 o valore ignoto; con 0 aspetta
 ``ATTESA_SLOT_S`` UNA volta e poi prova comunque (il valore puo' essere vecchio e un
 tentativo con 0 libere non toglie lo slot a nessuno: Betfair rifiuta). Mai "in
 attesa" per sempre. Un rifiuto di Betfair (``MAX_CONNECTION_LIMIT_EXCEEDED``) fa
 ritentare con il backoff (2..60 s). Dopo ogni SUA autenticazione il valore vero
-(``connectionsAvailable`` della risposta) sostituisce quello letto.
+(``connectionsAvailable`` della risposta) vale finche' e' il piu' recente.
 
 Entrate: una ``Sessione`` (``contratto.Sessione``; se offre anche
 ``segnala_sessione_morta(motivo)`` - ``SessioneConSegnalazione`` - la si usa dopo
@@ -146,6 +149,8 @@ CODICI_SLOT = frozenset({"MAX_CONNECTION_LIMIT_EXCEEDED", "TOO_MANY_REQUESTS"})
 CODICE_CLK_NON_VALIDO = "INVALID_CLOCK"
 
 _EPOCA = _dt.datetime(1970, 1, 1, tzinfo=_dt.timezone.utc)
+#: segnaposto: ``disponibili`` non ancora letto
+_NON_LETTO = object()
 _LATI = {StreamingSide.B.name: "back", StreamingSide.L.name: "lay"}
 #: campi IMPORTO dello stream: assenti -> None e dichiarati in ``campi_assenti``
 _IMPORTI = ("sm", "sr", "sl", "sc", "sv")
@@ -491,7 +496,7 @@ class FlussoOrdiniContoBetfair:
                  segmentazione: bool = True,
                  includi_posizione_complessiva: bool = True,
                  partizione_per_strategia: bool = False,
-                 disponibili: Optional[Callable[[], Optional[int]]] = None,
+                 disponibili: Optional[Callable[[], Any]] = None,
                  crea_stream: Callable[[Any, int, StreamListener], Any] = _crea_stream_libreria,
                  orologio_ms: Callable[[], float] = lambda: time.time() * 1000.0,
                  orologio_mono: Callable[[], float] = time.monotonic,
@@ -551,6 +556,15 @@ class FlussoOrdiniContoBetfair:
         #: ultimo ``connectionsAvailable`` noto: da ``disponibili`` o, dopo ogni
         #: autenticazione di QUESTA connessione, il valore vero della risposta
         self._libere_note: Optional[int] = None
+        #: il valore della NOSTRA ultima autenticazione e il suo istante (orologio monotono)
+        self._libere_proprie: Optional[int] = None
+        self._libere_proprie_mono: Optional[float] = None
+        #: ``disponibili`` senza istante: l'ultimo valore visto e quando e' cambiato
+        self._altri_visto: Any = _NON_LETTO
+        self._altri_mono: Optional[float] = None
+        #: l'ultima decisione: quante libere e da quale fonte ("propria" | "prezzi")
+        self._libere_usate: Optional[int] = None
+        self._libere_fonte: Optional[str] = None
         self._sessione_segnalata: Optional[str] = None
 
     # ------------------------------------------------------------ contratto
@@ -668,6 +682,8 @@ class FlussoOrdiniContoBetfair:
             "ultimo_errore": li.ultimo_errore,
             "connessioni_disponibili": li.connessioni_disponibili,
             "connessioni_libere_note": self._libere_note,
+            "connessioni_libere_usate": self._libere_usate,
+            "connessioni_libere_fonte": self._libere_fonte,
             "slot": self._slot,
             "ultime_attese_s": list(self._attese),
             "sessione_segnalata": self._sessione_segnalata,
@@ -738,9 +754,10 @@ class FlussoOrdiniContoBetfair:
     def _slot_libero(self) -> Optional[float]:
         """None = si apre adesso; altrimenti i secondi da aspettare.
 
-        La riserva NON vale per lo stream ordini (UNA connessione). Con libere >= 1 o
-        valore ignoto si apre; con 0 si aspetta ``ATTESA_SLOT_S`` UNA volta e poi si
-        prova comunque: il valore puo' essere vecchio (letto da un'altra connessione)
+        La riserva NON vale per lo stream ordini (UNA connessione). Le libere sono il
+        valore PIU' RECENTE fra la nostra ultima autenticazione e ``disponibili()``
+        (``_libere_adesso``). Con libere >= 1 o valore ignoto si apre; con 0 si aspetta
+        ``ATTESA_SLOT_S`` UNA volta e poi si prova comunque: il valore puo' essere vecchio
         e con 0 libere Betfair rifiuta (backoff), senza togliere lo slot a nessuno."""
         if self._disponibili is None:
             return None
@@ -748,12 +765,11 @@ class FlussoOrdiniContoBetfair:
             self._slot_atteso = False
             return None                     # gia' aspettato su 0: si prova (decide Betfair)
         try:
-            libere = self._disponibili()
+            libere, fonte = self._libere_adesso()
         except Exception as e:  # noqa: BLE001 - lettura del budget fallita: si apre come oggi
             logger.warning("[ordini-conto] connectionsAvailable illeggibile (%s): si apre", e)
             return None
-        if libere is not None:
-            self._libere_note = int(libere)
+        self._libere_usate, self._libere_fonte = libere, fonte
         if libere is not None and libere < 1:
             if self._slot != "in_attesa":
                 logger.warning("[ordini-conto] 0 connessioni libere dichiarate: lo stream ordini "
@@ -765,6 +781,31 @@ class FlussoOrdiniContoBetfair:
         if self._slot == "in_attesa":
             self._slot = None
         return None
+
+    def _libere_adesso(self) -> Tuple[Optional[int], Optional[str]]:
+        """(connessioni libere, fonte): il valore PIU' RECENTE fra la NOSTRA ultima
+        autenticazione ("propria") e ``disponibili()`` ("prezzi"). ``disponibili`` puo'
+        tornare ``(valore, istante)`` (``GestoreFlussi.disponibili_con_istante``, stesso
+        orologio monotono) o il solo valore: allora il suo istante e' quello in cui lo si
+        e' visto cambiare. Il nostro valore non conta la nostra connessione, che qui e'
+        giu' (si apre solo dopo una caduta o all'avvio): il suo slot e' di nuovo libero (+1)."""
+        letto = self._disponibili() if self._disponibili is not None else None
+        if isinstance(letto, tuple):
+            altri, quando_altri = letto[0], letto[1]
+        else:
+            altri = letto
+            if altri != self._altri_visto:
+                self._altri_visto, self._altri_mono = altri, self._mono()
+            quando_altri = self._altri_mono
+        if altri is not None:
+            self._libere_note = int(altri)
+        proprie, quando_proprie = self._libere_proprie, self._libere_proprie_mono
+        if proprie is not None and (altri is None or quando_altri is None
+                                    or quando_proprie >= quando_altri):
+            return int(proprie) + 1, "propria"
+        if altri is None:
+            return None, None
+        return int(altri), "prezzi"
 
     def _connetti_e_leggi(self) -> None:
         li = self._listener
@@ -799,8 +840,9 @@ class FlussoOrdiniContoBetfair:
 
     def _su_connessioni(self, libere: int) -> None:
         """Nel thread del socket, alla risposta della NOSTRA autenticazione: il valore
-        vero di ``connectionsAvailable`` sostituisce quello letto da ``disponibili``."""
+        vero di ``connectionsAvailable``, con il suo istante (vince se e' il piu' recente)."""
         self._libere_note = int(libere)
+        self._libere_proprie, self._libere_proprie_mono = int(libere), self._mono()
 
     def _dopo_errore(self, e: BaseException) -> None:
         """Conta e decide cosa rifare (immagine piena, sessione); l'attesa e' il backoff."""
