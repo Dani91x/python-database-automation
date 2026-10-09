@@ -260,7 +260,7 @@ lo rende rosso, con ripristino verificato da sha256 (`falsifica.py`, esito riga 
 |---|---|---|---|
 | A1 ordini stantii | `flusso_ordini_conto.py:336` `_on_change_message` (fine immagine di sottoscrizione: `SUB_IMAGE` intera o `SEG_END`, anche senza `oc`), `:828` `_su_fine_immagine`, `:410` immagine di RUNNER, `:836` `_non_piu_confermati` (riconsegna con `confermato=False`) | O::`test_ripartenza_da_zero_su_un_altro_mercato_segnala_gli_stantii` (R1), `::test_ripartenza_da_zero_con_immagine_vuota_senza_oc` (R2), `::test_fullimage_solo_di_runner_segnala_l_ordine_sparito` (R3), `::test_immagine_a_segmenti_si_chiude_solo_a_fine_segmento`, `::test_consumatore_riceve_l_ordine_non_confermato` (R7), `::test_fullimage_di_mercato_in_una_ripresa_segnala_l_ordine_sparito`, `::test_ordine_non_confermato_che_si_rifa_vivo_torna_confermato` (X1) | R1, R2, R3, R22, M11, X1 |
 | A2 posizioni | `flusso_ordini_conto.py:816-818` (la `fullImage` di mercato SOSTITUISCE le posizioni del mercato), `:411` | O::`test_posizione_di_un_runner_assente_dalla_nuova_immagine_di_mercato_esce` (R6) | R4 |
-| A3 backoff | `flusso_ordini_conto.py:667` `_connessione_sana`, `:692`; `flusso.py:334` `_sana`, `:355`; soglia dichiarata `VIVA_DOPO_S` = 60 s (o ocm/mcm ricevuti dopo la sottoscrizione) | O::`test_backoff_si_azzera_dopo_una_connessione_sana[True-2.0/False-60.0]` (R5), FL::`test_backoff_della_connessione_si_azzera_dopo_dati[...]` | R5, R6 |
+| A3 backoff | SUPERATA dalla seconda revisione (par. 11): "ocm/mcm ricevuti" NON azzera piu' (tempesta), solo `VIVA_DOPO_S` = 60 s | O::`test_backoff_si_azzera_dopo_una_connessione_sana[True-2.0/False-60.0]` (R5), FL::`test_backoff_della_connessione_si_azzera_dopo_dati[...]` | R5, R6 |
 | M1 watchdog | `flusso_ordini_conto.py:780` `_watchdog`; `flusso.py:604` `veglia`, `:731` `_ciclo_watchdog`; soglia `BATTITI_WATCHDOG` = 3 heartbeat (motivo: la stessa soglia del "muto" di tutta l'app, `stream_muto.BATTITI_PER_SOGLIA`; Betfair dice 2 = "forse disconnesso": un battito di margine contro il ritardo di un singolo heartbeat; con 500 ms chiesti = 1,5 s) | O::`test_watchdog_chiude_lo_stream_muto_e_riprende_con_clk`, FL::`test_watchdog_del_flusso_muto_riprende_con_clk_ed_emette_l_evento` (server TLS che smette di parlare SENZA chiudere) | R7, R8 |
 | M2 ladder, errore di invio | `ladder.py:518-546` `_pubblica_mercato`: try per mercato, il mercato torna in attesa, gli altri del lotto escono; `:362-374` riprova | FL::`test_errore_di_pubblicazione_non_perde_lo_stato_ne_il_resto_del_lotto` (L1) | R9 |
 | M3 meta in ritardo | `ladder.py:528-530` (`RIPROVA_META_S` = 0,2 s; nessun giro a vuoto) | FL::`test_meta_che_arriva_dopo_il_book_riaccende_la_pubblicazione` (L2), `::test_meta_assente_non_fa_girare_a_vuoto_il_thread` | R10 |
@@ -269,7 +269,7 @@ lo rende rosso, con ripristino verificato da sha256 (`falsifica.py`, esito riga 
 | M5b CPU | strumento `misura_cpu_ladder.py` (numeri sotto) | - | - |
 | M6 importi assenti | `flusso_ordini_conto.py:225` (None, mai 0), `:145` `OrdineDalContoEsteso.campi_assenti` (estensione proposta) | O::`test_importi_assenti_non_inventano_abbinato_ne_residuo` (R4) | R14 |
 | libro_chiuso | `ladder.py:574` (chiusura sull'ULTIMO book RICEVUTO, anche se fuso nei 20 ms), `:311`, `:577` | FL::`test_chiusura_calcio_sull_ultimo_book_RICEVUTO_anche_se_fuso` | R15 |
-| connectionsAvailable | `flusso_ordini_conto.py:704` `_slot_libero` (default prudente: libere <= riserva 1 -> NON apre, `slot="in_attesa"`), `:770` (rifiuto -> pausa 300 s, `slot="negato"`) | O::`test_senza_slot_libero_non_apre_e_lo_dice`, `::test_rifiuto_di_betfair_mette_in_pausa_lo_stream_ordini` | R16, R17 |
+| connectionsAvailable | SUPERATA dalla seconda revisione (par. 11, regola del coordinatore): la riserva non vale per lo stream ordini, 0 = un'attesa e poi si prova, rifiuto = backoff | (par. 11) | R16, R17 (testi nuovi) |
 | sessione | `flusso_ordini_conto.py:156` `SessioneConSegnalazione`, `:449` `segnala_sessione` (usata anche da `flusso.py`) | O::`test_no_session_si_segnala_alla_sessione_senza_affidarsi_al_timer`, FL::`test_no_session_sulla_connessione_dei_prezzi_si_segnala` | R18, R23 |
 | potatura | `flusso_ordini_conto.py:851` `_pota` (`TETTO_COMPLETATI` = 5000 EXECUTION_COMPLETE; gli EXECUTABLE mai), `flusso.py:716` `_pota_libri` | O::`test_potatura_dei_completati_oltre_il_tetto`, FL::`test_book_dei_mercati_non_piu_sottoscritti_escono` | R19, R20 |
 | eventi del contratto | `flusso.py:508` `aggiungi_osservatore`: `mercato_chiuso`, `flusso_muto`, `capacita_cambiata` | FL::`test_eventi_mercato_chiuso_e_capacita_cambiata`, `::test_watchdog_del_flusso_muto_...` | R21, R8 |
@@ -299,16 +299,25 @@ consecutivi: nessuna differenza); non c'e' un test che possa ucciderla. Il test 
 revisione) solleva `TypeError`; la nostra copia (FL::`test_consegna_non_si_blocca_...`) usa un cambio fisso ed e' verde. Gli
 altri 14 test originali del revisore sono verdi sul codice corretto.
 
-**M5b - CPU del ladder** (`python ARCHITETTURA_2026-10/ondata1/W1-A2/misura_cpu_ladder.py 1 10`, finestra di 15.000
-messaggi di 35797769 in gioco = 1.685 s di partita, `time.thread_time`, percentuale di UN core):
+**M5b - CPU del ladder** (`python ARCHITETTURA_2026-10/ondata1/W1-A2/misura_cpu_ladder.py 1 10`; ETICHETTA CORRETTA dopo
+la seconda revisione: le righe "3.000" sono sulla finestra di **3.000 messaggi** di 35797769 in gioco (`DA, A = 30000, 33000`)
+= **334 s** di partita; `time.thread_time`, percentuale di UN core):
 
-| Partite insieme | Book | Pubblicazioni oggi / nuovo | CPU oggi (recorder + worker 200 ms) | CPU nuovo (thread del ladder, 20 ms) |
-|---:|---:|---|---|---|
-| 1 | 10.286 | 8.539 / 10.093 | 3,21 s = 0,96% di un core | 3,88 s = 1,16% di un core |
-| 10 | 102.860 | 85.390 / 100.930 | 68,55 s = 20,5% di un core | 46,27 s = 13,84% di un core |
+| Finestra | Partite insieme | Book | Pubblicazioni oggi / nuovo | CPU oggi (recorder + worker 200 ms) | CPU nuovo (thread del ladder, 20 ms) | Chi |
+|---|---:|---:|---|---|---|---|
+| 3.000 msg, 334 s | 1 | 10.286 | 8.539 / 10.093 | 3,21 s = 0,96% di un core | 3,88 s = 1,16% di un core | W1-A2 |
+| 3.000 msg, 334 s | 10 | 102.860 | 85.390 / 100.930 | 68,55 s = 20,5% di un core | 46,27 s = 13,84% di un core | W1-A2 |
+| 3.000 msg, 334 s | 1 | 10.286 | 8.539 / 10.093 | 2,58 s = 0,77% di un core | 3,16 s = 0,94% di un core | revisore (rieseguito) |
+| 3.000 msg, 334 s | 10 | 102.860 | 85.390 / 100.930 | 62,39 s = 18,66% di un core | 40,11 s = 12,0% di un core | revisore (rieseguito) |
+| 15.000 msg, 1.685 s | 1 | 54.149 | 44.623 / 53.406 | 21,23 s = 1,26% di un core | 23,78 s = 1,41% di un core | revisore |
 
-Finestra di 3.000 messaggi (334 s di partita in gioco; una prima esecuzione su 15.000 messaggi, 1.685 s, ha dato per UNA
-partita 1,38% oggi / 1,55% nuovo; quella da 10 copie su 15.000 messaggi e' stata fermata al limite di tempo della macchina).
+Una mia prima esecuzione su 15.000 messaggi (1.685 s) aveva dato per UNA partita 1,38% oggi / 1,55% nuovo; quella da 10
+copie su 15.000 messaggi e' stata fermata al limite di tempo della macchina (macchina condivisa: i numeri variano di
+qualche decimo fra esecuzioni). **Cosa misura lo strumento**: la CPU del THREAD dentro le funzioni avvolte (recorder,
+worker, ladder e la serializzazione JSON del canale), NON quella del processo (niente socket, listener di flumine, GIL
+conteso dagli altri thread). La misura vera e' quella in OMBRA (Salute, CPU del processo runner). Il codice del ladder e'
+cambiato dopo queste misure (seconda revisione: riprova del meta a intervalli doppi, riparo che si rilegge, log raro): i
+cambi toccano solo i casi senza meta, con errore o con invii saltati, assenti nella registrazione; non rimisurato.
 Lettura: per partita il nuovo costa circa quanto oggi (~1,2-1,6% di un core) perche' serializza solo i book che pubblica
 mentre oggi il recorder li serializza TUTTI; con 10 partite il nuovo e' sotto oggi (il worker di oggi rigira ogni 200 ms
 tutti i mercati del catalogo). In OMBRA i due costi si SOMMANO (34% di un core a 10 partite): e' il dato da guardare.
@@ -331,7 +340,11 @@ Con `converti_valuta` tolto dal costruttore, `flusso.py` ha UNA sola strada (con
 `annullato_da_betfair` come `Optional[float]` (oggi passano None quando Betfair non li manda); `SessioneConSegnalazione` con
 `segnala_sessione_morta(motivo)` (da allineare con W1-A1 all'integrazione); `FlussoMercato.aggiungi_osservatore(cb)` per gli
 eventi `mercato_chiuso`, `flusso_muto`, `capacita_cambiata`; `FlussoOrdiniConto` costruito con `disponibili` (lettore di
-`connectionsAvailable` del processo, es. `GestoreFlussi._disponibili`) e `riserva_connessioni`.
+`connectionsAvailable` del processo, es. `GestoreFlussi._disponibili`); `riserva_connessioni` TOLTO nella seconda revisione
+(la riserva non vale per lo stream ordini). **Per il comparto C**: gli importi di `OrdineDalContoEsteso` (`prezzo`,
+`importo`, `abbinato`, `residuo`, `scaduto`, `annullato`, `annullato_da_betfair`, `prezzo_medio`) possono essere **None**
+quando Betfair non li manda (BSP prima della riconciliazione, ordini del sito senza importi): il libro ordini e il P&L
+devono trattarli come ASSENTI (mai 0) e guardare `campi_assenti`.
 
 **Eventi**: `mercato_chiuso`, `flusso_muto`, `capacita_cambiata` implementati nel gestore dei prezzi. `sessione_rifatta` e
 `book_aggiornato` ⊘: il primo e' della sessione (W1-A1), il secondo e' gia' il consumatore (`aggiungi_consumatore`).
@@ -346,3 +359,41 @@ eventi `mercato_chiuso`, `flusso_muto`, `capacita_cambiata`; `FlussoOrdiniConto`
 - suite intera (UNA volta, alla fine): **11.730 verdi, 1 rosso, 65 saltati, 6 xfail** in 809 s; l'unico rosso e' la guardia K1
   (`test_valuta_k1_2026_09_26.py::test_contratto_ogni_fonte_di_book_dello_stream_e_convertita`), da sbloccare con le due righe
   sopra all'integrazione.
+
+## 11. Seconda revisione (09/10, revisione di 91a19377: DA CORREGGERE, 10 punti)
+
+Commit nuovo sopra 91a19377 (storia non riscritta, nessun push). Nessun file esistente toccato. Righe sul codice finale.
+
+| Punto | Correzione (file:riga) | Test (file::nome) | Mutazioni rosse |
+|---|---|---|---|
+| 1. A3-1 tempesta | il backoff si azzera SOLO se la connessione caduta era su da oltre `VIVA_DOPO_S` = 60 s dalla sottoscrizione ("ha ricevuto dati" non basta): `flusso_ordini_conto.py:697` `_connessione_sana`, `:723`; `flusso.py:385` `_sana`, `:407`; attese `attesa_di_backoff` `flusso_ordini_conto.py:183` (2, 4, ... 60 s, valori di serie invariati; ora scalabili nei test), ultime attese nello stato | O::`test_backoff_si_azzera_solo_dopo_una_connessione_rimasta_su` (5 casi: immagine e chiusura subito, niente, 59 s, 61 s con e senza dati), `::test_tempesta_vera_immagine_e_chiusura_le_attese_crescono` (server TLS: immagine e chiusura a ogni giro, attese 0,05/0,1/0,2/0,4/0,4); FL::`test_backoff_della_connessione_si_azzera_solo_se_rimasta_su`, `::test_tempesta_vera_prezzi_immagine_e_chiusura_le_attese_crescono` | R5, R6, Y4, Y5, Z3, Z3b, Z4, Z4b, Z17 |
+| 2. A3-2 watchdog | la durata si valuta PRIMA di azzerare il riferimento: `flusso_ordini_conto.py:850` (in `_veglia` `:833`, un giro del watchdog ora e' un metodo); `flusso.py:691` (`veglia`) | O::`test_watchdog_su_una_connessione_su_da_ore_non_raddoppia_il_backoff` (su da 1 h poi muta: 2 s a ogni ripresa; muta da subito: cresce), FL::idem | Z1, Z2 |
+| 3. SLOT (decisione del coordinatore) | `flusso_ordini_conto.py:738` `_slot_libero`: la riserva NON vale per lo stream ordini (UNA connessione); apre con libere >= 1 o valore ignoto; con 0 aspetta `ATTESA_SLOT_S` = 30 s UNA volta e poi prova comunque (`:747`): mai in attesa per sempre; `:813` `MAX_CONNECTION_LIMIT_EXCEEDED` = backoff (tolti `PAUSA_SLOT_NEGATO_S` e `riserva_connessioni`); `:800` dopo ogni SUA autenticazione il valore vero va in `stato()["connessioni_libere_note"]` | O::`test_con_una_connessione_libera_o_valore_ignoto_lo_stream_ordini_apre[1/5/None]`, `::test_con_zero_libere_aspetta_poi_ritenta_mai_in_attesa_per_sempre` (valore fermo a 0: un'attesa, poi apre; autenticazione con 7 libere -> 7), `::test_rifiuto_di_betfair_ritenta_con_il_backoff_e_poi_apre` (3 rifiuti: attese 0,05/0,1/0,2, alla 4a apre) | R16, R17, Y16, Z5, Z6 |
+| 4. N1 | `flusso.py:318` `risottoscrivi`: un errore di rete NON arriva a chi chiama (`:346`), lo stream si chiude e la connessione riparte da immagine PIENA con l'insieme nuovo (`_abbandona` `:356`, `_forza_immagine`); in piu' (prova S9 del revisore) se la libreria ricollega lo stream fermato DENTRO l'invio (`BetfairStream._send`: socket nuovo nel thread di chi chiama, che nessuno legge, budget 10) il socket si chiude (`:350`); una risottoscrizione di un piano piu' vecchio non vince (`:333`, generazione del piano) | FL::`test_risottoscrizione_fallita_non_solleva_e_riparte_da_immagine_piena` (stream VERO con RST all'invio: nessuna eccezione, ultima sottoscrizione = insieme intero senza clk, book dei mercati nuovi), `::test_stream_ricollegato_dentro_l_invio_si_chiude_nessuna_connessione_orfana` (nessun `BetfairStream` aperto oltre a quello della connessione), `::test_risottoscrizione_di_un_piano_vecchio_non_vince_su_quella_nuova` | Z7, Z8, Z9, Z12, M20 |
+| 5. N2 | `flusso.py:562` (insieme coperto = insieme PIANIFICATO, aggiornato prima della rete; `_aggiorna_coperti` `:789`, anche a ogni apertura/chiusura), `:850` (`_consegna`: un book di un mercato fuori non si scrive ne' si consegna, `conti["book_fuori_insieme"]`; `_libri` sotto un lock suo, mai tenuto in rete o nei callback) | FL::`test_book_in_volo_di_un_mercato_tolto_non_si_scrive_ne_si_consegna`, `::test_book_dei_mercati_non_piu_sottoscritti_escono` | Z10, Z11, R20 |
+| 6. M2 log | `ladder.py:586`: una riga per mercato al massimo ogni `LOG_ERRORE_OGNI_S` = 60 s (`Betfair/stream/flusso_prezzi.Promemoria`, riusata: `dovuto(chiave, adesso_s)`), con il totale degli errori; la riprova resta a ogni giro | FL::`test_errore_di_pubblicazione_permanente_una_riga_al_minuto_per_mercato` (290 giri in 58 s: 1 riga; dopo 60 s: 2) | Z16 |
+| 7. M3 meta | `ladder.py:567` senza book e senza meta: nessuna riprova (aspetta il push); `:569` con book e senza meta: 0,2 s poi intervalli doppi fino a `RIPROVA_META_MAX_S` = 5 s; `:337` un book nuovo (o `push_a_ogni_cambio` di chi impara il meta) fa riprovare subito | FL::`test_senza_meta_e_senza_book_non_si_riprova_finche_non_arriva_un_push` (Y10), `::test_senza_meta_con_book_si_riprova_a_intervalli_crescenti_e_un_book_nuovo_riparte` | Y10, R10, Z14, Z15 |
+| 8. M5 riparo | `ladder.py:503` `_ripara_se_saltati` + `:392`: il contatore dei saltati si rilegge DOPO la ripubblicazione del riparo (finche' i mercati marcati non sono usciti non si rilegge): i salti che il riparo stesso provoca a un client lento non lo fanno ripartire | FL::`test_riparo_non_si_autoalimenta_con_un_client_lento` (ogni invio saltato, nessun book nuovo: 1 riparo, poi niente) | Z13, Y13, R13 |
+| 9a. A1 (Y1) | `flusso_ordini_conto.py:900` (solo gli EXECUTABLE diventano non confermati) | O::`test_eseguito_noto_resta_confermato_dopo_una_ripartenza_da_zero` | Y1 |
+| 9b. M1 soglia (Y8) | soglia 3 heartbeat, numero SCRITTO nel test (3 x 5 s): a 14,99 s non chiude, a 15,01 s chiude | O::`test_watchdog_ordini_soglia_di_3_heartbeat_contati_dalla_sottoscrizione` | Y8, R7 |
+| 9c. Y6/Y7 | NON equivalenti: il test mette l'ultimo battito della connessione PRECEDENTE 60 s prima della sottoscrizione; contando da li' il watchdog chiuderebbe una connessione appena sottoscritta | O::idem (Y6), FL::`test_watchdog_prezzi_soglia_di_3_heartbeat_contati_dalla_sottoscrizione` (Y7) | Y6, Y7 |
+
+**DIVERGENZA da confermare con l'utente (punto 3, regola decisa dal coordinatore)**: lo stream ordini del conto non
+lascia la riserva agli altri processi (oggi il calcio la lascia per scanner/scalper/tennis, `frammenti_mercato.py:91`): con
+1 connessione libera la prende; con 0 dichiarate prova lo stesso dopo 30 s (Betfair rifiuta senza togliere lo slot a
+nessuno, poi backoff fino a 60 s). Effetto possibile: nel caso peggiore di oggi (10/10, referto 8.1) lo stream ordini
+prende l'ultima connessione libera prima di un frammento del calcio o di uno shard dello scanner, che allora vedono
+`MAX_CONNECTION_LIMIT_EXCEEDED` e ripiegano (pausa 300 s del calcio, REST dello scanner). Le opzioni del par. 8.1 restano.
+
+**Mutazioni**: **97 mutazioni, 97 rosse, 97 ripristinate** (sha256 prima = dopo per ognuna;
+`python ARCHITETTURA_2026-10/ondata1/W1-A2/falsifica.py`, esito in `falsifica_esito.jsonl`, rieseguito per intero sul codice
+finale). Aggiunte: le 16 del revisore (`mut.py` Y1-Y16; testi adeguati dove il punto e' cambiato: Y4, Y5, Y6 (rientro), Y8,
+Y10, Y11 = R12, Y13, Y16 sulla regola nuova "con 1 libera NON apre") e 19 nuove (Z1-Z17,
+con Z3b/Z4b che provano da SOLA la tempesta sul server TLS); aggiornati i testi di M20, R5, R6, R7, R10, R12, R13, R16, R17,
+R20 (codice cambiato). Il programma ora legge e scrive i file senza tradurre i fine riga (`newline=""`: su Windows il
+ripristino sarebbe stato in CRLF; lo sha256 lo avrebbe detto).
+
+**Numeri** (rieseguiti di persona sul codice finale):
+- test del comparto: 164, tutti verdi (erano 138: i 6 test che fissavano le regole vecchie di backoff e slot riscritti sulle nuove, piu' i test nuovi della tabella; i veloci in ~3 min su macchina carica perche' i test sul server TLS aspettano backoff reali);
+- parita' di serie: VERDI nella suite finale (`test_payload_e_firma_identici_su_ogni_book[35760084]` e `[35797769]` 1 su 7, `test_sequenza_del_topic_identica_al_worker_di_oggi[calcio]` e `[tennis]`, `test_cadenza_20ms_contro_200ms_su_registrazione`; rapporto junit letto riga per riga);
+- suite intera (UNA volta, alla fine): **11.756 verdi, 1 rosso, 65 saltati, 6 xfail** in 639 s; l'unico rosso e' ancora la guardia K1 (`test_valuta_k1_2026_09_26.py::test_contratto_ogni_fonte_di_book_dello_stream_e_convertita`), da sbloccare con le due righe del par. 10 all'integrazione.

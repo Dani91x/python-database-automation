@@ -44,6 +44,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Set, Tuple
 
+from Betfair.stream.flusso_prezzi import Promemoria
 from Betfair.stream.ladder_canale import StatoLadder, updated_ms_del_book
 from Betfair.stream.recorder import serialize_book
 
@@ -55,11 +56,20 @@ INTERVALLO_MIN_MS = 20
 #: canale che torna ad avere client (oggi: il giro di 200 ms del worker)
 CONTROLLO_CANALE_S = 0.2
 #: un mercato con il book ma ancora senza metadati (evento non ancora noto alla
-#: sessione) resta in attesa e si riprova ogni tanto: mai perso, mai un giro a vuoto
+#: sessione) resta in attesa e si riprova: dopo 0,2 s, poi a intervalli doppi fino a
+#: ``RIPROVA_META_MAX_S`` (mai perso, mai un giro a vuoto a 5 Hz per sempre); ogni
+#: book nuovo (``consumatore``/``push_a_ogni_cambio``) riparte da 0,2 s. Chi impara
+#: i metadati dopo il book chiama ``push_a_ogni_cambio(market_id)``. Un mercato
+#: SENZA book e senza meta non si riprova affatto: aspetta il prossimo push.
 RIPROVA_META_S = 0.2
+RIPROVA_META_MAX_S = 5.0
 #: dopo un invio SALTATO dal canale (``local_channel``: tetto di 64 invii in volo per
-#: client) tutti i mercati si ripubblicano, al massimo una volta ogni tanto
+#: client) tutti i mercati si ripubblicano, al massimo una volta ogni tanto; il
+#: contatore si rilegge DOPO la ripubblicazione (i salti che essa stessa provoca a un
+#: client lento non fanno ripartire il riparo: niente ciclo che si autoalimenta)
 RIPARO_MIN_S = 0.5
+#: un mercato la cui pubblicazione fallisce di continuo si logga al massimo cosi' spesso
+LOG_ERRORE_OGNI_S = 60.0
 TOPIC_LADDER = "ladder"
 
 Sport = Literal["calcio", "tennis"]
@@ -243,6 +253,7 @@ class _Mercato:
     libro: Any = None                      # ultimo MarketBook ricevuto (consumatore)
     ultimo_aperto: Any = None              # ultimo MarketBook NON chiuso ricevuto
     riprova_dal: Optional[float] = None    # in attesa (meta assente, errore) fino a
+    tentativi_meta: int = 0                # riprove consecutive senza meta (backoff)
     libro_serializzato_da: Any = None      # il MarketBook da cui viene ``serializzato``
     serializzato: Optional[Dict[str, Any]] = None
     firma_canale: Optional[str] = None
@@ -281,6 +292,11 @@ class LadderEvento:
         self._saltati = saltati
         self._saltati_visti: Optional[int] = None
         self._ultimo_riparo: Optional[float] = None
+        #: mercati marcati dall'ultimo riparo e non ancora ripubblicati: finche' ce ne
+        #: sono, il contatore dei saltati non si rilegge (M5)
+        self._in_riparo: Set[str] = set()
+        #: righe di errore di pubblicazione: una per mercato al piu' ogni minuto (M2)
+        self._log_errori = Promemoria(LOG_ERRORE_OGNI_S)
         self._cond = threading.Condition()
         self._mercati: Dict[str, _Mercato] = {}
         self._sporchi: Set[str] = set()
@@ -318,6 +334,9 @@ class LadderEvento:
         with self._cond:
             self.conti["push"] += 1
             voce = self._voce(mid)
+            if voce.tentativi_meta:             # in attesa del meta: book (o meta) nuovo,
+                voce.tentativi_meta = 0         # si riprova subito
+                voce.riprova_dal = None
             if mid in self._sporchi:
                 self.conti["fusi"] += 1
             else:
@@ -330,6 +349,7 @@ class LadderEvento:
         with self._cond:
             self._mercati.pop(str(market_id), None)
             self._sporchi.discard(str(market_id))
+            self._in_riparo.discard(str(market_id))
 
     # ------------------------------------------------------------ uscite
     def snapshot(self, market_id: str) -> Dict[str, Any]:
@@ -364,6 +384,15 @@ class LadderEvento:
             quando = self._pubblica_mercato(mid, ora)
             if quando is not None:
                 rimandati.append((mid, quando))
+        if self._in_riparo:
+            with self._cond:
+                self._in_riparo.difference_update(pronti)
+                self._in_riparo.intersection_update(self._mercati)
+                if not self._in_riparo:
+                    # M5: il contatore si rilegge DOPO la ripubblicazione del riparo
+                    n = self._leggi_saltati()
+                    if n is not None:
+                        self._saltati_visti = n
         if rimandati:
             with self._cond:
                 for mid, quando in rimandati:
@@ -476,25 +505,35 @@ class LadderEvento:
         indietro perde il fotogramma: ``local_channel.py`` ``publish``), la firma
         "gia' pubblicato" non e' piu' vera per tutti: ogni mercato si ripubblica (al
         massimo ogni ``RIPARO_MIN_S``), come un fotogramma chiave."""
-        if self._saltati is None:
+        if self._saltati is None or self._in_riparo:
+            return                    # riparo in corso: si rilegge a ripubblicazione finita
+        n = self._leggi_saltati()
+        if n is None:
             return
-        try:
-            n = int(self._saltati())
-        except Exception as e:  # noqa: BLE001 - contatore illeggibile: nessun riparo
-            logger.warning("[ladder] contatore dei saltati illeggibile: %s", e)
-            return
-        if self._saltati_visti is not None and n > self._saltati_visti and (
-                self._ultimo_riparo is None or ora - self._ultimo_riparo >= RIPARO_MIN_S):
+        if self._saltati_visti is not None and n > self._saltati_visti:
+            if self._ultimo_riparo is not None and ora - self._ultimo_riparo < RIPARO_MIN_S:
+                return                # riparo gia' fatto da poco: il prossimo giro conta ancora
             self._ultimo_riparo = ora
             self.conti["ripari"] += 1
             for mid, voce in self._mercati.items():
                 voce.firma_canale = None
+                self._in_riparo.add(mid)
                 if mid not in self._sporchi:
                     self._sporchi.add(mid)
                     voce.sporco_dal = ora
-        elif self._saltati_visti is not None and n > self._saltati_visti:
-            return                    # riparo gia' fatto da poco: il prossimo giro conta ancora
+            if self._in_riparo:
+                return                # il contatore si rilegge DOPO la ripubblicazione
         self._saltati_visti = n
+
+    def _leggi_saltati(self) -> Optional[int]:
+        """Il contatore degli invii saltati dal canale, o None se illeggibile."""
+        if self._saltati is None:
+            return None
+        try:
+            return int(self._saltati())
+        except Exception as e:  # noqa: BLE001 - contatore illeggibile: nessun riparo
+            logger.warning("[ladder] contatore dei saltati illeggibile: %s", e)
+            return None
 
     def _scaduti(self, ora: float) -> Tuple[List[str], Optional[float]]:
         """(mercati da pubblicare adesso, prossima scadenza). Sotto ``_cond``."""
@@ -525,9 +564,11 @@ class LadderEvento:
         try:
             if self._meta(mid) is None:
                 if self._libro_corrente(mid, voce) is None:
-                    return None
+                    return None                   # niente book: si aspetta il prossimo push
                 self.conti["senza_meta"] += 1
-                return ora + RIPROVA_META_S       # il book c'e': si aspetta il meta
+                voce.tentativi_meta += 1          # il book c'e': si aspetta il meta (backoff)
+                return ora + min(RIPROVA_META_MAX_S,
+                                 RIPROVA_META_S * (2 ** min(voce.tentativi_meta - 1, 10)))
             v = self._versione(mid)
             if v is None:
                 return None
@@ -542,9 +583,13 @@ class LadderEvento:
             self._pubblica(self._topic, uscita)
         except Exception as e:  # noqa: BLE001 - un mercato non blocca gli altri del lotto
             self.conti["errori"] += 1
-            logger.warning("[ladder] pubblicazione KO %s (si riprova): %s", mid, e)
+            if self._log_errori.dovuto(mid, ora):
+                logger.warning("[ladder] pubblicazione KO %s (si riprova; %d errori in tutto, "
+                               "una riga al massimo ogni %.0f s per mercato): %s",
+                               mid, int(self.conti["errori"]), LOG_ERRORE_OGNI_S, e)
             return ora + max(self._intervallo, RIPROVA_META_S)
         voce.riprova_dal = None
+        voce.tentativi_meta = 0
         voce.firma_canale = sig
         voce.ultima_pub = ora
         if voce.sporco_dal is not None:

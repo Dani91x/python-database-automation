@@ -112,8 +112,8 @@ Correzioni (dettaglio, file:riga, test e mutazioni nel referto par. 10):
   `ordini_non_confermati()`; torna confermato alla prima notizia dallo stream.
 - **Posizioni**: una `fullImage` di mercato SOSTITUISCE le posizioni del mercato (base del P&L del comparto C).
 - **Importi assenti**: None (mai 0) e dichiarati in `OrdineDalContoEsteso.campi_assenti`.
-- **Backoff** azzerato dopo una connessione sana (ocm/mcm ricevuti o su oltre `VIVA_DOPO_S` = 60 s), nei due moduli:
-  DIVERGENZA MIGLIORATIVA dichiarata rispetto a `frammenti_mercato.py` di oggi (che non lo azzera mai).
+- **Backoff** azzerato dopo una connessione sana, nei due moduli: DIVERGENZA MIGLIORATIVA dichiarata rispetto a
+  `frammenti_mercato.py` di oggi (che non lo azzera mai). "Sana" ristretta dalla seconda revisione (par. 12).
 - **Watchdog** nei due moduli: connessione su senza NESSUN messaggio oltre 3 heartbeat (`BATTITI_WATCHDOG`, la soglia
   del "muto" dell'app; Betfair dice 2 = "forse disconnesso") -> socket chiuso, ripresa con `initialClk`/`clk`; evento
   `flusso_muto` nel gestore dei prezzi.
@@ -125,8 +125,7 @@ Correzioni (dettaglio, file:riga, test e mutazioni nel referto par. 10):
   intero; risottoscrizioni fuori dal lock del gestore; connessione e autenticazione fuori dal lock della connessione).
 - **Eventi** del contratto nel gestore dei prezzi: `aggiungi_osservatore(cb)` con `mercato_chiuso`, `flusso_muto`,
   `capacita_cambiata`.
-- **Slot di connessione** (stream ordini): con `disponibili()` <= riserva (1) NON apre e lo dice (`slot="in_attesa"`);
-  un rifiuto di Betfair mette in pausa 300 s (`slot="negato"`). Default prudente; la scelta resta all'utente (referto 8.1).
+- **Slot di connessione** (stream ordini): regola SOSTITUITA dalla seconda revisione (par. 12).
 - **Sessione**: `SessioneConSegnalazione.segnala_sessione_morta(motivo)` (estensione proposta) se c'e', altrimenti
   `rinnova_se_serve()`; nei due moduli.
 - **Potatura**: ordini EXECUTION_COMPLETE oltre `TETTO_COMPLETATI` (5000); book dei mercati non piu' sottoscritti.
@@ -134,3 +133,29 @@ Correzioni (dettaglio, file:riga, test e mutazioni nel referto par. 10):
 - Orologio MONOTONO per vivo/muto dello stream ordini; ASCII; codice morto tolto.
 
 Test nuovi: `tests/test_a2_ordini_revisione.py`, `tests/test_a2_flusso_ladder_revisione.py`.
+
+## 12. Dopo la seconda revisione (09/10)
+
+Correzioni (dettaglio, file:riga, test e mutazioni nel referto par. 11):
+
+- **Backoff** (A3-1): si azzera SOLO se la connessione caduta era rimasta su oltre `VIVA_DOPO_S` (60 s) dalla
+  sottoscrizione; "ha ricevuto dati" non basta piu' (un server che manda l'immagine e chiude a ogni giro faceva una
+  tempesta di riconnessioni). Attese 2, 4, 8, ... 60 s (`attesa_di_backoff`), le ultime in `stato()["ultime_attese_s"]`
+  (stream ordini) e `stato()["frammenti"][i]["ultime_attese_s"]` (gestore dei prezzi).
+- **Watchdog** (A3-2): la durata della connessione si valuta PRIMA di azzerare il riferimento della sottoscrizione: una
+  connessione su da ore che diventa muta riparte dal backoff minimo. Un giro del watchdog e' un metodo (`_veglia`,
+  `veglia`) provato con l'orologio finto: soglia 3 heartbeat contata dalla sottoscrizione.
+- **Slot dello stream ordini** (decisione del coordinatore, DIVERGENZA da confermare con l'utente): UNA connessione, la
+  riserva NON vale per lui. Apre con libere >= 1 o valore ignoto; con 0 aspetta `ATTESA_SLOT_S` (30 s) UNA volta e poi
+  prova comunque (mai "in attesa" per sempre); `MAX_CONNECTION_LIMIT_EXCEEDED` = nuovo tentativo con il backoff (non piu'
+  300 s fissi). Dopo ogni SUA autenticazione il valore vero (`connectionsAvailable`) va in `connessioni_libere_note`.
+- **Risottoscrizione** (N1): `imposta_mercati` non solleva MAI per un errore di rete; la connessione si chiude e riparte
+  da immagine PIENA con l'insieme nuovo. Se la libreria ricollega lo stream fermato DENTRO l'invio
+  (`BetfairStream._send`), quel socket orfano si chiude (`conti["connessioni_orfane_chiuse"]`). Una risottoscrizione di un
+  piano piu' vecchio non vince su quella nuova (generazione del piano).
+- **Book** (N2): `book()` e i consumatori vedono solo i mercati dell'insieme PIANIFICATO; un book in volo di un mercato
+  tolto non si scrive ne' si consegna (`conti["book_fuori_insieme"]`).
+- **Ladder**: un mercato che fallisce sempre si logga al massimo una volta al minuto (`flusso_prezzi.Promemoria`, M2);
+  senza book e senza meta non si riprova (aspetta il push), con book e senza meta si riprova a 0,2 s e poi a intervalli
+  doppi fino a 5 s, e un book nuovo fa riprovare subito (M3); dopo un riparo il contatore dei saltati si rilegge a
+  ripubblicazione finita, cosi' un client lento non tiene il riparo in un ciclo (M5).

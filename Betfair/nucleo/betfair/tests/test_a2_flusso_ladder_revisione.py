@@ -6,6 +6,11 @@ X18) e le prove delle correzioni: un errore di pubblicazione non perde il mercat
 il lotto, meta in ritardo, chiusura sull'ULTIMO book ricevuto, riparo dopo invii
 saltati dal canale, nessuna rete sotto i lock della consegna (niente deadlock),
 backoff azzerato, watchdog, eventi del contratto, potatura dei book.
+Seconda revisione (09/10): backoff azzerato SOLO dopo una connessione rimasta su oltre
+``VIVA_DOPO_S`` (anche dal watchdog), soglia del watchdog dalla sottoscrizione,
+``imposta_mercati`` mai un errore di rete a chi chiama (immagine piena dopo), socket
+ricollegato dentro l'invio chiuso, nessun book di mercati tolti, riparo che non si
+autoalimenta, meta assente senza giri a vuoto, una riga di log al minuto per mercato.
 """
 from __future__ import annotations
 
@@ -24,7 +29,7 @@ from Betfair.nucleo.betfair import profili as P
 from Betfair.stream.recorder import serialize_book
 from Betfair.stream.valuta import CambioGbpEur
 
-from .test_a2_finti import SessioneFinta, attendi, server_stream  # noqa: F401
+from .test_a2_finti import CHIUDI, SessioneFinta, attendi, server_stream  # noqa: F401
 from .test_a2_flusso import CAMBIO, MODELLO, PT0, _gestore, _ids, _risposta_immagine, immagine
 from .test_a2_ladder import MID, Libri, Orologio
 
@@ -153,6 +158,97 @@ def test_invii_saltati_dal_canale_ripubblicano_tutto():
     assert len(pub) == 6 and lad.conti["ripari"] == 2
 
 
+def test_riparo_non_si_autoalimenta_con_un_client_lento():
+    """(M5, seconda revisione) Un client indietro salta OGNI invio: il riparo
+    ripubblica una volta e rilegge il contatore DOPO; senza book nuovi non riparte."""
+    _lb, a, b = _due_mercati()
+    ora = Orologio()
+    pub: List[str] = []
+    saltati = {"n": 0}
+
+    def pubblica(t: str, riga: Dict[str, Any]) -> None:
+        pub.append(riga["market_id"])
+        saltati["n"] += 1                                    # il client lento salta anche questo
+    lad = L.LadderEvento(L.profilo_ladder("calcio", {}), meta=_meta2, pubblica=pubblica,
+                         saltati=lambda: saltati["n"], orologio=ora)
+    lad.consumatore(a)
+    lad.consumatore(b)
+    lad.esegui_scaduti()
+    assert len(pub) == 2
+    ora.t += 1.0
+    lad.esegui_scaduti()
+    assert len(pub) == 4 and lad.conti["ripari"] == 1
+    for _ in range(10):
+        ora.t += 1.0
+        lad.esegui_scaduti()
+    assert len(pub) == 4 and lad.conti["ripari"] == 1
+
+
+def test_senza_meta_e_senza_book_non_si_riprova_finche_non_arriva_un_push():
+    """(M3, Y10) Nessun book e nessun meta: il mercato NON si riprova a vuoto."""
+    ora = Orologio()
+    chiamate = {"meta": 0}
+
+    def meta(mid: str) -> Optional[L.MetaLadder]:
+        chiamate["meta"] += 1
+        return None
+    lad = L.LadderEvento(L.profilo_ladder("calcio", {}), meta=meta, pubblica=lambda t, r: None,
+                         sorgente=lambda mid: None, orologio=ora)
+    lad.push_a_ogni_cambio(MID)
+    assert lad.esegui_scaduti() is None
+    for _ in range(10):
+        ora.t += 1.0
+        assert lad.esegui_scaduti() is None
+    assert lad.stato()["in_attesa"] == 0 and lad.conti["senza_meta"] == 0
+    assert chiamate["meta"] == 1
+
+
+def test_senza_meta_con_book_si_riprova_a_intervalli_crescenti_e_un_book_nuovo_riparte():
+    """(M3) Il book c'e', il meta no: 0,2 s, poi intervalli doppi fino a 5 s (mai 5
+    giri al secondo per sempre); un book nuovo fa riprovare subito da 0,2 s."""
+    lb = Libri()
+    ora = Orologio()
+    lad = L.LadderEvento(L.profilo_ladder("calcio", {}), meta=lambda m: None,
+                         pubblica=lambda t, r: None, orologio=ora)
+    lad.consumatore(lb.immagine())
+    attese: List[float] = []
+    for _ in range(8):
+        prossima = lad.esegui_scaduti()
+        attese.append(round(prossima - ora.t, 3))
+        ora.t = prossima
+    assert attese == [0.2, 0.4, 0.8, 1.6, 3.2, 5.0, 5.0, 5.0]
+    lad.consumatore(lb.prezzo(1.9, 7.0))
+    assert round(lad.esegui_scaduti() - ora.t, 3) == 0.2
+
+
+def test_errore_di_pubblicazione_permanente_una_riga_al_minuto_per_mercato(caplog):
+    """(M2) Un mercato che solleva SEMPRE: al massimo una riga di log al minuto (si
+    riprova lo stesso a ogni giro); l'altro mercato esce."""
+    _lb, a, b = _due_mercati()
+    ora = Orologio()
+    pub: List[str] = []
+
+    def pubblica(t: str, riga: Dict[str, Any]) -> None:
+        if riga["market_id"] == MID:
+            raise RuntimeError("canale rotto")
+        pub.append(riga["market_id"])
+    lad = L.LadderEvento(L.profilo_ladder("calcio", {}), meta=_meta2, pubblica=pubblica,
+                         orologio=ora)
+    lad.consumatore(a)
+    lad.consumatore(b)
+
+    def righe() -> int:
+        return len([r for r in caplog.records if "pubblicazione KO" in r.getMessage()])
+    with caplog.at_level("WARNING", logger=L.logger.name):
+        for _ in range(290):                                # 58 s a passi di 0,2 s
+            lad.esegui_scaduti()
+            ora.t += 0.2
+        assert righe() == 1 and lad.conti["errori"] >= 250 and pub == ["1.777"]
+        ora.t += 3.0
+        lad.esegui_scaduti()
+        assert righe() == 2
+
+
 # ---------------------------------------------------------------------------
 # flusso: concorrenza
 # ---------------------------------------------------------------------------
@@ -164,7 +260,8 @@ def test_consegna_non_si_blocca_se_una_connessione_tiene_il_suo_lock():
     visti: List[Any] = []
     g.aggiungi_consumatore(visti.append)
     g.avvia()
-    book = Libri().immagine()
+    book = copy.deepcopy(Libri().immagine())
+    book.market_id = "1.1"                                   # mercato dell'insieme pianificato
     c = F._Connessione(g, 1, {"1.1"})                        # il thread NON parte
     c.stream = type("S", (), {"running": True})()
     c._sottoscrivi = lambda s, ripresa: None
@@ -191,6 +288,7 @@ def test_consegna_non_aspetta_il_lock_del_gestore():
     visti: List[Any] = []
     g.aggiungi_consumatore(visti.append)
     g.avvia()
+    g._coperti = frozenset({MID})                            # come dopo imposta_mercati([MID])
     g._lock.acquire()
     try:
         g._inoltra([Libri().immagine()])
@@ -291,12 +389,13 @@ class _PausaFinta:
         pass
 
 
-@pytest.mark.parametrize("sana,massimo", [(True, 2.0), (False, 60.0)])
-def test_backoff_della_connessione_si_azzera_dopo_dati(sana, massimo):
-    """DIVERGENZA MIGLIORATIVA dichiarata rispetto a ``FrammentoMarketStream.run``."""
+def _stream_prezzi_che_cade(ora: Orologio, su_per_s: float, con_dati: bool, veglia: Any = None):
     msg = dict(immagine(["1.1"], 1), id=7)
 
     class StreamFinto:
+        """Uno stream della libreria che riceve l'immagine (se ``con_dati``), resta su
+        ``su_per_s`` secondi dell'orologio finto e cade (o lo chiude il watchdog)."""
+
         def __init__(self, li: Any) -> None:
             self.li = li
             self.running = False
@@ -307,18 +406,99 @@ def test_backoff_della_connessione_si_azzera_dopo_dati(sana, massimo):
 
         def start(self) -> None:
             self.running = True
-            if sana:
+            if con_dati:
                 self.li.on_data(json.dumps(msg))
+            ora.t += su_per_s
+            if veglia is not None:
+                assert veglia() is True and self.running is False
+                return                      # come la libreria: la lettura finisce dopo stop()
             raise ConnectionError("caduta")
 
         def stop(self) -> None:
             self.running = False
-    g = F.GestoreFlussi(SessioneFinta(), P.profilo("runner_tennis", {}),
-                        crea_stream=lambda c, i, li: StreamFinto(li), cambio=CambioGbpEur(fisso=CAMBIO))
+    return StreamFinto
+
+
+#: le attese di serie, a backoff che cresce: 2, 4, 8, 16, 32, 60, 60
+CRESCE = [2.0, 4.0, 8.0, 16.0, 32.0, 60.0, 60.0]
+AZZERATO = [2.0] * 7
+
+
+def _gestore_con(ora: Orologio, classe: Any) -> F.GestoreFlussi:
+    return F.GestoreFlussi(SessioneFinta(), P.profilo("runner_tennis", {}),
+                           crea_stream=lambda c, i, li: classe(li),
+                           cambio=CambioGbpEur(fisso=CAMBIO), orologio=ora)
+
+
+@pytest.mark.parametrize("con_dati,su_per_s,attese", [
+    (True, 0.0, CRESCE),        # tempesta: immagine e chiusura a ogni giro (seconda revisione A3-1)
+    (False, 0.0, CRESCE),       # cade subito senza niente
+    (True, 59.0, CRESCE),       # su meno di VIVA_DOPO_S = 60 s: non basta
+    (True, 61.0, AZZERATO),     # su oltre 60 s: sana
+    (False, 61.0, AZZERATO),    # su oltre 60 s anche senza book (solo heartbeat): sana
+])
+def test_backoff_della_connessione_si_azzera_solo_se_rimasta_su(con_dati, su_per_s, attese):
+    """DIVERGENZA MIGLIORATIVA dichiarata rispetto a ``FrammentoMarketStream.run``."""
+    ora = Orologio(1000.0)
+    g = _gestore_con(ora, _stream_prezzi_che_cade(ora, su_per_s, con_dati))
     c = F._Connessione(g, 1, {"1.1"})
-    c._pausa = _PausaFinta(c, 12)
+    c._pausa = _PausaFinta(c, 7)
     c._ciclo()
-    assert max(c._pausa.attese[-3:]) == massimo and c.riconnessioni == 12
+    assert c._pausa.attese == attese and list(c.attese) == attese and c.riconnessioni == 7
+
+
+@pytest.mark.parametrize("su_per_s,attese", [(3600.0, AZZERATO), (0.0, CRESCE)])
+def test_watchdog_su_una_connessione_su_da_ore_non_raddoppia_il_backoff(su_per_s, attese):
+    """(A3-2) La connessione lavora per un'ora e poi diventa muta: il watchdog la
+    chiude e la ripresa parte dal backoff minimo. Muta dalla sottoscrizione: cresce."""
+    ora = Orologio(1000.0)
+    tieni: Dict[str, Any] = {}
+
+    def veglia() -> bool:
+        ora.t += 3 * 5.0 + 1.0                      # muta oltre 3 heartbeat da 5 s
+        return tieni["g"].veglia() == [1]
+    g = _gestore_con(ora, _stream_prezzi_che_cade(ora, su_per_s, True, veglia))
+    c = F._Connessione(g, 1, {"1.1"})
+    g._connessioni = [c]
+    tieni["g"] = g
+    c._pausa = _PausaFinta(c, 7)
+    c._ciclo()
+    assert c._pausa.attese == attese and g.conti["riavvii_watchdog"] == 7
+
+
+def test_watchdog_prezzi_soglia_di_3_heartbeat_contati_dalla_sottoscrizione():
+    """(M1, Y7) Il battito della connessione PRECEDENTE non conta: si parte dalla
+    sottoscrizione; soglia 3 heartbeat da 5 s."""
+    ora = Orologio(1000.0)
+    g = _gestore("runner_tennis", orologio=ora)
+    c = F._Connessione(g, 1, {"1.1"})                        # il thread NON parte
+    s = SessioneFinta().client().streaming.create_stream(unique_id=1, listener=c.listener)
+    s._running = True                                        # BetfairStream vero, senza socket
+    c.stream = s
+    g._connessioni = [c]
+    c.listener.heartbeat_ms_server = 5000
+    c.sottoscritta_mono = 1000.0
+    c.listener.ultimo_msg_mono = 940.0
+    ora.t = 1000.0 + 3 * 5.0 - 0.01
+    assert g.veglia() == [] and s.running is True
+    ora.t = 1000.0 + 3 * 5.0 + 0.01
+    assert g.veglia() == [1] and s.running is False
+
+
+def test_tempesta_vera_prezzi_immagine_e_chiusura_le_attese_crescono(server_stream, monkeypatch):
+    """(A3-1, server TLS) Betfair accetta, manda l'immagine e chiude, ogni volta: le
+    attese raddoppiano (prima della correzione restavano al minimo: tempesta)."""
+    monkeypatch.setattr(F, "BACKOFF_MIN_S", 0.05)
+    monkeypatch.setattr(F, "BACKOFF_MAX_S", 0.4)
+    srv = server_stream(lambda n, m, k: [immagine(m["marketFilter"]["marketIds"], k), CHIUDI])
+    g = _gestore("runner_tennis")
+    try:
+        g.imposta_mercati(_ids(0, 3))
+        assert attendi(lambda: len(g.stato()["frammenti"][0]["ultime_attese_s"]) >= 5)
+        assert g.stato()["frammenti"][0]["ultime_attese_s"][:5] == [0.05, 0.1, 0.2, 0.4, 0.4]
+        assert len(srv.sottoscrizioni) >= 5
+    finally:
+        g.ferma()
 
 
 def test_watchdog_del_flusso_muto_riprende_con_clk_ed_emette_l_evento(server_stream):
@@ -440,3 +620,148 @@ def test_no_session_sulla_connessione_dei_prezzi_si_segnala(server_stream, monke
         assert auth[1]["session"] == "token-dopo-segnalazione"
     finally:
         g.ferma()
+
+
+# ---------------------------------------------------------------------------
+# seconda revisione: N1 (rete mai a chi chiama), connessione orfana, N2 (book stantii)
+# ---------------------------------------------------------------------------
+class _StreamCheFallisce:
+    """Uno stream VERO della libreria, con l'invio della risottoscrizione che trova il
+    socket morto (RST) dopo che la connessione era su (prova S8 del revisore)."""
+
+    def __init__(self, reale: Any, stato: Dict[str, Any]) -> None:
+        self._r = reale
+        self._st = stato
+
+    def __getattr__(self, nome: str) -> Any:
+        return getattr(self._r, nome)
+
+    def subscribe_to_markets(self, **kw: Any) -> int:
+        if self._st.get("rompi") and self._st.get("avviato"):
+            self._st["rompi"] = False
+            self._r.stop()
+            from betfairlightweight.exceptions import SocketError
+            raise SocketError("Socket [Errno 104] Connection reset by peer")
+        return self._r.subscribe_to_markets(**kw)
+
+    def start(self) -> None:
+        self._st["avviato"] = True
+        return self._r.start()
+
+
+def test_risottoscrizione_fallita_non_solleva_e_riparte_da_immagine_piena(server_stream,
+                                                                          monkeypatch):
+    """(N1) ``imposta_mercati`` non solleva per la rete: la connessione si chiude e
+    riparte da immagine PIENA con l'insieme nuovo (mai una ripresa con filtro diverso)."""
+    monkeypatch.setattr(F, "BACKOFF_MIN_S", 0.05)
+    monkeypatch.setattr(F, "BACKOFF_MAX_S", 0.2)
+    stato: Dict[str, Any] = {}
+    srv = server_stream(_risposta_immagine)
+    g = _gestore("runner_tennis", crea_stream=lambda client, uid, li: _StreamCheFallisce(
+        F._crea_stream_libreria(client, uid, li), stato))
+    try:
+        g.imposta_mercati(_ids(0, 3))
+        assert attendi(lambda: all(g.book(m) is not None for m in _ids(0, 3)))
+        stato["rompi"] = True
+        assert g.imposta_mercati(_ids(0, 3) + _ids(10, 12)) == set()      # nessuna eccezione
+        assert attendi(lambda: all(g.book(m) is not None for m in _ids(10, 12)))
+        ultima = srv.sottoscrizioni[-1][1]
+        assert sorted(ultima["marketFilter"]["marketIds"]) == sorted(_ids(0, 3) + _ids(10, 12))
+        assert (ultima.get("initialClk"), ultima.get("clk")) == (None, None)
+        assert g.stato()["conti"]["risottoscrizioni_fallite"] == 1
+    finally:
+        g.ferma()
+
+
+class _StreamMorente:
+    """Uno stream VERO il cui socket muore DOPO il controllo ``running`` di
+    ``risottoscrivi``: la libreria, nell'invio, lo ricollega nel thread di chi chiama
+    (``BetfairStream._send``). Si aspetta che la lettura della connessione sia finita,
+    cosi' il socket ricollegato non lo legge nessuno (prova S9 del revisore)."""
+
+    def __init__(self, reale: Any, stato: Dict[str, Any]) -> None:
+        self._r = reale
+        self._st = stato
+
+    def __getattr__(self, nome: str) -> Any:
+        return getattr(self._r, nome)
+
+    def subscribe_to_markets(self, **kw: Any) -> int:
+        if self._st.get("rompi") and self._st.get("avviato"):
+            self._st["rompi"] = False
+            conn = self._st["conn"]
+            prima = conn.riconnessioni
+            self._r.stop()
+            assert attendi(lambda: conn.riconnessioni > prima, secondi=5.0)
+        return self._r.subscribe_to_markets(**kw)
+
+    def start(self) -> None:
+        self._st["avviato"] = True
+        return self._r.start()
+
+
+def test_stream_ricollegato_dentro_l_invio_si_chiude_nessuna_connessione_orfana(server_stream,
+                                                                                 monkeypatch):
+    import gc
+
+    from betfairlightweight.streaming.betfairstream import BetfairStream
+    monkeypatch.setattr(F, "BACKOFF_MIN_S", 0.05)
+    monkeypatch.setattr(F, "BACKOFF_MAX_S", 0.2)
+    stato: Dict[str, Any] = {}
+    server_stream(_risposta_immagine)
+    g = _gestore("runner_tennis", crea_stream=lambda client, uid, li: _StreamMorente(
+        F._crea_stream_libreria(client, uid, li), stato))
+
+    def aperti() -> List[Any]:
+        return [o for o in gc.get_objects() if isinstance(o, BetfairStream)
+                and getattr(o, "_running", False) and getattr(o, "_socket", None) is not None]
+    try:
+        g.imposta_mercati(_ids(0, 3))
+        assert attendi(lambda: all(g.book(m) is not None for m in _ids(0, 3)))
+        stato["conn"] = g._vive()[0]
+        stato["rompi"] = True
+        assert g.imposta_mercati(_ids(0, 3) + _ids(10, 12)) == set()
+        assert attendi(lambda: all(g.book(m) is not None for m in _ids(10, 12)))
+        assert g.stato()["conti"]["connessioni_orfane_chiuse"] == 1
+        reale = g._vive()[0].stream._r
+        assert [o for o in aperti() if o is not reale] == []
+    finally:
+        g.ferma()
+
+
+def test_book_in_volo_di_un_mercato_tolto_non_si_scrive_ne_si_consegna(server_stream):
+    """(N2) Un book del mercato appena tolto, ancora in coda, non torna in ``book()`` e
+    non arriva ai consumatori."""
+    server_stream(_risposta_immagine)
+    g = _gestore("runner_tennis")
+    visti: List[str] = []
+    g.aggiungi_consumatore(lambda b: visti.append(str(b.market_id)))
+    try:
+        g.imposta_mercati(_ids(0, 3))
+        assert attendi(lambda: all(g.book(m) is not None for m in _ids(0, 3)))
+        vecchio = g.book("1.000002")
+        g.imposta_mercati(_ids(0, 2))
+        assert g.book("1.000002") is None
+        n = len(visti)
+        g._inoltra([vecchio])                                  # in volo: arriva DOPO il cambio
+        assert attendi(lambda: g.stato()["conti"]["book_fuori_insieme"] >= 1, secondi=3.0)
+        assert attendi(lambda: g._coda.empty())
+        time.sleep(0.2)
+        assert g.book("1.000002") is None
+        assert "1.000002" not in visti[n:]
+    finally:
+        g.ferma()
+
+
+def test_risottoscrizione_di_un_piano_vecchio_non_vince_su_quella_nuova():
+    """Due ``imposta_mercati`` concorrenti: il thread del piano VECCHIO arriva per
+    ultimo alla connessione; vince comunque il piano nuovo (generazione)."""
+    g = F.GestoreFlussi(SessioneFinta(), P.profilo("runner_calcio", {}),
+                        cambio=CambioGbpEur(fisso=CAMBIO))
+    c = F._Connessione(g, 1, {"1.1"})                        # il thread NON parte
+    c.stream = type("S", (), {"running": True})()
+    mandati: List[List[str]] = []
+    c._sottoscrivi = lambda s, ripresa: mandati.append(sorted(c.mercati))
+    assert c.risottoscrivi({"1.1", "1.2"}, 5) is True
+    assert c.risottoscrivi({"1.1"}, 4) is False
+    assert c.mercati == {"1.1", "1.2"} and mandati == [["1.1", "1.2"]]

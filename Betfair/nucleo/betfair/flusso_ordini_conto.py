@@ -55,19 +55,29 @@ Ripresa: la sottoscrizione si rifa' con ``initialClk``/``clk`` dell'ultimo
 messaggio completo (la libreria li tiene; con la segmentazione ``clk`` arriva
 solo a fine segmento): Betfair risponde ``RESUB_DELTA`` con i soli cambi. Dopo
 ``INVALID_CLOCK``, un messaggio non applicabile o senza uno dei due clk si riparte
-da immagine piena. Backoff fra i tentativi: 2, 4, 8, ... 60 s, AZZERATO quando la
-connessione ha ricevuto messaggi ``ocm`` o e' rimasta viva oltre ``VIVA_DOPO_S``;
-mai dopo ``ferma``.
+da immagine piena. Backoff fra i tentativi: 2, 4, 8, ... 60 s
+(``attesa_di_backoff``), AZZERATO SOLO se la connessione caduta era rimasta su
+oltre ``VIVA_DOPO_S`` dalla sottoscrizione: "ha ricevuto dati" NON basta (un
+server che manda l'immagine e chiude a ogni giro farebbe una tempesta di
+riconnessioni, seconda revisione A3-1); mai dopo ``ferma``. Le ultime attese
+sono in ``stato()["ultime_attese_s"]``.
 
 Salute e watchdog: ``stato()`` dice vivo/muto con la regola degli stream di mercato
 (``Betfair/stream/stream_muto.stato_da_battiti``: 3 heartbeat senza messaggi =
 muto; ``status`` 503 = latente), su orologio MONOTONO. Il watchdog chiude la
-connessione muta oltre la stessa soglia e la fa ripartire con ripresa.
+connessione muta oltre la stessa soglia e la fa ripartire con ripresa; la durata
+della connessione si valuta PRIMA di chiuderla (una connessione su da ore che
+diventa muta riparte dal backoff minimo, A3-2).
 
-Connessioni: prima di aprire si guarda ``connectionsAvailable`` (se chi crea il
-flusso passa ``disponibili``): con libere <= ``riserva_connessioni`` NON si apre (lo
-slot resta agli altri processi) e lo si dice nello stato; un rifiuto di Betfair
-(``MAX_CONNECTION_LIMIT_EXCEEDED``) mette in pausa ``PAUSA_SLOT_NEGATO_S``.
+Connessioni (decisione del coordinatore, 09/10, DIVERGENZA da confermare con
+l'utente): lo stream ordini usa UNA connessione e la riserva degli stream di mercato
+NON vale per lui. Se chi crea il flusso passa ``disponibili`` (``connectionsAvailable``
+letto da un'altra connessione): apre con libere >= 1 o valore ignoto; con 0 aspetta
+``ATTESA_SLOT_S`` UNA volta e poi prova comunque (il valore puo' essere vecchio e un
+tentativo con 0 libere non toglie lo slot a nessuno: Betfair rifiuta). Mai "in
+attesa" per sempre. Un rifiuto di Betfair (``MAX_CONNECTION_LIMIT_EXCEEDED``) fa
+ritentare con il backoff (2..60 s). Dopo ogni SUA autenticazione il valore vero
+(``connectionsAvailable`` della risposta) sostituisce quello letto.
 
 Entrate: una ``Sessione`` (``contratto.Sessione``; se offre anche
 ``segnala_sessione_morta(motivo)`` - ``SessioneConSegnalazione`` - la si usa dopo
@@ -85,6 +95,7 @@ import dataclasses
 import datetime as _dt
 import json
 import logging
+import collections
 import queue
 import threading
 import time
@@ -114,18 +125,17 @@ HEARTBEAT_MS = 5000
 #: la stessa soglia del "muto" di tutta l'app (un solo numero, mai due verdetti
 #: diversi) e un battito di margine contro il ritardo di un singolo heartbeat.
 BATTITI_WATCHDOG = _SM.BATTITI_PER_SOGLIA
-#: backoff della riconnessione (s): 2, 4, 8, ... fino a 60
+#: backoff della riconnessione (s): 2, 4, 8, ... fino a 60 (``attesa_di_backoff``)
 BACKOFF_MIN_S = 2.0
 BACKOFF_MAX_S = 60.0
-#: una connessione rimasta su oltre tanto (o che ha ricevuto ocm) azzera il backoff
+#: SOLO una connessione rimasta su oltre tanto dalla sottoscrizione azzera il backoff
+#: (non basta che abbia ricevuto dati: immagine e chiusura a ogni giro = tempesta)
 VIVA_DOPO_S = 60.0
+#: quante attese di backoff recenti si mostrano nello stato
+ATTESE_RICORDATE = 20
 #: ordini EXECUTION_COMPLETE tenuti in memoria (i piu' vecchi escono oltre il tetto)
 TETTO_COMPLETATI = 5000
-#: riserva di connessioni lasciata agli altri processi (come il calcio: frammenti_mercato.py:91)
-RISERVA_CONNESSIONI = 1
-#: dopo un rifiuto di Betfair nessun tentativo per tanto (come frammenti_mercato.py:96)
-PAUSA_SLOT_NEGATO_S = 300.0
-#: senza slot libero si riguarda ogni tanto
+#: con 0 connessioni libere dichiarate si aspetta tanto, UNA volta, poi si prova comunque
 ATTESA_SLOT_S = 30.0
 #: codici Betfair dopo i quali la sessione e' da rifare
 CODICI_SESSIONE = frozenset({"NO_SESSION", "INVALID_SESSION_INFORMATION",
@@ -168,6 +178,13 @@ def _ms(data: Optional[_dt.datetime]) -> Optional[int]:
         data = data.replace(tzinfo=_dt.timezone.utc)
     d = data - _EPOCA
     return d.days * 86_400_000 + d.seconds * 1000 + int(round(d.microseconds / 1000.0))
+
+
+def attesa_di_backoff(tentativo: int, minimo: float, massimo: float) -> float:
+    """Attesa prima del tentativo ``tentativo`` (1, 2, ...): ``minimo`` raddoppiato a
+    ogni caduta, al massimo ``massimo`` (2, 4, 8, ... 60 s con i valori di serie)."""
+    t = max(1, int(tentativo))
+    return float(min(massimo, minimo * (2 ** min(t - 1, 30))))
 
 
 def _num(v: Any) -> Optional[float]:
@@ -297,13 +314,15 @@ class ListenerConto(StreamListener):
     def __init__(self, su_ordini: Callable[[List[OrdineDalContoEsteso], Dict[str, Any]], None],
                  orologio_ms: Callable[[], float],
                  orologio_mono: Callable[[], float] = time.monotonic,
-                 fine_immagine: Optional[Callable[[Set[str]], None]] = None) -> None:
+                 fine_immagine: Optional[Callable[[Set[str]], None]] = None,
+                 su_connessioni: Optional[Callable[[int], None]] = None) -> None:
         super().__init__(output_queue=None, max_latency=None, lightweight=True,
                          order_updates_only=True)
         self._su_ordini = su_ordini
         self._ora_ms = orologio_ms
         self._mono = orologio_mono
         self._fine_immagine = fine_immagine
+        self._su_connessioni = su_connessioni
         self.ultimo_msg_mono: Optional[float] = None
         self.ultimo_dato_mono: Optional[float] = None
         self.autenticato = False
@@ -359,6 +378,8 @@ class ListenerConto(StreamListener):
             disp = d.get("connectionsAvailable")
             if isinstance(disp, int) and not isinstance(disp, bool):
                 self.connessioni_disponibili = disp
+                if self._su_connessioni is not None:
+                    self._su_connessioni(disp)      # il valore VERO della nostra autenticazione
             if d.get("statusCode") == "SUCCESS":
                 self.autenticato = True
                 self.ultimo_errore = None
@@ -471,7 +492,6 @@ class FlussoOrdiniContoBetfair:
                  includi_posizione_complessiva: bool = True,
                  partizione_per_strategia: bool = False,
                  disponibili: Optional[Callable[[], Optional[int]]] = None,
-                 riserva_connessioni: int = RISERVA_CONNESSIONI,
                  crea_stream: Callable[[Any, int, StreamListener], Any] = _crea_stream_libreria,
                  orologio_ms: Callable[[], float] = lambda: time.time() * 1000.0,
                  orologio_mono: Callable[[], float] = time.monotonic,
@@ -486,7 +506,6 @@ class FlussoOrdiniContoBetfair:
             partition_matched_by_strategy_ref=bool(partizione_per_strategia),
         )
         self._disponibili = disponibili
-        self._riserva = max(0, int(riserva_connessioni))
         self._crea_stream = crea_stream
         self._ora_ms = orologio_ms
         self._mono = orologio_mono
@@ -501,7 +520,7 @@ class FlussoOrdiniContoBetfair:
         self._fermo = threading.Event()
         self._forza_immagine = False
         self._listener = ListenerConto(self._su_ordini, orologio_ms, orologio_mono,
-                                       self._su_fine_immagine)
+                                       self._su_fine_immagine, self._su_connessioni)
         self._stream: Any = None
         self._thread: Optional[threading.Thread] = None
         self._thread_consegna: Optional[threading.Thread] = None
@@ -520,9 +539,18 @@ class FlussoOrdiniContoBetfair:
         self._sottoscrizione: Optional[str] = None
         self._sottoscrizione_ms: Optional[float] = None
         self._sottoscrizione_mono: Optional[float] = None
-        self._ocm_alla_sottoscrizione = 0
-        #: None | "in_attesa" (connectionsAvailable <= riserva) | "negato" (rifiuto di Betfair)
+        #: il watchdog ha chiuso una connessione che era SANA (valutato prima di chiuderla)
+        self._sana_al_watchdog = False
+        #: le ultime attese di backoff (s), per la Salute e i test
+        self._attese: "collections.deque[float]" = collections.deque(maxlen=ATTESE_RICORDATE)
+        #: None | "in_attesa" (0 libere dichiarate: un'attesa, poi si prova) | "negato"
+        #: (rifiuto di Betfair: si ritenta col backoff)
         self._slot: Optional[str] = None
+        #: gia' atteso ``ATTESA_SLOT_S`` su 0 libere: il prossimo giro prova comunque
+        self._slot_atteso = False
+        #: ultimo ``connectionsAvailable`` noto: da ``disponibili`` o, dopo ogni
+        #: autenticazione di QUESTA connessione, il valore vero della risposta
+        self._libere_note: Optional[int] = None
         self._sessione_segnalata: Optional[str] = None
 
     # ------------------------------------------------------------ contratto
@@ -639,7 +667,9 @@ class FlussoOrdiniContoBetfair:
             "ultimo_clk": li.clk,
             "ultimo_errore": li.ultimo_errore,
             "connessioni_disponibili": li.connessioni_disponibili,
+            "connessioni_libere_note": self._libere_note,
             "slot": self._slot,
+            "ultime_attese_s": list(self._attese),
             "sessione_segnalata": self._sessione_segnalata,
             "heartbeat_ms": li.heartbeat_ms_server or self._heartbeat_ms,
             "filtro": self.filtro_ordini,
@@ -665,12 +695,13 @@ class FlussoOrdiniContoBetfair:
         return BATTITI_WATCHDOG * float(hb) / 1000.0
 
     def _connessione_sana(self) -> bool:
-        """La connessione appena caduta ha lavorato: ha ricevuto ``ocm`` dopo la
-        sottoscrizione, o e' rimasta su oltre ``VIVA_DOPO_S`` (azzera il backoff)."""
-        if self._sottoscrizione_mono is None:
+        """La connessione appena caduta e' rimasta su oltre ``VIVA_DOPO_S`` dalla
+        sottoscrizione (azzera il backoff). Ricevere dati NON basta: un server che
+        manda l'immagine e chiude a ogni giro non deve far ripartire da 2 s."""
+        dal = self._sottoscrizione_mono
+        if dal is None:
             return False
-        return (self._listener.ocm > self._ocm_alla_sottoscrizione
-                or self._mono() - self._sottoscrizione_mono > VIVA_DOPO_S)
+        return self._mono() - dal > VIVA_DOPO_S
 
     def _ciclo(self) -> None:
         tentativo = 0
@@ -688,37 +719,51 @@ class FlussoOrdiniContoBetfair:
             except Exception as e:  # noqa: BLE001 - si riconnette: niente resta muto in silenzio
                 if self._fermo.is_set():
                     break
-                if self._connessione_sana():
+                # durata valutata PRIMA di azzerare il riferimento (anche dal watchdog)
+                sana = self._connessione_sana() or self._sana_al_watchdog
+                self._sana_al_watchdog = False
+                self._sottoscrizione_mono = None
+                if sana:
                     tentativo = 0
                 tentativo += 1
-                pausa = self._dopo_errore(e)
-                attesa = pausa if pausa is not None else max(
-                    BACKOFF_MIN_S, min(BACKOFF_MAX_S, float(2 ** tentativo)))
-                logger.warning("[ordini-conto] connessione KO (%s): nuovo tentativo fra %.0f s",
+                self._dopo_errore(e)
+                attesa = attesa_di_backoff(tentativo, BACKOFF_MIN_S, BACKOFF_MAX_S)
+                self._attese.append(attesa)
+                logger.warning("[ordini-conto] connessione KO (%s): nuovo tentativo fra %.1f s",
                                str(e)[:160], attesa)
-                self._sottoscrizione_mono = None
                 if self._fermo.wait(attesa):
                     break
         logger.info("[ordini-conto] fermato")
 
     def _slot_libero(self) -> Optional[float]:
-        """None = si puo' aprire; altrimenti i secondi da aspettare (default
-        prudente: con libere <= riserva NON si prende lo slot degli altri processi)."""
+        """None = si apre adesso; altrimenti i secondi da aspettare.
+
+        La riserva NON vale per lo stream ordini (UNA connessione). Con libere >= 1 o
+        valore ignoto si apre; con 0 si aspetta ``ATTESA_SLOT_S`` UNA volta e poi si
+        prova comunque: il valore puo' essere vecchio (letto da un'altra connessione)
+        e con 0 libere Betfair rifiuta (backoff), senza togliere lo slot a nessuno."""
         if self._disponibili is None:
             return None
+        if self._slot_atteso:
+            self._slot_atteso = False
+            return None                     # gia' aspettato su 0: si prova (decide Betfair)
         try:
             libere = self._disponibili()
         except Exception as e:  # noqa: BLE001 - lettura del budget fallita: si apre come oggi
             logger.warning("[ordini-conto] connectionsAvailable illeggibile (%s): si apre", e)
             return None
-        if libere is not None and libere <= self._riserva:
+        if libere is not None:
+            self._libere_note = int(libere)
+        if libere is not None and libere < 1:
             if self._slot != "in_attesa":
-                logger.warning("[ordini-conto] %d connessioni libere, riserva %d: lo stream ordini "
-                               "NON apre (slot lasciato agli altri processi)", libere, self._riserva)
+                logger.warning("[ordini-conto] 0 connessioni libere dichiarate: lo stream ordini "
+                               "aspetta %.0f s e poi prova comunque", ATTESA_SLOT_S)
             self._slot = "in_attesa"
+            self._slot_atteso = True
             self.conti["attese_di_slot"] += 1
             return ATTESA_SLOT_S
-        self._slot = None
+        if self._slot == "in_attesa":
+            self._slot = None
         return None
 
     def _connetti_e_leggi(self) -> None:
@@ -745,7 +790,6 @@ class FlussoOrdiniContoBetfair:
         self._sottoscrizione = "ripresa_clk" if ripresa else "da_zero"
         self._sottoscrizione_ms = self._ora_ms()
         self._sottoscrizione_mono = self._mono()
-        self._ocm_alla_sottoscrizione = li.ocm
         logger.info("[ordini-conto] sottoscrizione %s (%s)", self._id,
                     "ripresa con clk" if ripresa else "immagine piena")
         if self._fermo.is_set():
@@ -753,21 +797,24 @@ class FlussoOrdiniContoBetfair:
             return
         stream.start()
 
-    def _dopo_errore(self, e: BaseException) -> Optional[float]:
-        """Conta e decide. Ritorna una pausa imposta (rifiuto di Betfair) o None."""
+    def _su_connessioni(self, libere: int) -> None:
+        """Nel thread del socket, alla risposta della NOSTRA autenticazione: il valore
+        vero di ``connectionsAvailable`` sostituisce quello letto da ``disponibili``."""
+        self._libere_note = int(libere)
+
+    def _dopo_errore(self, e: BaseException) -> None:
+        """Conta e decide cosa rifare (immagine piena, sessione); l'attesa e' il backoff."""
         li = self._listener
         self.conti["riconnessioni"] += 1
         codice = _codice_errore(e, li)
         if codice == CODICE_CLK_NON_VALIDO or li.errore_elaborazione:
             self._forza_immagine = True
             li.errore_elaborazione = False
-        pausa: Optional[float] = None
         if codice in CODICI_SLOT:
             self._slot = "negato"
             self.conti["slot_negati"] += 1
-            logger.error("[ordini-conto] Betfair ha rifiutato la connessione (%s): pausa %.0f s",
-                         codice, PAUSA_SLOT_NEGATO_S)
-            pausa = PAUSA_SLOT_NEGATO_S
+            logger.error("[ordini-conto] Betfair ha rifiutato la connessione (%s): si ritenta "
+                         "con il backoff", codice)
         if codice in CODICI_SESSIONE:
             self.conti["rinnovi_sessione"] += 1
             try:
@@ -775,27 +822,38 @@ class FlussoOrdiniContoBetfair:
             except Exception as ex:  # noqa: BLE001 - si ritenta al giro dopo
                 logger.warning("[ordini-conto] rinnovo della sessione KO: %s", ex)
         li.autenticato = False
-        return pausa
 
     def _watchdog(self) -> None:
-        """Connessione su ma senza NESSUN messaggio (neanche heartbeat) oltre la
-        soglia: si chiude; il ciclo la riapre con ripresa (``initialClk``/``clk``)."""
         while not self._fermo.wait(max(0.05, min(1.0, self._soglia_s() / 4.0))):
-            stream, li = self._stream, self._listener
-            dal = self._sottoscrizione_mono
-            if stream is None or dal is None or not getattr(stream, "running", False):
-                continue
-            ultimo = max(li.ultimo_msg_mono or 0.0, dal)
-            muto = self._mono() - ultimo
-            if muto > self._soglia_s():
-                self.conti["riavvii_watchdog"] += 1
-                logger.warning("[ordini-conto] stream ordini MUTO da %.1f s (soglia %.1f s): "
-                               "chiudo e riprendo", muto, self._soglia_s())
-                self._sottoscrizione_mono = None
-                try:
-                    stream.stop()
-                except Exception as e:  # noqa: BLE001 - il ciclo riprova comunque
-                    logger.warning("[ordini-conto] stop dal watchdog: %s", e)
+            try:
+                self._veglia()
+            except Exception as e:  # noqa: BLE001 - il watchdog non muore
+                logger.warning("[ordini-conto] giro del watchdog KO: %s", e)
+
+    def _veglia(self) -> bool:
+        """Un giro del watchdog: connessione su ma senza NESSUN messaggio (neanche
+        heartbeat) da oltre ``BATTITI_WATCHDOG`` heartbeat, contati dal piu' recente
+        fra l'ultimo messaggio e la sottoscrizione: si chiude; il ciclo la riapre con
+        ripresa (``initialClk``/``clk``). True se l'ha chiusa."""
+        stream, li = self._stream, self._listener
+        dal = self._sottoscrizione_mono
+        if stream is None or dal is None or not getattr(stream, "running", False):
+            return False
+        ultimo = max(li.ultimo_msg_mono or 0.0, dal)
+        muto = self._mono() - ultimo
+        if muto <= self._soglia_s():
+            return False
+        self.conti["riavvii_watchdog"] += 1
+        logger.warning("[ordini-conto] stream ordini MUTO da %.1f s (soglia %.1f s): "
+                       "chiudo e riprendo", muto, self._soglia_s())
+        # A3-2: la durata si valuta PRIMA di azzerare il riferimento della sottoscrizione
+        self._sana_al_watchdog = self._connessione_sana()
+        self._sottoscrizione_mono = None
+        try:
+            stream.stop()
+        except Exception as e:  # noqa: BLE001 - il ciclo riprova comunque
+            logger.warning("[ordini-conto] stop dal watchdog: %s", e)
+        return True
 
     # ------------------------------------------------------------ ordini
     def _su_ordini(self, ordini: List[OrdineDalContoEsteso], info: Dict[str, Any]) -> None:

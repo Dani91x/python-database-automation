@@ -24,9 +24,17 @@ Le regole (tutte nei test ``tests/test_a2_flusso*.py``):
   rifiuto (``MAX_CONNECTION_LIMIT_EXCEEDED``, ``TOO_MANY_REQUESTS``, ...): come
   ``GestoreFrammenti.massimo_adesso`` (``connessioni_concesse``, confrontata).
 * RIPRESA: dopo una caduta la connessione si riapre con ``initialClk``/``clk``
-  (``RESUB_DELTA``: solo i cambi), backoff 2..60 s, mai dopo ``ferma``/chiusura;
-  ``INVALID_CLOCK``, un messaggio non applicabile o un cambio di mercati durante
-  la caduta = immagine piena (i criteri della ripresa devono essere IDENTICI).
+  (``RESUB_DELTA``: solo i cambi), backoff 2..60 s azzerato SOLO dopo una
+  connessione rimasta su oltre ``VIVA_DOPO_S`` (valutato anche PRIMA che il
+  watchdog la chiuda), mai dopo ``ferma``/chiusura; ``INVALID_CLOCK``, un messaggio
+  non applicabile, un cambio di mercati durante la caduta o una risottoscrizione
+  fallita = immagine piena (i criteri della ripresa devono essere IDENTICI).
+* RISOTTOSCRIZIONE: ``imposta_mercati`` non solleva MAI per un errore di rete:
+  la connessione si chiude e riparte da immagine piena con l'insieme nuovo; se la
+  libreria ricollega lo stream fermato DENTRO l'invio (``BetfairStream._send``),
+  quel socket orfano si chiude subito (budget di 10 connessioni).
+* BOOK: ``book()`` e i consumatori vedono SOLO i mercati dell'insieme corrente
+  (pianificato): un book in volo di un mercato tolto non si scrive ne' si consegna.
 * SALUTE: per connessione, la regola di ``Betfair/stream/stream_muto.py``
   (riusata: ``stato_da_battiti``; 3 heartbeat senza messaggi = muto, ``status``
   503 = latente); per mercato ``vivo`` = connessione viva E un book ricevuto sulla
@@ -48,6 +56,7 @@ thread: nascono in ``avvia``/``imposta_mercati`` e muoiono in ``ferma``.
 """
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import queue
@@ -63,7 +72,7 @@ from Betfair.stream import stream_muto as _SM
 from Betfair.stream import valuta as _valuta
 
 from .contratto import ProfiloFlusso, Sessione, StatoFlusso
-from .flusso_ordini_conto import segnala_sessione
+from .flusso_ordini_conto import attesa_di_backoff, segnala_sessione
 from .profili import LIMITE_BETFAIR_CONNESSIONI, LIMITE_BETFAIR_MERCATI, filtro_dati
 
 logger = logging.getLogger(__name__)
@@ -83,11 +92,14 @@ CODICI_SESSIONE = frozenset({"NO_SESSION", "INVALID_SESSION_INFORMATION", "NOT_A
 CODICE_CLK_NON_VALIDO = "INVALID_CLOCK"
 BACKOFF_MIN_S = 2.0
 BACKOFF_MAX_S = 60.0
-#: una connessione rimasta su oltre tanto (o che ha ricevuto mcm) azzera il backoff.
+#: SOLO una connessione rimasta su oltre tanto dalla sottoscrizione azzera il backoff
+#: (ricevere dati non basta: immagine e chiusura a ogni giro = tempesta).
 #: DIVERGENZA MIGLIORATIVA dichiarata: ``FrammentoMarketStream.run`` di oggi
 #: (``frammenti_mercato.py:203-217``) non azzera mai il tentativo: dopo qualche caduta
 #: anche una connessione sana aspetta 60 s a ogni ripresa.
 VIVA_DOPO_S = 60.0
+#: quante attese di backoff recenti si mostrano nello stato di ogni connessione
+ATTESE_RICORDATE = 20
 #: battiti senza messaggi oltre i quali il watchdog chiude e riprende con clk: 3 come il
 #: "muto" di ``stream_muto`` (Betfair dice 2 = "forse disconnesso"; un battito di margine)
 BATTITI_WATCHDOG = _SM.BATTITI_PER_SOGLIA
@@ -265,10 +277,16 @@ class _Connessione:
         self.riconnessioni = 0
         self.aperta_mono = gestore._ora()
         self.sottoscritta_mono: Optional[float] = None
+        #: il watchdog l'ha chiusa quando era SANA (valutato prima di azzerare)
+        self.sana_al_watchdog = False
+        #: insieme PIANIFICATO dal gestore (sotto il suo lock): base dei mercati coperti
+        self.piano: Set[str] = set(mercati)
+        #: generazione del piano gia' applicata (una risottoscrizione vecchia non vince)
+        self._generazione = 0
+        self.attese: "collections.deque[float]" = collections.deque(maxlen=ATTESE_RICORDATE)
         self.id_sottoscrizione = numero * 10000
         self._forza_immagine = False
         self._versione = 0
-        self._mcm_alla_sottoscrizione = 0
         self._lock = threading.Lock()
         self._invio = threading.Lock()
         self._pausa = threading.Event()
@@ -297,13 +315,24 @@ class _Connessione:
             except Exception as e:  # noqa: BLE001 - si chiude comunque
                 logger.warning("[flusso] stop della connessione %d: %s", self.numero, e)
 
-    def risottoscrivi(self, mercati: Set[str]) -> bool:
+    def risottoscrivi(self, mercati: Set[str], generazione: Optional[int] = None) -> bool:
         """Sostituisce la sottoscrizione con ``mercati`` (insieme INTERO). True se
         mandata adesso; False se la connessione non e' su (la manda al collegamento,
-        da immagine piena: i criteri della ripresa sarebbero cambiati)."""
+        da immagine piena: i criteri della ripresa sarebbero cambiati), se un piano
+        piu' nuovo (``generazione``) e' gia' stato applicato, o se l'invio e' fallito.
+
+        Non solleva MAI per la rete (N1): un invio fallito chiude lo stream, che il
+        ciclo riapre da immagine piena con l'insieme nuovo (mai una ripresa con un
+        filtro diverso). Se la libreria, trovando lo stream fermato da un'altra parte,
+        lo ha RICOLLEGATO dentro l'invio (``BetfairStream._send``: socket nuovo nel
+        thread di chi chiama, che nessuno legge), quel socket si chiude subito."""
         if not mercati:
             raise ValueError("sottoscrizione vuota rifiutata")
         with self._lock:
+            if generazione is not None:
+                if generazione < self._generazione:
+                    return False
+                self._generazione = generazione
             self.mercati = set(mercati)
             self._versione += 1
             s = self.stream
@@ -311,8 +340,31 @@ class _Connessione:
                 self._forza_immagine = True
                 return False
         with self._invio:                      # rete FUORI da ``_lock``
-            self._sottoscrivi(s, ripresa=False)
+            socket_prima = getattr(s, "_socket", None)
+            try:
+                self._sottoscrivi(s, ripresa=False)
+            except Exception as e:  # noqa: BLE001 - mai un errore di rete a chi chiama
+                self._abbandona(s, "risottoscrizione fallita (%s: %s)" % (type(e).__name__, e),
+                                "risottoscrizioni_fallite")
+                return False
+            if getattr(s, "_socket", None) is not socket_prima:
+                self._abbandona(s, "la libreria ha ricollegato lo stream fermato dentro l'invio",
+                                "connessioni_orfane_chiuse")
+                return False
         return True
+
+    def _abbandona(self, s: Any, motivo: str, conto: str) -> None:
+        """Lo stream ``s`` non e' piu' affidabile: si chiude; il ciclo della
+        connessione la riapre da immagine piena con l'insieme corrente."""
+        with self._lock:
+            self._forza_immagine = True
+        self.g.conti[conto] += 1
+        logger.warning("[flusso] connessione %d (%s): %s: chiudo e riparto da immagine piena",
+                       self.numero, self.g.profilo.nome, motivo)
+        try:
+            s.stop()
+        except Exception as e:  # noqa: BLE001 - si chiude comunque
+            logger.warning("[flusso] stop della connessione %d: %s", self.numero, e)
 
     def _sottoscrivi(self, s: Any, ripresa: bool) -> None:
         li = self.listener
@@ -329,14 +381,14 @@ class _Connessione:
             segmentation_enabled=True,
         ))
         self.sottoscritta_mono = self.g._ora()
-        self._mcm_alla_sottoscrizione = li.mcm
 
     def _sana(self) -> bool:
-        """Ha lavorato prima di cadere: mcm ricevuti o su oltre ``VIVA_DOPO_S``."""
-        if self.sottoscritta_mono is None:
+        """Rimasta su oltre ``VIVA_DOPO_S`` dalla sottoscrizione (azzera il backoff).
+        Ricevere dati NON basta: immagine e chiusura a ogni giro = tempesta."""
+        dal = self.sottoscritta_mono
+        if dal is None:
             return False
-        return (self.listener.mcm > self._mcm_alla_sottoscrizione
-                or self.g._ora() - self.sottoscritta_mono > VIVA_DOPO_S)
+        return self.g._ora() - dal > VIVA_DOPO_S
 
     def _ciclo(self) -> None:
         tentativo = 0
@@ -351,11 +403,15 @@ class _Connessione:
                     break
                 if self._dopo_errore(e):
                     break
-                if self._sana():
-                    tentativo = 0
+                # durata valutata PRIMA di azzerare il riferimento (anche dal watchdog)
+                sana = self._sana() or self.sana_al_watchdog
+                self.sana_al_watchdog = False
                 self.sottoscritta_mono = None
+                if sana:
+                    tentativo = 0
                 tentativo += 1
-                attesa = max(BACKOFF_MIN_S, min(BACKOFF_MAX_S, float(2 ** tentativo)))
+                attesa = attesa_di_backoff(tentativo, BACKOFF_MIN_S, BACKOFF_MAX_S)
+                self.attese.append(attesa)
                 logger.warning("[flusso] connessione %d (%s) KO (%s): nuovo tentativo fra %.1f s",
                                self.numero, self.g.profilo.nome, str(e)[:120], attesa)
                 self._pausa.wait(attesa)
@@ -448,6 +504,12 @@ class GestoreFlussi:
         self._connessioni: List[_Connessione] = []
         self._numero = 0
         self._libri: Dict[str, Any] = {}
+        #: i mercati dell'insieme PIANIFICATO (sostituito per intero sotto ``_lock``): la
+        #: consegna scrive e consegna SOLO i loro book
+        self._coperti: frozenset = frozenset()
+        #: protegge solo ``_libri`` (mai tenuto durante rete o callback)
+        self._libri_lock = threading.Lock()
+        self._generazione = 0
         self._chiusi: Set[str] = set()
         self._consumatori: List[Tuple[Callable[[Any], None], Optional[Set[str]]]] = []
         self._osservatori: List[Callable[[str, Any], None]] = []
@@ -463,7 +525,9 @@ class GestoreFlussi:
         self.conti: Dict[str, int] = {"aperture": 0, "chiusure": 0, "rifiuti": 0, "muti": 0,
                                       "risottoscrizioni": 0, "riprese_con_clk": 0,
                                       "book": 0, "errori_consumatori": 0, "riavvii_watchdog": 0,
-                                      "libri_potati": 0, "errori_osservatori": 0}
+                                      "libri_potati": 0, "errori_osservatori": 0,
+                                      "book_fuori_insieme": 0, "risottoscrizioni_fallite": 0,
+                                      "connessioni_orfane_chiuse": 0}
 
     # ------------------------------------------------------------ contratto
     def imposta_mercati(self, mercati: Iterable[str]) -> Set[str]:
@@ -479,24 +543,27 @@ class GestoreFlussi:
         with self._lock:
             self.manutenzione()
             conn = self._vive()
-            attuali = [set(c.mercati) for c in conn]
+            attuali = [set(c.piano) for c in conn]
             massimo = self.massimo_adesso()
             piano = piano_connessioni(attuali, voluti, self.per_conn, max(massimo, len(conn)))
+            self._generazione += 1
+            generazione = self._generazione
             for i, (c, bersaglio) in enumerate(zip(conn, piano.bersagli)):
                 if bersaglio == attuali[i]:
                     continue
                 if not bersaglio and i > 0:
                     self._chiudi(c, "nessun mercato da seguire")
                     continue
+                c.piano = set(bersaglio)
                 da_mandare.append((c, bersaglio))
                 self.conti["risottoscrizioni"] += 1
             for blocco in piano.nuovi:
                 self._apri(blocco)
+            # PRIMA della rete: i book dei mercati tolti smettono subito di entrare
+            self._aggiorna_coperti()
+            coperti = self._coperti
         for c, bersaglio in da_mandare:
-            c.risottoscrivi(bersaglio)
-        with self._lock:
-            coperti = set().union(*(c.mercati for c in self._vive())) if self._vive() else set()
-            self._pota_libri(coperti)
+            c.risottoscrivi(bersaglio, generazione)
         return voluti - coperti
 
     def aggiungi_consumatore(self, cb: Callable[[Any], None], *,
@@ -513,7 +580,8 @@ class GestoreFlussi:
             self._osservatori = list(self._osservatori) + [cb]
 
     def book(self, market_id: str) -> Any:
-        return self._libri.get(str(market_id))
+        with self._libri_lock:
+            return self._libri.get(str(market_id))
 
     def stato_flusso(self, market_id: str) -> StatoFlusso:
         mid = str(market_id)
@@ -537,6 +605,7 @@ class GestoreFlussi:
                 "eta_dati_s": eta(li.ultimo_dato_mono), "riconnessioni": c.riconnessioni,
                 "errore": li.ultimo_errore, "vivo": v["vivo"], "motivo": v["motivo"],
                 "initial_clk": li.initial_clk, "clk": li.clk,
+                "ultime_attese_s": list(c.attese),
             })
         massimo = self.massimo_adesso()
         return {
@@ -618,6 +687,8 @@ class GestoreFlussi:
                 logger.warning("[flusso] %s: connessione %d MUTA da %.1f s (soglia %.1f s): "
                                "chiudo e riprendo", self.profilo.nome, c.numero, muto,
                                self._soglia_s(c))
+                # A3-2: la durata si valuta PRIMA di azzerare il riferimento
+                c.sana_al_watchdog = c._sana()
                 c.sottoscritta_mono = None
                 c.ferma_lettura()
                 riavviate.append(c.numero)
@@ -700,6 +771,7 @@ class GestoreFlussi:
         self.ultimo_evento = "aperta connessione %d (%d mercati)" % (c.numero, len(mercati))
         logger.warning("[flusso] %s: APERTA connessione %d con %d mercati",
                        self.profilo.nome, c.numero, len(mercati))
+        self._aggiorna_coperti()            # i suoi book entrano dal primo messaggio
         c.avvia()
         return c
 
@@ -707,17 +779,26 @@ class GestoreFlussi:
         persi = set(c.mercati)
         c.chiudi()
         self._connessioni = [x for x in self._connessioni if x is not c]
+        self._aggiorna_coperti()
         self.conti["chiusure"] += 1
         self.ultimo_evento = "chiusa connessione %d: %s" % (c.numero, motivo)
         logger.warning("[flusso] %s: CHIUSA connessione %d (%d mercati): %s",
                        self.profilo.nome, c.numero, len(persi), motivo)
         return persi
 
-    def _pota_libri(self, coperti: Set[str]) -> None:
-        """Sotto ``_lock``: i book dei mercati non piu' sottoscritti escono da ``book()``."""
-        via = [m for m in list(self._libri) if m not in coperti]
-        for m in via:
-            self._libri.pop(m, None)
+    def _aggiorna_coperti(self) -> None:
+        """Sotto ``_lock``: l'insieme pianificato delle connessioni vive diventa quello
+        coperto; i book dei mercati fuori escono da ``book()``."""
+        vive = self._vive()
+        self._coperti = frozenset().union(*(c.piano for c in vive)) if vive else frozenset()
+        self._pota_libri(self._coperti)
+
+    def _pota_libri(self, coperti: Any) -> None:
+        """I book dei mercati non piu' sottoscritti escono da ``book()``."""
+        with self._libri_lock:
+            via = [m for m in list(self._libri) if m not in coperti]
+            for m in via:
+                self._libri.pop(m, None)
         self.conti["libri_potati"] += len(via)
 
     def _evento(self, nome: str, dato: Any) -> None:
@@ -765,7 +846,11 @@ class GestoreFlussi:
                                      getattr(b, "market_id", "?"), e)
                         continue
                 mid = str(b.market_id)
-                self._libri[mid] = b
+                with self._libri_lock:
+                    if mid not in self._coperti:     # mercato tolto: book in volo, stantio
+                        self.conti["book_fuori_insieme"] += 1
+                        continue
+                    self._libri[mid] = b
                 self.conti["book"] += 1
                 if getattr(b, "status", None) == "CLOSED" and mid not in self._chiusi:
                     self._chiusi.add(mid)
