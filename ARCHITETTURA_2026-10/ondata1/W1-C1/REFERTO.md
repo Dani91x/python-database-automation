@@ -48,6 +48,10 @@ Implemento `PortaOrdini` (`PortaLocale`, verificato strutturalmente in `test_la_
 7. (par. 10) `Esecutore.place/cancel/replace(r, params=None)` + `accetta_params`: i params del bot verso l'esecutore;
    `RichiestaOrdine.place_and_trim: bool` (oggi la porta NON fa place-and-trim: il contratto non sa dirlo all'esecutore);
    `EventoOrdine.cor` (customerOrderRef vero, che il motore manda e `MemoriaComandi` conserva: divergenza 10b).
+8. (par. 12) Ref gia' visto = PARITA' col motore (`motore_ordini.py:997-1005`): stesso ref = stessa richiesta, mai un
+   secondo invio; `Ack` con `accettato` e `seq` della PRIMA risposta e motivo `ref_gia_visto`, in ogni fase (in volo,
+   ignoto, terminale), anche dopo il riavvio (prima risposta dal diario o da `ordini_ref_visti`). L'esito lo dicono
+   `stato`/`eventi`. Unico `accettato=False` su un ref noto: una prima risposta che era gia' un rifiuto.
 
 ## 3. Parita' (funzione di oggi -> nuova -> test -> esito)
 
@@ -221,6 +225,11 @@ Inoltre flumine NON conta un place senza risposta (eccezione/timeout) che Betfai
    paper non puo' piu' consumarlo.
 12. **Consumatore piu' severo di `MemoriaComandi`**: un terminale non si sovrascrive con un altro terminale e l'abbinato non
    cala (oggi Safe li accetta se il seq e' piu' alto). Fotografato in `test_stato_non_regredisce_piu_severo_di_oggi`.
+13. [TOLTA nella terza revisione, par. 12: il ref in volo dopo il riavvio risponde l'ack ORIGINALE, come il motore.]
+14. **Una porta per archivio** (par. 11): due runner (calcio e tennis) devono avere archivi (cartelle) diversi o
+   condividere UNA porta; la seconda `PortaLocale` sullo stesso archivio e' rifiutata `ArchivioGiaInUso`.
+15. **Memoria oltre 5.000 ref** (par. 11) se gli ordini APERTI sono tanti (si dice a WARNING): nessun ordine aperto si
+   dimentica.
 
 ## 10. Correzioni dopo la revisione indipendente (09/10 sera)
 
@@ -277,7 +286,7 @@ e' in `tests/test_c1_revisione.py` (sezione "seconda revisione"), salvo dove ind
 |---|---|---|---|---|
 | **B** (bloccante) | prenotazione con `transizione(t, chiave, "", "riservato:<porta>")` usata come "inserisci se assente": il contratto non la prevede; con l'`ArchivioLocale` VERO di G1 (riga assente -> `False`, colonna `status`) OGNI ordine nuovo usciva `accettato=True, seq=None, "in carico a un'altra porta"` con 0 chiamate a Betfair (ack falso, ordine perso). I miei test passavano perche' il finto faceva cio' che il vero non fa | tolti prenotazione, `_attesa_altrove`, `_padrone`; dedup = memoria + diario + righe `ordini_ref_visti` scritte (`scrivi`) e rilette (`leggi`) dalla porta stessa sotto `_lock_invio` (`porta.py` `_dedup` :459); UNA porta per archivio: registro di processo delle cartelle (`_ARCHIVI_IN_USO`, `_chiave_archivio` :146, controllo nel costruttore :218-222, rilascio in `chiudi` :312-320), seconda porta -> `ArchivioGiaInUso` | `test_ogni_ordine_nuovo_parte_con_la_semantica_vera` (20 ordini nuovi = 20 invii), `test_seconda_porta_sullo_stesso_archivio_rifiutata`, `test_contratto_del_finto_transizione_come_il_vero` | M02, M38, M51, M52 |
 | **B** (finto) | `_ArchivioMemoria` diverso dal vero | riscritto con la semantica di `ArchivioLocale` (W1-G1 `archivio.py:372-435`): `scrivi` = upsert che fonde le colonne, `leggi` = ultima versione o None, `transizione` SOLO su riga esistente con `colonna_stato` (di serie `status`, configurabile) che vale `da`, `cartella` per istanza (`test_c1_porta.py` :52, `transizione` :101) | `test_contratto_del_finto_transizione_come_il_vero` (riga assente -> False, colonna configurabile, fusione) | - |
-| **ACK FALSO** | un ordine dall'esito non certo rispondeva `accettato=True` | `_dedup`: ref ACCETTATO da questa porta -> lo stesso ack (`ref_gia_visto`, idempotenza); ref in volo dopo il riavvio o con esito `ignoto` -> `accettato=False, seq=None, "ref_gia_in_volo: ... riconciliare per ref"` (`M_IN_VOLO`), 0 invii | `test_mai_un_ack_falso` (in volo, ignoto, idempotenza; 0 chiamate), `test_esito_ignoto_mai_ok_mai_ritentato`, `test_riavvio_con_ordine_in_volo` (aggiornati) | M33 |
+| **ACK FALSO** [SUPERATO dal par. 12: introduceva un secondo ordine possibile; ora l'ack ORIGINALE come il motore] | un ordine dall'esito non certo rispondeva `accettato=True` | `_dedup`: ref ACCETTATO da questa porta -> lo stesso ack (`ref_gia_visto`, idempotenza); ref in volo dopo il riavvio o con esito `ignoto` -> `accettato=False, seq=None, "ref_gia_in_volo: ... riconciliare per ref"` (`M_IN_VOLO`), 0 invii | `test_mai_un_ack_falso` (in volo, ignoto, idempotenza; 0 chiamate), `test_esito_ignoto_mai_ok_mai_ritentato`, `test_riavvio_con_ordine_in_volo` (aggiornati) | M33 |
 | **A6** | `_emetti(tipo="esito")` saltava `_stantio`: lo stream degli ordini arrivato PRIMA della risposta REST veniva sovrascritto (abbinato 4,0 -> parziale 1,0) | `_stantio` anche sugli esiti (`porta.py` `_emetti` :735-739) | `test_esito_del_place_non_sovrascrive_il_flusso_arrivato_prima` (sequenza P2 del revisore) | M48, S10 |
 | **MEMORIA** | `_pota` espelleva anche ref NON terminali (un PERSIST aperto perdeva stato e aggiornamenti) | `_pota_ref` (`porta.py:417`, `_espellibile` :410) espelle solo ref con ordine chiuso (o senza stato e non in volo); tetto pieno di aperti -> si cresce e WARNING; stessa regola nel consumatore (`eventi._pota_eventi`) | `test_un_ordine_aperto_non_si_dimentica` (P1 del revisore, tetto 20), `test_tetto_pieno_di_ordini_aperti_cresce`, `test_memoria_della_porta_limitata`, `test_memoria_del_consumatore_limitata` | M44, M49, M50 |
 | **R9** | mutazione sopravvissuta: `_stantio` tolto da `_rileggi` | test del riavvio con una riga stantia nel diario | `test_riavvio_con_righe_stantie_nel_diario` | S9 |
@@ -331,8 +340,43 @@ due ordini).
 **11.713 passed, 0 failed**, 87 skipped, 6 xfailed (409 s): questa volta anche il test di latenza del motore
 di oggi (`test_latenza_logica_comando_place_sotto_20_ms`, rosso sotto carico al giro precedente) e' passato.
 
-**Divergenze per l'utente aggiornate**: (13) dopo un riavvio un ref ancora in volo risponde `accettato=False`
-`ref_gia_in_volo` (il motore di oggi rispondeva l'ack del diario, `accettato=True`): un bot che lo leggesse come rifiuto e
-rimandasse con un ref NUOVO creerebbe un secondo ordine; il motivo e' esplicito e il ref va riconciliato (C2). (14) Una porta
+**Divergenze per l'utente aggiornate**: [la (13) di questa sezione e' TOLTA nel par. 12: ora parita' col motore]. (14) Una porta
 per archivio: due runner (calcio e tennis) devono avere archivi (cartelle) diversi o condividere UNA porta. (15) La memoria
 cresce oltre 5.000 ref se gli ordini APERTI sono tanti (si dice a WARNING): nessun ordine aperto si dimentica.
+
+## 12. Terza revisione (su `cc5286cb`): il ref gia' visto risponde l'ack ORIGINALE
+
+Esito della verifica del coordinatore: dominio ok, 142 test verdi, B corretto; da togliere la divergenza 13, che era un
+rischio di SOLDI introdotto dalla regola "mai `accettato=True` per un ordine mai inviato" applicata anche ai ref GIA'
+inviati: un bot che legge `accettato=False` sul ref in volo come un rifiuto e rimanda con un ref NUOVO fa un SECONDO ORDINE.
+
+| Punto | Correzione (file:riga) | Test | Mutazione |
+|---|---|---|---|
+| 1. ref gia' visto in ogni fase | `porta.py` `_dedup` :458-479: memoria (riempita anche dal diario in `apri`/`_rileggi`), poi `ordini_ref_visti` (`leggi`); risposta = `dataclasses.replace(ack, motivo=ref_gia_visto)`: `accettato` e `seq` della PRIMA risposta, qualunque sia la fase. Lo stato del ref NON cambia (in volo / `ignoto` finche' un evento vero o la riconciliazione lo chiudono) | `test_riavvio_con_ordine_in_volo` (riavvio, ref in volo nel diario: `accettato=True`, STESSO seq, 0 invii, stato `ignoto`, ancora in volo), `test_esito_ignoto_mai_ok_mai_ritentato` (ignoto nella stessa vita: stesso ack, 1 sola chiamata), `test_ref_gia_visto_risponde_l_ack_originale` (in volo dopo il riavvio, ignoto, accettato: stesso ack) | M33 (riformulata: risponde `accettato=False` sul ref in volo o ignoto) ROSSA su tutti e quattro i test mirati (provata anche a parte), M53 (seq non originale) |
+| 2. `M_IN_VOLO` / `ref_gia_in_volo` | TOLTO (costante e motivo); docstring del modulo (:12-24) e di `_dedup` riscritte | (come sopra) | - |
+| 3. unico `accettato=False` su ref noto | la prima risposta era un rifiuto: la stessa risposta dopo il riavvio (dal diario `rifiuto` o da `ordini_ref_visti`) | `test_riavvio_con_un_ref_rifiutato_stesso_rifiuto` (kill-switch al primo invio, spento al riavvio: stesso rifiuto, stesso seq, 0 invii) | M54 (rifiuto originale trasformato in accettato) |
+| 5. parita' DIRETTA col motore | stessi ingressi: il diario scritto dalla porta (e' lo stesso `motore_ordini.Diario`) caricato dal `MotoreOrdini` VERO di oggi (`_carica_visti`, `motore_ordini.py:2494-2504`) e il SUO ramo di dedup (`_gestisci`, `:997-1005`) chiamato con lo stesso ref: (`accettato`, `seq`, `motivo`) identici alla porta riavviata per ref chiuso, ignoto, rifiutato e in volo | `test_ref_gia_visto_parita_col_motore_di_oggi` | M33, M53, M54 |
+
+**Punto 4: accettazione nel diario SENZA la riga `inviato` (crash fra ack e invio).** Il motore di oggi NON ha questo
+caso: l'ack vive DENTRO la riga `inviato`, scritta prima dell'invio (`motore_ordini.py:1022-1028`, `"ack": ack`); al
+riavvio `_carica_visti` (:2494) ricarica gli ack da `inviato`/`rifiuto` e `riprendi_da_diario` (:2506) riconcilia gli
+`inviato` senza esito con `listCurrentOrders` per customerOrderRef, MAI un nuovo invio. La porta fa lo stesso: `_accetta`
+(`porta.py:597-611`) scrive la riga `inviato` CON l'ack prima dell'archivio e prima dell'esecutore, quindi un'accettazione
+senza `inviato` nel diario non esiste. Crash dopo `inviato` (prima o durante l'invio): al riavvio il ref e' in volo, fase
+`ignoto` (`_rileggi`), la ripetizione riceve l'ack ORIGINALE e nessun invio automatico; la riconciliazione per ref e' di
+C2 / della ripresa. Casi vicini, dichiarati:
+- riga in `ordini_ref_visti` ma ref fuori dal diario letto (finestra dei giorni superata): ack ORIGINALE, 0 invii, `stato`
+  None (la porta non ne ha lo stato). Il motore di oggi, fuori dalla finestra del diario, il ref lo ha DIMENTICATO e lo
+  tratterebbe come nuovo: la porta e' piu' prudente (direzione sicura, nessun secondo ordine);
+- doppio guasto `inviato` scritto + archivio KO + riga `rifiuto` del diario KO (gia' dichiarato al par. 10, log CRITICAL):
+  il bot ha avuto il rifiuto, ma al riavvio il diario dice `inviato` e la ripetizione dello stesso ref risponde
+  `accettato=True` con lo stesso seq; l'ordine non e' mai partito, resta `ignoto` e la riconciliazione lo chiude. Mai due
+  ordini.
+
+**Divergenze**: la (13) e' TOLTA (ora parita' col motore). Restano la (14) una porta per archivio e la (15) memoria oltre
+5.000 con molti ordini aperti (par. 9), che il coordinatore porta all'utente.
+
+**Numeri**: test C1 **144 verdi**; falsificazione **81/81 rosse, ripristini sha256
+81/81** (`falsifica_c1.json` committato: M01-M54, le 11 V, le 16 S); sha256 dei file corretti: `porta.py`
+`38d6e00f175ff8da219542ff8e4b8c7855d921f9d28e551313f4ec7e3869fd99`, `test_c1_porta.py` `bc56da6d67d8516070892ebd453f3b0fdf0dd8c9a97c079390c6a4fcb2e5911c`, `test_c1_revisione.py` `c20e71855906ade0fcf3f6392700c50292767214db1f29d995e5a3ff5739b000`; suite intera (una corsa)
+**11.715 passed, 0 failed, 87 skipped, 6 xfailed (353 s)**.

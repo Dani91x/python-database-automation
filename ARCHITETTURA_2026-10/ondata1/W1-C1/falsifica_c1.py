@@ -3,7 +3,7 @@
 
 Uso: ``python falsifica_c1.py <radice del worktree> [ID ...]`` (senza ID: tutte).
 M01-M27 = consegna del 09/10; M28-M47 = correzioni dopo la prima revisione; M48-M52 =
-correzioni dopo la seconda; V* e S* = mutazioni del revisore indipendente (prima revisione
+correzioni dopo la seconda; M53-M54 (e M33 riformulata) = terza; V* e S* = mutazioni del revisore indipendente (prima revisione
 ``rev_w1c1/mut.py``, seconda ``rev_w1c1_2/mie_mutazioni.py``) riportate sul codice corretto.
 """
 from __future__ import annotations
@@ -114,9 +114,12 @@ MUTAZIONI = [
     ("M32", "consegna dentro il lucchetto (deadlock)", P,
      "            if not self._lock_consegna.acquire(blocking=False):",
      "            if not self._lock_consegna.acquire():"),
-    ("M33", "ack falso: ref in volo o ignoto risponde accettato", P,
-     "        if ack.accettato and (in_volo or (st is not None and st.fase == \"ignoto\")):",
-     "        if False:"),
+    ("M33", "ref in volo o ignoto risponde accettato=False (il bot rimanda: secondo ordine)", P,
+     "        return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO)",
+     "        st = self._stati.get(ref)\n"
+     "        if ack.accettato and (ref in self._in_volo or (st is not None and st.fase == \"ignoto\")):\n"
+     "            return Ack(ref=ref, accettato=False, seq=None, motivo=\"ref_gia_in_volo\")\n"
+     "        return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO)"),
     ("M34", "archivio KO dopo 'inviato' senza riga di chiusura", P,
      "motivo=f\"{M_ARCHIVIO}: {str(ex)[:160]}\"), chiudi_diario=True)",
      "motivo=f\"{M_ARCHIVIO}: {str(ex)[:160]}\"), chiudi_diario=False)"),
@@ -171,6 +174,13 @@ MUTAZIONI = [
      "            if False:\n                del _ARCHIVI_IN_USO[self._chiave_archivio]"),
     ("M52", "la stessa cartella non riconosciuta (identita' dell'oggetto)", P,
      "    cartella = getattr(archivio, \"cartella\", None)", "    cartella = None"),
+    # ------------------------------------------------------------ terza revisione (cc5286cb)
+    ("M53", "ref gia' visto risponde senza il seq della prima risposta", P,
+     "        return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO)",
+     "        return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO, seq=None)"),
+    ("M54", "rifiuto originale trasformato in accettato al ref gia' visto", P,
+     "        return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO)",
+     "        return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO, accettato=True)"),
     # ------------------------------------------------------------ mutazioni del revisore, seconda revisione
     ("S1", "paper senza contatore proprio usa quello del live", P,
      "\"live\": contatore, \"paper\": contatore_paper}",

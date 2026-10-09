@@ -448,8 +448,10 @@ def test_esito_ignoto_mai_ok_mai_ritentato(tmp_path: Any) -> None:
     ev = list(amb.porta.eventi("safe", a.seq))
     assert [(e.fase, e.codice_errore) for e in ev] == [("ignoto", PT.CODICE_ESITO_IGNOTO)]
     assert len(amb.betfair.chiamate) == 1       # UNA chiamata: nessun ritento
-    b = amb.porta.invia(_r(creato_ms=T0))       # il bot ripete: nessun ordine, MAI ok
-    assert (b.accettato, b.seq) == (False, None) and b.motivo.startswith(PT.M_IN_VOLO)
+    b = amb.porta.invia(_r(creato_ms=T0))       # il bot ripete: nessun nuovo ordine
+    # parita' col motore: l'ack ORIGINALE (accettato e seq), motivo ref_gia_visto
+    assert (b.accettato, b.seq, b.motivo) == (True, a.seq, MO.MOTIVO_REF_GIA_VISTO)
+    assert amb.porta.stato("safe-t1").fase == "ignoto"   # lo stato resta da riconciliare
     assert len(amb.betfair.chiamate) == 1
     assert amb.porta.conti["ignoti"] == 1
 
@@ -568,13 +570,17 @@ def test_riavvio_con_ordine_in_volo(tmp_path: Any) -> None:
     prima.esecutore.prima_della_chiamata = _muore
     with pytest.raises(_Crollo):
         prima.porta.invia(_r())
+    seq_prima = prima.porta._visti["safe-t1"].seq   # il seq dato col primo invio
     prima.porta.chiudi()                         # il processo e' morto: archivio libero
     dopo = _Ambiente(tmp_path, archivio=prima.archivio, orologio=_Orologio(T0 + 1_000))
     assert dopo.porta.in_volo() == ("safe-t1",)
     assert dopo.porta.stato("safe-t1").fase == "ignoto"
     b = dopo.porta.invia(_r(creato_ms=T0 + 1_000))
-    # MAI un ack falso: forse partito, forse no -> accettato=False, riconciliare
-    assert (b.accettato, b.seq) == (False, None) and b.motivo.startswith(PT.M_IN_VOLO)
+    # parita' col motore: l'ack ORIGINALE dal diario (accettato, stesso seq), 0 invii;
+    # lo stato resta ignoto finche' la riconciliazione per ref non lo chiude
+    assert (b.accettato, b.seq, b.motivo) == (True, seq_prima, MO.MOTIVO_REF_GIA_VISTO)
+    assert dopo.porta.stato("safe-t1").fase == "ignoto"
+    assert dopo.porta.in_volo() == ("safe-t1",)
     assert dopo.betfair.chiamate == []
 
 

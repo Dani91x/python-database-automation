@@ -16,11 +16,11 @@ docstring) e nello stesso ordine:
      lucchetto: SOLO le primitive del contratto, con la loro semantica vera. UNA porta per
      archivio: l'archivio locale ha un lucchetto esclusivo per cartella (un solo processo
      lo apre, W1-G1) e una seconda ``PortaLocale`` nello stesso processo sullo stesso
-     archivio e' rifiutata alla costruzione (``ArchivioGiaInUso``). MAI un ack falso: un
-     ordine mai inviato non risponde mai ``accettato=True``. Il ref gia' ACCETTATO da
-     questa porta risponde lo stesso ack (idempotenza, ``ref_gia_visto``); un ref ancora
-     in volo o con esito ignoto risponde ``accettato=False`` ``ref_gia_in_volo``
-     (riconciliare per ref, nessun invio);
+     archivio e' rifiutata alla costruzione (``ArchivioGiaInUso``). Parita' col motore
+     di oggi (``motore_ordini.py:997-1005``): stesso ref = stessa richiesta, mai un
+     secondo invio; il ref gia' visto risponde ``accettato`` e ``seq`` della PRIMA
+     risposta, motivo ``ref_gia_visto``, qualunque sia la sua fase (in volo, ignoto,
+     terminale), anche dopo il riavvio; l'esito lo dicono ``stato``/``eventi``;
   3. validazione con ``valida_comando`` di oggi (via ``adattatore_comando``); i ``params``
      del bot arrivano all'esecutore che li dichiara (``accetta_params``), altrimenti la
      richiesta e' RIFIUTATA (``params_non_serviti``): un cap che sparisce in silenzio no;
@@ -100,7 +100,6 @@ M_PARAMS = "params_non_serviti"
 #: un ref prenotato da un'ALTRA porta sullo stesso archivio, senza ack entro l'attesa
 #: un ref gia' inviato con esito non certo (in volo dopo un riavvio, o ignoto): nessun
 #: invio, ``accettato=False``, si riconcilia per ref
-M_IN_VOLO = "ref_gia_in_volo"
 _EPS = 1e-9
 
 
@@ -457,24 +456,26 @@ class PortaLocale:
         self._archivio.scrivi(TABELLA_REF, _ack_in_riga(ack, attore, int(self._ora_ms())))
 
     def _dedup(self, ref: str) -> Optional[Ack]:
-        """La risposta a un ref gia' visto, o None se nuovo. Fonti: memoria, poi la riga
-        che QUESTA porta ha scritto nell'archivio (``leggi``). Solleva se l'archivio non
-        risponde (il chiamante rifiuta: fail-closed). MAI ``accettato=True`` per un ordine
-        il cui esito non e' noto: in volo o ignoto -> ``ref_gia_in_volo``."""
+        """La risposta a un ref gia' visto, o None se nuovo. Fonti: memoria (riempita
+        anche dal diario in ``apri``), poi la riga che QUESTA porta ha scritto
+        nell'archivio (``leggi``). Solleva se l'archivio non risponde (il chiamante
+        rifiuta: fail-closed).
+
+        Parita' col motore di oggi (``motore_ordini.py:997-1005``): stesso ref = stessa
+        richiesta, mai un secondo invio; si risponde con ``accettato`` e ``seq`` della
+        PRIMA risposta e motivo ``ref_gia_visto``, QUALUNQUE sia la fase del ref (in volo,
+        ignoto, terminale). Lo stato del ref non cambia: resta ignoto o in volo finche' un
+        evento vero o la riconciliazione per ref lo chiudono; l'esito lo legge il bot da
+        ``stato``/``eventi``. L'unico ``accettato=False`` su un ref noto e' quello di una
+        prima risposta che era gia' un rifiuto."""
         M = _motore()
         with self._lock:
             ack = self._visti.get(ref)
-            in_volo = ref in self._in_volo
-            st = self._stati.get(ref)
         if ack is None:
             riga = self._archivio.leggi(TABELLA_REF, {"ref": ref})
             if riga is None:
                 return None
             ack = _ack_da_riga(riga)
-        if ack.accettato and (in_volo or (st is not None and st.fase == "ignoto")):
-            return Ack(ref=ref, accettato=False, seq=None,
-                       motivo=f"{M_IN_VOLO}: gia' inviato, esito non certo: riconciliare per "
-                              f"ref (nessun nuovo invio)")
         return dataclasses.replace(ack, motivo=M.MOTIVO_REF_GIA_VISTO)
 
     # --------------------------------------------------------------- l'invio

@@ -482,22 +482,28 @@ def test_ogni_ordine_nuovo_parte_con_la_semantica_vera(tmp_path: Any) -> None:
     assert len(amb.betfair.chiamate) == 20
 
 
-def test_mai_un_ack_falso(tmp_path: Any) -> None:
-    """Un ordine mai inviato (o dall'esito non certo) non risponde MAI accettato=True."""
+def test_ref_gia_visto_risponde_l_ack_originale(tmp_path: Any) -> None:
+    """Parita' col motore (``motore_ordini.py:997-1005``): stesso ref = stessa richiesta,
+    mai un secondo invio, ack con ``accettato`` e ``seq`` della PRIMA risposta, in ogni
+    fase. Un ``accettato=False`` sul ref in volo farebbe rimandare il bot con un ref
+    NUOVO: un secondo ordine."""
     amb = _Ambiente(tmp_path)
-    # 1. in volo dopo il riavvio
+    # 1. in volo dopo il riavvio: lo stesso ack del diario
     amb.esecutore.prima_della_chiamata = lambda _r: (_ for _ in ()).throw(_Crollo())
     with pytest.raises(_Crollo):
         amb.porta.invia(_r(ref="safe-v1"))
+    seq_v1 = amb.porta._visti["safe-v1"].seq
     amb.porta.chiudi()
     dopo = _Ambiente(tmp_path, archivio=amb.archivio, orologio=_Orologio(T0 + 1_000))
     a = dopo.porta.invia(_r(ref="safe-v1", creato_ms=T0 + 1_000))
-    assert (a.accettato, a.seq) == (False, None) and a.motivo.startswith(PT.M_IN_VOLO)
-    # 2. esito ignoto nella stessa vita
+    assert (a.accettato, a.seq, a.motivo) == (True, seq_v1, MO.MOTIVO_REF_GIA_VISTO)
+    assert dopo.porta.stato("safe-v1").fase == "ignoto"        # resta da riconciliare
+    # 2. esito ignoto nella stessa vita: lo stesso ack del primo invio
     dopo.betfair.piano = [TimeoutError("timeout")]
-    dopo.porta.invia(_r(ref="safe-v2", creato_ms=T0 + 1_000))
+    b1 = dopo.porta.invia(_r(ref="safe-v2", creato_ms=T0 + 1_000))
     b = dopo.porta.invia(_r(ref="safe-v2", creato_ms=T0 + 1_000))
-    assert (b.accettato, b.seq) == (False, None) and b.motivo.startswith(PT.M_IN_VOLO)
+    assert (b.accettato, b.seq, b.motivo) == (True, b1.seq, MO.MOTIVO_REF_GIA_VISTO)
+    assert dopo.porta.stato("safe-v2").fase == "ignoto"
     assert len(dopo.betfair.chiamate) == 1                     # solo il primo safe-v2
     # 3. idempotenza: un ref ACCETTATO da questa porta risponde lo stesso ack
     c1 = dopo.porta.invia(_r(ref="safe-v3", creato_ms=T0 + 1_000))
@@ -567,3 +573,69 @@ def test_riavvio_con_righe_stantie_nel_diario(tmp_path: Any) -> None:
     dopo = _Ambiente(tmp_path, archivio=prima.archivio, orologio=_Orologio(T0 + 1_000))
     st = dopo.porta.stato("safe-t1")
     assert (st.fase, st.abbinato) == ("parziale", 3.0)
+
+
+# ---------------------------------------------------------------- terza revisione (cc5286cb)
+def _riavvia(amb: Any, tmp_path: Any) -> Any:
+    """Il processo muore e riparte: stesso diario (stessa cartella), stesso archivio."""
+    amb.porta.chiudi()
+    return _Ambiente(tmp_path, archivio=amb.archivio, orologio=_Orologio(T0 + 1_000))
+
+
+def test_riavvio_con_un_ref_rifiutato_stesso_rifiuto(tmp_path: Any) -> None:
+    """L'unico accettato=False su un ref noto: la prima risposta era gia' un rifiuto."""
+    amb = _Ambiente(tmp_path)
+    amb.freni.kill = True
+    a = amb.porta.invia(_r(ref="safe-k1"))
+    assert not a.accettato and a.seq is not None and a.motivo.startswith(MO.M_KILL)
+    dopo = _riavvia(amb, tmp_path)
+    b = dopo.porta.invia(_r(ref="safe-k1", creato_ms=T0 + 1_000))   # kill-switch ora spento
+    assert (b.accettato, b.seq, b.motivo) == (False, a.seq, MO.MOTIVO_REF_GIA_VISTO)
+    assert dopo.betfair.chiamate == []
+
+
+def test_ref_gia_visto_parita_col_motore_di_oggi(tmp_path: Any) -> None:
+    """Parita' DIRETTA sugli stessi ingressi: il diario scritto dalla porta (lo stesso
+    ``motore_ordini.Diario``) caricato dal ``MotoreOrdini`` di oggi (``_carica_visti``) e
+    il ramo di dedup del motore (``_gestisci``, ``motore_ordini.py:997-1005``) rispondono
+    come la porta riavviata: ref chiuso, ignoto, rifiutato, in volo."""
+    from types import SimpleNamespace
+
+    amb = _Ambiente(tmp_path)
+    amb.porta.invia(_r(ref="safe-q1"))                                # chiuso
+    amb.betfair.piano = [TimeoutError("timeout")]
+    amb.porta.invia(_r(ref="safe-q2"))                                # ignoto
+    amb.freni.kill = True
+    amb.porta.invia(_r(ref="safe-q3"))                                # rifiutato
+    amb.freni.kill = False
+    amb.esecutore.prima_della_chiamata = lambda _r: (_ for _ in ()).throw(_Crollo())
+    with pytest.raises(_Crollo):
+        amb.porta.invia(_r(ref="safe-q4"))                            # in volo (crash)
+    refs = ("safe-q1", "safe-q2", "safe-q3", "safe-q4")
+    prime = {ref: amb.porta._visti[ref] for ref in refs}
+    dopo = _riavvia(amb, tmp_path)
+    assert set(dopo.porta.in_volo()) == {"safe-q2", "safe-q4"}
+
+    class _Canale:
+        def __init__(self) -> None:
+            self.acks: List[Dict[str, Any]] = []
+
+        def invia(self, _ws: Any, payload: Dict[str, Any]) -> None:
+            self.acks.append(payload["d"])
+
+    canale = _Canale()
+    motore = MO.MotoreOrdini("calcio", canale=canale,
+                             diario=MO.Diario(amb.cartella, giorno=lambda: GIORNO),
+                             scrittore=None)  # type: ignore[arg-type]
+    motore._giorni_diario = lambda: [GIORNO]  # type: ignore[method-assign]
+    motore._carica_visti()
+    for ref in refs:
+        motore._gestisci(SimpleNamespace(token_ok=True, attore="safe", tipo="comando",
+                                         d={"ref": ref}, ws="ws", ricevuto_ms=0))
+        oggi = canale.acks[-1]
+        mia = dopo.porta.invia(_r(ref=ref, creato_ms=T0 + 1_000))
+        assert (mia.accettato, mia.seq, mia.motivo) == \
+            (oggi["accettato"], oggi["seq"], oggi["motivo"]), ref
+        assert (mia.accettato, mia.seq) == (prime[ref].accettato, prime[ref].seq), ref
+    assert [a["accettato"] for a in canale.acks] == [True, True, False, True]
+    assert dopo.betfair.chiamate == []                 # nessun invio dopo il riavvio

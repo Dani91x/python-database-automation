@@ -30,10 +30,10 @@ stesso archivio. Sotto, un `Esecutore` iniettato (oggi: il dispatch del runner, 
 - `Ack` (accettato/rifiutato, `seq`, motivo con i CODICI del motore: `parametri_invalidi`, `mode_non_servibile`,
   `kill_switch`, `reduces_liability_non_verificabile`, `guardia_avvio`, `settings_stantie`, `comando_scaduto`,
   `diario_non_scrivibile`, `SOTTO_MINIMO_NON_PIAZZABILE`, `ref_gia_visto`; nuovi: `MAX_TRANSACTION_COUNT`,
-  `archivio_non_disponibile`, `azione_composta_sopra_la_porta`, `params_non_serviti`, `ref_gia_in_volo`).
-  Mai un ack falso: un ref gia' inviato ma dall'esito non certo (in volo dopo il riavvio, oppure `ignoto`) risponde
-  `accettato=False, seq=None, ref_gia_in_volo: ... riconciliare per ref`, 0 invii; un ref ACCETTATO da questa porta
-  risponde lo stesso ack (`ref_gia_visto`, idempotenza).
+  `archivio_non_disponibile`, `azione_composta_sopra_la_porta`, `params_non_serviti`).
+  Ref gia' visto (memoria, diario o `ordini_ref_visti`), in ogni fase (in volo, ignoto, terminale), anche dopo il riavvio:
+  l'`Ack` ORIGINALE (`accettato` e `seq` della prima risposta), motivo `ref_gia_visto`, 0 invii: parita' col motore
+  (`motore_ordini.py:997-1005`). Lo stato del ref non cambia; l'esito lo dicono `stato`/`eventi`.
 - Memoria: oltre 5.000 ref si dimenticano SOLO gli ordini chiusi; se i ref aperti superano il tetto la memoria cresce e lo
   dice a WARNING (nessun ordine aperto perde stato). Stato monotono anche sull'esito del place (lo stream arrivato prima
   della risposta REST non viene sovrascritto).
@@ -59,7 +59,7 @@ Nessun import di supabase, di flumine o di un bot (i bot sono solo ARBITRI nei t
 |---|---|---|---|
 | C-002 | schema del comando, rifiuti identici | `adattatore_comando.richiesta_da_comando` (chiama `valida_comando`) | `test_c1_adattatore_comando.py` (andata e ritorno, piano identico su comandi VERI di Safe, 14 rifiuti identici) |
 | C-003 | ack, `seq` per attore, `da_seq` 500 | `porta.py` `_nuovo_seq` + `_memorizza` (stesso lucchetto), `da_seq`, `eventi`; `eventi.py` | `test_c1_porta.py` (push perso riparato, memoria superata, seq per attore, seq mai indietro); `test_c1_eventi.py` (parita' con `MemoriaComandi`) |
-| C-004 | dedup per ref anche dopo il riavvio (memoria + diario + righe `ordini_ref_visti` che la porta scrive e rilegge sotto il suo lucchetto; una porta per archivio) | `porta._ref_e_dedup`, `_dedup`, `apri`, registro `_ARCHIVI_IN_USO` | `test_c1_porta.py` (stessa vita, riavvio da archivio, riavvio da diario, archivio guasto fail-closed); `test_c1_revisione.py` (seconda porta rifiutata, ack fantasma, ignoto dopo il riavvio, mai un ack falso, finto = vero) |
+| C-004 | dedup per ref anche dopo il riavvio (memoria + diario + righe `ordini_ref_visti` che la porta scrive e rilegge sotto il suo lucchetto; una porta per archivio) | `porta._ref_e_dedup`, `_dedup`, `apri`, registro `_ARCHIVI_IN_USO` | `test_c1_porta.py` (stessa vita, riavvio da archivio, riavvio da diario, archivio guasto fail-closed); `test_c1_revisione.py` (seconda porta rifiutata, ack fantasma, ignoto dopo il riavvio, ack originale in ogni fase, rifiuto dopo il riavvio, parita' DIRETTA col `MotoreOrdini` di oggi, finto = vero) |
 | C-011, C-013 (forma) | riga di coda di Safe, riga del dispatch | `adattatore_comando.riga_coda_da_richiesta` / `richiesta_da_riga_coda` | `test_c1_adattatore_comando.py` (riga VERA di `enqueue_place` con la normalizzazione della RPC; riga = riga del motore) |
 | C-020, C-021, C-028 (decisione) | kill-switch sulle aperture, modo della RIGA | `controlli.controlla` | `test_c1_controlli.py::test_controlla_parita_col_motore` (griglia di 768 casi = `_controlla`); `test_c1_porta.py` |
 | C-022 (rate) | transazioni/ora per CONTO, solo live | `controlli.ContatoreTransazioni` | parita' col control VERO `MaxTransactionCount` e con l'esecuzione VERA di flumine; somma su 3 attori; paper escluso (`test_c1_revisione.py`) |
