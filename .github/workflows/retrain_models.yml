@@ -43,18 +43,34 @@ on:
   # Cosi' gli allenamenti partono SOLO quando c'e' lavoro vero.
   #
   # workflow_dispatch resta per i run manuali (override leghe / campagne cutoff).
-  workflow_run:
-    workflows: ["Daily Yesterday Backfill"]
-    types: [completed]
-  # FALLBACK GIORNALIERO (gated): rete di sicurezza se l'evento workflow_run si
-  # perde (raro ma capita su GitHub). NON e' polling "a caso": e' UN solo check al
-  # giorno e, grazie al gate, se non c'e' lavoro skippa in ~30s senza accendere
-  # shard. 08:19 UTC = dopo che il backfill (01:12) e' sicuramente finito, anche
-  # con ritardi. Minuto off-peak per non finire in fila a :00.
-  schedule:
-    - cron: "19 8 * * *"
+  #
+  # 09/10/2026 (cantiere orologio notturno): tolti l'aggancio workflow_run al Daily e
+  # il fallback giornaliero su cron (19 8 * * *). GitHub non esegue piu' di tre livelli
+  # di workflow_run in fila e il suo cron partiva con 5-6 h di ritardo: ora il Retrain
+  # e' il SECONDO anello della catena notturna e lo lancia il Daily (job
+  # passa-testimone) con catena=true e monte_ok=true/false. Regola invariata: il
+  # training parte solo se il Daily e' success (monte_ok), il gate interno "lavoro
+  # vero" (planner) resta. Il fallback su cron non serve piu': la staffetta non si
+  # perde come un evento workflow_run e, se fallisce, la run e' rossa e la verifica
+  # delle 07:30 UTC lo scrive in live_alerts.
+  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine del 09/10/2026:
+  # 1 Daily Yesterday Backfill -> 2 Retrain ML -> 3 ML Post-Calibration ->
+  # 4 Today Predictions Backfill -> 5 Hazard Atlas -> 6 Leagues Mapping ->
+  # 7 Seasons Catchup -> 8 Predictions Results Backfill -> 9 Weekly Poisson (solo lunedi').
+  # Il primo anello lo lancia l'orologio pg_cron (00:12 UTC); ogni anello lancia il
+  # successivo con il job passa-testimone (in fondo al file). Nessun cron GitHub.
   workflow_dispatch:
     inputs:
+      catena:
+        description: "Catena notturna: 'true' = finito questo, lancia il prossimo anello (lo mettono l'orologio pg_cron e l'anello precedente). A mano lascia 'false': gira solo questo workflow."
+        type: choice
+        options: ["false", "true"]
+        default: "false"
+      monte_ok:
+        description: "USO INTERNO (catena): 'false' = il Daily a monte NON e' success, il training si salta (regola di sempre). A mano lascia 'true'."
+        type: choice
+        options: ["true", "false"]
+        default: "true"
       total_shards:
         description: "Job paralleli (shard) = runner separati, 1 lega ciascuno. Default 3 (regime incrementale: meno runner accesi = meno minuti fatturati a parita' di leghe allenate; l'auto-chain smaltisce comunque la coda). Alza a 5 per campagne di massa."
         default: "3"
@@ -69,7 +85,7 @@ on:
         default: ""
         required: false
       time_budget_min:
-        description: "Stop NUOVE leghe dopo N minuti (4h=240). L'ultima lega in corso finisce, poi il run esce; il cron rilancia ~30 min dopo."
+        description: "Stop NUOVE leghe dopo N minuti (4h=240). L'ultima lega in corso finisce, poi il run esce; il job rechain lo rilancia (auto-chain)."
         default: "240"
         required: true
       parallel_leagues:
@@ -92,14 +108,13 @@ concurrency:
 
 jobs:
   plan:
-    # Su workflow_run parte SOLO se il backfill a monte e' andato a buon fine
-    # (inutile ricontrollare se l'ingest dei risultati e' fallito). I run manuali
-    # (workflow_dispatch) passano sempre.
-    # 25/09/2026: la conclusion del Daily riflette SOLO il backfill (l'atlante
-    # hazard e' stato spostato in hazard_atlas.yml): un job accessorio non puo'
-    # piu' far saltare il retrain. Se e' il backfill a fallire, il salto qui e'
-    # voluto e il fallback giornaliero (schedule 08:19 UTC) recupera.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event.workflow_run.conclusion == 'success' }}
+    # Parte SOLO se il backfill a monte e' andato a buon fine (inutile ricontrollare
+    # se l'ingest dei risultati e' fallito). 09/10/2026: l'esito del Daily arriva
+    # con l'input monte_ok della staffetta (prima: workflow_run.conclusion ==
+    # 'success'); i run manuali (monte_ok di default 'true') passano sempre.
+    # Se e' il backfill a fallire il salto e' voluto: il testimone passa comunque
+    # agli anelli a valle (job passa-testimone, in fondo).
+    if: ${{ inputs.monte_ok != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     outputs:
@@ -320,6 +335,11 @@ jobs:
     permissions:
       actions: write      # necessario a `gh workflow run` per rilanciare
       contents: read
+    # 09/10/2026: rilanciato=true se questa run ha rilanciato il retrain. In quel caso
+    # il testimone della catena lo passa la run RILANCIATA (l'ultima del giro), non
+    # questa: gli anelli a valle partono UNA volta sola.
+    outputs:
+      rilanciato: ${{ steps.rilancio.outputs.rilanciato }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -337,11 +357,14 @@ jobs:
           pip install -r requirements-planner.txt
 
       - name: Rilancia se restano leghe del giorno (auto-chain)
+        id: rilancio
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           RETRAIN_INCREMENTAL_MIN_NEW: "10"
           CHAIN_DEPTH: ${{ inputs.chain_depth || '0' }}
+          # 09/10/2026: la run rilanciata eredita catena (passera' lei il testimone)
+          CATENA: ${{ inputs.catena || 'false' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PYTHONIOENCODING: utf-8
           PYTHONUNBUFFERED: "1"
@@ -368,4 +391,41 @@ jobs:
             exit 0
           fi
           echo "[RECHAIN] Restano $REMAINING leghe: rilancio il workflow (giro $NEXT/$MAX_CHAIN)."
-          gh workflow run retrain_models.yml -f chain_depth="$NEXT"
+          # 09/10/2026: rilanciato=true scritto PRIMA del lancio: se gh fallisse dopo che
+          # GitHub ha creato la run, la catena a valle partirebbe due volte (qui e nella
+          # run rilanciata). Meglio una catena ferma (run rossa + allarme delle 07:30) che
+          # un doppio lancio.
+          echo "rilanciato=true" >> "$GITHUB_OUTPUT"
+          gh workflow run retrain_models.yml -f chain_depth="$NEXT" -f catena="$CATENA" -f monte_ok=true
+
+  # STAFFETTA (09/10/2026, cantiere orologio notturno): finito il lavoro di questa run,
+  # lancia il PROSSIMO anello della catena notturna (workflow_dispatch con GITHUB_TOKEN,
+  # .github/scripts/passa_testimone.sh). Regola: passa il testimone se la run NON e' stata
+  # annullata (!cancelled(): anche dopo un fallimento la catena prosegue, una cancellazione
+  # manuale la ferma) e SOLO se questa run fa parte della catena (input catena=true: lo
+  # mettono l'orologio pg_cron e l'anello precedente; un lancio a mano parte con
+  # catena=false e NON trascina gli anelli a valle).
+  # Retrain: il testimone NON passa se questa run ha rilanciato se stessa (auto-chain,
+  # rilanciato=true): lo passera' l'ultima run del giro, cosi' Post-Calibration e gli
+  # anelli dopo partono UNA volta. retrain_eseguito=false se il plan e' stato saltato
+  # (Daily non success): la Post-Calibration si dichiara skipped come prima.
+  passa-testimone:
+    needs: [plan, train, rechain]
+    if: ${{ !cancelled() && inputs.catena == 'true' && needs.rechain.outputs.rilanciato != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      actions: write      # gh workflow run del prossimo anello
+      contents: read
+    steps:
+      - name: Checkout (solo lo script della staffetta)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Passa il testimone a ml_calibration.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROSSIMO_ANELLO: ml_calibration.yml
+          RETRAIN_ESEGUITO: ${{ needs.plan.result == 'skipped' && 'false' || 'true' }}
+        run: bash .github/scripts/passa_testimone.sh "$PROSSIMO_ANELLO" retrain_eseguito="$RETRAIN_ESEGUITO"

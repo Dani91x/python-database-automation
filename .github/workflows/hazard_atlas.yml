@@ -36,10 +36,23 @@ name: Hazard Atlas (notturno, dopo il Daily)
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  workflow_run:
-    workflows: ["Daily Yesterday Backfill"]
-    types: [completed]
+  # 09/10/2026: tolto l'aggancio workflow_run al Daily (GitHub non va oltre tre livelli
+  # di workflow_run in fila). QUINTO anello della catena notturna: lo lancia Today
+  # Predictions (passa-testimone). Gira anche se a monte qualcosa e' fallito; una
+  # cancellazione a monte ferma la catena prima di arrivare qui.
+  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine del 09/10/2026:
+  # 1 Daily Yesterday Backfill -> 2 Retrain ML -> 3 ML Post-Calibration ->
+  # 4 Today Predictions Backfill -> 5 Hazard Atlas -> 6 Leagues Mapping ->
+  # 7 Seasons Catchup -> 8 Predictions Results Backfill -> 9 Weekly Poisson (solo lunedi').
+  # Il primo anello lo lancia l'orologio pg_cron (00:12 UTC); ogni anello lancia il
+  # successivo con il job passa-testimone (in fondo al file). Nessun cron GitHub.
   workflow_dispatch:
+    inputs:
+      catena:
+        description: "Catena notturna: 'true' = finito questo, lancia il prossimo anello (lo mettono l'orologio pg_cron e l'anello precedente). A mano lascia 'false': gira solo questo workflow."
+        type: choice
+        options: ["false", "true"]
+        default: "false"
 
 concurrency:
   group: hazard-atlas
@@ -47,9 +60,10 @@ concurrency:
 
 jobs:
   hazard-atlas:
-    # Come prima (`needs: run-backfill` + `if: !cancelled()`): gira anche se il
-    # backfill fallisce (si aggiorna con quello che c'e'), mai se e' stato annullato.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'cancelled' }}
+    # Come prima: gira anche se il backfill fallisce (si aggiorna con quello che c'e'),
+    # mai se e' stato annullato. 09/10/2026: la regola "mai dopo un annullamento" ora
+    # la applica la staffetta (un anello annullato non passa il testimone), quindi qui
+    # nessuna condizione: parte solo da workflow_dispatch.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -111,3 +125,30 @@ jobs:
           --filigrana-da-ora-se-assente
           --seme Betfair/omega/data/hazard_atlas_v3.json
           --scrivi-db
+
+  # STAFFETTA (09/10/2026, cantiere orologio notturno): finito il lavoro di questa run,
+  # lancia il PROSSIMO anello della catena notturna (workflow_dispatch con GITHUB_TOKEN,
+  # .github/scripts/passa_testimone.sh). Regola: passa il testimone se la run NON e' stata
+  # annullata (!cancelled(): anche dopo un fallimento la catena prosegue, una cancellazione
+  # manuale la ferma) e SOLO se questa run fa parte della catena (input catena=true: lo
+  # mettono l'orologio pg_cron e l'anello precedente; un lancio a mano parte con
+  # catena=false e NON trascina gli anelli a valle).
+  passa-testimone:
+    needs: [hazard-atlas]
+    if: ${{ !cancelled() && inputs.catena == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      actions: write      # gh workflow run del prossimo anello
+      contents: read
+    steps:
+      - name: Checkout (solo lo script della staffetta)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Passa il testimone a leagues_mapper.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROSSIMO_ANELLO: leagues_mapper.yml
+        run: bash .github/scripts/passa_testimone.sh "$PROSSIMO_ANELLO"

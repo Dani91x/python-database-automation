@@ -8,26 +8,44 @@ name: ML Post-Calibration (assembla per-lega + globale)
 # emesse dal training), aggrega per-lega + fallback globale, UPSERT nella tabella.
 # Niente ri-predizione, niente file: solo aggregazione di numeri => leggero.
 #
-# QUANDO PARTE:
-#   - SUBITO DOPO ogni retrain (workflow_run): l'assemblatore gira in modalita'
+# QUANDO PARTE (09/10/2026: catena notturna, niente workflow_run ne' cron):
+#   - SUBITO DOPO il retrain (staffetta, catena=true): l'assemblatore gira in modalita'
 #     INCREMENTALE => aggiorna SOLO le leghe riaddestrate dall'ultima calibrazione,
 #     e se nulla e' cambiato non fa niente. Cosi' gira solo quando c'e' davvero un
 #     modello nuovo, e tocca solo le leghe coinvolte.
-#   - 1 volta al giorno (schedule): rete di sicurezza in modalita' FULL (ricostruisce
-#     tutte le righe + pulizia obsolete), nel caso un retrain venga saltato.
+#   - FULL (ricostruisce tutte le righe + pulizia obsolete): era la rete di sicurezza
+#     giornaliera del cron delle 05:14 UTC, tolto il 09/10/2026. Ora (decisione del
+#     09/10) gira FULL una volta a settimana DENTRO la catena: il LUNEDI' (giorno UTC),
+#     anche se il retrain a monte e' stato saltato; a mano con l'input completa=true.
 # Idempotente (upsert su PK league_id).
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  # parte alla FINE del workflow di retrain (modalita' incrementale)
-  workflow_run:
-    workflows: ["Retrain ML Models (cloud, all leagues)"]
-    types: [completed]
-  # rete di sicurezza giornaliera (modalita' full)
-  schedule:
-    - cron: "14 5 * * *"   # 05:14 UTC (minuto off-peak: parte vicino all'orario, non in fila a :00)
+  # 09/10/2026: TERZO anello della catena notturna, lo lancia il Retrain (job
+  # passa-testimone, una volta sola anche se il retrain si rilancia da solo).
+  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine del 09/10/2026:
+  # 1 Daily Yesterday Backfill -> 2 Retrain ML -> 3 ML Post-Calibration ->
+  # 4 Today Predictions Backfill -> 5 Hazard Atlas -> 6 Leagues Mapping ->
+  # 7 Seasons Catchup -> 8 Predictions Results Backfill -> 9 Weekly Poisson (solo lunedi').
+  # Il primo anello lo lancia l'orologio pg_cron (00:12 UTC); ogni anello lancia il
+  # successivo con il job passa-testimone (in fondo al file). Nessun cron GitHub.
   workflow_dispatch:
     inputs:
+      catena:
+        description: "Catena notturna: 'true' = finito questo, lancia il prossimo anello (lo mettono l'orologio pg_cron e l'anello precedente). A mano lascia 'false': gira solo questo workflow."
+        type: choice
+        options: ["false", "true"]
+        default: "false"
+      retrain_eseguito:
+        description: "USO INTERNO (catena): 'false' = il retrain a monte e' stato saltato (Daily non success), niente da assemblare. A mano lascia 'true'."
+        type: choice
+        options: ["true", "false"]
+        default: "true"
+      completa:
+        description: "'true' = modalita' FULL (ricostruisce tutte le righe + pulizia obsolete). Default incrementale."
+        type: choice
+        options: ["false", "true"]
+        default: "false"
       min_n:
         description: "Campioni minimi per bin per applicare una correzione."
         default: "20"
@@ -38,7 +56,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Il lunedi' si decide qui (data UTC del runner): l'espressione if di GitHub non
+  # conosce il giorno della settimana. Stesso schema di weekly_poisson_calibration.yml.
+  giorno:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      lunedi: ${{ steps.g.outputs.lunedi }}
+    steps:
+      - name: Oggi e' lunedi' (UTC)?
+        id: g
+        run: |
+          D="$(date -u +%u)"
+          if [ "$D" = "1" ]; then
+            echo "lunedi=true" >> "$GITHUB_OUTPUT"
+            echo "Oggi (UTC) e' lunedi': nella catena la calibrazione gira FULL."
+          else
+            echo "lunedi=false" >> "$GITHUB_OUTPUT"
+            echo "Oggi (UTC) non e' lunedi' (giorno $D): incrementale."
+          fi
+
   assemble:
+    needs: giorno
     # 25/09/2026: se il retrain a monte e' stato SALTATO (nessun job eseguito,
     # quindi nessun modello nuovo) l'incrementale non ha nulla da fare: prima
     # leggeva comunque ~18.800 righe di calibration_cells per concludere "niente
@@ -46,7 +85,10 @@ jobs:
     # dichiaratamente skipped. Retrain success/failure (anche parziale: alcuni
     # shard possono aver salvato modelli) -> gira come prima. Schedule e
     # workflow_dispatch invariati.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'skipped' }}
+    # 09/10/2026: il "retrain saltato" arriva con l'input retrain_eseguito della
+    # staffetta (prima: workflow_run.conclusion == 'skipped'); stessa regola.
+    # Eccezione (09/10): il lunedi' nella catena gira comunque (FULL, rete di sicurezza).
+    if: ${{ inputs.retrain_eseguito != 'false' || (inputs.catena == 'true' && needs.giorno.outputs.lunedi == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -70,9 +112,39 @@ jobs:
           # min_n via env (mai interpolato direttamente nello shell: anti-injection,
           # stesso pattern di retrain_models.yml).
           MIN_N: ${{ inputs.min_n || '20' }}
-          EVENT: ${{ github.event_name }}
+          COMPLETA: ${{ inputs.completa || 'false' }}
+          # 09/10/2026: FULL anche il lunedi' (UTC) dentro la catena
+          FULL_SETTIMANALE: ${{ inputs.catena == 'true' && needs.giorno.outputs.lunedi == 'true' }}
         run: |
-          # schedule = rete di sicurezza giornaliera => FULL; altrimenti incrementale.
+          # completa=true (a mano) o lunedi' nella catena => FULL; altrimenti incrementale.
           FULL=""
-          if [ "$EVENT" = "schedule" ]; then FULL="--full"; fi
+          if [ "$COMPLETA" = "true" ] || [ "$FULL_SETTIMANALE" = "true" ]; then FULL="--full"; fi
+          echo "Modalita': ${FULL:-incrementale}"
           python compute_ml_post_calibration.py --min-n "$MIN_N" $FULL
+
+  # STAFFETTA (09/10/2026, cantiere orologio notturno): finito il lavoro di questa run,
+  # lancia il PROSSIMO anello della catena notturna (workflow_dispatch con GITHUB_TOKEN,
+  # .github/scripts/passa_testimone.sh). Regola: passa il testimone se la run NON e' stata
+  # annullata (!cancelled(): anche dopo un fallimento la catena prosegue, una cancellazione
+  # manuale la ferma) e SOLO se questa run fa parte della catena (input catena=true: lo
+  # mettono l'orologio pg_cron e l'anello precedente; un lancio a mano parte con
+  # catena=false e NON trascina gli anelli a valle).
+  passa-testimone:
+    needs: [giorno, assemble]
+    if: ${{ !cancelled() && inputs.catena == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      actions: write      # gh workflow run del prossimo anello
+      contents: read
+    steps:
+      - name: Checkout (solo lo script della staffetta)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Passa il testimone a today_predictions_backfill.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROSSIMO_ANELLO: today_predictions_backfill.yml
+        run: bash .github/scripts/passa_testimone.sh "$PROSSIMO_ANELLO"

@@ -13,8 +13,10 @@ event}]}.
 """
 from __future__ import annotations
 
+import inspect
 import os
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -84,8 +86,22 @@ class FintoGitHub:
         return RispostaGH(200, {"total_count": len(runs), "workflow_runs": runs[:int(params.get("per_page") or 30)]})
 
 
+# 09/10/2026: i workflow VERI non hanno piu' cron (catena notturna lanciata da pg_cron). La logica
+# di action_completate_oggi resta e si prova con i vecchi orari, scritti in YAML di prova letti
+# dall'orario_cron VERO (stessa regex); main() non la usa piu' (vedi riserva_da_catena, par. 3).
+CARTELLA_CRON_PROVA = tempfile.mkdtemp(prefix="cron_prova_")
+for _wf, _cron in ((DAILY, "12 1 * * *"), (TODAY, "18 2 * * *"), (RESULTS, "23 3 * * *")):
+    with open(os.path.join(CARTELLA_CRON_PROVA, _wf), "w", encoding="utf-8") as _f:
+        _f.write("on:\n  schedule:\n    - cron: '" + _cron + "'\n  workflow_dispatch:\n")
+
+
+class ControlloConCronDiProva(sc.ControlloConcorrenza):
+    def orario_cron(self, wf, cartella=CARTELLA_CRON_PROVA):
+        return super().orario_cron(wf, cartella)
+
+
 def _controllo(gh: FintoGitHub, env: Optional[Dict[str, str]] = None) -> sc.ControlloConcorrenza:
-    return sc.ControlloConcorrenza(env=ENV_GH if env is None else env, http_get=gh.get)
+    return ControlloConCronDiProva(env=ENV_GH if env is None else env, http_get=gh.get)
 
 
 def _tutte_fatte(gh: FintoGitHub) -> None:
@@ -107,7 +123,14 @@ def _quota(gh: FintoGitHub, adesso: datetime, env: Optional[Dict[str, str]] = No
 # ===========================================================================
 # 1. Le 3 verifiche del giorno e la riserva
 # ===========================================================================
-def test_cron_letti_dai_workflow_veri():
+def test_workflow_veri_senza_cron_orario_none():
+    """09/10/2026: nessun cron nei workflow veri -> orario_cron None (riserva da CATCHUP_RISERVA_PER)."""
+    c = sc.ControlloConcorrenza(env=ENV_GH, http_get=FintoGitHub().get)
+    assert [c.orario_cron(w) for w in sc.ACTION_GIORNALIERE] == [None, None, None]
+    assert c.action_completate_oggi(GIORNO.replace(hour=19)) is None
+
+
+def test_cron_letti_dai_yaml_di_prova():
     c = _controllo(FintoGitHub())
     assert [c.orario_cron(w) for w in sc.ACTION_GIORNALIERE] == [(1, 12), (2, 18), (3, 23)]
 
@@ -208,6 +231,67 @@ def test_completate_resta_vero_nel_giorno_e_si_rilegge_il_giorno_dopo():
     c._completate_cache = None
     assert c.action_completate_oggi(GIORNO.replace(hour=22)) is True and len(gh.richieste) == n
     assert c.action_completate_oggi(GIORNO + timedelta(days=1, hours=9)) is False   # nuovo giorno UTC
+
+
+# ===========================================================================
+# 3. (09/10/2026) Riserva nella catena notturna: CATCHUP_RISERVA_PER
+# ===========================================================================
+RES = "predictions_results_backfill.yml"
+
+
+def test_riserva_per_assente_riserva_piena():
+    assert sc.riserva_da_catena({})[0] == 3000
+    assert "riserva piena 3000" in sc.riserva_da_catena({})[1]
+
+
+def test_riserva_per_vuota_riserva_piena():
+    """Decisione: '' = lancio a mano (il workflow la lascia vuota con catena=false) -> PIENA."""
+    for v in ("", "  ", ","):
+        r, nota = sc.riserva_da_catena({"CATCHUP_RISERVA_PER": v})
+        assert r == 3000, (v, nota)
+
+
+def test_riserva_per_solo_results():
+    r, nota = sc.riserva_da_catena({"CATCHUP_RISERVA_PER": RES})
+    assert r == 300 + 1000                                   # residua + ceil(3000 / 3)
+    assert f"{RES}=1000" in nota and "= 1300" in nota
+
+
+def test_riserva_per_numero_esplicito_e_somma():
+    assert sc.riserva_da_catena({"CATCHUP_RISERVA_PER": f"{RES}=700"})[0] == 1000
+    assert sc.riserva_da_catena({"CATCHUP_RISERVA_PER": f"{RES}=700, today_predictions_backfill.yml=500"})[0] == 1500
+
+
+def test_riserva_per_mai_sopra_la_piena():
+    r, nota = sc.riserva_da_catena({"CATCHUP_RISERVA_PER": f"{RES}=5000"})
+    assert r == 3000 and "limitata alla piena" in nota
+    assert sc.riserva_da_catena({"CATCHUP_RISERVA_PER": ",".join(sc.ACTION_GIORNALIERE)})[0] == 3000
+
+
+def test_riserva_per_voce_non_valida_riserva_piena_con_avviso():
+    for v in ("Results", f"{RES}=-5", f"{RES}=tanti", f"{RES};x"):
+        r, nota = sc.riserva_da_catena({"CATCHUP_RISERVA_PER": v})
+        assert r == 3000 and nota.startswith("AVVISO"), (v, nota)
+
+
+def test_riserva_per_segue_piena_e_residua_da_env():
+    env = {"CATCHUP_RISERVA_PER": RES, "API_FOOTBALL_RISERVA_GIORNALIERA": "6000",
+           "API_FOOTBALL_RISERVA_RESIDUA": "500"}
+    assert sc.riserva_da_catena(env)[0] == 500 + 2000
+
+
+def test_gestore_quota_con_la_riserva_della_catena():
+    r, _ = sc.riserva_da_catena({"CATCHUP_RISERVA_PER": RES})
+    db, server = FintoDB(), FintoServer(current=5000)
+    q = api_quota.GestoreQuota(sb=db, api_key="x", http_get=server.http_get_status, env={}, riserva=r)
+    st = q.aggiorna()
+    assert st.riserva == 1300 and st.margine == 7500 - 5000 - 1300
+
+
+def test_main_prende_la_riserva_da_catena_non_dai_cron():
+    src = inspect.getsource(sc.main)
+    assert "riserva_da_catena()" in src and "riserva=riserva" in src
+    assert "action_completate=" not in src
 
 
 # ===========================================================================

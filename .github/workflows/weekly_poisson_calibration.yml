@@ -1,12 +1,57 @@
 name: Weekly Poisson Calibration
 
 on:
-  schedule:
-    - cron: '27 3 * * 1'   # ogni lunedì alle 03:27 UTC (minuto off-peak, non in fila a :00)
+  # 09/10/2026: tolto il cron (27 3 * * 1). NONO e ULTIMO anello della catena notturna:
+  # lo lancia Predictions Results (passa-testimone) OGNI notte, ma la calibrazione gira
+  # SOLO il lunedi' (giorno UTC, job giorno qui sotto); gli altri giorni il job calibrate
+  # e' skipped, dichiarato nel riepilogo. Un lancio a mano (catena=false) gira sempre.
+  # Ultimo anello: nessun passa-testimone.
+  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine del 09/10/2026:
+  # 1 Daily Yesterday Backfill -> 2 Retrain ML -> 3 ML Post-Calibration ->
+  # 4 Today Predictions Backfill -> 5 Hazard Atlas -> 6 Leagues Mapping ->
+  # 7 Seasons Catchup -> 8 Predictions Results Backfill -> 9 Weekly Poisson (solo lunedi').
+  # Il primo anello lo lancia l'orologio pg_cron (00:12 UTC); ogni anello lancia il
+  # successivo con il job passa-testimone (in fondo al file). Nessun cron GitHub.
   workflow_dispatch:       # lancio manuale dal tab Actions
+    inputs:
+      catena:
+        description: "Catena notturna: 'true' = finito questo, lancia il prossimo anello (lo mettono l'orologio pg_cron e l'anello precedente). A mano lascia 'false': gira solo questo workflow."
+        type: choice
+        options: ["false", "true"]
+        default: "false"
+
+# 09/10/2026: gruppo come gli altri anelli (mai due calibrazioni sovrapposte, nessuna
+# cancellata: la seconda attende).
+concurrency:
+  group: weekly-poisson-calibration
+  cancel-in-progress: false
 
 jobs:
+  # Il lunedi' si decide qui (data UTC del runner): l'espressione if di GitHub non
+  # conosce il giorno della settimana.
+  giorno:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      lunedi: ${{ steps.g.outputs.lunedi }}
+    steps:
+      - name: Oggi e' lunedi' (UTC)?
+        id: g
+        run: |
+          D="$(date -u +%u)"
+          if [ "$D" = "1" ]; then
+            echo "lunedi=true" >> "$GITHUB_OUTPUT"
+            echo "Oggi (UTC) e' lunedi': calibrazione settimanale."
+          else
+            echo "lunedi=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Oggi (UTC) non e' lunedi' (giorno $D): calibrazione settimanale SALTATA nella catena (skipped dichiarato)."
+            echo "Calibrazione settimanale SALTATA: oggi (UTC) non e' lunedi' (giorno $D). Gira solo il lunedi' nella catena notturna." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   calibrate:
+    needs: giorno
+    # Nella catena solo il lunedi'; a mano (catena=false) sempre.
+    if: ${{ inputs.catena != 'true' || needs.giorno.outputs.lunedi == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

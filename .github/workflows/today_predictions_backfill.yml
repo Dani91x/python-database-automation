@@ -1,8 +1,15 @@
 name: Today Predictions Backfill
 
 on:
-  schedule:
-    - cron: '18 2 * * *'   # 02:18 UTC (minuto off-peak: parte vicino all'orario, non in fila a :00)
+  # 09/10/2026: tolto il cron (18 2 * * *, partiva con 5-6 h di ritardo). QUARTO anello
+  # della catena notturna: lo lancia ML Post-Calibration (passa-testimone), cosi' le
+  # predizioni di oggi sono pronte prima delle 09:00 italiane (decisione dell'utente).
+  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine del 09/10/2026:
+  # 1 Daily Yesterday Backfill -> 2 Retrain ML -> 3 ML Post-Calibration ->
+  # 4 Today Predictions Backfill -> 5 Hazard Atlas -> 6 Leagues Mapping ->
+  # 7 Seasons Catchup -> 8 Predictions Results Backfill -> 9 Weekly Poisson (solo lunedi').
+  # Il primo anello lo lancia l'orologio pg_cron (00:12 UTC); ogni anello lancia il
+  # successivo con il job passa-testimone (in fondo al file). Nessun cron GitHub.
   workflow_dispatch:
     inputs:
       date:
@@ -10,6 +17,11 @@ on:
         required: false
         type: string
         default: ''
+      catena:
+        description: "Catena notturna: 'true' = finito questo, lancia il prossimo anello (lo mettono l'orologio pg_cron e l'anello precedente). A mano lascia 'false': gira solo questo workflow."
+        type: choice
+        options: ["false", "true"]
+        default: "false"
 
 concurrency:
   group: today-predictions-backfill
@@ -45,3 +57,30 @@ jobs:
           else
             python -m Prediction.today_predictions_backfill
           fi
+
+  # STAFFETTA (09/10/2026, cantiere orologio notturno): finito il lavoro di questa run,
+  # lancia il PROSSIMO anello della catena notturna (workflow_dispatch con GITHUB_TOKEN,
+  # .github/scripts/passa_testimone.sh). Regola: passa il testimone se la run NON e' stata
+  # annullata (!cancelled(): anche dopo un fallimento la catena prosegue, una cancellazione
+  # manuale la ferma) e SOLO se questa run fa parte della catena (input catena=true: lo
+  # mettono l'orologio pg_cron e l'anello precedente; un lancio a mano parte con
+  # catena=false e NON trascina gli anelli a valle).
+  passa-testimone:
+    needs: [run-predictions]
+    if: ${{ !cancelled() && inputs.catena == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      actions: write      # gh workflow run del prossimo anello
+      contents: read
+    steps:
+      - name: Checkout (solo lo script della staffetta)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Passa il testimone a hazard_atlas.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROSSIMO_ANELLO: hazard_atlas.yml
+        run: bash .github/scripts/passa_testimone.sh "$PROSSIMO_ANELLO"

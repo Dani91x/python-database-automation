@@ -3,25 +3,34 @@ name: Leagues Mapping (giornaliero)
 # dal 25/09 gira anche OGNI GIORNO, in coda al Daily: il mapper AGGIORNA i flag di coverage
 # delle stagioni vive (API-Football li accende a stagione iniziata; prima restavano False
 # per sempre) e inserisce le leghe/stagioni nuove. 1 chiamata API (/leagues) per run.
-# Il cron mensile resta come rete di sicurezza se l'evento workflow_run si perde.
+# 09/10/2026: tolti l'aggancio workflow_run al Daily e il cron mensile (12 0 1 * *): il
+# mapper gira ogni notte come SESTO anello della catena (lo lancia Hazard Atlas), quindi
+# la rete di sicurezza mensile non serve piu'.
 
 on:
-  workflow_run:
-    workflows: ["Daily Yesterday Backfill"]
-    types: [completed]
-  schedule:
-    - cron: '12 0 1 * *'   # giorno 1 del mese 00:12 UTC (minuto off-peak, non in fila a :00)
+  # Catena notturna IN FILA (un solo lavoro per volta sul DB), ordine del 09/10/2026:
+  # 1 Daily Yesterday Backfill -> 2 Retrain ML -> 3 ML Post-Calibration ->
+  # 4 Today Predictions Backfill -> 5 Hazard Atlas -> 6 Leagues Mapping ->
+  # 7 Seasons Catchup -> 8 Predictions Results Backfill -> 9 Weekly Poisson (solo lunedi').
+  # Il primo anello lo lancia l'orologio pg_cron (00:12 UTC); ogni anello lancia il
+  # successivo con il job passa-testimone (in fondo al file). Nessun cron GitHub.
   workflow_dispatch:
+    inputs:
+      catena:
+        description: "Catena notturna: 'true' = finito questo, lancia il prossimo anello (lo mettono l'orologio pg_cron e l'anello precedente). A mano lascia 'false': gira solo questo workflow."
+        type: choice
+        options: ["false", "true"]
+        default: "false"
 
-# Mai due mapper sovrapposti (Daily + mensile + manuale): il secondo attende, nessuno e' cancellato.
+# Mai due mapper sovrapposti (catena + manuale): il secondo attende, nessuno e' cancellato.
 concurrency:
   group: leagues-mapper
   cancel-in-progress: false
 
 jobs:
   run-leagues-mapper:
-    # Gira anche se il Daily e' fallito (i flag vanno aggiornati comunque); non se annullato.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled' }}
+    # Gira anche se il Daily e' fallito (i flag vanno aggiornati comunque); non se annullato:
+    # dal 09/10/2026 lo garantisce la staffetta (un anello annullato non passa il testimone).
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -45,3 +54,30 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: python leagues_mapper.py
+
+  # STAFFETTA (09/10/2026, cantiere orologio notturno): finito il lavoro di questa run,
+  # lancia il PROSSIMO anello della catena notturna (workflow_dispatch con GITHUB_TOKEN,
+  # .github/scripts/passa_testimone.sh). Regola: passa il testimone se la run NON e' stata
+  # annullata (!cancelled(): anche dopo un fallimento la catena prosegue, una cancellazione
+  # manuale la ferma) e SOLO se questa run fa parte della catena (input catena=true: lo
+  # mettono l'orologio pg_cron e l'anello precedente; un lancio a mano parte con
+  # catena=false e NON trascina gli anelli a valle).
+  passa-testimone:
+    needs: [run-leagues-mapper]
+    if: ${{ !cancelled() && inputs.catena == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      actions: write      # gh workflow run del prossimo anello
+      contents: read
+    steps:
+      - name: Checkout (solo lo script della staffetta)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Passa il testimone a seasons_catchup.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROSSIMO_ANELLO: seasons_catchup.yml
+        run: bash .github/scripts/passa_testimone.sh "$PROSSIMO_ANELLO"

@@ -63,7 +63,8 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 import season_aggregates as sa
 import season_backfill as sbk
 import season_gaps as sg
-from api_quota import GestoreQuota, QuotaConPavimento, QuotaNonLeggibile, margine_medio_log
+from api_quota import (GestoreQuota, QuotaConPavimento, QuotaNonLeggibile, leggi_riserva,
+                       leggi_riserva_residua, margine_medio_log)
 from db_client import MOTIVO_GUASTO_RETE, GuastoRete, esegui_con_retry, riepilogo_rete
 
 logger = logging.getLogger("seasons_catchup")
@@ -87,6 +88,10 @@ P4_GIORNI_MEDIA = 7                 # margine medio degli ultimi 7 giorni (api_c
 SOGLIA_RINVII_RETE_PCT_DEFAULT = 50  # CATCHUP_SOGLIA_RINVII_RETE_PCT
 RINNOVO_CLIENT_DEFAULT = 5000        # CATCHUP_RINNOVO_CLIENT_OGNI (il server chiude a 10.000 richieste)
 TITOLO_RINVII_RETE = "RINVIATE PER GATEWAY/RETE"
+# 09/10/2026 (catena notturna, nessun cron GitHub): elenco delle action che devono ANCORA girare
+# oggi DOPO il catchup, per cui tenere la quota API. Lo imposta seasons_catchup.yml solo quando
+# gira nella catena (inputs.catena == 'true'). Vedi riserva_da_catena.
+RISERVA_PER_ENV = "CATCHUP_RISERVA_PER"
 
 
 def _env_int(nome: str, default: int, env: Optional[Dict[str, str]] = None) -> int:
@@ -185,7 +190,11 @@ class ControlloConcorrenza:
     # -- riserva dinamica (api_quota.GestoreQuota(action_completate=...)) -------------------
     def orario_cron(self, wf: str, cartella: str = CARTELLA_WORKFLOW) -> Optional[Tuple[int, int]]:
         """(ora, minuto) UTC del cron giornaliero del workflow, letto dal suo file YAML
-        (`cron: 'M H * * *'`; con piu' cron il piu' presto). Non leggibile -> None."""
+        (`cron: 'M H * * *'`; con piu' cron il piu' presto). Non leggibile -> None.
+        09/10/2026: i workflow NON hanno piu' cron (catena notturna lanciata da pg_cron,
+        migrations/orologio_action_notturne_2026-10-09.sql): sui file veri ritorna None, quindi
+        action_completate_oggi ritorna None. main() non la usa piu': la riserva la decide
+        riserva_da_catena (CATCHUP_RISERVA_PER)."""
         try:
             with open(os.path.join(cartella, wf), encoding="utf-8") as f:
                 testo = f.read()
@@ -253,6 +262,46 @@ class ControlloConcorrenza:
         if esito:
             self._completate_giorno = giorno
         return esito
+
+
+def riserva_da_catena(env: Optional[Dict[str, str]] = None) -> Tuple[int, str]:
+    """Riserva di quota API per la run di oggi (09/10/2026, catena notturna, nessun cron).
+
+    Nella catena il catchup gira DOPO Daily e Today Predictions (le loro chiamate sono gia'
+    nel contatore `current`) e PRIMA di Predictions Results: la quota va tenuta SOLO per chi
+    deve ancora girare. CATCHUP_RISERVA_PER = elenco separato da virgole dei workflow che
+    devono ANCORA girare oggi dopo il catchup, ognuno `file.yml` o `file.yml=N`:
+      - `file.yml=N`: N chiamate per quel workflow;
+      - `file.yml`: la sua parte della riserva piena = ceil(piena / 3) (la piena,
+        API_FOOTBALL_RISERVA_GIORNALIERA, e' dimensionata per le 3 action Daily, Today, Results);
+      riserva = residua (API_FOOTBALL_RISERVA_RESIDUA) + somma delle voci, mai sopra la piena.
+    Variabile ASSENTE o VUOTA ('') = riserva PIENA: e' il lancio a mano (il workflow la mette
+    vuota quando catena != 'true'), prudente perche' non si sa chi deve ancora girare.
+    Voce non valida = riserva PIENA con AVVISO (mai una riserva piu' bassa per un refuso).
+    Ritorna (riserva, nota leggibile)."""
+    env = os.environ if env is None else env
+    piena = leggi_riserva(env)
+    residua = leggi_riserva_residua(env, piena)
+    grezzo = (env.get(RISERVA_PER_ENV) or "").strip()
+    if not grezzo:
+        return piena, f"{RISERVA_PER_ENV} assente o vuota (lancio fuori dalla catena): riserva piena {piena}"
+    voci = [v.strip() for v in grezzo.split(",") if v.strip()]
+    if not voci:
+        return piena, f"AVVISO: {RISERVA_PER_ENV} senza voci ({grezzo!r}): riserva piena {piena}"
+    parte_default = math.ceil(piena / len(ACTION_GIORNALIERE))
+    totale = residua
+    dettaglio: List[str] = []
+    for voce in voci:
+        m = re.fullmatch(r"([a-z0-9_]+\.yml)(?:=(\d+))?", voce)
+        if not m:
+            return piena, f"AVVISO: {RISERVA_PER_ENV} non valida (voce {voce!r}): riserva piena {piena}"
+        n = int(m.group(2)) if m.group(2) is not None else parte_default
+        totale += n
+        dettaglio.append(f"{m.group(1)}={n}")
+    riserva = min(piena, totale)
+    nota = (f"riserva per le action che devono ancora girare oggi ({', '.join(dettaglio)}) "
+            f"+ residua {residua} = {riserva}" + (f" (limitata alla piena {piena})" if totale > piena else ""))
+    return riserva, nota
 
 
 ATTESA_CONCORRENTI_MAX_MIN_DEFAULT = 90   # CATCHUP_ATTESA_CONCORRENTI_MAX_MINUTI
@@ -1175,9 +1224,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sb = ClientResiliente()
     client = APIFootballClient()
     concorrenza = ControlloConcorrenza()
-    # riserva dinamica: piena finche' Daily/Today/Results di oggi non hanno finito, poi residua
-    quota = GestoreQuota(sb=sb, api_key=API_FOOTBALL_KEY, client=client,
-                         action_completate=getattr(concorrenza, "action_completate_oggi", None))
+    # 09/10/2026: niente piu' cron nei workflow -> la riserva non si legge dagli orari dei cron
+    # (action_completate_oggi) ma da CATCHUP_RISERVA_PER: nella catena solo la quota delle action
+    # che devono ancora girare oggi (Predictions Results); fuori dalla catena riserva piena.
+    riserva, nota_riserva = riserva_da_catena()
+    print(f"[CATCHUP] {nota_riserva}")
+    quota = GestoreQuota(sb=sb, api_key=API_FOOTBALL_KEY, client=client, riserva=riserva)
     # R-CATCHUP-1 (26/09): prima si aspetta la fine di Retrain/Daily/Today/Results (niente quota spesa)
     attendi_action_concorrenti(concorrenza, _env_int("CATCHUP_ATTESA_CONCORRENTI_MAX_MINUTI",
                                                      ATTESA_CONCORRENTI_MAX_MIN_DEFAULT))
