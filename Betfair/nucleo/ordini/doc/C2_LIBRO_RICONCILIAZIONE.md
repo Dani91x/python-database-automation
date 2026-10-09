@@ -38,7 +38,9 @@ confronta conto, specchio, blotter e diario e scrive le divergenze, senza toccar
 - `LibroConto.posizione(market_id, modo)` -> `PosizioneMercato` (UN modo: paper e live mai sommati);
   `calcolo_posizione` -> `CalcoloPosizione` (supportato, esposizione `None` se i runner non sono noti, motivi:
   `tipo_ignoto`, `runner_ignoti`, `seme_non_fatto`, `abbinato_mancante`, `ordini_riassunti`...; `solo_abbinato`: gli
-  ordini non abbinati NON entrano nell'esposizione, la UI lo dice).
+  ordini non abbinati NON entrano nell'esposizione, la UI lo dice). Per la UI: `pnl_mercato.posizione_per_json` (`NaN` ->
+  `null`). Senza `numberOfWinners` il modello vale solo per i `marketType` a vincitore unico per definizione
+  (`vincitori_ignoti`). Una riga di coda prova l'autore SOLO se ha piazzato quell'ordine (mai cancel/replace).
 - `LibroConto.aggiungi_consumatore(cb)`: avviso a ogni ordine cambiato (aggancio al ladder in ondata 2).
 - `RefertoOmbra`: divergenze tipizzate con gravita' e motivo; `StatoOrdine` per bet_id; `PosizioneConto` per selezione.
 
@@ -84,7 +86,7 @@ Cambiare la regola di attribuzione = cambiare `attribuzione.py` e la tabella `DI
 
 ## 8. Come si prova da solo
 
-`python -m pytest Betfair/nucleo/ordini/tests/test_c2_*.py -q -p no:cacheprovider` (197 test dopo la revisione del 09/10, ~15-30 s). Nessuna rete,
+`python -m pytest Betfair/nucleo/ordini/tests/test_c2_*.py -q -p no:cacheprovider` (232 test dopo la seconda revisione del 09/10, ~15-30 s; mutazioni: `python ARCHITETTURA_2026-10/ondata1/W1-C2/mutazioni.py .`). Nessuna rete,
 nessun DB (il client supabase e' vero su `httpx.MockTransport`), nessun file fuori da `tmp_path`.
 
 ## 9. Misure (macchina condivisa, carico ~8, Python 3.13)

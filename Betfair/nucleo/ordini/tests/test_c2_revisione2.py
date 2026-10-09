@@ -213,8 +213,13 @@ def test_m2_aggiornamento_tardivo_di_un_riassunto_storna_e_conserva_l_autore():
 
 def test_m2_rientro_vecchio_o_in_regressione_rifiutato():
     lib = _tetto(3.0)
-    vecchio = dal_conto(ordine_json("1", "BACK", 10.0, 3.0, csr="mike", cor="mike-t1"), 50)
+    fuori = lib.stato()["conti"]["fuori_ordine"]
+    # piu' vecchio del riassunto (101) e con un prezzo medio diverso: rifiutato
+    vecchio = dal_conto(ordine_json("1", "BACK", 10.0, 3.0, avp=2.5, csr="mike",
+                                    cor="mike-t1"), 50)
     lib.ricevi_live(vecchio)
+    assert lib.posizione(MKT, "live").se_vince[HOME] == 60.0
+    assert lib.stato()["conti"]["fuori_ordine"] == fuori + 1
     regresso = dal_conto(ordine_json("1", "BACK", 4.0, 3.0, residuo=6.0, csr="mike",
                                      cor="mike-t1"), 9999)
     lib.ricevi_live(regresso)
@@ -287,3 +292,12 @@ def test_m2_dopo_dimentica_mercato_il_riassunto_non_ferma_un_ordine_nuovo():
     lib.dimentica_mercato(MKT)
     lib.ricevi_live(dal_conto(ordine_json("1", "BACK", 10.0, 3.0, csr="mike", cor="mike-t1"), 5))
     assert lib.ordine("1", "live").abbinato == 10.0
+
+
+def test_g1_indizio_che_non_dice_nulla_non_blocca_la_conferma_dell_utente():
+    """Una tabella che non e' di un bot (nessun autore) non impedisce all'evidenza
+    dell'utente di confermare il terminale (R04 del revisore)."""
+    o = _ordine_live("930")
+    a = A.attribuisci(o, [A.Indizio("tabella", "tabella_non_di_un_bot"),
+                          A.Indizio("utente", "coda:local30")])
+    assert (a.autore, a.provvisoria) == ("desktop", False)

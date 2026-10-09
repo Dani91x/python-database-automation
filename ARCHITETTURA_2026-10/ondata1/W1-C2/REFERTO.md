@@ -320,3 +320,69 @@ riferimenti. Scelta prudente (mai annullare un ordine di un bot credendolo dell'
 
 Estensioni del contratto proposte (in piu' del par. 2): `PosizioneMercato.esposizione_massima: Optional[float]` (oggi
 float: uso `NaN`); `FlussoOrdiniConto` con riconnessione/ripresa e `mb`/`ml`; `OrdineDalConto.event_type_id` (D8).
+
+## 11. Seconda revisione (09/10, revisione di `0e05d04d`: «DA CORREGGERE», correzioni piccole)
+
+Promossi dal revisore: G2, G3, M1, M3, M4, M5 e il P&L (6 casi a mano; 0 differenze con `pnlSeVince`/`lockedPnlAt`,
+`flumine.calculate_matched_exposure` su 3000 casi e `greenup.compute_greenup` su 2000); 93/93 mutazioni rosse. Le
+correzioni sono nel commit `a89c8c25` (codice e test) e nel commit di questo referto. Contratti invariati, nessun
+file esistente toccato.
+
+| Punto | Correzione (file:riga) | Test (in `test_c2_revisione2.py` salvo dove detto) |
+|---|---|---|
+| **1a** G1: il place dal ladder (`local<id>`) ha la colonna `bet_id` NULL (`live_order_worker.py:3649-3653` `_LOCAL_ROW_KEYS`, `:3777-3786` `_record_local_request`); il bet_id nuovo e' solo in `result` | `attribuzione.py` `bet_id_della_riga` (`:361`): prima `result.bet_id` (la chiave che `live_order_worker._result` `:880` scrive), poi la colonna; `result` anche come stringa JSON (`_risultato` `:347`). `indizi_da_riga_coda(riga, bet_id=...)` (`:371`) prova solo per QUEL bet_id | `test_g1a_place_dal_ladder_riconosciuto_dal_result_della_riga_vera` (la riga e' il corpo VERO dell'INSERT di `_record_local_request` sul client supabase vero; il `result` e' `_result` vero con un ordine flumine vero), `test_g1a_riga_della_coda_db_col_bet_id_in_colonna`, `test_g1_result_come_stringa_json_e_rotto` |
+| **1b** G1: coda tennis `tennis_live_order_queue` (`tennis_live_order_worker.py:1830`, `local<sid>`, colonne `client_ref`, `payload`, `result`; comandi del motore `cmd<id>` con `payload.comando`, `esecutore_tennis.py:266`) | `indizi_da_riga_tennis` (`:405`): stessa regola su `payload.action`, `payload.comando`/`source`, `result.bet_id` | `test_g1b_coda_tennis_place_del_ladder_e_comando_di_un_bot` (`_result` VERO del worker tennis) |
+| **1c** G1: un CANCEL o REPLACE dell'utente su un ordine di un bot NON prova che l'ordine sia suo | `AZIONI_CHE_PIAZZANO` (`:339`): `place`, `place_submin`, `greenup`, `dutch`, `cashout_all`, `cashout_event`; ogni altra azione (e le righe senza azione) non prova niente, ne' per l'utente ne' per un bot ne' per il risk | `test_g1c_cancel_o_replace_dell_utente_su_un_ordine_di_un_bot_non_e_prova[cancel/replace]` (righe vere), `test_g1c_greenup_dell_utente_e_un_suo_ordine` |
+| **1d** G1: i ritentativi `ft<rid>...` (`live_order_worker.py:1867-1877`, `params.ft_parent`) | `indizi_da_riga_coda(..., genitore=riga)`: eredita gli indizi della riga genitore (stesso `id`); senza genitore (o con un altro id) nessuna prova | `test_g1d_ritentativo_ft_eredita_l_autore_del_genitore` |
+| **2** M2: dopo il tetto un riseme o un aggiornamento tardivo faceva rientrare l'ordine riassunto: P&L raddoppiato (`probe_m2.py`: 120 invece di 60) e autore di nuovo provvisorio | `libro_conto.py` `_Riassunto` (`:220`) ricorda per (modo, mercato) ogni bet_id riassunto con stato, attore, indizi e la sua parte; `_rientro_da_riassunto` (`:423`): stesse guardie (vecchio/regressione) contro l'ultimo stato, poi la parte si STORNA, tornano indizi e attore, contatore `riassunti_rientrati`; `dimentica_mercato` li toglie | `test_m2_seme_dopo_il_tetto_non_raddoppia` (60, anche due risemi), `test_m2_aggiornamento_tardivo_di_un_riassunto_storna_e_conserva_l_autore`, `test_m2_rientro_vecchio_o_in_regressione_rifiutato`, `test_m2_paper_riassunto_rientra_con_l_attore_dichiarato`, `test_m2_dopo_dimentica_mercato_il_riassunto_non_ferma_un_ordine_nuovo` |
+| **3** mutanti R14 (riassunto a prezzo 2,0) e R18 (`ASIAN_HANDICAP_SINGLE_LINE` a vincitore unico) | solo test | `test_m2_riassunto_con_prezzo_diverso_da_due` (3 x 10 @ 3,0 = 60), `test_m4_tipi_non_a_vincitore_unico[SINGLE_LINE/DOUBLE_LINE/LINE/RANGE]` |
+| **4** `vincitori_ignoti` | `pnl_mercato.py:208`: tipo `ODDS` senza `numberOfWinners` -> non supportato (se vince vuoto, stima prudente), salvo i `marketType` a vincitore unico PER DEFINIZIONE (`TIPI_MERCATO_UN_VINCITORE` `:81`: `MATCH_ODDS`, `CORRECT_SCORE`, `HALF_TIME`, `HALF_TIME_SCORE`, `BOTH_TEAMS_TO_SCORE`, e i prefissi `OVER_UNDER_`, `FIRST_HALF_GOALS_`; `vincitore_unico_per_definizione` `:86`); `LibroConto.imposta_mercato(tipo_mercato=...)` | `test_vincitori_ignoti_e_tipi_a_vincitore_unico_per_definizione` |
+| **5** NaN nel contratto | `posizione_per_json` (`pnl_mercato.py:296`): `NaN` -> `None`, chiavi in testo; il serializzatore dell'ondata 2 DEVE usarla (o scrivere `null`): `json.dumps(..., allow_nan=False)` passa | `test_posizione_per_json_nan_diventa_null` |
+
+I 21 test nuovi (`test_c2_revisione2.py`) sono stati eseguiti sul codice di `0e05d04d`: **14 rossi** (tutti quelli
+delle correzioni); i 7 verdi uccidono mutanti su comportamenti gia' giusti (R14, R18 x4, R04) o proteggono un ramo
+nuovo (`dimentica_mercato` coi bet_id riassunti). Uscita:
+`scratchpad/w1c2/rossi_rev2_su_vecchio.txt`. Test W1-C2: **232 verdi**.
+
+Mutazioni: lo script del repo ha ora **136** mutazioni: le 93 di prima, le **21 del revisore** (R01-R21, R13/R14
+adeguate al riassunto riscritto) e **22 nuove** (M94-M115, una per ramo delle correzioni). Giro completo
+(`python ARCHITETTURA_2026-10/ondata1/W1-C2/mutazioni.py .`): **TOTALE rosse 136/136 (guasti 0)**. Al primo giro 2 sopravvissute: R04 (una
+tabella che non e' di un bot non deve bloccare la conferma dell'utente: mancava il test,
+`test_g1_indizio_che_non_dice_nulla_non_blocca_la_conferma_dell_utente`) e M104 (il rientro di un messaggio piu'
+vecchio passava inosservato perche' il test usava gli stessi numeri: ora con un prezzo medio diverso e il contatore
+`fuori_ordine`); poi giro completo ripetuto: 136/136, uscita in
+`ARCHITETTURA_2026-10/ondata1/W1-C2/mutazioni_esito.txt`. sha256 dopo ogni ripristino = file committati in
+`a89c8c25`: `attribuzione.py` 0acd6ee24a718da0c978150d88d45dea5e2c8092cae03bea70202dc9b1ab11da,
+`libro_conto.py` 34a337aabed021ddc1c9802aabe3551b24055fb0074ff201dcc9d07eef3cffbd,
+`pnl_mercato.py` c765f43856999e08b2dbed1626af95f6009d4ce294091185cd944ade6f6d76d7,
+`riconciliazione.py` c65da0decef50ef8606f8649a92275e824b068d37a3c6269bef0a09b2a594bbd.
+Suite intera (una volta, alla fine): **11.803 verdi, 0 rossi, 87 saltati, 6 xfailed** (367 s).
+
+**Aggancio aggiornato (ondata 2), riconferma degli ordini aperti dell'utente all'AVVIO** (un ordine PERSIST
+dell'utente deve tornare `desktop`, quindi cancellabile dal ladder, dopo il riavvio del runner o dell'app). Per ogni
+ordine live ancora PROVVISORIO (ref `live`/`tennis`), fuori dal percorso degli ordini, una lettura per bet_id nuovo
+(come `esposizione_fuori_bot.proprietari_bot`), a blocchi di 100:
+- calcio: `betfair_live_order_requests` colonne `id, client_ref, action, params, bet_id, result`, `mode=live`,
+  filtro `bet_id=in.(...)` OPPURE `result->>bet_id=in.(...)` (le righe `local<id>` hanno il bet_id solo nel
+  `result`); per le righe `ft...` la riga genitore per `id=params->>ft_parent`; poi `indizi_da_riga_coda(riga,
+  bet_id=..., genitore=...)`;
+- tennis: `tennis_live_order_queue` colonne `client_ref, payload, result`, filtro `result->>bet_id=in.(...)`; poi
+  `indizi_da_riga_tennis(riga, bet_id=...)`;
+- le tabelle dei bot (`omega_trades`, `safe_strategy_trades`, `mike_trades` con `role`) e lo specchio come oggi
+  (`proprietari_bot`, `indizio_da_riga_bot`);
+- il diario del motore (righe `inviato` con attore `desktop` e `ordine` col customerOrderRef vero) come
+  `indizio_ack_desktop`.
+Finche' nessuna lettura risponde l'ordine resta provvisorio (nessun comando); una lettura fallita si ritenta
+(`RIPROVA_PROPRIETARI_S` come W3a). Il serializzatore del topic `libro_conto` usa `posizione_per_json` (mai `NaN`
+nel JSON).
+
+**Divergenze aggiornate (da provare nell'ombra, per l'utente):**
+- **D10 replaceOrders**: Betfair sostituisce l'ordine con uno NUOVO (bet_id nuovo). Con la regola 1c la riga di
+  REPLACE non prova niente, quindi un ordine dell'utente spostato dal ladder torna PROVVISORIO (non piu' spostabile
+  ne' cancellabile dal ladder) finche' un'altra prova non lo conferma. Da decidere: ereditare l'autore dell'ordine
+  sostituito (bet_id del comando) quando QUELLO era gia' confermato dell'utente. Da provare nell'ombra anche quali
+  `customerStrategyRef`/`customerOrderRef` Betfair mette sull'ordine nuovo del replace (flumine `replace_order`):
+  non verificato su ordini reali.
+- **D11 elenco dei `marketType` a vincitore unico per definizione** (punto 4): scelto prudente e chiuso; un
+  mercato fuori elenco senza `numberOfWinners` resta `vincitori_ignoti` (se vince vuoto). Da confermare.
+- D9 resta (ref manuale senza prove = provvisorio).
