@@ -223,10 +223,16 @@ def test_57014_e_4xx_mai_ritentati_neanche_negli_upsert(server):
     for azione in (json_errore(500, CORPO_57014), json_errore(409, CORPO_23505), json_errore(400, {
             "code": "22P02", "details": None, "hint": None, "message": "invalid input syntax for type bigint"})):
         server.richieste.clear()
-        server.sempre[("POST", "/x")] = azione
+        server.sempre[("POST", "/live_signals")] = azione
         with pytest.raises(APIError):
-            _cliente().scrivi("x", "upsert", [{"id": 1}], on_conflict="id")
-        assert server.conta("POST", "/x") == 1
+            _cliente().scrivi("live_signals", "upsert", [{"event_id": "1"}], on_conflict="event_id")
+        assert server.conta("POST", "/live_signals") == 1
+
+
+def test_scrittura_solo_su_tabelle_del_registro(server):
+    with pytest.raises(ValueError, match="non registrata"):
+        _cliente().scrivi("tabella_sconosciuta", "upsert", [{"id": 1}])
+    assert server.richieste == []
 
 
 def test_transitorio_poi_successo_e_client_nuovo_dopo_goaway(server):

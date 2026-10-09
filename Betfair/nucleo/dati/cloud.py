@@ -241,10 +241,13 @@ class ClienteCloud:
     # ------------------------------------------------------------------ estensione: scrittura
     def scrivi(self, tabella: str, op: Operazione, righe: Any, *, on_conflict: Optional[str] = None,
                ignora_duplicati: bool = False, filtri: Optional[Mapping[str, Any]] = None) -> Sequence[Mapping[str, Any]]:
-        """Scrittura (estensione per il postino). Ritentata SOLO l'``upsert``; ``insert``,
-        ``patch`` e ``delete`` hanno UN tentativo (l'errore risale identico)."""
+        """Scrittura (estensione per il postino), SOLO su tabelle del registro. Ritentata SOLO
+        l'``upsert``; ``insert``, ``patch`` e ``delete`` hanno UN tentativo (l'errore risale identico)."""
         if op not in ("upsert", "insert", "patch", "delete"):
             raise ValueError(f"operazione sconosciuta: {op!r}")
+        if tabella not in self._registro.tabelle():
+            # il cloud non riceve righe da tabelle che il registro non conosce (R23)
+            raise ValueError(f"tabella non registrata: {tabella} (Betfair/nucleo/dati/registro.py)")
         if op in ("patch", "delete") and not filtri:
             raise ValueError(f"{op} senza filtri: rifiutato (toccherebbe tutta la tabella {tabella})")
         _valida_filtri(filtri or {})

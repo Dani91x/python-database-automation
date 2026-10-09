@@ -317,6 +317,13 @@ SITI_DINAMICI: Tuple[SitoDinamico, ...] = (
                  "esegui_aggregato: _mappa :192-203"),
 )
 
+#: il client generico del nucleo: scrive solo tabelle del registro (``ClienteCloud.scrivi`` rifiuta le
+#: altre) e chiama RPC passate dai chiamanti; le tabelle sono le voci stesse del registro
+SITI_DINAMICI = SITI_DINAMICI + (
+    SitoDinamico("Betfair/nucleo/dati/cloud.py", "<dinamico:tabella>", (256,), (),
+                 "ClienteCloud.scrivi: ValueError su tabella non registrata (test_scrittura_solo_su_tabelle_del_registro)"),
+)
+
 #: builder restituiti senza operazione (la scansione non vede insert/upsert...): passanti
 SITI_PASSANTI: Tuple[SitoDinamico, ...] = (
     SitoDinamico("Betfair/stream/live_order_worker.py", "<dinamico:name>", (3735,), (),
@@ -328,6 +335,8 @@ SITI_PASSANTI: Tuple[SitoDinamico, ...] = (
 RPC_DINAMICHE: Tuple[SitoDinamico, ...] = (
     SitoDinamico("Betfair/stream/live_order_worker.py", "<dinamico:*a>", (3738,), (),
                  "passante: rpc(*a) inoltra al client vero le RPC dei chiamanti (gia' scansionate)"),
+    SitoDinamico("Betfair/nucleo/dati/cloud.py", "<dinamico:nome>", (234,), (),
+                 "ClienteCloud.rpc: ritenta solo le RPC di lettura; le scriventi sono nel registro"),
     SitoDinamico("frontend/src/certification/realClient.ts", "<dinamico>", (155,), (),
                  "probeRpc: sonde di forma, sempre in lettura (:150-158)"),
     SitoDinamico("frontend/src/lib/__fixtures__/replayBarraDbFinto.ts", "<dinamico>", (185,), (),

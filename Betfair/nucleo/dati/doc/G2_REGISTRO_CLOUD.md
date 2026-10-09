@@ -26,7 +26,7 @@ Tappe del piano: T2 (registro + client, consegna R23) e T7 (algoritmi del cloud 
 ## 3. Uscite
 
 - `REGISTRO.spec(tabella) -> SpecTabella`; `verifica_copertura(registro, scansione) -> EsitoCopertura(errori, avvisi)`.
-- `ClienteCloud.leggi/rpc` (contratto) e `scrivi` (estensione per il postino): righe in copia profonda; errori:
+- `ClienteCloud.leggi/rpc` (contratto) e `scrivi` (estensione per il postino, SOLO tabelle del registro): righe in copia profonda; errori:
   l'eccezione originale (4xx, 57014, applicativi) o `db_client.GuastoRete` dopo l'ultimo tentativo.
 - `ReplicaEmpirica.ht_ft_transitions/minute_transitions/ht_ft_rows` e `DossierPrematch.fixture_id_for_event/
   fixture_lambdas/fixture_analysis/ht_ft_rows`: STESSE firme e STESSI ritorni delle funzioni di oggi
@@ -69,7 +69,7 @@ una riga `_v(...)` in `registro.py` (il test di copertura lo pretende). Un algor
 ## 8. Come si prova da solo
 
 `python -m pytest Betfair/nucleo/dati/tests/test_g2_registro.py Betfair/nucleo/dati/tests/test_g2_cloud.py Betfair/nucleo/dati/tests/test_g2_cache_cloud.py -q -p no:cacheprovider`
-(89 test, ~25 s; il registro scansiona tutti i file tracciati). Nessuna rete: client supabase VERO su `httpx.MockTransport`.
+(90 test, ~30 s; il registro scansiona tutti i file tracciati). Nessuna rete: client supabase VERO su `httpx.MockTransport`.
 
 ## 9. Misure
 
