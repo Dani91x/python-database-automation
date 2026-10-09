@@ -377,12 +377,81 @@ Finche' nessuna lettura risponde l'ordine resta provvisorio (nessun comando); un
 nel JSON).
 
 **Divergenze aggiornate (da provare nell'ombra, per l'utente):**
-- **D10 replaceOrders**: Betfair sostituisce l'ordine con uno NUOVO (bet_id nuovo). Con la regola 1c la riga di
-  REPLACE non prova niente, quindi un ordine dell'utente spostato dal ladder torna PROVVISORIO (non piu' spostabile
-  ne' cancellabile dal ladder) finche' un'altra prova non lo conferma. Da decidere: ereditare l'autore dell'ordine
-  sostituito (bet_id del comando) quando QUELLO era gia' confermato dell'utente. Da provare nell'ombra anche quali
-  `customerStrategyRef`/`customerOrderRef` Betfair mette sull'ordine nuovo del replace (flumine `replace_order`):
-  non verificato su ordini reali.
+- ~~D10 replaceOrders~~: **tolta**, non era una decisione dell'utente ma una regressione di parita'; corretta nel par. 12.
 - **D11 elenco dei `marketType` a vincitore unico per definizione** (punto 4): scelto prudente e chiuso; un
   mercato fuori elenco senza `numberOfWinners` resta `vincitori_ignoti` (se vince vuoto). Da confermare.
 - D9 resta (ref manuale senza prove = provvisorio).
+
+## 12. Terza verifica (09/10, verifica del coordinatore su `3ceac891`): replaceOrders, il nuovo eredita
+
+La D10 non era una decisione dell'utente ma una regressione da evitare: oggi un ordine dell'utente spostato dal ladder
+resta suo e comandabile. Corretto nel commit `d1430036` (codice, test, mutazioni) e nel commit di questo referto.
+Contratti invariati, nessun file esistente toccato.
+
+**Regola** (`attribuzione.py:467` `eredita`): l'ordine NUOVO nato da un replace prende autore, conflitto e
+PROVVISORIETA' dell'ordine SOSTITUITO, qualunque fosse (utente, bot, sito, sconosciuto): un sostituito provvisorio da' un
+nuovo provvisorio, niente si inventa. Restano solo le prove PROPRIE del nuovo che dicono un bot (una riga di tabella
+o di coda col SUO bet_id; se dicono un autore diverso dal sostituito il conflitto si scrive) e l'attore dichiarato
+della sorgente in prova. I riferimenti del nuovo cedono al sostituito: li porta Betfair dall'ordine sostituito.
+
+**Le fonti del legame vecchio -> nuovo (grafia verificata nel codice):**
+
+| Fonte | Cosa c'e' davvero | Uso |
+|---|---|---|
+| (a) `betfair_live_order_requests`, `action=replace` | `live_order_worker._do_replace` (`:1639-1678`): la colonna `bet_id` e `params` portano il bet_id VECCHIO (comando); il `result` e' `_result(...order=order)` (`:1674-1677`) preso sull'ordine SOSTITUITO, quindi `result.bet_id` = VECCHIO. **Il bet_id nuovo non e' in nessuna colonna della riga** (provato: `test_fonti_calcio_il_replace_porta_il_vecchio_lo_specchio_lega_il_nuovo`, riga = corpo vero dell'INSERT di `_record_local_request`) | il legame si prende per ORIGINE: flumine crea il rimpiazzo con `Trade.create_order_replacement` (`flumine/order/trade.py:111`, `context=order.context` `:131`; `execution/betfairexecution.py:194`), quindi il `context["customer_order_ref"]` = `awlq<origine>` messo da `live_order_build._create_order` (`:940-941`) passa al nuovo e lo specchio `betfair_live_orders` (`LiveTradingStrategy._order_row` `:376`, `_client_order_ref` `:121`, `_request_id_from_ref` `:114`) lo scrive con `client_order_ref=awlq<origine>`, `request_id=origine`, anche dopo piu' replace. `attribuzione.origine_della_riga_specchio` (`:430`) e `indizi_da_origine(riga_specchio, riga_coda)` (`:449`): la richiesta d'origine (`id`=origine per la coda DB, `client_ref=local<origine>` per il canale locale) da' gli indizi del NUOVO bet_id con la regola di sempre (`indizi_da_riga_coda`) |
+| (b) `tennis_live_order_queue`, `payload.action=replace` | `tennis_live_order_worker._do_replace` (`:798-816`): `payload.bet_id` = VECCHIO; il worker traccia il TRADE sotto il ref del comando (`_track_manual` `:812`), quindi la riga `tennis_live_orders` del rimpiazzo (`riga_specchio` `:508`) ha `client_order_ref` = `result.customer_order_ref` della riga di coda (`awtq<sid>`) e `bet_id` = NUOVO | `attribuzione.legame_da_replace_tennis(riga_coda, riga_specchio)` (`:486`) -> (vecchio, nuovo) -> `LibroConto.lega_sostituzione` |
+| (c) tabelle dei bot | quando il replace lo fa il bot stesso, il bot scrive il bet_id NUOVO (Omega place-and-trim: `omega_market.py:1276` `nuovo_bet = esito_rep.get("bet_id")` -> `PlaceResult.bet_id`) | prova PROPRIA del nuovo (`indizio_da_riga_bot`), coerente col sostituito; se discorde, conflitto scritto |
+| (d) stream ordini | flumine (`flumine/order/process.py:63-70`, "replaceOrder handling") trova il rimpiazzo col customerOrderRef del SOSTITUITO e poi lo cerca per bet_id: Betfair porta sul rimpiazzo lo STESSO `rfo` | `LibroConto._lega_dallo_stream` (`libro_conto.py:450`): stesso mercato, selezione, lato e `customerOrderRef` non vuoto, il bet_id MINORE completo (`EXECUTION_COMPLETE`) e' il sostituito del MAGGIORE, in qualunque ordine arrivino i messaggi (anche il completo tardivo), solo dopo le guardie (un messaggio rifiutato non lega). **Prova in piu', da provare nell'ombra**: contatore `legami_dallo_stream` accanto a `legami` (fonti a-c); criterio: per N giornate ogni legame dallo stream coincide con uno delle fonti a-c (stesso vecchio, stesso nuovo), altrimenti si spegne |
+
+**Libro** (`libro_conto.py`): `lega_sostituzione(vecchio, nuovo, modo)` (`:380`, idempotente, `modo` controllato, mai
+un ordine con se stesso); `_componi` (`:567`) applica `eredita` quando c'e' il legame; l'attribuzione del sostituito
+(`_attribuzione_del_sostituito` `:415`) e' quella nota (anche di un ordine RIASSUNTO dal tetto: `_Riassunto.attribuzione`
+`:231`, `_attribuzione_nota` `:404`), altrimenti (riavvio: il sostituito annullato puo' non tornare dal conto) i suoi
+indizi riletti dalle righe, altrimenti risalendo la catena; cicli fermati. Il legame vale prima o dopo l'arrivo del
+nuovo e del sostituito; nuove prove sul sostituito (o sulla radice di una catena) riattribuiscono e AVVISANO tutti i
+successori (`_ricomponi_successori` `:435`). `dimentica_mercato` (`:663`) toglie i legami (`_slega` `:655`), anche
+degli ordini riassunti.
+
+**Test** (`test_c2_revisione3.py`, 33 nuovi, righe e ordini nella grafia vera: corpo vero dell'INSERT/UPDATE della
+coda dal client supabase vero, `_result` veri del worker calcio e tennis, ordini flumine veri creati da
+`live_order_build._create_order` e rimpiazzi da `Trade.create_order_replacement`, righe specchio da
+`LiveTradingStrategy._order_row` e `tennis_live_order_worker.riga_specchio`):
+- replace di un ordine dell'UTENTE: il nuovo e' `desktop` con comandi `annulla`/`sposta`
+  (`test_replace_dell_utente_dallo_specchio_il_nuovo_e_desktop_e_comandabile`, `..._nel_libro_il_nuovo_eredita`);
+- replace di un ordine di OMEGA (riga di coda di Omega `omega-t9`, spostato dall'utente): il nuovo e' `omega`, senza
+  comandi (`test_replace_di_un_ordine_di_omega_il_nuovo_e_omega`); Omega che riprezza da solo
+  (`test_omega_riprezza_da_solo_la_sua_tabella_e_prova_del_nuovo`);
+- replace di un PROVVISORIO: resta provvisorio e senza comandi; quando arriva la prova sul sostituito il nuovo la segue
+  (`test_replace_di_un_provvisorio_resta_provvisorio`);
+- CATENA di due replace: specchio (`awlq40` sopravvive a due rimpiazzi), libro (prova sulla radice -> tutti e tre
+  `desktop`, avvisati tutti), dopo un RIAVVIO con solo l'ultimo ordine vivo, ciclo senza fine fermato;
+- tennis (`test_tennis_replace_dell_utente_legame_dalla_coda_e_dallo_specchio`, `test_tennis_un_cancel_non_lega`);
+  stream (7 test: legame, completo tardivo, ref/lato/selezione diversi, verso dal bet_id, bet_id non numerici,
+  messaggio rifiutato); tetto e dimenticanza (4 test); paper (l'attore dichiarato non cambia).
+I 33 test nuovi sul codice di `3ceac891` (i due moduli di allora rimessi al loro posto e poi ripristinati, sha256 ricontrollato): **33 rossi** (le funzioni del legame non esistono: nessuna eredita'). Uscita: `scratchpad/w1c2/rossi_rev3_su_vecchio.txt`.
+
+**Falsificazione**: 39 mutazioni nuove nello script (M116-M154, una per ramo), fra cui **M116 «il nuovo non eredita»**
+(`a = attr.eredita(...)` -> `pass`): ROSSA. Al primo giro M149 (ciclo senza guardia nella risalita) sopravviveva:
+aggiunto il ciclo di tre legami scritti prima dell'arrivo dell'ordine, ora rossa. Giro completo (175 mutazioni): al primo giro 174/174 rosse e 1 guasto, M109 (la sua stringa non c'era piu': `dimentica_mercato` ora slega i bet_id riassunti; adeguata a `_riassunti_bet.get` al posto di `.pop`); giro completo ripetuto: **TOTALE rosse 175/175 (guasti 0)**, uscita in
+`ARCHITETTURA_2026-10/ondata1/W1-C2/mutazioni_esito.txt`. sha256 dopo ogni ripristino = file di `d1430036`:
+`attribuzione.py` 469a20c30c2cd9fe86b743b0d8031f1540509789dae466e867427bcafb87f858,
+`libro_conto.py` 74a081169de75f017ff0d9254c47ba01a2077bccbe9a20ab480ef0867b3a940c (`pnl_mercato.py` e
+`riconciliazione.py` invariati). Test W1-C2: **265 verdi**. Suite intera (una volta, alla fine): **11.836 verdi, 0 rossi, 87 saltati, 6 xfailed** (360 s).
+
+**Aggancio aggiornato (ondata 2): il legame dopo un riavvio si RILEGGE dalle righe** (in aggiunta alla riconferma
+all'avvio del par. 11; stesse regole: fuori dal percorso degli ordini, a blocchi di 100, lettura fallita = si ritenta,
+nel frattempo l'ordine resta provvisorio):
+- calcio: per ogni ordine live provvisorio, la riga di `betfair_live_orders` col suo `bet_id` (colonne `bet_id,
+  client_order_ref, request_id`); se ha un'origine (`origine_della_riga_specchio`), la richiesta d'origine in
+  `betfair_live_order_requests` per `id=in.(...)` OPPURE `client_ref=in.(local<id>,...)`; poi
+  `LibroConto.aggiungi_indizi(bet_id, indizi_da_origine(riga_specchio, riga_coda))`. Copre il piazzato e ogni suo
+  rimpiazzo, in catena, senza bisogno del sostituito;
+- tennis: le righe `tennis_live_order_queue` con `payload->>action=replace` del giorno e la riga `tennis_live_orders`
+  con `client_order_ref` = `result->>customer_order_ref`: `lega_sostituzione(*legame_da_replace_tennis(...))`; per il
+  sostituito la riga di coda che lo ha piazzato (par. 11, `indizi_da_riga_tennis`) -> `aggiungi_indizi(vecchio, ...)`;
+  il nuovo eredita anche se il sostituito, annullato, non torna dal conto;
+- bot: le tabelle col bet_id nuovo come oggi (`indizio_da_riga_bot`);
+- in esercizio (non solo all'avvio) gli stessi agganci all'arrivo della riga (canale locale o Realtime), piu' lo stream
+  (d) in ombra.
+
+D11 resta per l'utente (par. 11). D9 resta.

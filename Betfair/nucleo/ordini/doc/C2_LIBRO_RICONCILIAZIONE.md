@@ -41,6 +41,14 @@ confronta conto, specchio, blotter e diario e scrive le divergenze, senza toccar
   ordini non abbinati NON entrano nell'esposizione, la UI lo dice). Per la UI: `pnl_mercato.posizione_per_json` (`NaN` ->
   `null`). Senza `numberOfWinners` il modello vale solo per i `marketType` a vincitore unico per definizione
   (`vincitori_ignoti`). Una riga di coda prova l'autore SOLO se ha piazzato quell'ordine (mai cancel/replace).
+- **replaceOrders**: l'ordine NUOVO eredita autore e provvisorieta' del SOSTITUITO (`attribuzione.eredita`), anche in
+  catena; restano solo le prove PROPRIE del nuovo che dicono un bot (riga di tabella o di coda col suo bet_id) e
+  l'attore dichiarato in prova. Legame: `LibroConto.lega_sostituzione(vecchio, nuovo, modo)` dalle fonti vere
+  (`legame_da_replace_tennis`: riga replace di `tennis_live_order_queue` + riga `tennis_live_orders` sotto lo stesso
+  ref); per il calcio la riga del replace porta il bet_id VECCHIO e il nuovo si lega per ORIGINE
+  (`indizi_da_origine`: la riga di `betfair_live_orders` del rimpiazzo ha `request_id`/`awlq<id>` della richiesta
+  d'origine); dallo stream, stesso customerOrderRef sul rimpiazzo (prova in piu', da provare nell'ombra, contatore
+  `legami_dallo_stream`).
 - `LibroConto.aggiungi_consumatore(cb)`: avviso a ogni ordine cambiato (aggancio al ladder in ondata 2).
 - `RefertoOmbra`: divergenze tipizzate con gravita' e motivo; `StatoOrdine` per bet_id; `PosizioneConto` per selezione.
 
