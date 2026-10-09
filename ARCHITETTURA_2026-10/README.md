@@ -15,3 +15,9 @@ Brief: `BRIEF_PIANO_ARCHITETTURA_2026-10-08.md` (par. 9 vale su tutto). Solo doc
 | `08_REVISIONE_CRITICA.md` | Revisione avversaria di 04/05/06 contro il brief: 24 rilievi, correzioni applicate |
 | `COSTI.md` | Spesa per tappa (tetto 190 USD) |
 | `strumenti/verifica/` | Revisione di 415 citazioni, coperture (05 vs 01: 971/971; tabelle in G: 89+6 e 72 RPC), coerenza finale |
+
+## Audit successivi (tutti in questa cartella, una sottocartella per audit — ordine dell'utente del 09/10)
+
+| Cartella | Data | Contenuto |
+|---|---|---|
+| `AUDIT_MATEMATICA_ML/` | 09/10/2026 | Audit di catena Poisson, catena ML e di tutti i componenti matematici (bot, UI, consigli, motori). Leggere per primo `07_RIEPILOGO_PER_L_UTENTE.md`, poi `DECISIONI_PER_L_UTENTE.md` (23 decisioni); reperti in `05_ERRORI_DI_PROGETTAZIONE.md`, 32 proposte in `06_PIANO_MIGLIORAMENTI.md`. Lanciato con `strumenti/sessione_audit_sdk.py` (36,97 USD); scritto in origine in `AUDIT_2026-10-09_MATEMATICA/` e spostato qui a lavoro finito. |
