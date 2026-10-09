@@ -9,17 +9,11 @@ import type { ReplayData } from '@/lib/live';
 import { buildSnapshots } from '@/lib/opportunities/snapshot';
 import { creaRilievo, esitoDaRilievi } from '@/lib/replayVerificaBarra';
 import { AvvisoCoerenzaBarra } from './AvvisoCoerenzaBarra';
-import { caricaPartita, eventiConFixture } from '@/lib/__fixtures__/replayBarraTutte';
+import { caricaPartita, conFonteInRitardo, eventiConFixture } from '@/lib/__fixtures__/replayBarraTutte';
 
 const EVENTI = eventiConFixture();
 
-// difetto nei DATI: una seconda fonte che dopo il primo gol rimette il punteggio a 0-0
-function conFonteInRitardo(replay: ReplayData): ReplayData {
-    const g = replay.score_timeline.find(x => (x.score_home ?? 0) > 0);
-    if (!g) throw new Error('la partita deve avere un gol');
-    const tardi = new Date(Date.parse(g.ts) + 5000).toISOString().replace('Z', '+00:00');
-    return { ...replay, score_timeline: [...replay.score_timeline, { ...g, ts: tardi, source: 'api_football', score_home: 0, score_away: 0 }] };
-}
+// difetto nei DATI: `conFonteInRitardo` (fixture comune): dopo il primo gol che resta una seconda fonte rimette 0-0
 
 describe.each(EVENTI)('AvvisoCoerenzaBarra - partita vera %s', (ev) => {
     it('barra coerente: non compare nulla', () => {

@@ -26,7 +26,7 @@ import {
 } from '@/lib/replayVerificaBarraDb';
 import { esitoDaRilievi } from '@/lib/replayVerificaBarra';
 import { FintoDb, pgTs } from './__fixtures__/replayBarraDbFinto';
-import { eventiConFixture, RADICE_REPO, caricaFixtureCompleta } from './__fixtures__/replayBarraTutte';
+import { eventiConFixture, RADICE_REPO, caricaFixtureCompleta, primoGolCheResta } from './__fixtures__/replayBarraTutte';
 
 const EVENTI = eventiConFixture();
 let finto: FintoDb;
@@ -95,7 +95,7 @@ describe('verificaPartite con le funzioni VERE della pagina e il finto delle RPC
     it('un database con un difetto (due fonti discordanti sul punteggio) viene segnalato: riepilogo rosso e codice nel referto', async () => {
         const difettoso = new FintoDb(EVENTI, {
             modifica: (_ev: string, replay: ReplayData): ReplayData => {
-                const g = replay.score_timeline.find(r => r.score_home === 1 && r.score_away === 0) ?? replay.score_timeline.find(r => (r.score_home ?? 0) > 0);
+                const g = primoGolCheResta(replay);
                 if (!g) return replay;
                 const tardi = new Date(Date.parse(g.ts) + 5000).toISOString().replace('Z', '+00:00');
                 return { ...replay, score_timeline: [...replay.score_timeline, { ...g, ts: tardi, source: 'api_football', score_home: 0, score_away: 0 }] };
@@ -149,7 +149,7 @@ describe('verificaPartite con le funzioni VERE della pagina e il finto delle RPC
                 const r = conKickOff(replay);
                 if (ev !== EVENTI[EVENTI.length - 1] || EVENTI.length < 2) return r;
                 // l'ultima partita ha ANCHE un difetto vero (due fonti discordanti): non e' "solo per dati"
-                const g = r.score_timeline.find(x => (x.score_home ?? 0) > 0);
+                const g = primoGolCheResta(r);
                 if (!g) return r;
                 const tardi = new Date(Date.parse(g.ts) + 5000).toISOString().replace('Z', '+00:00');
                 return { ...r, score_timeline: [...r.score_timeline, { ...g, ts: tardi, source: 'api_football', score_home: 0, score_away: 0 }] };

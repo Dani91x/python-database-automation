@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import type { ReplayData } from '@/lib/live';
 import { FintoDb, avviaServerFinto, type ServerFinto } from './__fixtures__/replayBarraDbFinto';
-import { eventiConFixture } from './__fixtures__/replayBarraTutte';
+import { eventiConFixture, primoGolCheResta } from './__fixtures__/replayBarraTutte';
 import { comandoViteNode } from './replayVerificaBarraLancio';
 
 const FRONTEND = resolve(__dirname, '../..');
@@ -65,7 +65,7 @@ describe('script verifica_barra_replay.ts lanciato davvero (finto PostgREST su l
     it('database con un difetto sul punteggio: esce con 1 e dice quale partita e quale codice', async () => {
         const difettoso = new FintoDb(EVENTI, {
             modifica: (_ev: string, replay: ReplayData): ReplayData => {
-                const g = replay.score_timeline.find(x => (x.score_home ?? 0) > 0);
+                const g = primoGolCheResta(replay);
                 if (!g) return replay;
                 const tardi = new Date(Date.parse(g.ts) + 5000).toISOString().replace('Z', '+00:00');
                 return { ...replay, score_timeline: [...replay.score_timeline, { ...g, ts: tardi, source: 'api_football', score_home: 0, score_away: 0 }] };

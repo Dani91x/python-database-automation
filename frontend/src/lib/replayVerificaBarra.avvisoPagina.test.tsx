@@ -11,7 +11,6 @@
 // ============================================================================
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, within } from '@testing-library/react';
-import type { ReplayData } from '@/lib/live';
 
 const stato = vi.hoisted(() => ({ dati: null as unknown, casa: '' }));
 vi.mock('@/lib/live', async () => {
@@ -28,16 +27,9 @@ vi.mock('@/lib/live', async () => {
 
 import MatchReplay from '@/pages/MatchReplay';
 import { apriReplay } from './__fixtures__/replayBarraPagina';
-import { caricaPartita, eventiConFixture } from './__fixtures__/replayBarraTutte';
+import { caricaPartita, conFonteInRitardo, eventiConFixture } from './__fixtures__/replayBarraTutte';
 
 afterEach(() => { stato.dati = null; });
-
-function conFonteInRitardo(replay: ReplayData): ReplayData {
-    const g = replay.score_timeline.find(x => (x.score_home ?? 0) > 0);
-    if (!g) throw new Error('la partita deve avere un gol');
-    const tardi = new Date(Date.parse(g.ts) + 5000).toISOString().replace('Z', '+00:00');
-    return { ...replay, score_timeline: [...replay.score_timeline, { ...g, ts: tardi, source: 'api_football', score_home: 0, score_away: 0 }] };
-}
 
 describe.each(eventiConFixture())('Match Replay - avviso di coerenza della barra, partita %s', (ev) => {
     it('barra coerente: nessun avviso nella pagina', async () => {

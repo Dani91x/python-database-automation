@@ -13,7 +13,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { ReplayData } from '@/lib/live';
+import type { ReplayData, ScoreEvent } from '@/lib/live';
 import type { EstremiRegistrazione } from '@/lib/replayVerificaBarra';
 import { replayDaFixture, type FixtureBarra } from './replayBarraConversione';
 
@@ -92,4 +92,30 @@ export function eventiConFixture(): string[] {
 export function caricaPartita(ev: string): { replay: ReplayData; estremi: EstremiRegistrazione; fixture: FixtureBarraCompleta } {
     const fixture = caricaFixtureCompleta(ev);
     return { replay: replayDaFixture(fixture), estremi: fixture.meta, fixture };
+}
+
+/**
+ * Il primo gol che RESTA, di una squadra qualsiasi: la prima riga di punteggio con almeno un gol
+ * dopo la quale nessuna riga torna a un punteggio piu' basso. Un gol ANNULLATO (35768365, 1-0 al
+ * 28' poi 0-0) non va bene: la seconda fonte a 0-0 darebbe due segnalazioni invece di una. E non
+ * si guarda solo la squadra di casa: in 35774000 (0-3) segnano solo gli ospiti.
+ */
+export function primoGolCheResta(replay: ReplayData): ScoreEvent | null {
+    const righe = replay.score_timeline.filter(r => r.score_home != null && r.score_away != null);
+    for (let i = 0; i < righe.length; i++) {
+        const g = righe[i];
+        if ((g.score_home ?? 0) + (g.score_away ?? 0) <= 0) continue;
+        const annullato = righe.slice(i + 1).some(r => (r.score_home ?? 0) < (g.score_home ?? 0) || (r.score_away ?? 0) < (g.score_away ?? 0));
+        if (!annullato) return g;
+    }
+    return null;
+}
+
+/** Difetto nei DATI usato dai test: una seconda fonte (api_football) che 5 s dopo il primo gol che
+ *  resta rimette il punteggio a 0-0 -> una sola segnalazione TABELLONE_SCENDE. */
+export function conFonteInRitardo(replay: ReplayData): ReplayData {
+    const g = primoGolCheResta(replay);
+    if (!g) throw new Error('la partita deve avere un gol che resta');
+    const tardi = new Date(Date.parse(g.ts) + 5000).toISOString().replace('Z', '+00:00');
+    return { ...replay, score_timeline: [...replay.score_timeline, { ...g, ts: tardi, source: 'api_football', score_home: 0, score_away: 0 }] };
 }
