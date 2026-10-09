@@ -5560,3 +5560,12 @@ riletto, test rilanciati, mutazioni PROPRIE, replay) e committata sul suo ramo; 
   attesi KO -> OK, base e ingresso IDENTICI al controllo finale del cloud), omega apertura/paper/riavvio IDENTICI nelle righe di esito
   (solo righe di log CRITICAL per processo), mike base/cap-stretto IDENTICI, safe_base base/riavvio IDENTICI, swing IDENTICO.
 - Commit orfano `1f35f5c8` (log 3 GB): `git gc` rimandato (non pushato, nessun rischio).
+- 09/10 09:41 FUSIONE SU MASTER: `origin/master` `d257abea` -> `733177da` (avanzamento veloce da `fusione-sera`); checkout principale su
+  `733177da`; BUILD ad app chiusa exit 0 in 42 s (`AUDIT_2026-10-08/build_coordinatore_733177da.txt`). L'utente puo' riavviare l'app;
+  all'avvio nessun bot opera. Rami dei cantieri conservati in locale (`cantiere-d2`, `cantiere-banco-sera`, `cantiere-ui-sera`,
+  `cantiere-w2-sera`, `fusione-sera`), worktree smontati senza cancellazioni ricorsive.
+- PUNTO DI RIPRESA (09/10): (1) prove a schermo dell'utente in PROVA: pagina Cash Out (sezione Concluse, annullo automatico nel
+  green-up fuori bot), schede tennis con le soglie nuove, registro del replay; (2) migrazione `replay_tennis_fonte_nomi_2026-10-08.sql`;
+  (3) i 23 sospesi di `AUDIT_2026-10-08/decisioni_sera/DECISIONI_SOSPESE_PER_IL_09-10.md`, uno alla volta; (4) prima di paper/live:
+  per ogni bot dire se e' certificato sul replay; replay tennis dei cantieri 5/6/9/W3b non ancora eseguiti (corsa unica §3.1 dell'handoff);
+  live con scalper/sniper/tennis/worker solo dopo l'osservazione dal vivo del D-2 (referto §7 e §8).
