@@ -1,0 +1,9 @@
+P1 worker senza il rifiuto variable+lay: exit=1 | 2 failed, 24 passed in 1.35s
+   ripristino live_order_worker.py sha uguale: True
+P2 rifiuto variable+lay spostato DOPO il calcolo dei prezzi: exit=1 | 1 failed, 25 passed in 0.94s
+   ripristino live_order_worker.py sha uguale: True
+P3 dutch_variable senza arrotondamento dello stake: exit=1 | 3 failed, 23 passed in 1.16s
+   ripristino dutching.py sha uguale: True
+P4 dutch_variable con profitto proporzionale allo stake (formula UI vecchia): exit=1 | 5 failed, 21 passed in 0.99s
+   ripristino dutching.py sha uguale: True
+dopo il ripristino: 26 passed in 0.50s

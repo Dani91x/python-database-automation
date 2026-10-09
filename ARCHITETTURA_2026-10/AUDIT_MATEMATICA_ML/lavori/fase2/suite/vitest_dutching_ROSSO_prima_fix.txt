@@ -1,0 +1,1465 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90mC:/Users/Admin/Desktop/PYTHON DATABASE/python-database-automation/frontend[39m
+
+ [31m❯[39m src/components/live/DutchingPanel.test.tsx [2m([22m[2m28 tests[22m[2m | [22m[31m12 failed[39m[2m)[22m[33m 9858[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel[2m > [22ml'anteprima book% si aggiorna al variare delle selezioni [33m 478[2mms[22m[39m
+   [32m✓[39m DutchingPanel[2m > [22mrichiede ≥2 selezioni (con una sola il tasto è disabilitato)[32m 132[2mms[22m[39m
+   [32m✓[39m DutchingPanel[2m > [22min LIVE il piazzamento è bloccato finché non si conferma[32m 141[2mms[22m[39m
+   [32m✓[39m DutchingPanel[2m > [22msendDutch riceve selections + total_stake (che il server annida in params)[32m 116[2mms[22m[39m
+   [32m✓[39m DutchingPanel[2m > [22mmodalità TARGET invia dutchMode='target' con targetProfit e senza total_stake[32m 229[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel[2m > [22mil profitto obiettivo modifica il targetProfit inviato [33m 325[2mms[22m[39m
+   [32m✓[39m DutchingPanel[2m > [22mpricing di default è 'as_given'[32m 94[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel[2m > [22mpricing 'nominated' mostra il prezzo nominato e lo passa a sendDutch [33m 360[2mms[22m[39m
+   [32m✓[39m DutchingPanel[2m > [22mcon pricing 'nominated' senza prezzo il piazzamento è bloccato[32m 120[2mms[22m[39m
+   [32m✓[39m DutchingPanel — fix audit #14/#19[2m > [22m#14: snapshot stantio (>10s) → Piazza DISABILITATO con avviso[32m 37[2mms[22m[39m
+   [32m✓[39m DutchingPanel — fix audit #14/#19[2m > [22m#14: snapshot fresco → Piazza abilitato (nessun avviso)[32m 36[2mms[22m[39m
+   [32m✓[39m DutchingPanel — fix audit #14/#19[2m > [22m#14: senza updatedAt (chiamante legacy) → nessun guardiano, bottone operabile[32m 34[2mms[22m[39m
+   [32m✓[39m DutchingPanel — fix audit #14/#19[2m > [22m#19: sul lato Lay la modalità Target è disabilitata e ripiega su Equal[32m 191[2mms[22m[39m
+[31m   [31m×[31m DutchingPanel - A1: variable non e' disponibile sul lato Lay[2m > [22msul lato Back Variable e selezionabile, sul lato Lay no[39m[32m 152[2mms[22m[39m
+[31m     → expected false to be true // Object.is equality[39m
+[31m   [31m×[31m DutchingPanel - A1: variable non e' disponibile sul lato Lay[2m > [22mvariable poi Lay: motivo leggibile, Piazza disabilitato, sendDutch mai chiamato[39m[32m 182[2mms[22m[39m
+[31m     → Unable to find an element with the text: /Variable non disponibile sul lato Lay/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<div[31m
+      [33mclass[31m=[32m"glass-card rounded-2xl border border-white/10 bg-black/40 p-4 md:p-5 space-y-5"[31m
+    [36m>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"flex items-center justify-between gap-3 flex-wrap"[31m
+      [36m>[31m
+        [36m<div>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"flex items-center gap-2"[31m
+          [36m>[31m
+            [36m<svg[31m
+              [33maria-hidden[31m=[32m"true"[31m
+              [33mclass[31m=[32m"lucide lucide-layers w-5 h-5 text-amber-400"[31m
+              [33mfill[31m=[32m"none"[31m
+              [33mheight[31m=[32m"24"[31m
+              [33mstroke[31m=[32m"currentColor"[31m
+              [33mstroke-linecap[31m=[32m"round"[31m
+              [33mstroke-linejoin[31m=[32m"round"[31m
+              [33mstroke-width[31m=[32m"2"[31m
+              [33mviewBox[31m=[32m"0 0 24 24"[31m
+              [33mwidth[31m=[32m"24"[31m
+              [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+            [36m>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"[31m
+              [36m/>[31m
+            [36m</svg>[31m
+            [36m<h3[31m
+              [33mclass[31m=[32m"font-display font-black text-lg text-white"[31m
+            [36m>[31m
+              [0mDutching[0m
+            [36m</h3>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shadow hover:bg-primary/80 bg-amber-400 text-black font-black border-transparent"[31m
+            [36m>[31m
+              [0mPAPER[0m
+            [36m</div>[31m
+          [36m</div>[31m
+          [36m<p[31m
+            [33mclass[31m=[32m"text-[11px] text-muted-foreground mt-0.5"[31m
+          [36m>[31m
+            [0mBanca più esiti (bookmaking)[0m
+            [0m ·[0m
+            [0m [0m
+            [0mmercato [0m
+            [36m<span[31m
+              [33mclass[31m=[32m"font-mono text-white/70"[31m
+            [36m>[31m
+              [0m1.234[0m
+            [36m</span>[31m
+          [36m</p>[31m
+        [36m</div>[31m
+        [36m<button[31m
+          [33mclass[31m=[32m"inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors bg-white/5 text-white/70 border-white/10 hover:border-red-500/40"[31m
+          [33mtitle[31m=[32m"Blocca SOLO gli invii di questo pannello (il Kill-switch GLOBALE del runner è nei Controlli)"[31m
+          [33mtype[31m=[32m"button"[31m
+        [36m>[31m
+          [36m<svg[31m
+            [33maria-hidden[31m=[32m"true"[31m
+            [33mclass[31m=[32m"lucide lucide-shield-alert w-3.5 h-3.5"[31m
+            [33mfill[31m=[32m"none"[31m
+            [33mheight[31m=[32m"24"[31m
+            [33mstroke[31m=[32m"currentColor"[31m
+            [33mstroke-linecap[31m=[32m"round"[31m
+            [33mstroke-linejoin[31m=[32m"round"[31m
+            [33mstroke-width[31m=[32m"2"[31m
+            [33mviewBox[31m=[32m"0 0 24 24"[31m
+            [33mwidth[31m=[32m"24"[31m
+            [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+          [36m>[31m
+            [36m<path[31m
+              [33md[31m=[32m"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"[31m
+            [36m/>[31m
+            [36m<path[31m
+              [33md[31m=[32m"M12 8v4"[31m
+            [36m/>[31m
+            [36m<path[31m
+              [33md[31m=[32m"M12 16h.01"[31m
+            [36m/>[31m
+          [36m</svg>[31m
+          [0mBlocco pannello [0m
+          [0mOFF[0m
+        [36m</button>[31m
+      [36m</div>[31m
+      [36m<fieldset[31m
+        [33mclass[31m=[32m"space-y-4"[31m
+      [36m>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"grid grid-cols-2 md:grid-cols-4 gap-3"[31m
+        [36m>[31m
+          [36m<div>[31m
+            [36m<label[31m
+              [33mclass[31m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[31m
+            [36m>[31m
+              [0mLato[0m
+            [36m</label>[31m
+            [36m<select[31m
+              [33mclass[31m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[31m
+            [36m>[31m
+              [36m<option[31m
+                [33mvalue[31m=[32m"back"[31m
+              [36m>[31m
+                [0mBack (dutch)[0m
+              [36m</option>[31m
+              [36m<option[31m
+                [33mvalue[31m=[32m"lay"[31m
+              [36m>[31m
+                [0mLay (bookmaking)[0m
+              [36m</option>[31m
+            [36m</select>[31m
+          [36m</div>[31m
+          [36m<div>[31m
+            [36m<label[31m
+              [33mclass[31m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[31m
+            [36m>[31m
+              [0mModalità[0m
+            [36m</label>[31m
+            [36m<select[31m
+              [33mclass[31m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[31m
+            [36m>[31m
+              [36m<option[31m
+                [33mvalue[31m=[32m"equal"[31m
+              [36m>[31m
+                [0mEqual (profitto pari)[0m
+              [36m</option>[31m
+              [36m<option[31m
+                [33mvalue[31m=[32m"variable"[31m
+              [36m>[31m
+                [0mVariable (peso)[0m
+              [36m</option>[31m
+              [36m<option[31m
+                [33mdisabled[31m=[32m""[31m
+                [33mvalue[31m=[32m"target"[31m
+              [36m>[31m
+                [0mTarget (profitto obiettivo[0m
+                [0m — solo Back[0m
+                [0m)[0m
+              [36m</option>[31m
+            [36m</select>[31m
+          [36m</div>[31m
+          [36m<div>[31m
+  ...[39m
+   [32m✓[39m DutchingPanel - A1: variable non e' disponibile sul lato Lay[2m > [22mvariable sul lato Back resta inviabile e manda dutchMode=variable con i pesi[32m 174[2mms[22m[39m
+[31m   [31m×[31m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22mcaso A: quote 2.5/3/4, pesi 1/2/1, T=100 -> stake 40.51/34.18/25.32, profitti 1.26/2.53/1.27[39m[33m 722[2mms[22m[39m
+[31m     → expected [ '€30.38', '€50.63', '€18.99' ] to deeply equal [ '€40.51', '€34.18', '€25.32' ][39m
+[31m   [31m×[31m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22mcaso B: quote 2/5, pesi 1/3, T=50 -> stake 31.82/18.18, profitti 13.64/40.90[39m[33m 556[2mms[22m[39m
+[31m     → expected [ '€22.73', '€27.27' ] to deeply equal [ '€31.82', '€18.18' ][39m
+[31m   [31m×[31m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22mcaso C: quote fuori tick 2.01/3.03 (il server le porta a 2.02/3.05), pesi 1.5/1/2, T=37.5[39m[33m 823[2mms[22m[39m
+[31m     → expected [ '€18.40', '€8.14', '€10.96' ] to deeply equal [ '€17.73', '€11.93', '€7.84' ][39m
+[31m   [31m×[31m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22mpesi irrealizzabili (stake negativo): messaggio, nessuno stake mostrato, invio bloccato[39m[33m 690[2mms[22m[39m
+[31m     → Unable to find an element with the text: /Pesi irrealizzabili/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<div[31m
+      [33mclass[31m=[32m"glass-card rounded-2xl border border-white/10 bg-black/40 p-4 md:p-5 space-y-5"[31m
+    [36m>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"flex items-center justify-between gap-3 flex-wrap"[31m
+      [36m>[31m
+        [36m<div>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"flex items-center gap-2"[31m
+          [36m>[31m
+            [36m<svg[31m
+              [33maria-hidden[31m=[32m"true"[31m
+              [33mclass[31m=[32m"lucide lucide-layers w-5 h-5 text-amber-400"[31m
+              [33mfill[31m=[32m"none"[31m
+              [33mheight[31m=[32m"24"[31m
+              [33mstroke[31m=[32m"currentColor"[31m
+              [33mstroke-linecap[31m=[32m"round"[31m
+              [33mstroke-linejoin[31m=[32m"round"[31m
+              [33mstroke-width[31m=[32m"2"[31m
+              [33mviewBox[31m=[32m"0 0 24 24"[31m
+              [33mwidth[31m=[32m"24"[31m
+              [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+            [36m>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"[31m
+              [36m/>[31m
+            [36m</svg>[31m
+            [36m<h3[31m
+              [33mclass[31m=[32m"font-display font-black text-lg text-white"[31m
+            [36m>[31m
+              [0mDutching[0m
+            [36m</h3>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shadow hover:bg-primary/80 bg-amber-400 text-black font-black border-transparent"[31m
+            [36m>[31m
+              [0mPAPER[0m
+            [36m</div>[31m
+          [36m</div>[31m
+          [36m<p[31m
+            [33mclass[31m=[32m"text-[11px] text-muted-foreground mt-0.5"[31m
+          [36m>[31m
+            [0mPunta più esiti (dutch)[0m
+            [0m ·[0m
+            [0m [0m
+            [0mmercato [0m
+            [36m<span[31m
+              [33mclass[31m=[32m"font-mono text-white/70"[31m
+            [36m>[31m
+              [0m1.234[0m
+            [36m</span>[31m
+          [36m</p>[31m
+        [36m</div>[31m
+        [36m<button[31m
+          [33mclass[31m=[32m"inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors bg-white/5 text-white/70 border-white/10 hover:border-red-500/40"[31m
+          [33mtitle[31m=[32m"Blocca SOLO gli invii di questo pannello (il Kill-switch GLOBALE del runner è nei Controlli)"[31m
+          [33mtype[31m=[32m"button"[31m
+        [36m>[31m
+          [36m<svg[31m
+            [33maria-hidden[31m=[32m"true"[31m
+            [33mclass[31m=[32m"lucide lucide-shield-alert w-3.5 h-3.5"[31m
+            [33mfill[31m=[32m"none"[31m
+            [33mheight[31m=[32m"24"[31m
+            [33mstroke[31m=[32m"currentColor"[31m
+            [33mstroke-linecap[31m=[32m"round"[31m
+            [33mstroke-linejoin[31m=[32m"round"[31m
+            [33mstroke-width[31m=[32m"2"[31m
+            [33mviewBox[31m=[32m"0 0 24 24"[31m
+            [33mwidth[31m=[32m"24"[31m
+            [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+          [36m>[31m
+            [36m<path[31m
+              [33md[31m=[32m"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"[31m
+            [36m/>[31m
+            [36m<path[31m
+              [33md[31m=[32m"M12 8v4"[31m
+            [36m/>[31m
+            [36m<path[31m
+              [33md[31m=[32m"M12 16h.01"[31m
+            [36m/>[31m
+          [36m</svg>[31m
+          [0mBlocco pannello [0m
+          [0mOFF[0m
+        [36m</button>[31m
+      [36m</div>[31m
+      [36m<fieldset[31m
+        [33mclass[31m=[32m"space-y-4"[31m
+      [36m>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"grid grid-cols-2 md:grid-cols-4 gap-3"[31m
+        [36m>[31m
+          [36m<div>[31m
+            [36m<label[31m
+              [33mclass[31m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[31m
+            [36m>[31m
+              [0mLato[0m
+            [36m</label>[31m
+            [36m<select[31m
+              [33mclass[31m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[31m
+            [36m>[31m
+              [36m<option[31m
+                [33mvalue[31m=[32m"back"[31m
+              [36m>[31m
+                [0mBack (dutch)[0m
+              [36m</option>[31m
+              [36m<option[31m
+                [33mvalue[31m=[32m"lay"[31m
+              [36m>[31m
+                [0mLay (bookmaking)[0m
+              [36m</option>[31m
+            [36m</select>[31m
+          [36m</div>[31m
+          [36m<div>[31m
+            [36m<label[31m
+              [33mclass[31m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[31m
+            [36m>[31m
+              [0mModalità[0m
+            [36m</label>[31m
+            [36m<select[31m
+              [33mclass[31m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[31m
+            [36m>[31m
+              [36m<option[31m
+                [33mvalue[31m=[32m"equal"[31m
+              [36m>[31m
+                [0mEqual (profitto pari)[0m
+              [36m</option>[31m
+              [36m<option[31m
+                [33mvalue[31m=[32m"variable"[31m
+              [36m>[31m
+                [0mVariable (peso)[0m
+              [36m</option>[31m
+              [36m<option[31m
+                [33mvalue[31m=[32m"target"[31m
+              [36m>[31m
+                [0mTarget (profitto obiettivo[0m
+                [0m)[0m
+              [36m</option>[31m
+            [36m</select>[31m
+          [36m</div>[31m
+          [36m<div>[31m
+            [36m<label[31m
+              [33mclass[31m=[32m"font-medium peer-disabled:c...[39m
+[31m   [31m×[31m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22mbook > 100% ma realizzabile: stessi numeri del server (quote 1.5/1.8/3, pesi 1/1/2, T=10)[39m[33m 696[2mms[22m[39m
+[31m     → expected [ '€3.53', '€2.94', '€3.53' ] to deeply equal [ '€4.71', '€3.92', '€1.37' ][39m
+[31m   [31m×[31m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22m4 gambe, pesi decimali, T=123.45 (profitti negativi piccoli)[39m[33m 1166[2mms[22m[39m
+[31m     → expected [ '€47.73', '€38.61', '€8.47', …(1) ] to deeply equal [ '€56.07', '€36.28', '€19.90', …(1) ][39m
+   [32m✓[39m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22mil modo equal NON cambia: 2/3 con T=10 -> stake 6.00/4.00 (proporzionali a 1/quota)[32m 62[2mms[22m[39m
+[31m   [31m×[31m DutchingPanel - funzioni pure di allineamento al server[2m > [22mpyRound2 = round(x, 2) di Python, anche sui pareggi esatti[39m[32m 1[2mms[22m[39m
+[31m     → pyRound2 is not a function[39m
+[31m   [31m×[31m DutchingPanel - funzioni pure di allineamento al server[2m > [22mnearestTickPrice = get_nearest_price di flumine (mezzo tick verso l'alto)[39m[32m 1[2mms[22m[39m
+[31m     → nearestTickPrice is not a function[39m
+[31m   [31m×[31m DutchingPanel - V3: esito ok senza ordini piazzati[2m > [22mok=true SENZA legs (piano non azionabile): NON dice "inviato", mostra il motivo[39m[33m 1118[2mms[22m[39m
+[31m     → expected "spy" to be called at least once
+
+Ignored nodes: comments, script, style
+[36m<html>[31m
+  [36m<head />[31m
+  [36m<body>[31m
+    [36m<div>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"glass-card rounded-2xl border border-white/10 bg-black/40 p-4 md:p-5 space-y-5"[31m
+      [36m>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"flex items-center justify-between gap-3 flex-wrap"[31m
+        [36m>[31m
+          [36m<div>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"flex items-center gap-2"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-layers w-5 h-5 text-amber-400"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<path[31m
+                  [33md[31m=[32m"M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"[31m
+                [36m/>[31m
+                [36m<path[31m
+                  [33md[31m=[32m"M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"[31m
+                [36m/>[31m
+                [36m<path[31m
+                  [33md[31m=[32m"M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"[31m
+                [36m/>[31m
+              [36m</svg>[31m
+              [36m<h3[31m
+                [33mclass[31m=[32m"font-display font-black text-lg text-white"[31m
+              [36m>[31m
+                [0mDutching[0m
+              [36m</h3>[31m
+              [36m<div[31m
+                [33mclass[31m=[32m"inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shadow hover:bg-primary/80 bg-amber-400 text-black font-black border-transparent"[31m
+              [36m>[31m
+                [0mPAPER[0m
+              [36m</div>[31m
+            [36m</div>[31m
+            [36m<p[31m
+              [33mclass[31m=[32m"text-[11px] text-muted-foreground mt-0.5"[31m
+            [36m>[31m
+              [0mPunta più esiti (dutch)[0m
+              [0m ·[0m
+              [0m [0m
+              [0mmercato [0m
+              [36m<span[31m
+                [33mclass[31m=[32m"font-mono text-white/70"[31m
+              [36m>[31m
+                [0m1.234[0m
+              [36m</span>[31m
+            [36m</p>[31m
+          [36m</div>[31m
+          [36m<button[31m
+            [33mclass[31m=[32m"inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors bg-white/5 text-white/70 border-white/10 hover:border-red-500/40"[31m
+            [33mtitle[31m=[32m"Blocca SOLO gli invii di questo pannello (il Kill-switch GLOBALE del runner è nei Controlli)"[31m
+            [33mtype[31m=[32m"button"[31m
+          [36m>[31m
+            [36m<svg[31m
+              [33maria-hidden[31m=[32m"true"[31m
+              [33mclass[31m=[32m"lucide lucide-shield-alert w-3.5 h-3.5"[31m
+              [33mfill[31m=[32m"none"[31m
+              [33mheight[31m=[32m"24"[31m
+              [33mstroke[31m=[32m"currentColor"[31m
+              [33mstroke-linecap[31m=[32m"round"[31m
+              [33mstroke-linejoin[31m=[32m"round"[31m
+              [33mstroke-width[31m=[32m"2"[31m
+              [33mviewBox[31m=[32m"0 0 24 24"[31m
+              [33mwidth[31m=[32m"24"[31m
+              [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+            [36m>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M12 8v4"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M12 16h.01"[31m
+              [36m/>[31m
+            [36m</svg>[31m
+            [0mBlocco pannello [0m
+            [0mOFF[0m
+          [36m</button>[31m
+        [36m</div>[31m
+        [36m<fieldset[31m
+          [33mclass[31m=[32m"space-y-4"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"grid grid-cols-2 md:grid-cols-4 gap-3"[31m
+          [36m>[31m
+            [36m<div>[31m
+              [36m<label[31m
+                [33mclass[31m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[31m
+              [36m>[31m
+                [0mLato[0m
+              [36m</label>[31m
+              [36m<select[31m
+                [33mclass[31m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[31m
+              [36m>[31m
+                [36m<option[31m
+                  [33mvalue[31m=[32m"back"[31m
+                [36m>[31m
+                  [0mBack (dutch)[0m
+                [36m</option>[31m
+                [36m<option[31m
+                  [33mvalue[31m=[32m"lay"[31m
+                [36m>[31m
+                  [0mLay (bookmaking)[0m
+                [36m</option>[31m
+              [36m</select>[31m
+            [36m</div>[31m
+            [36m<div>[31m
+              [36m<label[31m
+                [33mclass[31m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[31m
+              [36m>[31m
+                [0mModalità[0m
+              [36m</label>[31m
+              [36m<select[31m
+                [33mclass[31m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[31m
+              [36m>[31m
+                [36m<option[31m
+                  [33mvalue[31m=[32m"equal"[31m
+                [36m>[31m
+                  [0mEqual (profitto pari)[0m
+                [36m</option>[31m
+                [36m<option[31m
+                  [33mvalue[31m=[32m"variable"[31m
+                [36m>[31m
+                  [0mVariable (peso)[0m
+                [36m</option>[31m
+                [36m<option[31m
+                  [33mvalue[31m=[32m"target"[...[39m
+[31m   [31m×[31m DutchingPanel - V3: esito ok senza ordini piazzati[2m > [22mok=true con legs vuoto: stesso trattamento (nessun ordine partito)[39m[33m 1131[2mms[22m[39m
+[31m     → expected "spy" to be called at least once
+
+Ignored nodes: comments, script, style
+[36m<html>[31m
+  [36m<head />[31m
+  [36m<body>[31m
+    [36m<div>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"glass-card rounded-2xl border border-white/10 bg-black/40 p-4 md:p-5 space-y-5"[31m
+      [36m>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"flex items-center justify-between gap-3 flex-wrap"[31m
+        [36m>[31m
+          [36m<div>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"flex items-center gap-2"[31m
+            [36m>[31m
+              [36m<svg[31m
+                [33maria-hidden[31m=[32m"true"[31m
+                [33mclass[31m=[32m"lucide lucide-layers w-5 h-5 text-amber-400"[31m
+                [33mfill[31m=[32m"none"[31m
+                [33mheight[31m=[32m"24"[31m
+                [33mstroke[31m=[32m"currentColor"[31m
+                [33mstroke-linecap[31m=[32m"round"[31m
+                [33mstroke-linejoin[31m=[32m"round"[31m
+                [33mstroke-width[31m=[32m"2"[31m
+                [33mviewBox[31m=[32m"0 0 24 24"[31m
+                [33mwidth[31m=[32m"24"[31m
+                [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+              [36m>[31m
+                [36m<path[31m
+                  [33md[31m=[32m"M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"[31m
+                [36m/>[31m
+                [36m<path[31m
+                  [33md[31m=[32m"M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"[31m
+                [36m/>[31m
+                [36m<path[31m
+                  [33md[31m=[32m"M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"[31m
+                [36m/>[31m
+              [36m</svg>[31m
+              [36m<h3[31m
+                [33mclass[31m=[32m"font-display font-black text-lg text-white"[31m
+              [36m>[31m
+                [0mDutching[0m
+              [36m</h3>[31m
+              [36m<div[31m
+                [33mclass[31m=[32m"inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shadow hover:bg-primary/80 bg-amber-400 text-black font-black border-transparent"[31m
+              [36m>[31m
+                [0mPAPER[0m
+              [36m</div>[31m
+            [36m</div>[31m
+            [36m<p[31m
+              [33mclass[31m=[32m"text-[11px] text-muted-foreground mt-0.5"[31m
+            [36m>[31m
+              [0mPunta più esiti (dutch)[0m
+              [0m ·[0m
+              [0m [0m
+              [0mmercato [0m
+              [36m<span[31m
+                [33mclass[31m=[32m"font-mono text-white/70"[31m
+              [36m>[31m
+                [0m1.234[0m
+              [36m</span>[31m
+            [36m</p>[31m
+          [36m</div>[31m
+          [36m<button[31m
+            [33mclass[31m=[32m"inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors bg-white/5 text-white/70 border-white/10 hover:border-red-500/40"[31m
+            [33mtitle[31m=[32m"Blocca SOLO gli invii di questo pannello (il Kill-switch GLOBALE del runner è nei Controlli)"[31m
+            [33mtype[31m=[32m"button"[31m
+          [36m>[31m
+            [36m<svg[31m
+              [33maria-hidden[31m=[32m"true"[31m
+              [33mclass[31m=[32m"lucide lucide-shield-alert w-3.5 h-3.5"[31m
+              [33mfill[31m=[32m"none"[31m
+              [33mheight[31m=[32m"24"[31m
+              [33mstroke[31m=[32m"currentColor"[31m
+              [33mstroke-linecap[31m=[32m"round"[31m
+              [33mstroke-linejoin[31m=[32m"round"[31m
+              [33mstroke-width[31m=[32m"2"[31m
+              [33mviewBox[31m=[32m"0 0 24 24"[31m
+              [33mwidth[31m=[32m"24"[31m
+              [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+            [36m>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M12 8v4"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M12 16h.01"[31m
+              [36m/>[31m
+            [36m</svg>[31m
+            [0mBlocco pannello [0m
+            [0mOFF[0m
+          [36m</button>[31m
+        [36m</div>[31m
+        [36m<fieldset[31m
+          [33mclass[31m=[32m"space-y-4"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"grid grid-cols-2 md:grid-cols-4 gap-3"[31m
+          [36m>[31m
+            [36m<div>[31m
+              [36m<label[31m
+                [33mclass[31m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[31m
+              [36m>[31m
+                [0mLato[0m
+              [36m</label>[31m
+              [36m<select[31m
+                [33mclass[31m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[31m
+              [36m>[31m
+                [36m<option[31m
+                  [33mvalue[31m=[32m"back"[31m
+                [36m>[31m
+                  [0mBack (dutch)[0m
+                [36m</option>[31m
+                [36m<option[31m
+                  [33mvalue[31m=[32m"lay"[31m
+                [36m>[31m
+                  [0mLay (bookmaking)[0m
+                [36m</option>[31m
+              [36m</select>[31m
+            [36m</div>[31m
+            [36m<div>[31m
+              [36m<label[31m
+                [33mclass[31m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[31m
+              [36m>[31m
+                [0mModalità[0m
+              [36m</label>[31m
+              [36m<select[31m
+                [33mclass[31m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[31m
+              [36m>[31m
+                [36m<option[31m
+                  [33mvalue[31m=[32m"equal"[31m
+                [36m>[31m
+                  [0mEqual (profitto pari)[0m
+                [36m</option>[31m
+                [36m<option[31m
+                  [33mvalue[31m=[32m"variable"[31m
+                [36m>[31m
+                  [0mVariable (peso)[0m
+                [36m</option>[31m
+                [36m<option[31m
+                  [33mvalue[31m=[32m"target"[...[39m
+   [32m✓[39m DutchingPanel - V3: esito ok senza ordini piazzati[2m > [22mok=true con legs (ordini partiti): "Dutching inviato" come prima[32m 88[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 12 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - A1: variable non e' disponibile sul lato Lay[2m > [22msul lato Back Variable e selezionabile, sul lato Lay no
+[31m[1mAssertionError[22m: expected false to be true // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- true[39m
+[31m+ false[39m
+
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m224:43[22m[39m
+    [90m222| [39m        [34mexpect[39m([34mvariableOption[39m()[33m.[39mdisabled)[33m.[39m[34mtoBe[39m([35mfalse[39m)[33m;[39m
+    [90m223| [39m        await user.selectOptions(screen.getByDisplayValue('Back (dutch…
+    [90m224| [39m        [34mexpect[39m([34mvariableOption[39m()[33m.[39mdisabled)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m   | [39m                                          [31m^[39m
+    [90m225| [39m    })[33m;[39m
+    [90m226| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/12]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - A1: variable non e' disponibile sul lato Lay[2m > [22mvariable poi Lay: motivo leggibile, Piazza disabilitato, sendDutch mai chiamato
+[31m[1mTestingLibraryElementError[22m[39m: Unable to find an element with the text: /Variable non disponibile sul lato Lay/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"glass-card rounded-2xl border border-white/10 bg-black/40 p-4 md:p-5 space-y-5"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex items-center justify-between gap-3 flex-wrap"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex items-center gap-2"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-layers w-5 h-5 text-amber-400"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+            [36m<h3[39m
+              [33mclass[39m=[32m"font-display font-black text-lg text-white"[39m
+            [36m>[39m
+              [0mDutching[0m
+            [36m</h3>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shadow hover:bg-primary/80 bg-amber-400 text-black font-black border-transparent"[39m
+            [36m>[39m
+              [0mPAPER[0m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-[11px] text-muted-foreground mt-0.5"[39m
+          [36m>[39m
+            [0mBanca più esiti (bookmaking)[0m
+            [0m ·[0m
+            [0m [0m
+            [0mmercato [0m
+            [36m<span[39m
+              [33mclass[39m=[32m"font-mono text-white/70"[39m
+            [36m>[39m
+              [0m1.234[0m
+            [36m</span>[39m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors bg-white/5 text-white/70 border-white/10 hover:border-red-500/40"[39m
+          [33mtitle[39m=[32m"Blocca SOLO gli invii di questo pannello (il Kill-switch GLOBALE del runner è nei Controlli)"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-shield-alert w-3.5 h-3.5"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"2"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"[39m
+            [36m/>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M12 8v4"[39m
+            [36m/>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M12 16h.01"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [0mBlocco pannello [0m
+          [0mOFF[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<fieldset[39m
+        [33mclass[39m=[32m"space-y-4"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"grid grid-cols-2 md:grid-cols-4 gap-3"[39m
+        [36m>[39m
+          [36m<div>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[39m
+            [36m>[39m
+              [0mLato[0m
+            [36m</label>[39m
+            [36m<select[39m
+              [33mclass[39m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[39m
+            [36m>[39m
+              [36m<option[39m
+                [33mvalue[39m=[32m"back"[39m
+              [36m>[39m
+                [0mBack (dutch)[0m
+              [36m</option>[39m
+              [36m<option[39m
+                [33mvalue[39m=[32m"lay"[39m
+              [36m>[39m
+                [0mLay (bookmaking)[0m
+              [36m</option>[39m
+            [36m</select>[39m
+          [36m</div>[39m
+          [36m<div>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[39m
+            [36m>[39m
+              [0mModalità[0m
+            [36m</label>[39m
+            [36m<select[39m
+              [33mclass[39m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[39m
+            [36m>[39m
+              [36m<option[39m
+                [33mvalue[39m=[32m"equal"[39m
+              [36m>[39m
+                [0mEqual (profitto pari)[0m
+              [36m</option>[39m
+              [36m<option[39m
+                [33mvalue[39m=[32m"variable"[39m
+              [36m>[39m
+                [0mVariable (peso)[0m
+              [36m</option>[39m
+              [36m<option[39m
+                [33mdisabled[39m=[32m""[39m
+                [33mvalue[39m=[32m"target"[39m
+              [36m>[39m
+                [0mTarget (profitto obiettivo[0m
+                [0m — solo Back[0m
+                [0m)[0m
+              [36m</option>[39m
+            [36m</select>[39m
+          [36m</div>[39m
+          [36m<div>[39m
+  ...
+[90m [2m❯[22m Object.getElementError node_modules/@testing-library/dom/dist/config.js:[2m37:19[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m76:38[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m52:17[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m95:19[22m[39m
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m232:23[22m[39m
+    [90m230| [39m        [35mawait[39m user[33m.[39m[34mselectOptions[39m([34mmodeSelect[39m()[33m,[39m [32m'variable'[39m)[33m;[39m
+    [90m231| [39m        await user.selectOptions(screen.getByDisplayValue('Back (dutch…
+    [90m232| [39m        expect(screen.getByText(/Variable non disponibile sul lato Lay…
+    [90m   | [39m                      [31m^[39m
+    [90m233| [39m        const place = screen.getByRole('button', { name: /Piazza Bookm…
+    [90m234| [39m        [34mexpect[39m(place)[33m.[39m[34mtoBeDisabled[39m()[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/12]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - M11: anteprima variable = numeri del server[2m > [22mcaso A: quote 2.5/3/4, pesi 1/2/1, T=100 -> stake 40.51/34.18/25.32, profitti 1.26/2.53/1.27
+[31m[1mAssertionError[22m: expected [ '€30.38', '€50.63', '€18.99' ] to deeply equal [ '€40.51', '€34.18', '€25.32' ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  [[22m
+[32m-   "€40.51",[39m
+[32m-   "€34.18",[39m
+[32m-   "€25.32",[39m
+[31m+   "€30.38",[39m
+[31m+   "€50.63",[39m
+[31m+   "€18.99",[39m
+[2m  ][22m
+
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m277:60[22m[39m
+    [90m275| [39m    it('caso A: quote 2.5/3/4, pesi 1/2/1, T=100 -> stake 40.51/34.18/…
+    [90m276| [39m        [35mawait[39m [34msetup[39m([34mmk[39m([[34m2.5[39m[33m,[39m [34m3.0[39m[33m,[39m [34m4.0[39m])[33m,[39m [[32m'1'[39m[33m,[39m [32m'2'[39m[33m,[39m [32m'1'[39m][33m,[39m [32m'100'[39m)[33m;[39m
+    [90m277| [39m        expect([stakeOf('A'), stakeOf('B'), stakeOf('C')]).toEqual(['€…
+    [90m   | [39m                                                           [31m^[39m
+    [90m278| [39m        expect([profitOf('A'), profitOf('B'), profitOf('C')]).toEqual(…
+    [90m279| [39m        [34mexpect[39m(screen[33m.[39m[34mgetByText[39m([32m'98.33%'[39m))[33m.[39m[34mtoBeInTheDocument[39m()[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/12]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - M11: anteprima variable = numeri del server[2m > [22mcaso B: quote 2/5, pesi 1/3, T=50 -> stake 31.82/18.18, profitti 13.64/40.90
+[31m[1mAssertionError[22m: expected [ '€22.73', '€27.27' ] to deeply equal [ '€31.82', '€18.18' ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  [[22m
+[32m-   "€31.82",[39m
+[32m-   "€18.18",[39m
+[31m+   "€22.73",[39m
+[31m+   "€27.27",[39m
+[2m  ][22m
+
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m285:46[22m[39m
+    [90m283| [39m    it('caso B: quote 2/5, pesi 1/3, T=50 -> stake 31.82/18.18, profit…
+    [90m284| [39m        [35mawait[39m [34msetup[39m([34mmk[39m([[34m2.0[39m[33m,[39m [34m5.0[39m])[33m,[39m [[32m'1'[39m[33m,[39m [32m'3'[39m][33m,[39m [32m'50'[39m)[33m;[39m
+    [90m285| [39m        expect([stakeOf('A'), stakeOf('B')]).toEqual(['€31.82', '€18.1…
+    [90m   | [39m                                             [31m^[39m
+    [90m286| [39m        expect([profitOf('A'), profitOf('B')]).toEqual(['€13.64', '€40…
+    [90m287| [39m    })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/12]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - M11: anteprima variable = numeri del server[2m > [22mcaso C: quote fuori tick 2.01/3.03 (il server le porta a 2.02/3.05), pesi 1.5/1/2, T=37.5
+[31m[1mAssertionError[22m: expected [ '€18.40', '€8.14', '€10.96' ] to deeply equal [ '€17.73', '€11.93', '€7.84' ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  [[22m
+[32m-   "€17.73",[39m
+[32m-   "€11.93",[39m
+[32m-   "€7.84",[39m
+[31m+   "€18.40",[39m
+[31m+   "€8.14",[39m
+[31m+   "€10.96",[39m
+[2m  ][22m
+
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m291:60[22m[39m
+    [90m289| [39m    it('caso C: quote fuori tick 2.01/3.03 (il server le porta a 2.02/…
+    [90m290| [39m        const user = await setup(mk([2.01, 3.03, 4.5]), ['1.5', '1', '…
+    [90m291| [39m        expect([stakeOf('A'), stakeOf('B'), stakeOf('C')]).toEqual(['€…
+    [90m   | [39m                                                           [31m^[39m
+    [90m292| [39m        expect([profitOf('A'), profitOf('B'), profitOf('C')]).toEqual(…
+    [90m293| [39m        expect(screen.getByText('104.51%')).toBeInTheDocument(); // bo…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/12]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - M11: anteprima variable = numeri del server[2m > [22mpesi irrealizzabili (stake negativo): messaggio, nessuno stake mostrato, invio bloccato
+[31m[1mTestingLibraryElementError[22m[39m: Unable to find an element with the text: /Pesi irrealizzabili/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"glass-card rounded-2xl border border-white/10 bg-black/40 p-4 md:p-5 space-y-5"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex items-center justify-between gap-3 flex-wrap"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex items-center gap-2"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-layers w-5 h-5 text-amber-400"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+            [36m<h3[39m
+              [33mclass[39m=[32m"font-display font-black text-lg text-white"[39m
+            [36m>[39m
+              [0mDutching[0m
+            [36m</h3>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shadow hover:bg-primary/80 bg-amber-400 text-black font-black border-transparent"[39m
+            [36m>[39m
+              [0mPAPER[0m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-[11px] text-muted-foreground mt-0.5"[39m
+          [36m>[39m
+            [0mPunta più esiti (dutch)[0m
+            [0m ·[0m
+            [0m [0m
+            [0mmercato [0m
+            [36m<span[39m
+              [33mclass[39m=[32m"font-mono text-white/70"[39m
+            [36m>[39m
+              [0m1.234[0m
+            [36m</span>[39m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors bg-white/5 text-white/70 border-white/10 hover:border-red-500/40"[39m
+          [33mtitle[39m=[32m"Blocca SOLO gli invii di questo pannello (il Kill-switch GLOBALE del runner è nei Controlli)"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-shield-alert w-3.5 h-3.5"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"2"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"[39m
+            [36m/>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M12 8v4"[39m
+            [36m/>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M12 16h.01"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [0mBlocco pannello [0m
+          [0mOFF[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<fieldset[39m
+        [33mclass[39m=[32m"space-y-4"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"grid grid-cols-2 md:grid-cols-4 gap-3"[39m
+        [36m>[39m
+          [36m<div>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[39m
+            [36m>[39m
+              [0mLato[0m
+            [36m</label>[39m
+            [36m<select[39m
+              [33mclass[39m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[39m
+            [36m>[39m
+              [36m<option[39m
+                [33mvalue[39m=[32m"back"[39m
+              [36m>[39m
+                [0mBack (dutch)[0m
+              [36m</option>[39m
+              [36m<option[39m
+                [33mvalue[39m=[32m"lay"[39m
+              [36m>[39m
+                [0mLay (bookmaking)[0m
+              [36m</option>[39m
+            [36m</select>[39m
+          [36m</div>[39m
+          [36m<div>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[39m
+            [36m>[39m
+              [0mModalità[0m
+            [36m</label>[39m
+            [36m<select[39m
+              [33mclass[39m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[39m
+            [36m>[39m
+              [36m<option[39m
+                [33mvalue[39m=[32m"equal"[39m
+              [36m>[39m
+                [0mEqual (profitto pari)[0m
+              [36m</option>[39m
+              [36m<option[39m
+                [33mvalue[39m=[32m"variable"[39m
+              [36m>[39m
+                [0mVariable (peso)[0m
+              [36m</option>[39m
+              [36m<option[39m
+                [33mvalue[39m=[32m"target"[39m
+              [36m>[39m
+                [0mTarget (profitto obiettivo[0m
+                [0m)[0m
+              [36m</option>[39m
+            [36m</select>[39m
+          [36m</div>[39m
+          [36m<div>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"font-medium peer-disabled:c...
+[90m [2m❯[22m Object.getElementError node_modules/@testing-library/dom/dist/config.js:[2m37:19[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m76:38[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m52:17[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m95:19[22m[39m
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m304:23[22m[39m
+    [90m302| [39m    it('pesi irrealizzabili (stake negativo): messaggio, nessuno stake…
+    [90m303| [39m        [35mawait[39m [34msetup[39m([34mmk[39m([[34m1.5[39m[33m,[39m [34m1.8[39m[33m,[39m [34m10.0[39m])[33m,[39m [[32m'1'[39m[33m,[39m [32m'1'[39m[33m,[39m [32m'6'[39m][33m,[39m [32m'10'[39m)[33m;[39m
+    [90m304| [39m        expect(screen.getByText(/Pesi irrealizzabili/)).toBeInTheDocum…
+    [90m   | [39m                      [31m^[39m
+    [90m305| [39m        expect([stakeOf('A'), stakeOf('B'), stakeOf('C')]).toEqual(['—…
+    [90m306| [39m        expect(screen.getByRole('button', { name: /Piazza Dutch/ })).t…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/12]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - M11: anteprima variable = numeri del server[2m > [22mbook > 100% ma realizzabile: stessi numeri del server (quote 1.5/1.8/3, pesi 1/1/2, T=10)
+[31m[1mAssertionError[22m: expected [ '€3.53', '€2.94', '€3.53' ] to deeply equal [ '€4.71', '€3.92', '€1.37' ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  [[22m
+[32m-   "€4.71",[39m
+[32m-   "€3.92",[39m
+[32m-   "€1.37",[39m
+[31m+   "€3.53",[39m
+[31m+   "€2.94",[39m
+[31m+   "€3.53",[39m
+[2m  ][22m
+
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m312:60[22m[39m
+    [90m310| [39m    it('book > 100% ma realizzabile: stessi numeri del server (quote 1…
+    [90m311| [39m        [35mawait[39m [34msetup[39m([34mmk[39m([[34m1.5[39m[33m,[39m [34m1.8[39m[33m,[39m [34m3.0[39m])[33m,[39m [[32m'1'[39m[33m,[39m [32m'1'[39m[33m,[39m [32m'2'[39m][33m,[39m [32m'10'[39m)[33m;[39m
+    [90m312| [39m        expect([stakeOf('A'), stakeOf('B'), stakeOf('C')]).toEqual(['€…
+    [90m   | [39m                                                           [31m^[39m
+    [90m313| [39m        expect([profitOf('A'), profitOf('B'), profitOf('C')]).toEqual(…
+    [90m314| [39m    })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/12]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - M11: anteprima variable = numeri del server[2m > [22m4 gambe, pesi decimali, T=123.45 (profitti negativi piccoli)
+[31m[1mAssertionError[22m: expected [ '€47.73', '€38.61', '€8.47', …(1) ] to deeply equal [ '€56.07', '€36.28', '€19.90', …(1) ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  [[22m
+[32m-   "€56.07",[39m
+[32m-   "€36.28",[39m
+[32m-   "€19.90",[39m
+[32m-   "€11.20",[39m
+[31m+   "€47.73",[39m
+[31m+   "€38.61",[39m
+[31m+   "€8.47",[39m
+[31m+   "€28.64",[39m
+[2m  ][22m
+
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m319:14[22m[39m
+    [90m317| [39m        await setup(mk([2.2, 3.4, 6.2, 11.0]), ['1', '1.25', '0.5', '3…
+    [90m318| [39m        expect([stakeOf('A'), stakeOf('B'), stakeOf('C'), stakeOf('D')…
+    [90m319| [39m            [33m.[39m[34mtoEqual[39m([[32m'€56.07'[39m[33m,[39m [32m'€36.28'[39m[33m,[39m [32m'€19.90'[39m[33m,[39m [32m'€11.20'[39m])[33m;[39m
+    [90m   | [39m             [31m^[39m
+    [90m320| [39m        expect([profitOf('A'), profitOf('B'), profitOf('C'), profitOf(…
+    [90m321| [39m            [33m.[39m[34mtoEqual[39m([[32m'−€0.10'[39m[33m,[39m [32m'−€0.10'[39m[33m,[39m [32m'−€0.07'[39m[33m,[39m [32m'−€0.25'[39m])[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/12]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - funzioni pure di allineamento al server[2m > [22mpyRound2 = round(x, 2) di Python, anche sui pareggi esatti
+[31m[1mTypeError[22m: pyRound2 is not a function[39m
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m341:54[22m[39m
+    [90m339| [39m            [[34m2.5[39m[33m,[39m [34m2.5[39m][33m,[39m
+    [90m340| [39m        ][33m;[39m
+    [90m341| [39m        for (const [x, atteso] of casi) expect(Panel.pyRound2(x)).toBe…
+    [90m   | [39m                                                     [31m^[39m
+    [90m342| [39m    })[33m;[39m
+    [90m343| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/12]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - funzioni pure di allineamento al server[2m > [22mnearestTickPrice = get_nearest_price di flumine (mezzo tick verso l'alto)
+[31m[1mTypeError[22m: nearestTickPrice is not a function[39m
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m352:54[22m[39m
+    [90m350| [39m            [2.0, 2.0], [3.0, 3.0], [4.0, 4.0], [6.0, 6.0], [10.0, 10.…
+    [90m351| [39m        ][33m;[39m
+    [90m352| [39m        for (const [x, atteso] of casi) expect(Panel.nearestTickPrice(…
+    [90m   | [39m                                                     [31m^[39m
+    [90m353| [39m    })[33m;[39m
+    [90m354| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/12]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - V3: esito ok senza ordini piazzati[2m > [22mok=true SENZA legs (piano non azionabile): NON dice "inviato", mostra il motivo
+[31m[1mAssertionError[22m[39m: expected "spy" to be called at least once
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"glass-card rounded-2xl border border-white/10 bg-black/40 p-4 md:p-5 space-y-5"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex items-center justify-between gap-3 flex-wrap"[39m
+        [36m>[39m
+          [36m<div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex items-center gap-2"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-layers w-5 h-5 text-amber-400"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+              [36m<h3[39m
+                [33mclass[39m=[32m"font-display font-black text-lg text-white"[39m
+              [36m>[39m
+                [0mDutching[0m
+              [36m</h3>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shadow hover:bg-primary/80 bg-amber-400 text-black font-black border-transparent"[39m
+              [36m>[39m
+                [0mPAPER[0m
+              [36m</div>[39m
+            [36m</div>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"text-[11px] text-muted-foreground mt-0.5"[39m
+            [36m>[39m
+              [0mPunta più esiti (dutch)[0m
+              [0m ·[0m
+              [0m [0m
+              [0mmercato [0m
+              [36m<span[39m
+                [33mclass[39m=[32m"font-mono text-white/70"[39m
+              [36m>[39m
+                [0m1.234[0m
+              [36m</span>[39m
+            [36m</p>[39m
+          [36m</div>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors bg-white/5 text-white/70 border-white/10 hover:border-red-500/40"[39m
+            [33mtitle[39m=[32m"Blocca SOLO gli invii di questo pannello (il Kill-switch GLOBALE del runner è nei Controlli)"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-shield-alert w-3.5 h-3.5"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12 8v4"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12 16h.01"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+            [0mBlocco pannello [0m
+            [0mOFF[0m
+          [36m</button>[39m
+        [36m</div>[39m
+        [36m<fieldset[39m
+          [33mclass[39m=[32m"space-y-4"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"grid grid-cols-2 md:grid-cols-4 gap-3"[39m
+          [36m>[39m
+            [36m<div>[39m
+              [36m<label[39m
+                [33mclass[39m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[39m
+              [36m>[39m
+                [0mLato[0m
+              [36m</label>[39m
+              [36m<select[39m
+                [33mclass[39m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[39m
+              [36m>[39m
+                [36m<option[39m
+                  [33mvalue[39m=[32m"back"[39m
+                [36m>[39m
+                  [0mBack (dutch)[0m
+                [36m</option>[39m
+                [36m<option[39m
+                  [33mvalue[39m=[32m"lay"[39m
+                [36m>[39m
+                  [0mLay (bookmaking)[0m
+                [36m</option>[39m
+              [36m</select>[39m
+            [36m</div>[39m
+            [36m<div>[39m
+              [36m<label[39m
+                [33mclass[39m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[39m
+              [36m>[39m
+                [0mModalità[0m
+              [36m</label>[39m
+              [36m<select[39m
+                [33mclass[39m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[39m
+              [36m>[39m
+                [36m<option[39m
+                  [33mvalue[39m=[32m"equal"[39m
+                [36m>[39m
+                  [0mEqual (profitto pari)[0m
+                [36m</option>[39m
+                [36m<option[39m
+                  [33mvalue[39m=[32m"variable"[39m
+                [36m>[39m
+                  [0mVariable (peso)[0m
+                [36m</option>[39m
+                [36m<option[39m
+                  [33mvalue[39m=[32m"target"[...
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m363:60[22m[39m
+    [90m361| [39m        await user.click(screen.getByRole('button', { name: /Piazza Du…
+    [90m362| [39m        [35mawait[39m [34mwaitFor[39m(() [33m=>[39m [34mexpect[39m(mSend)[33m.[39m[34mtoHaveBeenCalledTimes[39m([34m1[39m))[33m;[39m
+    [90m363| [39m        await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenC…
+    [90m   | [39m                                                           [31m^[39m
+    [90m364| [39m        [34mexpect[39m(vi[33m.[39m[34mmocked[39m(toast[33m.[39msuccess))[33m.[39mnot[33m.[39m[34mtoHaveBeenCalled[39m()[33m;[39m
+    [90m365| [39m        expect(vi.mocked(toast.error).mock.calls[0][0]).toBe('Dutching…
+[90m [2m❯[22m runWithExpensiveErrorDiagnosticsDisabled node_modules/@testing-library/dom/dist/config.js:[2m47:12[22m[39m
+[90m [2m❯[22m checkCallback node_modules/@testing-library/dom/dist/wait-for.js:[2m124:77[22m[39m
+[90m [2m❯[22m Timeout.checkRealTimersCallback node_modules/@testing-library/dom/dist/wait-for.js:[2m118:16[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/12]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/live/DutchingPanel.test.tsx[2m > [22mDutchingPanel - V3: esito ok senza ordini piazzati[2m > [22mok=true con legs vuoto: stesso trattamento (nessun ordine partito)
+[31m[1mAssertionError[22m[39m: expected "spy" to be called at least once
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"glass-card rounded-2xl border border-white/10 bg-black/40 p-4 md:p-5 space-y-5"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex items-center justify-between gap-3 flex-wrap"[39m
+        [36m>[39m
+          [36m<div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex items-center gap-2"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-layers w-5 h-5 text-amber-400"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+              [36m<h3[39m
+                [33mclass[39m=[32m"font-display font-black text-lg text-white"[39m
+              [36m>[39m
+                [0mDutching[0m
+              [36m</h3>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shadow hover:bg-primary/80 bg-amber-400 text-black font-black border-transparent"[39m
+              [36m>[39m
+                [0mPAPER[0m
+              [36m</div>[39m
+            [36m</div>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"text-[11px] text-muted-foreground mt-0.5"[39m
+            [36m>[39m
+              [0mPunta più esiti (dutch)[0m
+              [0m ·[0m
+              [0m [0m
+              [0mmercato [0m
+              [36m<span[39m
+                [33mclass[39m=[32m"font-mono text-white/70"[39m
+              [36m>[39m
+                [0m1.234[0m
+              [36m</span>[39m
+            [36m</p>[39m
+          [36m</div>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors bg-white/5 text-white/70 border-white/10 hover:border-red-500/40"[39m
+            [33mtitle[39m=[32m"Blocca SOLO gli invii di questo pannello (il Kill-switch GLOBALE del runner è nei Controlli)"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-shield-alert w-3.5 h-3.5"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12 8v4"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12 16h.01"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+            [0mBlocco pannello [0m
+            [0mOFF[0m
+          [36m</button>[39m
+        [36m</div>[39m
+        [36m<fieldset[39m
+          [33mclass[39m=[32m"space-y-4"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"grid grid-cols-2 md:grid-cols-4 gap-3"[39m
+          [36m>[39m
+            [36m<div>[39m
+              [36m<label[39m
+                [33mclass[39m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[39m
+              [36m>[39m
+                [0mLato[0m
+              [36m</label>[39m
+              [36m<select[39m
+                [33mclass[39m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[39m
+              [36m>[39m
+                [36m<option[39m
+                  [33mvalue[39m=[32m"back"[39m
+                [36m>[39m
+                  [0mBack (dutch)[0m
+                [36m</option>[39m
+                [36m<option[39m
+                  [33mvalue[39m=[32m"lay"[39m
+                [36m>[39m
+                  [0mLay (bookmaking)[0m
+                [36m</option>[39m
+              [36m</select>[39m
+            [36m</div>[39m
+            [36m<div>[39m
+              [36m<label[39m
+                [33mclass[39m=[32m"font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block"[39m
+              [36m>[39m
+                [0mModalità[0m
+              [36m</label>[39m
+              [36m<select[39m
+                [33mclass[39m=[32m"w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ds-v2-campo focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-40"[39m
+              [36m>[39m
+                [36m<option[39m
+                  [33mvalue[39m=[32m"equal"[39m
+                [36m>[39m
+                  [0mEqual (profitto pari)[0m
+                [36m</option>[39m
+                [36m<option[39m
+                  [33mvalue[39m=[32m"variable"[39m
+                [36m>[39m
+                  [0mVariable (peso)[0m
+                [36m</option>[39m
+                [36m<option[39m
+                  [33mvalue[39m=[32m"target"[...
+[36m [2m❯[22m src/components/live/DutchingPanel.test.tsx:[2m376:60[22m[39m
+    [90m374| [39m        render(<DutchingPanel marketId="1.234" mode="paper" selections…
+    [90m375| [39m        await user.click(screen.getByRole('button', { name: /Piazza Du…
+    [90m376| [39m        await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenC…
+    [90m   | [39m                                                           [31m^[39m
+    [90m377| [39m        [34mexpect[39m(vi[33m.[39m[34mmocked[39m(toast[33m.[39msuccess))[33m.[39mnot[33m.[39m[34mtoHaveBeenCalled[39m()[33m;[39m
+    [90m378| [39m    })[33m;[39m
+[90m [2m❯[22m runWithExpensiveErrorDiagnosticsDisabled node_modules/@testing-library/dom/dist/config.js:[2m47:12[22m[39m
+[90m [2m❯[22m checkCallback node_modules/@testing-library/dom/dist/wait-for.js:[2m124:77[22m[39m
+[90m [2m❯[22m Timeout.checkRealTimersCallback node_modules/@testing-library/dom/dist/wait-for.js:[2m118:16[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/12]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m12 failed[39m[22m[2m | [22m[1m[32m16 passed[39m[22m[90m (28)[39m
+[2m   Start at [22m 12:59:51
+[2m   Duration [22m 16.43s[2m (transform 370ms, setup 862ms, collect 761ms, tests 9.86s, environment 3.24s, prepare 1.05s)[22m
+

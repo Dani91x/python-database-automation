@@ -1,0 +1,115 @@
+=== 1) Probabilita' 1X2/O2.5/BTTS: produzione vs riferimento indipendente (N=200, no rinormalizz.) ===
+
+ lam=1.4 mu=1.1 rho=-0.1  | massa totale riferimento=1.000000000000
+  value_engine.bivariate (MAX 15)      H=0.425402 D=0.291627 A=0.282971 O25=0.456187 BTTS=0.515258  maxabsdiff=1.57e-12
+  tactical_engine.dixon_coles (10)     H=0.425401 D=0.291627 A=0.282971 O25=0.456187 BTTS=0.515258  maxabsdiff=1.68e-07
+  today_predictions_backfill (10)      H=0.425401 D=0.291627 A=0.282971 O25=0.456187 BTTS=0.515258  maxabsdiff=1.68e-07
+  riferimento                          H=0.425402 D=0.291627 A=0.282971 O25=0.456187 BTTS=0.515258
+
+ lam=1.4 mu=1.1 rho=-0.13  | massa totale riferimento=1.000000000000
+  value_engine.bivariate (MAX 15)      H=0.421609 D=0.299212 A=0.279179 O25=0.456187 BTTS=0.519050  maxabsdiff=1.58e-12
+  tactical_engine.dixon_coles (10)     H=0.421609 D=0.299212 A=0.279179 O25=0.456187 BTTS=0.519050  maxabsdiff=1.68e-07
+  today_predictions_backfill (10)      H=0.421609 D=0.299212 A=0.279179 O25=0.456187 BTTS=0.519050  maxabsdiff=1.68e-07
+  riferimento                          H=0.421609 D=0.299212 A=0.279179 O25=0.456187 BTTS=0.519050
+
+ lam=2.2 mu=0.8 rho=-0.13  | massa totale riferimento=1.000000000000
+  value_engine.bivariate (MAX 15)      H=0.681921 D=0.207180 A=0.110898 O25=0.576810 BTTS=0.501046  maxabsdiff=7.74e-10
+  tactical_engine.dixon_coles (10)     H=0.681915 D=0.207184 A=0.110900 O25=0.576802 BTTS=0.501045  maxabsdiff=8.38e-06
+  today_predictions_backfill (10)      H=0.681915 D=0.207184 A=0.110900 O25=0.576802 BTTS=0.501045  maxabsdiff=8.38e-06
+  riferimento                          H=0.681921 D=0.207180 A=0.110898 O25=0.576810 BTTS=0.501046
+
+ lam=0.9 mu=0.7 rho=0.05  | massa totale riferimento=1.000000000000
+  value_engine.bivariate (MAX 15)      H=0.388177 D=0.337864 A=0.273959 O25=0.216642 BTTS=0.292382  maxabsdiff=3.00e-15
+  tactical_engine.dixon_coles (10)     H=0.388177 D=0.337864 A=0.273959 O25=0.216642 BTTS=0.292382  maxabsdiff=2.91e-09
+  today_predictions_backfill (10)      H=0.388177 D=0.337864 A=0.273959 O25=0.216642 BTTS=0.292382  maxabsdiff=2.91e-09
+  riferimento                          H=0.388177 D=0.337864 A=0.273959 O25=0.216642 BTTS=0.292382
+
+=== 2) Massa persa dal troncamento (Poisson indipendente, prima della rinormalizzazione) ===
+ lam=1.4 mu=1.1 max_goals= 4: massa tenuta=0.98038888 persa=1.96e-02
+ lam=1.4 mu=1.1 max_goals= 8: massa tenuta=0.99998128 persa=1.87e-05
+ lam=1.4 mu=1.1 max_goals=10: massa tenuta=0.99999969 persa=3.09e-07
+ lam=1.4 mu=1.1 max_goals=15: massa tenuta=1.00000000 persa=2.87e-12
+ lam=2.5 mu=2.0 max_goals= 4: massa tenuta=0.84425481 persa=1.56e-01
+ lam=2.5 mu=2.0 max_goals= 8: massa tenuta=0.99862257 persa=1.38e-03
+ lam=2.5 mu=2.0 max_goals=10: massa tenuta=0.99993007 persa=6.99e-05
+ lam=2.5 mu=2.0 max_goals=15: massa tenuta=0.99999999 persa=1.12e-08
+ lam=3.5 mu=3.0 max_goals= 4: massa tenuta=0.59142861 persa=4.09e-01
+ lam=3.5 mu=3.0 max_goals= 8: massa tenuta=0.98636090 persa=1.36e-02
+ lam=3.5 mu=3.0 max_goals=10: massa tenuta=0.99868857 persa=1.31e-03
+ lam=3.5 mu=3.0 max_goals=15: massa tenuta=0.99999896 persa=1.04e-06
+ lam=5.0 mu=4.0 max_goals= 4: massa tenuta=0.27699845 persa=7.23e-01
+ lam=5.0 mu=4.0 max_goals= 8: massa tenuta=0.91199764 persa=8.80e-02
+ lam=5.0 mu=4.0 max_goals=10: massa tenuta=0.98350386 persa=1.65e-02
+ lam=5.0 mu=4.0 max_goals=15: massa tenuta=0.99992610 persa=7.39e-05
+
+=== 3) Non-negativita' con rho (celle DC) ===
+ lam=1.4 mu=1.1 rho=-0.13: tau<0 in nessuna; dominio rho=(-0.7143,0.6494)
+    dixon_coles.score_matrix: min=4.677e-13
+    bivariate.score_matrix : min=3.119e-23 (clamp tau>=0)
+    today._dc_tau griglia  : min_prima_norm=4.677e-13 sum=1.0000
+ lam=1.4 mu=1.1 rho=-0.25: tau<0 in nessuna; dominio rho=(-0.7143,0.6494)
+    dixon_coles.score_matrix: min=4.677e-13
+    bivariate.score_matrix : min=3.119e-23 (clamp tau>=0)
+    today._dc_tau griglia  : min_prima_norm=4.677e-13 sum=1.0000
+ lam=1.4 mu=1.1 rho=0.5: tau<0 in nessuna; dominio rho=(-0.7143,0.6494)
+    dixon_coles.score_matrix: min=4.677e-13
+    bivariate.score_matrix : min=3.119e-23 (clamp tau>=0)
+    today._dc_tau griglia  : min_prima_norm=4.677e-13 sum=1.0000
+ lam=3.0 mu=3.0 rho=0.15: tau<0 in [(0, 0)]; dominio rho=(-0.3333,0.1111)
+    dixon_coles.score_matrix: min=-8.681e-04
+    bivariate.score_matrix : min=0.000e+00 (clamp tau>=0)
+    today._dc_tau griglia  : min_prima_norm=-8.676e-04 sum=0.9994
+ lam=5.0 mu=4.0 rho=-0.25: tau<0 in [(0, 1)]; dominio rho=(-0.2,0.05)
+    dixon_coles.score_matrix: min=-1.255e-04
+    bivariate.score_matrix : min=0.000e+00 (clamp tau>=0)
+    today._dc_tau griglia  : min_prima_norm=0.000e+00 sum=0.9836
+ lam=9.0 mu=1.0 rho=-0.13: tau<0 in [(0, 1)]; dominio rho=(-0.1111,0.1111)
+    dixon_coles.score_matrix: min=-1.093e-05
+    bivariate.score_matrix : min=0.000e+00 (clamp tau>=0)
+    today._dc_tau griglia  : min_prima_norm=0.000e+00 sum=0.7060
+
+=== 4) Casi limite ===
+ dixon_coles.score_matrix(0,1.2,-0.1): ECCEZIONE ValueError: lambda devono essere > 0
+ bivariate.score_matrix(0,1.2,-0.1)[0][0] (lam clamp 1e-6): 0.30119394686149625
+ today._build_score_grid(0,1.2,10).sum() (lambda=0 -> riga zero): 0.0
+ dixon_coles.score_matrix(nan,1.2,-0.1).sum(): nan
+ bivariate.score_matrix(nan,1.2,-0.1) somma: nan
+ bivariate.score_matrix(60,60,-0.13) somma (MAX 15): 1.0
+ bivariate.pois(800,200): ECCEZIONE OverflowError: int too large to convert to float
+ dixon_coles.score_matrix(60,60,-0.13).sum(): 1.0
+ bivariate.score_matrix(900,900,-0.13) somma: ECCEZIONE ZeroDivisionError: float division by zero
+ pt.p_le(3,0.0): 1.0
+ pt.lam_from_prematch('over',2,0.0): 0.018254282963090618
+ pt.lam_from_prematch('over',2,nan): 50.0
+ pt.lam_from_prematch('under',0,0.5): 0.6931471805599453
+ pt.p_le(200, 150.0) (factorial): ECCEZIONE OverflowError: (34, 'Result too large')
+ pt.p_le(180, 100.0): ECCEZIONE OverflowError: (34, 'Result too large')
+ bv.derive_lambdas(0.5,0.5): (1.6401618004005154, 1.0338985133801286)
+ bv.derive_lambdas(0.9,0.95): (4.959202972522398, 1.3366766372868777)
+ bv.derive_lambdas(0.5,0.5,rho=-0.5): (1.7251107958526068, 0.9489495179891129)
+ devig_multiplicative({'H':1.0,'D':3.0,'A':5.0}): ECCEZIONE ValueError: Tutte le quote devono essere > 1.0, ricevuto: {'H': 1.0, 'D': 3.0, 'A': 5.0}
+ devig_pair(2.0, 2.0): 0.5
+ devig_pair(1.9, 1.0 sospeso): 0.5263157894736842
+ devig_pair(nan, 2.0): nan
+
+=== 5) Roundtrip derive_lambdas (p_home, p_over25) -> (lam, mu) -> mercati ===
+ p_home=0.45 p_over25=0.55 -> lam=1.6358 mu=1.2468; round-trip H=0.4500 O25=0.5500; riferimento(N=200) H=0.4500 O25=0.5500
+ p_home=0.6 p_over25=0.5 -> lam=1.8443 mu=0.8297; round-trip H=0.6000 O25=0.5000; riferimento(N=200) H=0.6000 O25=0.5000
+ p_home=0.25 p_over25=0.45 -> lam=1.0236 mu=1.4523; round-trip H=0.2500 O25=0.4500; riferimento(N=200) H=0.2500 O25=0.4500
+
+=== 6) De-vig: proporzionale vs potenza vs Shin su 1X2 tipico (quote 2.10/3.40/3.60) ===
+ overround=1.0481  proporzionale=[0.4543 0.2806 0.265 ]  potenza(k=1.046)=[0.4602 0.278  0.2618]  Shin(z=0.0241)=[0.4587 0.2787 0.2626]
+
+=== 7) Tempo rimanente: lineare vs CDF empirica (value_engine.goal_timing) ===
+ minuto  0: frazione rimasta FT lineare=1.0000 CDF=1.0000
+ minuto 30: frazione rimasta FT lineare=0.6667 CDF=0.7334
+ minuto 45: frazione rimasta FT lineare=0.5000 CDF=0.5652
+ minuto 60: frazione rimasta FT lineare=0.3333 CDF=0.4064
+ minuto 75: frazione rimasta FT lineare=0.1667 CDF=0.2428
+ minuto 85: frazione rimasta FT lineare=0.0556 CDF=0.1301
+ minuto 89: frazione rimasta FT lineare=0.0111 CDF=0.0828
+ quota gol primo tempo (cdf[45]) = 0.4348
+
+=== 8) Fit DixonColesModel su dati sintetici (recupero dei parametri) ===
+ n=700 partite, 12 squadre. home_adv vero=0.25 stimato=0.233; rho vero=-0.08 stimato=-0.104; converged=True
+ corr(attacco vero, stimato)=0.925; pendenza stima/vero=0.884 (ridge=0.08 + decadimento -> restringimento)

@@ -1,0 +1,21 @@
+=== mutazione A1_opzione
+   × DutchingPanel - A1: variable non e' disponibile sul lato Lay > sul lato Back Variable e selezionabile, sul lato Lay no 180ms
+      Tests  1 failed | 27 passed (28)
+MUT FAIL A1_avviso_e_bottone
+=== mutazione M11_formula_vecchia
+   × DutchingPanel - M11: anteprima variable = numeri del server > caso A: quote 2.5/3/4, pesi 1/2/1, T=100 -> stake 40.51/34.18/25.32, profitti 1.26/2.53/1.27 837ms
+   × DutchingPanel - M11: anteprima variable = numeri del server > caso B: quote 2/5, pesi 1/3, T=50 -> stake 31.82/18.18, profitti 13.64/40.90 550ms
+   × DutchingPanel - M11: anteprima variable = numeri del server > caso C: quote fuori tick 2.01/3.03 (il server le porta a 2.02/3.05), pesi 1.5/1/2, T=37.5 1118ms
+   × DutchingPanel - M11: anteprima variable = numeri del server > pesi irrealizzabili (stake negativo): messaggio, nessuno stake mostrato, invio bloccato 808ms
+   × DutchingPanel - M11: anteprima variable = numeri del server > book > 100% ma realizzabile: stessi numeri del server (quote 1.5/1.8/3, pesi 1/1/2, T=10) 748ms
+   × DutchingPanel - M11: anteprima variable = numeri del server > 4 gambe, pesi decimali, T=123.45 (profitti negativi piccoli) 1641ms
+      Tests  6 failed | 22 passed (28)
+=== mutazione pyRound2
+   × DutchingPanel - funzioni pure di allineamento al server > pyRound2 = round(x, 2) di Python, anche sui pareggi esatti 22ms
+      Tests  1 failed | 27 passed (28)
+MUT FAIL tick
+=== mutazione V3
+   × DutchingPanel - V3: esito ok senza ordini piazzati > ok=true SENZA legs (piano non azionabile): NON dice "inviato", mostra il motivo 1145ms
+   × DutchingPanel - V3: esito ok senza ordini piazzati > ok=true con legs vuoto: stesso trattamento (nessun ordine partito) 1090ms
+      Tests  2 failed | 26 passed (28)
+MUT FAIL infeasible_invio

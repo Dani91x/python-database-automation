@@ -1,0 +1,8 @@
+M1 variable abilitato sul lay: exit=1 [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+M2 anteprima variable con la formula vecchia (stake ~ peso/quota): exit=1 [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 6 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+M3 V3 tolto: ok senza legs = inviato: exit=1 [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+M4 bottone non disabilitato su variable+lay: SALTATA (occorrenze=0)
+M5 guardBeforeSend senza il blocco variable+lay (insieme a M4): SALTATA (occorrenze=0)
+M6 arrotondamento ingenuo al posto di round() di Python: exit=1 [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+M7 pesi irrealizzabili non bloccano l'invio: exit=0 [2m      Tests [22m [1m[32m28 passed[39m[22m[90m (28)[39m
+ripristino: sha uguale all'originale = True

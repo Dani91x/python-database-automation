@@ -1,0 +1,100 @@
+== chiavi atlante live: ['meta', 'global', 'by_league', 'by_team', 'h2h_hint', 'v4']
+meta: {'name': 'hazard_atlas_v3', 'generated_at': '2026-10-09T08:23:47+00:00', 'generator': 'Betfair/stream/scalper/atlante_a_domanda.py', 'purpose': 'P(gol imminente) per stato (minuto, gol correnti), gerarchico squadra->lega->globale. Rigenerato in automatico, incrementale per lega.', 'n_fixtures_used': 456678, 'n_goals': 1239158, 'avg_goals_per_match': 2.7134, 'n_leagues': 381, 'n_leagues_in_state': 404, 'n_leagues_affidabili': 290, 'n_leagues_da_seme': 15, 'globale': {'fonte': 'stato', 'n_fixtures': 456678}}
+v4 presente: True
+v4.meta: {'name': 'hazard_atlas_v4', 'generated_at': '2026-10-09T08:23:47+00:00', 'stagione_rif': 2028, 'stagione_rif_per_lega': {'5': 2027, '10': 2027, '12': 2026, '25': 2027, '36': 2028, '41': 2027, '42': 2027, '43': 2027, '44': 2027, '45': 2027, '46': 2027, '50': 2027, '51': 2027, '58': 2027, '59': 2027, '60': 2027, '63': 2027, '64': 2027, '67': 2027, '68': 2026, '69': 2027, '71': 2027, '72': 2027, '74': 2026, '75': 2027, '80': 2027, '82': 2027, '83': 2027, '84': 2027, '85': 2027, '86': 2027, '87': 2027, '89': 2027, '91': 2026, '92': 2025, '95': 2026, '99': 2027, '100': 2027, '101': 2027, '102': 2026, '104': 2027, '105': 2028, '109': 2027, '110': 2027, '111': 2027, '115': 2027, '117': 2027, '122': 2027, '128': 2027, '129': 2027, '130': 2027, '131': 2027, '132': 2027, '134': 2027, '138': 2027, '139': 2027, '141': 2027, '142': 2027, '143': 2027, '146': 2027, '163': 2027, '170': 2027, '174': 2026, '180': 2027, '181': 2025, '182': 2027, '183': 2027, '184': 2027, '186': 2027, '187': 2025, '200': 2027, '201': 2025, '205': 2027, '206': 2027, '211': 2027, '212': 2026, '221': 2025, '223': 2025, '236': 2026, '239': 2027, '240': 2027, '241': 2027, '243': 2027, '244': 2027, '245': 2027, '247': 2027, '248': 2027, '249': 2027, '251': 2027, '252': 2027, '253': 2027, '254': 2027, '255': 2027, '262': 2026, '263': 2027, '267': 2027, '268': 2027, '269': 2027, '275': 2027, '276': 2026, '281': 2027, '282': 2027, '283': 2027, '284': 2027, '287': 2027, '290': 2027, '291': 2027, '295': 2027, '300': 2027, '302': 2027, '304': 2027, '305': 2027, '308': 2027, '316': 2026, '317': 2026, '322': 2027, '327': 2026, '334': 2027, '335': 2027, '336': 2027, '339': 2027, '340': 2028, '341': 2028, '343': 2025, '347': 2027, '348': 2027, '349': 2027, '355': 2027, '356': 2027, '357': 2027, '358': 2027, '361': 2027, '369': 2027, '370': 2027, '374': 2027, '382': 2027, '386': 2025, '387': 2027, '388': 2027, '390': 2027, '396': 2027, '397': 2025, '398': 2028, '399': 2028, '400': 2025, '401': 2027, '403': 2025, '407': 2025, '408': 2027, '418': 2027, '423': 2027, '426': 2027, '427': 2027, '428': 2027, '429': 2026, '430': 2026, '431': 2026, '432': 2026, '433': 2026, '434': 2026, '435': 2027, '436': 2027, '439': 2027, '440': 2027, '441': 2027, '442': 2027, '443': 2027, '444': 2027, '445': 2027, '446': 2027, '447': 2027, '448': 2027, '449': 2027, '450': 2027, '451': 2026, '452': 2026, '453': 2027, '454': 2027, '455': 2027, '456': 2027, '458': 2026, '460': 2026, '473': 2027, '474': 2027, '479': 2027, '484': 2027, '487': 2027, '488': 2025, '489': 2027, '492': 2027, '494': 2027, '496': 2027, '501': 2027, '506': 2027, '510': 2027, '518': 2027, '525': 2027, '536': 2026, '538': 2027, '542': 2027, '549': 2027, '552': 2027, '553': 2027, '554': 2027, '560': 2027, '563': 2027, '564': 2027, '566': 2025, '567': 2027, '569': 2027, '570': 2027, '585': 2027, '592': 2027, '593': 2027, '594': 2027, '595': 2027, '596': 2027, '597': 2027, '599': 2025, '600': 2025, '601': 2025, '617': 2027, '625': 2027, '633': 2027, '634': 2027, '635': 2027, '637': 2028, '638': 2027, '640': 2027, '649': 2027, '650': 2027, '651': 2027, '652': 2027, '653': 2027, '657': 2027, '660': 2027, '666': 2027, '667': 2027, '668': 2027, '669': 2022, '673': 2027, '676': 2027, '677': 2027, '680': 2027, '685': 2027, '697': 2026, '699': 2026, '701': 2027, '703': 2027, '704': 2026, '707': 2026, '711': 2027, '722': 2027, '725': 2026, '728': 2027, '730': 2025, '733': 2027, '734': 2025, '735': 2027, '736': 2027, '737': 2027, '739': 2027, '742': 2027, '744': 2025, '745': 2025, '746': 2023, '747': 2025, '748': 2025, '749': 2025, '750': 2025, '751': 2025, '752': 2025, '753': 2025, '754': 2025, '755': 2025, '756': 2027, '759': 2027, '764': 2028, '765': 2028, '771': 2027, '774': 2027, '775': 2027, '776': 2027, '777': 2027, '778': 2027, '779': 2027, '780': 2027, '781': 2027, '782': 2027, '783': 2027, '803': 2027, '811': 2027, '823': 2027, '828': 2027, '850': 2028, '862': 2027, '863': 2026, '872': 2027, '875': 2027, '876': 2027, '877': 2027, '878': 2027, '879': 2027, '886': 2028, '887': 2027, '890': 2027, '895': 2025, '906': 2027, '915': 2027, '916': 2027, '917': 2026, '929': 2027, '930': 2027, '931': 2027, '938': 2025, '939': 2025, '942': 2027, '943': 2027, '946': 2027, '948': 2026, '951': 2027, '955': 2027, '964': 2027, '1015': 2024, '1023': 2027, '1025': 2026, '1026': 2027, '1030': 2027, '1031': 2027, '1033': 2026, '1034': 2025, '1039': 2027, '1041': 2027, '1065': 2027, '1067': 2026, '1075': 2027, '1086': 2027, '1087': 2027, '1088': 2025, '1095': 2026, '1103': 2026, '1104': 2027, '1107': 2027, '1113': 2027, '1114': 2027, '1126': 2027, '1128': 2026, '1129': 2027, '1130': 2027, '1142': 2027, '1150': 2027, '1155': 2027, '1156': 2027, '1182': 2027, '1191': 2027, '1197': 2027, '1199': 2027, '1200': 2027, '1201': 2027, '1203': 2027, '1232': 2027, '1242': 2027, '1243': 2027, '1244': 2027, '1245': 2027, '1247': 2027}, 'emivita': 3.0, 'k_celle': 1500.0, 'beta': {'2': 0.628, '3': 0.627}, 'n_leghe': 366, 'n_leghe_affidabili': 290, 'n_partite_affidabili': 456678, 'globale_solido': True, 'min_partite_globale': 10000, 'ripieghi': [['45+', '40-45']], 'k_durata': 6.61354612470291, 'recupero_2T_noto': True, 'durata_media_campione': 6.233355581536809, 'forza': {'metodo': 'Poisson-Elo del banco (validazione_hazard/forza.py), per lega, cronologico', 'eta': 0.015, 'rientro': 1.0, 'alfa_lega': 0.01, 'n_leghe_con_forza': 366}}
+n leghe v3: 381  n leghe v4: 366  by_team: 8745
+
+== 1) v3 globale p(3min) per bucket (media pesata n sui gol) vs Poisson con CDF residua (gol medi 2.70)
+CDF caricata: True cdf[45]= 0.4348 cdf[90]= 1.0
+  0-5    n= 2283390 v3=0.0654  Poisson(CDF,2.7 gol)=0.0628  rapporto v3/Poisson=1.042
+  10-15  n= 2283390 v3=0.0752  Poisson(CDF,2.7 gol)=0.0738  rapporto v3/Poisson=1.019
+  30-35  n= 2283390 v3=0.0781  Poisson(CDF,2.7 gol)=0.0741  rapporto v3/Poisson=1.055
+  40-45  n= 2283390 v3=0.1102  Poisson(CDF,2.7 gol)=0.1334  rapporto v3/Poisson=0.826
+  45-50  n= 2283390 v3=0.0838  Poisson(CDF,2.7 gol)=0.0813  rapporto v3/Poisson=1.031
+  60-65  n= 2283390 v3=0.0874  Poisson(CDF,2.7 gol)=0.0845  rapporto v3/Poisson=1.035
+  75-80  n= 2283390 v3=0.0877  Poisson(CDF,2.7 gol)=0.0870  rapporto v3/Poisson=1.009
+  85-90  n= 1370034 v3=0.1408  Poisson(CDF,2.7 gol)=0.2497  rapporto v3/Poisson=0.564
+
+== 2) v3 globale 60-65: p3 per gol totali
+  gol 0 {'p_goal_next_3min': 0.07539, 'p_goal_next_2min': 0.05095, 'n': 451264}
+  gol 1 {'p_goal_next_3min': 0.08278, 'p_goal_next_2min': 0.05584, 'n': 694725}
+  gol 2 {'p_goal_next_3min': 0.09056, 'p_goal_next_2min': 0.06078, 'n': 572636}
+  gol 3+ {'p_goal_next_3min': 0.09955, 'p_goal_next_2min': 0.06697, 'n': 564765}
+
+== 3) mult squadra: esempio numerico (atlante sintetico minimo, formula di produzione)
+  neutre                               p=0.1000 fonte=team conf=alta
+  A att 2x                             p=0.1462 fonte=team conf=alta
+  entrambe forti att x2/def x1         p=0.1900 fonte=team conf=alta
+  A forte att x2, B debole def x2      p=0.2316 fonte=team conf=alta
+  -- rumore profilo squadra (n=30, K_TEAM=12, sr=0.030 gol/partita/bucket):
+     0 gol in bucket -> att=0.0086  rapporto att/sr=0.29
+     1 gol in bucket -> att=0.0324  rapporto att/sr=1.08
+     2 gol in bucket -> att=0.0562  rapporto att/sr=1.87
+     3 gol in bucket -> att=0.0800  rapporto att/sr=2.67
+     P(>=3 gol in 30 partite | tasso vero 0.030) = 0.0629
+
+== 4) _p_recupero2 (formula di produzione)
+  r=0.03 j=0 k=3: P=0.0847  atteso residuo=4.800000000000001
+  r=0.03 j=2 k=3: P=0.0698  atteso residuo=2.947368421052631
+  r=0.03 j=4 k=3: P=0.0528  atteso residuo=1.909090909090909
+  r=0.03 j=7 k=3: P=0.0296  atteso residuo=1.0
+  fallback senza pi: k=2: (0.029554466451491845, None)  k=3: (0.029554466451491845, None)  (identici: k ignorato)
+  controllo manuale j=0 k=3: 0.084677
+  leghe v4 piu' grandi: [('667', None, 12492, 3.22548, 6.233), ('205', None, 5433, 2.72642, 6.137), ('129', None, 4957, 1.93329, 6.042)]
+  gol medi globali v4: 2.89956  beta: {'2': 0.628, '3': 0.627}  emivita 3.0  k_durata 6.61354612470291  ripieghi [['45+', '40-45']]
+  global r_rec2 per gol key: [0.0252, 0.0276, 0.0288, 0.03]
+  confronto v3 vs v4 (lega 667, p3) per bucket regolari, gol=1:
+      0- 5: v3=0.07523 v4=0.0756
+     15-20: v3=0.09493 v4=0.0943
+     30-35: v3=0.10105 v4=0.1008
+     45-50: v3=0.10218 v4=0.1013
+     60-65: v3=0.09898 v4=0.0983
+     75-80: v3=0.09019 v4=0.0904
+  celle del recupero 2T v4 (lega 667), p3 per J_BIN, gol=1: [0.0857, 0.0891, 0.0845, 0.0746, 0.0635, 0.0503, 0.0396, 0.0251]
+  squadre con rating nella lega: 4233 ['711', '537']
+   v4 62' 1 gol {} -> p3=0.0983 1.0 league alta n= 9844.9
+   v4 62' 1 gol {'home_id': '711', 'away_id': '537'} -> p3=0.0859 0.8686 league alta n= 9844.9
+   v4 90' tempo2 1 gol: p3=0.0778 p2=0.0532 atteso rec=6.23
+   v4 92' tempo2 1 gol: p3=0.0724 p2=0.0519 atteso rec=4.45
+   v4 94' tempo2 1 gol: p3=0.0601 p2=0.0472 atteso rec=3.16
+   v4 96' tempo2 1 gol: p3=0.0547 p2=0.0441 atteso rec=2.8
+   lambda esplicito 3.0+2.5 -> 1.3974 p=0.1346
+  v4 globale p3 bucket 60-65: [0.0752, 0.0831, 0.091, 0.1008]  v3: [0.07539, 0.08278, 0.09056, 0.09955]
+
+== 5) p_upper / shrunk_upper (produzione): gonfiaggio rispetto alla frequenza
+  k=     0 n=    200  MLE=0.00000  upper=0.01327  rapporto=inf
+  k=     0 n=   1000  MLE=0.00000  upper=0.00268  rapporto=inf
+  k=     0 n=  10000  MLE=0.00000  upper=0.00027  rapporto=inf
+  k=     1 n=    200  MLE=0.00500  upper=0.02202  rapporto=4.40
+  k=     5 n=   1000  MLE=0.00500  upper=0.01021  rapporto=2.04
+  k=    50 n=   5000  MLE=0.01000  upper=0.01259  rapporto=1.26
+  k=   500 n=  50000  MLE=0.01000  upper=0.01076  rapporto=1.08
+  k=  5000 n= 500000  MLE=0.01000  upper=0.01023  rapporto=1.02
+  shrunk_upper lega k=0/n=10, globale k=2/n=200 (docstring: 1,26%): 0.02829
+  shrunk_upper lega k=3/n=300, globale k=3000/n=300000: 0.01421  MLE lega=0.01 glob=0.01
+  shrunk_upper lega k=60/n=3000 (2%), globale 1% su 300000: 0.02237
+  n_eff = 4082.2 (vs n_l = 3000.0 , n_l+K = 3500.0 )
+  E[max(N(0.08,0.02),N(0.08,0.02))]=0.09128 (teoria p+s/sqrt(pi)=0.09128) -> bias relativo 14.1%
+  E[max(N(0.08,0.01),N(0.08,0.01))]=0.08563 (teoria p+s/sqrt(pi)=0.08564) -> bias relativo 7.0%
+  E[max(N(0.002,0.001),N(0.002,0.001))]=0.00256 (teoria p+s/sqrt(pi)=0.00256) -> bias relativo 28.1%
+  combine_hazard(0.08, 0.10, 1.25) = 0.125  (0.10*1.25=0.125 domina)
+  combine_hazard(0.12, 0.08, 1.25) = 0.12
+  combine_hazard(None, 0.08, 1.0) = 0.08  combine(None,None) = None
+
+== 6) tabella omega_minute: stato a minuto esatto b, usata per b..b+4 (CDF reale)
+  bucket 60 usato a minuto 60: gol residui attesi tabella ~0.406 vs reali 0.406 della partita (rapporto 1.00)
+  bucket 60 usato a minuto 62: gol residui attesi tabella ~0.406 vs reali 0.385 della partita (rapporto 1.06)
+  bucket 60 usato a minuto 64: gol residui attesi tabella ~0.406 vs reali 0.364 della partita (rapporto 1.12)
+  bucket 80 usato a minuto 80: gol residui attesi tabella ~0.187 vs reali 0.187 della partita (rapporto 1.00)
+  bucket 80 usato a minuto 82: gol residui attesi tabella ~0.187 vs reali 0.165 della partita (rapporto 1.13)
+  bucket 80 usato a minuto 84: gol residui attesi tabella ~0.187 vs reali 0.142 della partita (rapporto 1.32)
+  bucket 85 usato a minuto 85: gol residui attesi tabella ~0.130 vs reali 0.130 della partita (rapporto 1.00)
+  bucket 85 usato a minuto 87: gol residui attesi tabella ~0.130 vs reali 0.106 della partita (rapporto 1.22)
+  bucket 85 usato a minuto 89: gol residui attesi tabella ~0.130 vs reali 0.083 della partita (rapporto 1.57)
+  minute_bucket(89,half=False)= 85  minute_bucket(93,half=False)= 85
+
+== 7) v3: M_MAX=87 e clamp dei gol: finestra (m, m+3] per m=85..87 arriva a 90; per m=88,89 la cella 85-90 e' consultata ma non contata
+  G.M_MAX = 87  bucket(87)= 85-90  _bucket_gol(90)= 85-90  _bucket_gol(45)= 40-45  _bucket_gol(46)= 45-50
+  partita con gol al 90' (anche 90+5): celle 85-90 gk=0 [n,s3,s2] = [3, 1, 0]  (conta solo per m=87: m<x<=m+3 -> 87<90<=90)
+  stessa partita, gol 45+4 (minute=45): cella 40-45 gk=0: None
+   40-45 gk=0: [5, 3, 2]  45-50 gk=0: [0, 0, 0]  45-50 gk=1: [5, 0, 0] (il gol del recupero 1T al 45' e' 'segnato' gia' a m=45: nel 2T parte da 1 gol)

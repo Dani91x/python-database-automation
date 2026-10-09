@@ -1,0 +1,37 @@
+# Correzioni applicate dal coordinatore dopo REVISIONE_FINALE.md
+
+- 07_RIEPILOGO_PER_L_UTENTE.md: 0x '1. **I conti che muovono i soldi dei bot sono gius'
+- 07_RIEPILOGO_PER_L_UTENTE.md: 1x 'Green-up, P&L, commissione, Kelly, scala delle quo'
+- 07_RIEPILOGO_PER_L_UTENTE.md: 1x "Restano: nessun bot controlla quanto e' vecchia la"
+- 07_RIEPILOGO_PER_L_UTENTE.md: 1x 'lo confronta con una moneta invece che con la medi'
+- 07_RIEPILOGO_PER_L_UTENTE.md: 0x 'le previsioni scritte a partita iniziata: la causa'
+- DECISIONI_PER_L_UTENTE.md: 1x "La causa (cron in ritardo) e' stata rimossa il 09/"
+- DECISIONI_PER_L_UTENTE.md: 1x "lo stop di conto oggi e' spento (NULL)"
+- 05_ERRORI_DI_PROGETTAZIONE.md: 1x "**causa gia' rimossa** il 09/10"
+- 05_ERRORI_DI_PROGETTAZIONE.md: 1x "Theta e' opt-in (`theta_mode`, `theta_bot.py:546-5"
+- 05_ERRORI_DI_PROGETTAZIONE.md: 1x '(`omega_advisor.py:309`)'
+- REFERTO_FIX_DUTCHING.md: 1x "Strumento manuale dell'utente: nessun bot (Omega, "
+- REFERTO_FIX_DUTCHING.md: 1x '| `frontend/src/components/live/DutchingPanel.test'
+- REFERTO_FIX_DUTCHING.md: 1x 'seme diverso (424242), 2-12 gambe,'
+- REFERTO_FIX_DUTCHING.md: 1x '| M5 bottone + `guardBeforeSend` + opzione tolti i'
+- REFERTO_FIX_DUTCHING.md: 1x 'azionabili inclusi; `lavori/fase2/suite/differenzi'
+- 01_CATENA_POISSON.md: 1x 'today_predictions_backfill.py:1493'
+- 01_CATENA_POISSON.md: 1x 'poisson_calibrator.py:84-90'
+- 01_CATENA_POISSON.md: 0x 'omega_advisor.py:309'
+- 02_CATENA_ML.md: 0x 'today_predictions_backfill.py:1493'
+- 02_CATENA_ML.md: 0x 'poisson_calibrator.py:84-90'
+- 02_CATENA_ML.md: 0x 'omega_advisor.py:309'
+- 03_COMPONENTI_MATEMATICI.md: 0x 'today_predictions_backfill.py:1493'
+- 03_COMPONENTI_MATEMATICI.md: 1x 'poisson_calibrator.py:84-90'
+- 03_COMPONENTI_MATEMATICI.md: 0x 'omega_advisor.py:309'
+- 04_FLUSSO_FINO_AL_CONSUMATORE.md: 0x 'today_predictions_backfill.py:1493'
+- 04_FLUSSO_FINO_AL_CONSUMATORE.md: 2x 'poisson_calibrator.py:84-90'
+- 04_FLUSSO_FINO_AL_CONSUMATORE.md: 1x 'omega_advisor.py:309'
+- 06_PIANO_MIGLIORAMENTI.md: 0x 'today_predictions_backfill.py:1493'
+- 06_PIANO_MIGLIORAMENTI.md: 0x 'poisson_calibrator.py:84-90'
+- 06_PIANO_MIGLIORAMENTI.md: 0x 'omega_advisor.py:309'
+- 00_INVENTARIO_MATEMATICO.md: 0x 'today_predictions_backfill.py:1493'
+- 00_INVENTARIO_MATEMATICO.md: 0x 'poisson_calibrator.py:84-90'
+- 00_INVENTARIO_MATEMATICO.md: 0x 'omega_advisor.py:309'
+- 07: 2 frasi su CRLF applicate a mano dal coordinatore
+- sed coordinatore: 'causa probabile' (02), 'non leakage' (03:110,542), FL-15 'danno non provato' (04)

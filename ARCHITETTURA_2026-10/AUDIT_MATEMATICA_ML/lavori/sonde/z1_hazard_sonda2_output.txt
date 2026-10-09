@@ -1,0 +1,13 @@
+docstring shrunk_upper(0,10,0,200) = 0.01265 (attesa 0.0126)
+leghe affidabili con forza: 290 mult neutro (mu_sum/gol_medi): min 0.896 p10 0.960 mediana 1.025 p90 1.099 max 1.204
+quota leghe con |mult-1|>5%: 0.38 ; con >10%: 0.10
+  lega 456 n 2021 mu [1.192, 0.858] gol_medi 2.28686 mult_neutro 0.896 -> p fattore (mult^0.627) = 0.934
+  lega 667 n 12492 mu [1.459, 1.443] gol_medi 3.22548 mult_neutro 0.9 -> p fattore (mult^0.627) = 0.936
+  lega 748 n 842 mu [1.519, 1.43] gol_medi 3.2619 mult_neutro 0.904 -> p fattore (mult^0.627) = 0.939
+  lega 80 n 3414 mu [1.884, 1.501] gol_medi 2.91593 mult_neutro 1.161 -> p fattore (mult^0.627) = 1.098
+  lega 187 n 1978 mu [1.689, 1.012] gol_medi 2.26579 mult_neutro 1.192 -> p fattore (mult^0.627) = 1.116
+  lega 308 n 2221 mu [1.699, 1.432] gol_medi 2.60128 mult_neutro 1.204 -> p fattore (mult^0.627) = 1.123
+lega piu' grande: n squadre 4233 media att -0.000 media dif -0.000 sd att 0.063 sd dif 0.063
+   E[exp(att+dif)] ~ 1.0037 (Jensen, >1 se sd>0)
+   mu [1.4593552, 1.4431457] gol_medi 3.22548  rientro 1.0 stagione 2026
+by_team v3: n squadre 8745 n_matches mediana 73 p10 20 p90 239

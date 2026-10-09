@@ -1,0 +1,80 @@
+
+=== 1. hold_from_serve_point vs DP esatto sui punti
+0.5 0.5 0.5
+0.55 0.623149 0.623149
+0.6 0.735729 0.735729
+0.65 0.829645 0.829645
+0.7 0.900789 0.900789
+
+=== 2. estimate_holds
+zero dati: (0.7916666666666666, 0.7916666666666666)
+tennis_runner con serviceBreaks=0 (sidecar vero) al crescere dei game:
+(1, 0) (0.7916666666666666, 0.7916666666666666)
+(2, 1) (0.7916666666666666, 0.7916666666666666)
+(3, 3) (0.875, 0.875)
+(4, 4) (0.9166666666666666, 0.9166666666666666)
+(6, 6) (0.95, 0.95)
+(7, 5) (0.95, 0.95)
+break (1,0) a 3-3: (0.7083333333333334, 0.875)
+
+=== 3. P(vittoria) p1 (servizio ignoto) modello Safe, prior 0.75 sim. - e variazioni
+(1, 0) (3, 1) adj/raw prior .75: [0.8839, 0.9039]
+(1, 0) (4, 2) adj/raw prior .75: [0.9038, 0.9238]
+(1, 0) (5, 2) adj/raw prior .75: [0.9566, 0.9766]
+(1, 0) (5, 3) adj/raw prior .75: [0.9331, 0.9531]
+(0, 0) (5, 1) adj/raw prior .75: [0.7212, 0.7412]
+(1, 0) (2, 0) adj/raw prior .75: [0.8693, 0.8893]
+hold prior .85 (ATP-like): [0.9062, 0.9262]
+hold prior .65 (WTA-like): [0.8723, 0.8923]
+p_set(0,0,True,.75,.75)= 0.5  serve B: 0.5
+
+=== 4. Giocatori asimmetrici: stesso punteggio 1-0 set + 3-1, p1 = underdog che conduce
+(0.75, 0.75) 0.9039
+(0.7, 0.85) 0.7575
+(0.85, 0.7) 0.978
+(0.65, 0.65) 0.8923
+(0.85, 0.85) 0.9262
+
+=== 5. Gate: cosa serve per P>=0.90 e EV
+p 0.9 back 1.05 edge -0.0524 EV/1EUR netto -0.0572
+p 0.9 back 1.08 edge -0.0259 EV/1EUR netto -0.0316
+p 0.9 back 1.1 edge -0.0091 EV/1EUR netto -0.0145
+p 0.93 back 1.05 edge -0.0224 EV/1EUR netto -0.0258
+p 0.93 back 1.08 edge 0.0041 EV/1EUR netto 0.0007
+p 0.93 back 1.1 edge 0.0209 EV/1EUR netto 0.0184
+devig 1.10/8.0: (0.879120879120879, 0.12087912087912087)  somma implicite: 1.0341
+
+=== 6. daily_pnl
+back 10@3 (W=+20,L=-10), best_lay 3.0: 0.0
+  lay 3.2: -0.62  lay 2.5: 2.0
+  prezzi mancanti worst-case: (-10.0, True)
+  prezzo lay=1.01 (book sottile): 19.7
+  FLAT: 0.0
+limite -50, tot -49.995: False within_limit
+tot -49.99999999: False
+tot -49.9999999 (1e-7 sopra): False
+NaN -> profit settled non finito: nan
+realized lordo +200 (comm 10): lo stop vede 200.0 il netto reale 190.0 -> scatta a lordo -50 = netto -60 se tutti i profitti sono su mercati commissionati
+
+=== 7. theta_pair: locked>0 lordo ma dopo size a 2 decimali?
+coppie costruibili: 282  con min(win,lose)<=0 dopo arrotondamento: 0
+[]
+esempio 10@2.00 ->1.99: {'entry_price': 2.0, 'exit_price': 1.99, 'exit_size': 10.05, 'locked': 0.0503}
+esempio 10@1.50 ->1.49: {'entry_price': 1.5, 'exit_price': 1.49, 'exit_size': 10.07, 'locked': 0.0671}
+
+=== 8. esposizione_fuori_bot: netto in size vs esposizione vera
+netto_size: 0.0  esposizione (if_win, if_lose): (-30.0, 0.0)
+
+=== 9. liability: round float vs Decimal (HALF_UP / HALF_EVEN) sui prezzi di scala
+casi 120000 float!=HALF_UP 3137 float!=HALF_EVEN 2890 [(0.01, 2.5, 0.01, 0.02, 0.02), (0.01, 5.5, 0.04, 0.05, 0.04), (0.01, 11.5, 0.1, 0.11, 0.1), (0.01, 13.5, 0.12, 0.13, 0.12), (0.01, 15.5, 0.14, 0.15, 0.14)]
+rendimento_in_banda(0.70,1.02) False  (0.80,1.01) True  (2.0,1.01) True
+
+=== 10. valuta: arrotondamento size GBP->EUR
+0.003 GBP -> 0.0 EUR (esatto 0.00349 )
+0.004 GBP -> 0.0 EUR (esatto 0.00466 )
+0.005 GBP -> 0.01 EUR (esatto 0.00582 )
+0.01 GBP -> 0.01 EUR (esatto 0.01165 )
+1.0 GBP -> 1.16 EUR (esatto 1.16469 )
+2.0 GBP -> 2.33 EUR (esatto 2.32937 )
+17.43 GBP -> 20.3 EUR (esatto 20.30049 )
+errore massimo per livello (EUR): 0.005

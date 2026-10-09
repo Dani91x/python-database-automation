@@ -1,0 +1,258 @@
+202	Betfair/stream/tennis_live/tennis_runner.py	LIVE	tennis_runner.py
+179	Betfair/stream/live_order_worker.py	LIVE	live_order_worker.py<-runner.py<-watchdog.py
+170	Betfair/stream/scalper/validazione_hazard/banco.py	NONRAGG	banco.py;taratura_b1.py
+168	Betfair/omega/tools/misura_ingresso_passivo.py	NONRAGG	misura_ingresso_passivo.py
+138	Betfair/stream/scalper/validazione_hazard/candidati.py	LIVE	candidati.py<-atlante_v4.py<-genera_atlante.py
+118	Betfair/stream/tennis_scalper/tennis_flb_bot.py	LIVE	tennis_flb_bot.py<-tennis_runner.py
+111	Betfair/stream/scalper/scalper_session.py	LIVE	scalper_session.py<-scalper_service.py
+102	Betfair/stream/scalper/theta_bot.py	LIVE	theta_bot.py<-scalper_session.py<-scalper_service.py
+100	Betfair/stream/scalper/atlante_v4.py	LIVE	atlante_v4.py<-genera_atlante.py
+98	Betfair/mike/tools/replay_registrazioni.py	NONRAGG	replay_registrazioni.py
+97	laboratorio/scalper_lab/scalper_bot_base.py	NONRAGG	__init__.py;bt_lab.py
+94	Betfair/mike/certificazione.py	LIVE	certificazione.py<-registro_bot.py<-applica_bot.py<-worker.py
+91	Betfair/omega/tools/replay_registrazioni.py	LIVE	replay_registrazioni.py<-trasporto_rapido.py<-certifica.py<-applica_bot.py
+91	Betfair/omega/certificazione.py	LIVE	certificazione.py<-registro_bot.py<-applica_bot.py<-worker.py
+73	Betfair/stream/tennis_live/tennis_recorder.py	LIVE	tennis_recorder.py<-tennis_runner.py
+72	Betfair/stream/tennis_scalper/tennis_pro_bot.py	LIVE	tennis_pro_bot.py<-tennis_runner.py
+70	Betfair/omega/omega_proposte.py	LIVE	omega_proposte.py<-omega_service.py
+67	Betfair/stream/tennis_live/tennis_bot_service.py	LIVE	tennis_bot_service.py
+65	Betfair/safe_strategy/proposte_opportunita.py	LIVE	proposte_opportunita.py<-bot_service.py
+64	Betfair/stream/trading/submin.py	LIVE	submin.py<-esecutore_tennis.py<-tennis_runner.py
+61	Betfair/omega/omega_config.py	LIVE	omega_config.py<-omega_service.py
+60	Betfair/safe_strategy/tools/backtest_opportunity.py	NONRAGG	backtest_opportunity.py
+57	Betfair/stream/scalper/sniper_bot.py	LIVE	sniper_bot.py<-scalper_session.py<-scalper_service.py
+55	Betfair/stream/scalper/tools/replay_registrazioni.py	NONRAGG	
+53	Betfair/stream/backtest/proposte_modello.py	LIVE	proposte_modello.py<-certifica.py<-applica_bot.py<-worker.py
+49	Betfair/stream/scalper/scalper_service.py	LIVE	scalper_service.py
+48	simulate_recovery_forward.py	NONRAGG	
+48	Betfair/stream/scalper/validazione_hazard/metriche.py	NONRAGG	banco.py;taratura_b1.py
+46	Betfair/stream/backtest/certifica.py	LIVE	certifica.py<-applica_bot.py<-worker.py
+45	Betfair/stream/risk_engine_worker.py	LIVE	risk_engine_worker.py<-runner.py<-watchdog.py
+44	Betfair/tools/verifica_pnl_2026_09_12.py	NONRAGG	verifica_pnl_2026_09_12.py
+42	_certify_personal_report.py	NONRAGG	
+42	Betfair/safe_strategy/tools/validate_opportunity.py	LIVE	validate_opportunity.py<-replay_registrazioni.py<-trasporto_rapido.py<-certifica.py
+41	Betfair/omega/omega_market.py	LIVE	omega_market.py<-omega_service.py
+39	Betfair/stream/motore_ordini.py	LIVE	motore_ordini.py<-runner.py<-watchdog.py
+39	Betfair/safe_strategy/tools/replay_registrazioni.py	LIVE	replay_registrazioni.py<-trasporto_rapido.py<-certifica.py<-applica_bot.py
+38	Betfair/stream/scalper/certificazione.py	LIVE	certificazione.py<-registro_bot.py<-applica_bot.py<-worker.py
+38	Betfair/stream/backtest/trasporto_rapido.py	LIVE	trasporto_rapido.py<-certifica.py<-applica_bot.py<-worker.py
+38	Ai Engine/ai_engine/evaluate_holdout.py	NONRAGG	
+37	Betfair/safe_strategy/tennis_opportunity.py	LIVE	tennis_opportunity.py<-registro_bot.py<-applica_bot.py<-worker.py
+36	Betfair/safe_strategy/certificazione.py	LIVE	certificazione.py<-registro_bot.py<-applica_bot.py<-worker.py
+36	Betfair/omega/tools/montecarlo_pl.py	NONRAGG	montecarlo_pl.py
+36	Betfair/omega/tools/k_in_gioco.py	NONRAGG	deriva_margine.py;k_in_gioco.py
+35	Betfair/stream/backtest/tools/misura_punto8/s2_calibrazione_uscita.py	NONRAGG	s2_calibrazione_uscita.py
+35	Betfair/safe_strategy/bot_db.py	LIVE	bot_db.py<-bot_service.py
+35	Betfair/omega/tools/banco_modelli.py	NONRAGG	banco_modelli.py
+34	Betfair/stream/tennis_scalper/condotta_ordini.py	LIVE	condotta_ordini.py<-tennis_swing_bot.py<-tennis_runner.py
+34	Betfair/stream/scalper/validazione_hazard/stati.py	LIVE	stati.py<-atlante_v4.py<-genera_atlante.py
+31	migrations/backfill_engine_signals.py	NONRAGG	betfair_report_manager.py
+31	_stack_eval.py	NONRAGG	
+31	Betfair/stream/scalper/genera_atlante.py	LIVE	genera_atlante.py
+29	laboratorio/tennis_lab/tennis_lab.py	NONRAGG	lab_grid.py;tennis_lab_score.py;validate.py
+29	Betfair/stream/trading/dutching.py	LIVE	dutching.py<-live_order_worker.py<-runner.py<-watchdog.py
+28	Betfair/stream/backtest/tools/misura_punto8/x1_bias.py	NONRAGG	
+28	Betfair/stream/backtest/tools/misura_punto8/o1_catena_lambda.py	NONRAGG	o1_catena_lambda.py;o5_rossi.py;o6_coda.py
+27	tactical_engine/tools/verifica_payload_tacticai.py	NONRAGG	verifica_payload_tacticai.py
+27	Betfair/tools/verifica_margine_2026_09_12.py	NONRAGG	verifica_margine_2026_09_12.py
+27	Betfair/safe_strategy/risk.py	LIVE	risk.py<-bot_service.py
+27	Betfair/omega/tools/misura_k.py	LIVE	misura_k.py<-omega_service.py
+26	aggiorna_mm_sheets.py	NONRAGG	
+26	Betfair/stream/tennis_replay/caricamento.py	LIVE	caricamento.py<-tennis_recorder.py<-tennis_runner.py
+25	Betfair/stream/tennis_replay/importa.py	LIVE	importa.py<-tennis_recorder.py<-tennis_runner.py
+25	Betfair/safe_strategy/tools/replay_tennis.py	NONRAGG	replay_tennis.py
+24	_certify_direction.py	NONRAGG	
+24	Betfair/omega/tools/misura_prezzo_appaiata.py	NONRAGG	misura_prezzo_appaiata.py
+23	Betfair/stream/tennis_scalper/record_multi.py	NONRAGG	record_multi.py
+23	Betfair/stream/tennis_live/tools/replay_bot.py	NONRAGG	replay_bot.py
+23	Betfair/stream/scalper/validazione_hazard/modello_b1.py	NONRAGG	banco.py;taratura_b1.py
+23	Betfair/stream/backtest/tools/misura_punto8/estrai_db.py	NONRAGG	estrai_db.py
+23	Betfair/stream/backtest/tools/misura_punto8/comune.py	NONRAGG	m1_mike.py;o1_catena_lambda.py;o5_rossi.py
+23	Betfair/stream/backtest/ordini_esterni_banco.py	NONRAGG	replay_registrazioni.py
+23	Betfair/stream/backtest/chiusura_parziale.py	LIVE	chiusura_parziale.py<-certifica.py<-applica_bot.py<-worker.py
+23	Betfair/omega/tools/ev_per_liability.py	NONRAGG	ev_per_liability.py
+23	Betfair/omega/omega_validate.py	NONRAGG	omega_validate_models.py
+22	Betfair/stream/scalper/run_theta.py	NONRAGG	run_theta.py
+22	Betfair/stream/raw_listener.py	LIVE	raw_listener.py<-runner.py<-watchdog.py
+21	market_intelligence/signals.py	NONRAGG	__init__.py;pipeline.py
+21	laboratorio/scalper_lab/bt_theta.py	NONRAGG	bt_theta.py
+21	Betfair/stream/tennis_live/esecutore_tennis.py	LIVE	esecutore_tennis.py<-tennis_runner.py
+21	Betfair/stream/tennis_live/certificazione_bot.py	LIVE	certificazione_bot.py<-registro_bot.py<-applica_bot.py<-worker.py
+21	Betfair/stream/scalper/hazard_atlas.py	LIVE	hazard_atlas.py<-opportunity.py<-service.py
+21	Betfair/stream/backtest/tools/misura_punto8/o5_rossi.py	NONRAGG	o5_rossi.py
+21	Betfair/stream/backtest/applica_bot.py	LIVE	applica_bot.py<-worker.py
+20	laboratorio/tennis_lab/validate.py	NONRAGG	validate.py
+20	Betfair/stream/tools/validate_recordings.py	LIVE	validate_recordings.py<-run_backtest.py<-worker.py
+20	Betfair/stream/tennis_live/chiusura_manuale.py	LIVE	chiusura_manuale.py<-tennis_runner.py
+20	Betfair/omega/omega_db.py	LIVE	omega_db.py<-omega_service.py
+20	Ai Engine/backtest_ml.py	NONRAGG	
+19	import_betfair_operations.py	NONRAGG	
+19	Betfair/tools/scostamento_fischio_2026_09_13.py	NONRAGG	scostamento_fischio_2026_09_13.py
+19	Betfair/stream/trading/hedging.py	LIVE	hedging.py<-live_order_worker.py<-runner.py<-watchdog.py
+19	Betfair/stream/backtest/tools/misura_punto8/m1_mike.py	NONRAGG	
+19	Betfair/safe_strategy/certificazione_tennis.py	LIVE	certificazione_tennis.py<-registro_bot.py<-applica_bot.py<-worker.py
+19	Betfair/omega/tools/deriva_margine.py	NONRAGG	deriva_margine.py
+18	tmp_smoke_ml_fixes.py	NONRAGG	
+18	laboratorio/scalper_lab/bt_lab.py	NONRAGG	bt_lab.py;exp_families.py;rdloop.py
+18	Betfair/stream/scalper/tools/atlas_v0.py	NONRAGG	
+18	Betfair/stream/esiti_ordini_canale.py	LIVE	esiti_ordini_canale.py<-omega_service.py
+17	Betfair/stream/tennis_scalper/run_tennis_scalper.py	LIVE	run_tennis_scalper.py<-tennis_runner.py
+17	Betfair/safe_strategy/tools/falsifica_f0_f1_2026_09_18.py	NONRAGG	falsifica_f0_f1_2026_09_18.py
+16	_certify_direction_report.py	NONRAGG	
+16	Betfair/stream/trading/controls.py	LIVE	controls.py<-omega_service.py
+16	Betfair/safe_strategy/tools/synth_safe.py	NONRAGG	synth_safe.py
+15	per_fixture_backfill.py	LIVE	per_fixture_backfill.py<-daily_yesterday_backfill.py
+15	laboratorio/tennis_lab/lab_grid_score.py	NONRAGG	lab_grid_score.py;validate.py
+15	laboratorio/scalper_lab/theta_strategy.py	NONRAGG	bt_theta.py
+15	Betfair/stream/scalper/atlante_a_domanda.py	LIVE	atlante_a_domanda.py<-hazard_atlas_sync.py<-service.py
+15	Betfair/stream/backtest/porta_banco.py	LIVE	porta_banco.py<-trasporto.py<-banco_comune.py<-run_backtest.py
+15	Betfair/stream/auto_follow.py	LIVE	auto_follow.py<-runner.py<-watchdog.py
+15	Betfair/omega/liquidity_probe.py	NONRAGG	liquidity_probe.py
+15	Betfair/mike/tools/synth_mike.py	NONRAGG	synth_mike.py
+14	market_intelligence/pipeline.py	NONRAGG	__init__.py;edge_scorer.py;pipeline.py
+14	laboratorio/scalper_lab/rdloop.py	NONRAGG	rdloop.py
+14	Betfair/stream/xhedge_worker.py	LIVE	xhedge_worker.py<-runner.py<-watchdog.py
+14	Betfair/stream/trading/xhedge.py	LIVE	xhedge.py<-feed.py<-service.py
+14	Betfair/stream/scalper/validazione_hazard/taratura_b1.py	NONRAGG	taratura_b1.py
+14	Betfair/stream/scalper/auto_mode.py	LIVE	auto_mode.py<-scalper_service.py
+14	Betfair/stream/backtest/uscite_manuali.py	LIVE	uscite_manuali.py<-certifica.py<-applica_bot.py<-worker.py
+14	Betfair/stream/backtest/tools/misura_punto8/t1_superficie.py	NONRAGG	t1_superficie.py
+14	Betfair/safe_strategy/selezione.py	LIVE	selezione.py<-service.py
+14	Betfair/safe_strategy/porta_ordini.py	LIVE	porta_ordini.py<-bot_service.py
+13	tools/replay_barra_fixture.py	NONRAGG	
+13	tmp_analysis.py	NONRAGG	
+13	laboratorio/tennis_lab/lab_grid.py	NONRAGG	lab_grid.py;validate.py
+13	_league_eval.py	NONRAGG	
+13	Betfair/stream/uploader.py	LIVE	uploader.py<-runner.py<-watchdog.py
+12	analyze_threshold.py	NONRAGG	
+12	Betfair/safe_strategy/tools/genera_oro_valuta_proposta.py	NONRAGG	genera_oro_banda_strategia.py;genera_oro_valuta_proposta.py
+11	tmp_smoke_stack.py	NONRAGG	
+11	Betfair/stream/scalper/validazione_hazard/produzione.py	NONRAGG	banco.py
+11	Betfair/stream/scalper/hazard_atlas_sync.py	LIVE	hazard_atlas_sync.py<-service.py
+11	Betfair/stream/daily_stop_worker.py	LIVE	daily_stop_worker.py<-runner.py<-watchdog.py
+11	Betfair/omega/tools/banco_fusione.py	NONRAGG	banco_fusione.py
+11	Ai Engine/ai_engine/preprocessing/dataset.py	NONRAGG	
+10	sql/_cert_wc_fetch.py	NONRAGG	
+10	laboratorio/scalper_lab/synth_raw.py	NONRAGG	synth_raw.py;validate_synth.py
+10	laboratorio/scalper_lab/grid_strategy.py	NONRAGG	
+10	Betfair/tools/verifica_75_condizioni_2026_09_13.py	NONRAGG	verifica_75_condizioni_2026_09_13.py
+10	Betfair/stream/tennis_scalper/backtest_pro.py	NONRAGG	backtest_pro.py
+10	Betfair/stream/tennis_replay/convertitore.py	LIVE	convertitore.py<-tennis_recorder.py<-tennis_runner.py
+10	Betfair/stream/tennis_live/ordini_esterni_tennis.py	LIVE	ordini_esterni_tennis.py<-tennis_runner.py
+9	Betfair/stream/trading/esposizione_fuori_bot.py	LIVE	esposizione_fuori_bot.py<-ordini_esterni_tennis.py<-tennis_runner.py
+9	Betfair/stream/scalper/validazione_hazard/forza.py	LIVE	forza.py<-atlante_v4.py<-genera_atlante.py
+9	Betfair/stream/scalper/run_scalper.py	NONRAGG	
+9	Betfair/stream/orologio.py	LIVE	orologio.py<-scanner.py<-service.py
+9	Betfair/stream/backtest/tools/misura_punto8/falsifica_misura_punto8.py	NONRAGG	falsifica_misura_punto8.py
+9	Betfair/betfair_match.py	LIVE	betfair_match.py<-omega_service.py
+9	Ai Engine/ai_engine/analysis/advanced.py	NONRAGG	
+8	tmp_validate_league.py	NONRAGG	
+8	analyze_recovery.py	NONRAGG	
+8	Betfair/stream/valuta.py	LIVE	valuta.py<-tennis_runner.py
+8	Betfair/stream/tennis_scalper/flb_backtest.py	NONRAGG	flb_backtest.py
+8	Betfair/stream/riserva_prezzi.py	LIVE	riserva_prezzi.py<-runner.py<-watchdog.py
+8	Betfair/stream/backtest/trasporto.py	LIVE	trasporto.py<-banco_comune.py<-run_backtest.py<-worker.py
+8	Betfair/stream/backtest/sim_strategy.py	LIVE	sim_strategy.py<-run_backtest.py<-worker.py
+8	Betfair/safe_strategy/pressure.py	LIVE	pressure.py<-service.py
+8	Betfair/safe_strategy/certificazione_k.py	LIVE	certificazione_k.py<-certificazione_tennis.py<-registro_bot.py<-applica_bot.py
+8	Betfair/mike/feed.py	LIVE	feed.py<-service.py
+7	seasons_catchup.py	LIVE	seasons_catchup.py
+7	laboratorio/scalper_lab/validate_synth.py	NONRAGG	validate_synth.py
+7	betfair_full_odds.py	NONRAGG	
+7	Betfair/stream/tennis_scalper/ordini_esterni.py	LIVE	ordini_esterni.py<-ordini_esterni_tennis.py<-tennis_runner.py
+7	Betfair/stream/scalper/run_scalper_live.py	NONRAGG	run_scalper_live.py
+7	Betfair/stream/backtest/scavalco_rifiuti.py	NONRAGG	replay_registrazioni.py
+7	Ai Engine/ai_engine/metrics/balance.py	NONRAGG	
+6	tmp_analysis2.py	NONRAGG	
+6	sql/_verify_delays_math.py	NONRAGG	
+6	fix_storico_prob.py	NONRAGG	
+6	Betfair/stream/watchlist.py	LIVE	watchlist.py<-runner.py<-watchdog.py
+6	Betfair/stream/scalper/validazione_hazard/raccogli.py	NONRAGG	banco.py
+6	Betfair/stream/engine/live_trading_strategy.py	LIVE	live_trading_strategy.py<-runner.py<-watchdog.py
+6	Betfair/safe_strategy/tools/storia_operazioni.py	NONRAGG	
+6	Betfair/safe_strategy/scanner.py	LIVE	scanner.py<-service.py
+6	Betfair/omega/tools/genera_oro_uscita.py	NONRAGG	genera_oro_uscita.py
+6	Betfair/omega/tools/falsifica_raccordo_v3_2026_09_17.py	NONRAGG	
+5	tmp_train_today.py	NONRAGG	
+5	sql/_cert_wc_full.py	NONRAGG	
+5	betfair_tennis_odds.py	LIVE	betfair_tennis_odds.py
+5	Betfair/stream/tools/leggi_tempi_ordine.py	NONRAGG	leggi_tempi_ordine.py
+5	Betfair/stream/tennis_scalper/tennis_winprob.py	LIVE	tennis_winprob.py<-tennis_runner.py
+5	Betfair/stream/tennis_live/guardie_tennis.py	LIVE	guardie_tennis.py<-tennis_runner.py
+5	Betfair/stream/auth.py	LIVE	auth.py<-tennis_runner.py
+5	Betfair/safe_strategy/tools/genera_oro_banda_strategia.py	NONRAGG	genera_oro_banda_strategia.py
+5	Betfair/omega/porta_ordini.py	LIVE	porta_ordini.py<-omega_service.py
+5	Ai Engine/ai_engine/models/voting.py	NONRAGG	
+5	Ai Engine/ai_engine/generate_fixture_report.py	NONRAGG	
+4	market_intelligence/audit.py	NONRAGG	__init__.py;audit.py;pipeline.py
+4	laboratorio/scalper_lab/exp_families.py	NONRAGG	exp_families.py
+4	Betfair/stream/uscite_proposte.py	LIVE	uscite_proposte.py<-tennis_runner.py
+4	Betfair/stream/tennis_scalper/run_tennis_pro.py	NONRAGG	run_tennis_pro.py
+4	Betfair/stream/tennis_scalper/record_tennis.py	NONRAGG	record_tennis.py
+4	Betfair/stream/tennis_live/auto_mode.py	LIVE	auto_mode.py<-tennis_runner.py
+4	Betfair/stream/scalper/tools/atlas_report.py	NONRAGG	
+4	Betfair/stream/curator.py	LIVE	curator.py<-uploader.py<-runner.py<-watchdog.py
+4	Betfair/safe_strategy/tools/sonda_canale_scan_2026_09_18.py	NONRAGG	sonda_canale_scan_2026_09_18.py
+4	Betfair/mike/porta_ordini.py	LIVE	porta_ordini.py<-service.py
+4	Ai Engine/ai_engine/preprocessing/statistics.py	NONRAGG	feature_pipeline.py
+4	Ai Engine/ai_engine/audit_nulls.py	NONRAGG	
+3	value_engine/__init__.py	NONRAGG	cli.py;generate_battery.py;markets.py
+3	tmp_validate_predict.py	NONRAGG	
+3	tmp_smoke_poisson_fixes.py	NONRAGG	
+3	season_gaps.py	LIVE	season_gaps.py<-daily_yesterday_backfill.py
+3	market_intelligence/__init__.py	NONRAGG	
+3	Betfair/stream/tennis_live/tennis_db.py	LIVE	tennis_db.py<-tennis_runner.py
+3	Betfair/stream/stream_muto.py	LIVE	stream_muto.py<-tennis_runner.py
+3	Betfair/stream/odds_http.py	NONRAGG	start_order_server.py
+3	Betfair/stream/config_stream.py	LIVE	config_stream.py<-tennis_runner.py
+3	Betfair/stream/canale_bot.py	LIVE	canale_bot.py<-tennis_runner.py
+3	Betfair/stream/backtest/varianti_bot.py	LIVE	varianti_bot.py<-applica_bot.py<-worker.py
+3	Betfair/stream/backtest/tools/misura_punto8/o6_coda.py	NONRAGG	o6_coda.py
+3	Betfair/stream/backtest/registro_bot.py	LIVE	registro_bot.py<-applica_bot.py<-worker.py
+3	Betfair/stream/backtest/minimi_banco.py	LIVE	minimi_banco.py<-applica_bot.py<-worker.py
+3	Betfair/omega/omega_empirical.py	LIVE	omega_empirical.py<-omega_service.py
+2	tools/omega_watch.py	NONRAGG	
+2	tmp_predict_today.py	NONRAGG	
+2	sql/_cert_wc_compare.py	NONRAGG	
+2	sql/_build_wc_xlsx_2013.py	NONRAGG	
+2	league_orchestrator.py	NONRAGG	
+2	certify_backtest_strategy.py	NONRAGG	
+2	_certify_delay_context.py	NONRAGG	
+2	Betfair/tools/genera_tabella_75_2026_09_14.py	NONRAGG	
+2	Betfair/stream/trading/daily_pnl.py	LIVE	daily_pnl.py<-daily_stop_worker.py<-runner.py<-watchdog.py
+2	Betfair/stream/tennis_live/mercati_registrati.py	LIVE	mercati_registrati.py<-tennis_runner.py
+2	Betfair/stream/scores/poller.py	LIVE	poller.py<-runner.py<-watchdog.py
+2	Betfair/stream/scalper/__init__.py	LIVE	__init__.py<-scalper_service.py
+2	Betfair/stream/modo_ordini.py	LIVE	modo_ordini.py<-tennis_runner.py
+2	Betfair/stream/avvio_app.py	LIVE	avvio_app.py
+2	Betfair/safe_strategy/tools/conta_operazioni_live.py	NONRAGG	
+2	Betfair/safe_strategy/stream.py	LIVE	stream.py<-service.py
+2	Betfair/order_worker.py	NONRAGG	start_order_server.py
+2	Ai Engine/ai_engine/preprocessing/selection.py	NONRAGG	
+2	Ai Engine/ai_engine/market_ranking.py	NONRAGG	runner.py
+1	value_engine/cli.py	NONRAGG	cli.py
+1	sanity_check.py	NONRAGG	
+1	leagues_mapper.py	LIVE	leagues_mapper.py
+1	laboratorio/tennis_lab/tennis_lab_score.py	NONRAGG	lab_grid_score.py
+1	db_client.py	LIVE	db_client.py<-scalper_service.py
+1	Betfair/stream/trading/stato_mercato.py	LIVE	stato_mercato.py<-omega_service.py
+1	Betfair/stream/trading/__init__.py	LIVE	__init__.py<-omega_service.py
+1	Betfair/stream/tennis_scalper/tune_tennis.py	NONRAGG	tune_tennis.py
+1	Betfair/stream/tennis_scalper/research_data.py	NONRAGG	
+1	Betfair/stream/tempi_ordine.py	LIVE	tempi_ordine.py<-esecutore_tennis.py<-tennis_runner.py
+1	Betfair/stream/scores/scan_feed.py	LIVE	scan_feed.py<-tennis_runner.py
+1	Betfair/stream/scalper/validazione_hazard/parita.py	NONRAGG	
+1	Betfair/stream/scalper/validazione_hazard/dati.py	LIVE	dati.py<-atlante_v4.py<-genera_atlante.py
+1	Betfair/stream/scalper/risk_semaphore.py	LIVE	risk_semaphore.py<-scalper_session.py<-scalper_service.py
+1	Betfair/stream/saldo_evento.py	LIVE	saldo_evento.py<-tennis_runner.py
+1	Betfair/stream/recorder.py	LIVE	recorder.py<-tennis_runner.py
+1	Betfair/stream/ladder_canale.py	LIVE	ladder_canale.py<-tennis_runner.py
+1	Betfair/stream/frammenti_mercato.py	LIVE	frammenti_mercato.py<-runner.py<-watchdog.py
+1	Betfair/stream/flusso_prezzi.py	LIVE	flusso_prezzi.py<-service.py
+1	Betfair/stream/backtest/tools/misura_punto8/percorsi.py	NONRAGG	o1_catena_lambda.py;o5_rossi.py;o6_coda.py
+1	Betfair/safe_strategy/tools/sonda_righe_scan_2026_09_18.py	NONRAGG	
+1	Betfair/safe_strategy/canale_scan.py	LIVE	canale_scan.py<-omega_service.py
+1	Betfair/safe_strategy/arresto_bot.py	LIVE	arresto_bot.py<-omega_service.py
+1	Betfair/omega/tools/falsifica_canale_scan_2026_09_23.py	NONRAGG	falsifica_canale_scan_2026_09_23.py
+1	Ai Engine/ai_engine/analysis/tools.py	NONRAGG	
+1	Ai Engine/ai_engine/advanced_validation.py	NONRAGG	runner.py

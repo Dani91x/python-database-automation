@@ -1,0 +1,21 @@
+FASE 2 - CERTIFICAZIONE DEI REFERTI + FIX DUTCHING (09/10/2026) - FATTO
+(la fase 1 era chiusa da AUDIT_2026-10-09_MATEMATICA/FATTO.txt)
+
+Compito B - correzione del dutching (A1 + M11 + caso V3):
+- REFERTO_FIX_DUTCHING.md   diff, test, falsificazione (delegato + 11 mutazioni del coordinatore), suite prima/dopo,
+                            differenziale UI/server, residui fuori perimetro
+  File modificati (solo il perimetro): Betfair/stream/live_order_worker.py, Betfair/stream/tests/test_dutching.py,
+  Betfair/stream/tests/test_live_order_dutch_cashout.py, frontend/src/components/live/DutchingPanel.tsx,
+  frontend/src/components/live/DutchingPanel.test.tsx (dutching.py NON modificato).
+  Suite Betfair/: 11477 -> 11483 passed, 0 regressioni; vitest pannello 28/28; tsc 0 errori.
+  NON fatti per regola: commit, npm run build (decisione F1).
+
+Compito A - certificazione di tutti i referti:
+- 05_ERRORI_DI_PROGETTAZIONE.md   riscritto con verdetto e gravita' certificata (unico ALTO: A1, corretto)
+- 07_RIEPILOGO_PER_L_UTENTE.md    riscritto solo con fatti certificati
+- DECISIONI_PER_L_UTENTE.md       ripulito (tolte D6, D10, D16, D17; riscritte; aggiunte F1-F6)
+- CERTIFICAZIONE_REFERTI.md       reperto -> verdetto -> prova -> come verificato; verifiche indipendenti del coordinatore
+- 00, 01, 02, 03, 04, 06          correzioni puntuali marcate [cert. fase 2] (registri lavori/fase2/APPLICATE_*.md)
+- COSTI.md                        fase 2 ~32,1 USD
+Lavori: lavori/fase2/ (CERT_1..5, FIX_DUTCHING_delegato, REVISIONE_FINALE, suite/, sonde/, originali della fase 1).
+Nessun ordine Betfair, nessun processo terminato o lasciato acceso, nessun commit, nessuna modifica al DB.

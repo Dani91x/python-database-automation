@@ -1,0 +1,6 @@
+fine riga: CRLF
+M4 solo bottone variable+lay riabilitato: exit=1 [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+M5 bottone + guardBeforeSend variable+lay tolti: exit=1 [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+M5b bottone + guard + opzione (tutto il blocco UI variable+lay): exit=1 [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+M7 bottone + guard pesi irrealizzabili tolti: exit=1 [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+ripristino sha uguale: True

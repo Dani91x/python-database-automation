@@ -1,0 +1,2 @@
+| B40 | Atlante v4: moltiplicatore di forza non neutro per squadre a rating 0 (0,90-1,20); fallback senza `pi` ignora k; pesi stagione non allineati tra leghe; confidenza "alta" sovra-dichiarata | atlante_v4.py:737-760, :611-618, :410-419; genera_atlante.py:317-323 | Z1-6..9 |
+| B41 | Tennis: rischio ritiro additivo fisso 2%/3%; liability in tre copie con tolleranze diverse; `netto_size` annulla back e lay a prezzi diversi | tennis_opportunity.py; submin.py:57, 595; esposizione_fuori_bot.py:272-282 | Z2-6..8 |

@@ -1,0 +1,19 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90mC:/Users/Admin/Desktop/PYTHON DATABASE/python-database-automation/frontend[39m
+
+ [32m✓[39m src/components/live/DutchingPanel.test.tsx [2m([22m[2m28 tests[22m[2m)[22m[33m 9363[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel[2m > [22ml'anteprima book% si aggiorna al variare delle selezioni [33m 603[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel[2m > [22mil profitto obiettivo modifica il targetProfit inviato [33m 375[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel[2m > [22mpricing 'nominated' mostra il prezzo nominato e lo passa a sendDutch [33m 407[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22mcaso A: quote 2.5/3/4, pesi 1/2/1, T=100 -> stake 40.51/34.18/25.32, profitti 1.26/2.53/1.27 [33m 904[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22mcaso B: quote 2/5, pesi 1/3, T=50 -> stake 31.82/18.18, profitti 13.64/40.90 [33m 581[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22mcaso C: quote fuori tick 2.01/3.03 (il server le porta a 2.02/3.05), pesi 1.5/1/2, T=37.5 [33m 968[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22mpesi irrealizzabili (stake negativo): messaggio, nessuno stake mostrato, invio bloccato [33m 896[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22mbook > 100% ma realizzabile: stessi numeri del server (quote 1.5/1.8/3, pesi 1/1/2, T=10) [33m 805[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel - M11: anteprima variable = numeri del server[2m > [22m4 gambe, pesi decimali, T=123.45 (profitti negativi piccoli) [33m 1312[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m28 passed[39m[22m[90m (28)[39m
+[2m   Start at [22m 13:12:26
+[2m   Duration [22m 15.34s[2m (transform 402ms, setup 793ms, collect 750ms, tests 9.36s, environment 2.99s, prepare 598ms)[22m
+

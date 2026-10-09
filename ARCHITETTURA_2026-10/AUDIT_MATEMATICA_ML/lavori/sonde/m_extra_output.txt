@@ -1,0 +1,46 @@
+# m_extra.py - output
+
+## 1X2 campione B n=1509: differenze APPAIATE (negativo = il primo e' meglio) [IC95 bootstrap 1000]
+  ML - PC: logloss -0.0038 [-0.0195,+0.0127]   Brier -0.0048 [-0.0147,+0.0056]   RPS -0.0029 [-0.0075,+0.0018] 
+  ML - PR: logloss -0.0047 [-0.0207,+0.0125]   Brier -0.0051 [-0.0152,+0.0057]   RPS -0.0032 [-0.0079,+0.0016] 
+  PC - PR: logloss -0.0009 [-0.0051,+0.0030]   Brier -0.0003 [-0.0028,+0.0022]   RPS -0.0003 [-0.0011,+0.0005] 
+  ML estremi (classe 0): P<0.05: 5  P>0.95: 0  min=0.0211 max=0.8956 ; Poisson cal min=0.0665 max=0.9573; quote min=0.0155 max=0.9652
+  10 peggiori logloss ML: somma=27.16 su totale=1521.24 (1.8%); stessa quota per Q: 1.5%
+  corr(classe0): ML-Q=0.736 Pcal-Q=0.673 ML-Pcal=0.596 Pgrezzo-Q=0.676
+  partite con ML o Poisson generato DOPO il kickoff: 200 su 1509; prima: 1309
+  PC: d_logloss_vs_Q  post-kickoff=+0.0218 (n=200)  pre-kickoff=+0.0574 (n=1309)  diff-in-diff=-0.0363 [-0.0782,+0.0048] (negativo marcato = firma di leakage)
+  ML: d_logloss_vs_Q  post-kickoff=+0.0276 (n=200)  pre-kickoff=+0.0522 (n=1309)  diff-in-diff=-0.0240 [-0.0664,+0.0179] (negativo marcato = firma di leakage)
+  anticipo ML [-99,0)h n=200: logloss Q=0.9954 PC=1.0172 ML=1.0230
+  anticipo ML [0,3)h n=240: logloss Q=0.9603 PC=1.0077 ML=1.0489
+  anticipo ML [3,8)h n=629: logloss Q=0.9525 PC=1.0073 ML=0.9975
+  anticipo ML [8,99)h n=440: logloss Q=0.9517 PC=1.0185 ML=0.9944
+
+## O25 campione B n=1006: differenze APPAIATE (negativo = il primo e' meglio) [IC95 bootstrap 1000]
+  ML - PC: logloss +0.0060 [-0.0087,+0.0206]   Brier +0.0018 [-0.0049,+0.0079] 
+  ML - PR: logloss -0.0043 [-0.0231,+0.0126]   Brier -0.0022 [-0.0101,+0.0050] 
+  PC - PR: logloss -0.0103 [-0.0177,-0.0035]*  Brier -0.0040 [-0.0071,-0.0012]*
+  ML estremi (classe 0): P<0.05: 3  P>0.95: 0  min=0.0100 max=0.8589 ; Poisson cal min=0.2418 max=0.8546; quote min=0.2577 max=0.9159
+  10 peggiori logloss ML: somma=17.38 su totale=694.67 (2.5%); stessa quota per Q: 2.3%
+  corr(classe0): ML-Q=0.698 Pcal-Q=0.734 ML-Pcal=0.616 Pgrezzo-Q=0.721
+  partite con ML o Poisson generato DOPO il kickoff: 161 su 1006; prima: 845
+  PC: d_logloss_vs_Q  post-kickoff=+0.0177 (n=161)  pre-kickoff=+0.0123 (n=845)  diff-in-diff=+0.0055 [-0.0201,+0.0317] (negativo marcato = firma di leakage)
+  ML: d_logloss_vs_Q  post-kickoff=+0.0362 (n=161)  pre-kickoff=+0.0159 (n=845)  diff-in-diff=+0.0204 [-0.0261,+0.0875] (negativo marcato = firma di leakage)
+  anticipo ML [-99,0)h n=161: logloss Q=0.6688 PC=0.6865 ML=0.7050
+  anticipo ML [0,3)h n=161: logloss Q=0.6228 PC=0.6447 ML=0.6366
+  anticipo ML [3,8)h n=419: logloss Q=0.6903 PC=0.7011 ML=0.7058
+  anticipo ML [8,99)h n=265: logloss Q=0.6726 PC=0.6816 ML=0.6904
+
+## BTTS campione B n=1014: differenze APPAIATE (negativo = il primo e' meglio) [IC95 bootstrap 1000]
+  ML - PC: logloss +0.0157 [-0.0014,+0.0341]   Brier +0.0039 [-0.0020,+0.0101] 
+  ML - PR: logloss +0.0120 [-0.0080,+0.0337]   Brier +0.0024 [-0.0052,+0.0096] 
+  PC - PR: logloss -0.0036 [-0.0118,+0.0039]   Brier -0.0016 [-0.0053,+0.0019] 
+  ML estremi (classe 0): P<0.05: 5  P>0.95: 0  min=0.0100 max=0.7624 ; Poisson cal min=0.3047 max=0.7430; quote min=0.3208 max=0.8081
+  10 peggiori logloss ML: somma=25.01 su totale=705.28 (3.5%); stessa quota per Q: 2.1%
+  corr(classe0): ML-Q=0.535 Pcal-Q=0.646 ML-Pcal=0.392 Pgrezzo-Q=0.647
+  partite con ML o Poisson generato DOPO il kickoff: 164 su 1014; prima: 850
+  PC: d_logloss_vs_Q  post-kickoff=-0.0007 (n=164)  pre-kickoff=+0.0011 (n=850)  diff-in-diff=-0.0026 [-0.0283,+0.0228] (negativo marcato = firma di leakage)
+  ML: d_logloss_vs_Q  post-kickoff=-0.0121 (n=164)  pre-kickoff=+0.0220 (n=850)  diff-in-diff=-0.0341 [-0.0672,-0.0065] (negativo marcato = firma di leakage)
+  anticipo ML [-99,0)h n=164: logloss Q=0.6848 PC=0.6840 ML=0.6726
+  anticipo ML [0,3)h n=165: logloss Q=0.6316 PC=0.6461 ML=0.6800
+  anticipo ML [3,8)h n=420: logloss Q=0.6975 PC=0.6960 ML=0.7043
+  anticipo ML [8,99)h n=265: logloss Q=0.6758 PC=0.6726 ML=0.7054

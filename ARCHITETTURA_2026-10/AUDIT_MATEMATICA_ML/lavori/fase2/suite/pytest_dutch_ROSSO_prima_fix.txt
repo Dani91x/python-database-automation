@@ -1,0 +1,37 @@
+.......................FF.                                               [100%]
+================================== FAILURES ===================================
+____________ test_dutch_variable_lay_is_rejected_with_zero_orders _____________
+
+    def test_dutch_variable_lay_is_rejected_with_zero_orders():
+        row = _variable_row(20, "lay")
+        sb = _Sb([row])
+        market = _Market("1.1")
+>       with pytest.raises(ValueError, match="mode=variable: supportato solo per back"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+Betfair\stream\tests\test_live_order_dutch_cashout.py:283: Failed
+------------------------------ Captured log call ------------------------------
+WARNING  Betfair.stream.live_order_build:live_order_build.py:855 [build_order] punta 40.51 -> 40.50 (multiplo di 0,50 per difetto): residuo 0.01 NON piazzato
+WARNING  Betfair.stream.live_order_build:live_order_build.py:855 [build_order] punta 34.18 -> 34.00 (multiplo di 0,50 per difetto): residuo 0.18 NON piazzato
+WARNING  Betfair.stream.live_order_build:live_order_build.py:855 [build_order] punta 25.32 -> 25.00 (multiplo di 0,50 per difetto): residuo 0.32 NON piazzato
+WARNING  Betfair.stream.live_order_worker:live_order_worker.py:937 [live-order] audit NON scritto (richiesta 20, esito done, bet None): '_Query' object has no attribute 'insert'
+______ test_dutch_variable_lay_is_rejected_even_when_pricing_would_fail _______
+
+    def test_dutch_variable_lay_is_rejected_even_when_pricing_would_fail():
+        # il rifiuto avviene PRIMA di qualsiasi calcolo/prezzo: stesso errore, non quello del prezzo
+        row = _variable_row(21, "lay")
+        del row["params"]["selections"][0]["price"]   # _price_or_raise fallirebbe con un altro messaggio
+        sb = _Sb([row])
+        market = _Market("1.1")
+>       with pytest.raises(ValueError, match="mode=variable: supportato solo per back"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'mode=variable: supportato solo per back'
+E         Actual message: 'dutch: prezzo non risolvibile per la selezione 10 (pricing=as_given): nessuna gamba piazzata'
+
+Betfair\stream\tests\test_live_order_dutch_cashout.py:295: AssertionError
+=========================== short test summary info ===========================
+FAILED Betfair/stream/tests/test_live_order_dutch_cashout.py::test_dutch_variable_lay_is_rejected_with_zero_orders
+FAILED Betfair/stream/tests/test_live_order_dutch_cashout.py::test_dutch_variable_lay_is_rejected_even_when_pricing_would_fail
+2 failed, 24 passed in 1.39s

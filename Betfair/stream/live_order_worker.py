@@ -2912,6 +2912,11 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         return price
 
     if dmode == "variable":
+        # A1 (audit matematica ML): dutch_variable e' SOLO back (restituisce sempre side="back").
+        # Con side=lay il worker piazzava ordini BACK per una richiesta LAY: rifiuto esplicito,
+        # PRIMA di qualsiasi calcolo/ordine, come per target+lay.
+        if side == "lay":
+            raise ValueError("dutch mode=variable: supportato solo per back")
         triples = [
             (int(s["selection_id"]), _price_or_raise(s), _f(s.get("weight")) or 1.0)
             for s in sels_in

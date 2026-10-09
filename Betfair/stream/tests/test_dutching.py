@@ -76,3 +76,35 @@ def test_dutch_back_invalid_inputs():
     # prezzo non valido scartato
     plan = d.dutch_back([(1, 4.0), (2, 1.0)], 30.0)  # 1.0 non valido
     assert len(plan.legs) == 1
+
+
+# ---------------------------------------------------------------------------
+# dutch_variable: valori di riferimento (letterali) copiati dall'ESECUZIONE della funzione
+# vera. Sono la fonte dei numeri che l'anteprima UI (DutchingPanel) deve riprodurre al
+# centesimo (audit matematica ML, M11): se la formula server cambia, questi test e quelli
+# del pannello devono cambiare insieme.
+# ---------------------------------------------------------------------------
+def _legs(plan):
+    return [(l.selection_id, l.price, l.size, l.profit_if_wins) for l in plan.legs]
+
+
+def test_dutch_variable_reference_values_profit_proportional_to_weight():
+    plan = d.dutch_variable([(1, 2.5, 1), (2, 3.0, 2), (3, 4.0, 1)], 100)
+    assert _legs(plan) == [(1, 2.5, 40.51, 1.26), (2, 3.0, 34.18, 2.53), (3, 4.0, 25.32, 1.27)]
+    assert plan.total_stake == 100.01 and plan.book_pct == 98.33
+    plan = d.dutch_variable([(1, 2.0, 1), (2, 5.0, 3)], 50)
+    assert _legs(plan) == [(1, 2.0, 31.82, 13.64), (2, 5.0, 18.18, 40.9)]
+    assert plan.total_stake == 50.0 and plan.book_pct == 70.0
+
+
+def test_dutch_variable_reference_values_off_tick_prices_are_snapped():
+    # 2.01 -> 2.02 e 3.03 -> 3.05 (get_nearest_price, mezzo tick verso l'alto)
+    plan = d.dutch_variable([(1, 2.01, 1.5), (2, 3.03, 1), (3, 4.5, 2)], 37.5)
+    assert _legs(plan) == [(1, 2.02, 17.73, -1.69), (2, 3.05, 11.93, -1.11), (3, 4.5, 7.84, -2.22)]
+    assert plan.book_pct == 104.51
+
+
+def test_dutch_variable_unrealizable_weights_are_refused_without_legs():
+    plan = d.dutch_variable([(1, 1.5, 1), (2, 1.8, 1), (3, 10.0, 6)], 10)
+    assert not plan.actionable and plan.legs == ()
+    assert "pesi irrealizzabili" in plan.note and plan.book_pct == 132.22

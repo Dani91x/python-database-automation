@@ -1,0 +1,6 @@
+righe lette: 1200
+tattico DC-MLE               n=528 RPS=0.2166 logloss=1.0049
+poisson calibrato            n=528 RPS=0.2135 logloss=1.0003
+poisson grezzo               n=528 RPS=0.2142 logloss=1.0031
+quote                        n=528 RPS=0.2032 logloss=0.9653
+media(tattico,poisson cal)   n=528 RPS=0.2111 logloss=0.9909

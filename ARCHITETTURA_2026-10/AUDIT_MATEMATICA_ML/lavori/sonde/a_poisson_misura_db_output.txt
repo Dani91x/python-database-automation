@@ -1,0 +1,25 @@
+righe lette: 1500 (limite 1500 )
+righe modello poisson_xg_hybrid_dc con esito: 1500
+
+Baseline climatologica (frequenze del campione) per riferimento:
+ 1X2 frequenze campione H/D/A = 0.451/0.211/0.339  Brier=0.6378 logloss=1.0540 RPS=0.2358
+
+[GREZZE] 1X2: n=1500 Brier(3 classi)=0.6063 logloss=1.0142 RPS=0.2197
+   O1.5: n=1500 Brier=0.1554 logloss=0.4877
+   O2.5: n=1500 Brier=0.2393 logloss=0.6728
+   O3.5: n=1500 Brier=0.2305 logloss=0.6551
+   BTTS: n=1500 Brier=0.2485 logloss=0.6915
+
+[CALIBRATE] 1X2: n=1500 Brier(3 classi)=0.6049 logloss=1.0113 RPS=0.2192
+   O1.5: n=1500 Brier=0.1553 logloss=0.4863
+   O2.5: n=1500 Brier=0.2349 logloss=0.6621
+   O3.5: n=1500 Brier=0.2271 logloss=0.6456
+   BTTS: n=1500 Brier=0.2435 logloss=0.6798
+
+[GREZZE] reliability O2.5 (bin: n, p media, freq): [(1, 18, 0.166, 0.333), (2, 50, 0.261, 0.42), (3, 146, 0.358, 0.507), (4, 228, 0.454, 0.513), (5, 349, 0.552, 0.579), (6, 372, 0.65, 0.629), (7, 240, 0.745, 0.671), (8, 87, 0.835, 0.747)]
+
+[CALIBRATE] reliability O2.5 (bin: n, p media, freq): [(2, 18, 0.27, 0.333), (3, 94, 0.354, 0.479), (4, 238, 0.458, 0.492), (5, 523, 0.555, 0.566), (6, 436, 0.645, 0.647), (7, 167, 0.739, 0.743), (8, 22, 0.827, 0.727)]
+
+lambda totale medio=3.091  gol reali medi=3.159  (n=1500); casa: lambda=1.688 reali=1.741
+residuo medio (gol - lambda)=+0.067; var(gol)/media(gol)=1.126 (Poisson puro = 1 condizionatamente; qui marginale)
+dispersione di Pearson condizionata E[(g-lambda)^2/lambda] = 1.142 (1.00 = Poisson perfetto)

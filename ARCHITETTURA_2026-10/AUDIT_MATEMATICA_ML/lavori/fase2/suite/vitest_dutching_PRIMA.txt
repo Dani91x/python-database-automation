@@ -1,0 +1,13 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90mC:/Users/Admin/Desktop/PYTHON DATABASE/python-database-automation/frontend[39m
+
+ [32m✓[39m src/components/live/DutchingPanel.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[33m 2640[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel[2m > [22ml'anteprima book% si aggiorna al variare delle selezioni [33m 584[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel[2m > [22mil profitto obiettivo modifica il targetProfit inviato [33m 344[2mms[22m[39m
+   [33m[2m✓[22m[39m DutchingPanel[2m > [22mpricing 'nominated' mostra il prezzo nominato e lo passa a sendDutch [33m 457[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m13 passed[39m[22m[90m (13)[39m
+[2m   Start at [22m 12:38:52
+[2m   Duration [22m 55.78s[2m (transform 4.32s, setup 10.00s, collect 1.79s, tests 2.64s, environment 26.65s, prepare 13.53s)[22m
+

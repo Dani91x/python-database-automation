@@ -1,0 +1,3 @@
+casi 20000 divergenti 0
+Error: ENOENT: no such file or directory, open 'C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation\ARCHITETTURA_2026-10\AUDIT_MATEMATICA_ML\lavori\fase2\suite\_tick_py.json'
+  path: 'C:\\Users\\Admin\\Desktop\\PYTHON DATABASE\\python-database-automation\\ARCHITETTURA_2026-10\\AUDIT_MATEMATICA_ML\\lavori\\fase2\\suite\\_tick_py.json'

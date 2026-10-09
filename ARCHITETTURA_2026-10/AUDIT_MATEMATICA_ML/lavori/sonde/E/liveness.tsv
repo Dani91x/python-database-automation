@@ -1,0 +1,1108 @@
+NONRAGG	AGGIORNA_CAMPO_db_json_analisi.py	
+NONRAGG	Ai Engine/ai_engine/__init__.py	
+NONRAGG	Ai Engine/ai_engine/advanced_validation.py	runner.py
+NONRAGG	Ai Engine/ai_engine/ai_config.py	feature_pipeline.py;runner.py
+NONRAGG	Ai Engine/ai_engine/analysis/__init__.py	
+NONRAGG	Ai Engine/ai_engine/analysis/advanced.py	
+NONRAGG	Ai Engine/ai_engine/analysis/summary.py	
+NONRAGG	Ai Engine/ai_engine/analysis/tools.py	
+NONRAGG	Ai Engine/ai_engine/audit_nulls.py	
+NONRAGG	Ai Engine/ai_engine/backtest.py	
+NONRAGG	Ai Engine/ai_engine/bss_monitor.py	
+NONRAGG	Ai Engine/ai_engine/confidence_gate.py	
+NONRAGG	Ai Engine/ai_engine/coverage.py	runner.py
+NONRAGG	Ai Engine/ai_engine/db_adapter.py	feature_pipeline.py;training_dataset.py
+NONRAGG	Ai Engine/ai_engine/elo_ratings.py	feature_pipeline.py
+NONRAGG	Ai Engine/ai_engine/ensemble_trainer.py	
+NONRAGG	Ai Engine/ai_engine/evaluate_holdout.py	
+NONRAGG	Ai Engine/ai_engine/feature_pipeline.py	runner.py;training_dataset.py
+NONRAGG	Ai Engine/ai_engine/generate_fixture_report.py	
+NONRAGG	Ai Engine/ai_engine/market_ranking.py	runner.py
+NONRAGG	Ai Engine/ai_engine/metrics/__init__.py	
+NONRAGG	Ai Engine/ai_engine/metrics/balance.py	
+NONRAGG	Ai Engine/ai_engine/model_suite.py	runner.py
+NONRAGG	Ai Engine/ai_engine/models/__init__.py	
+NONRAGG	Ai Engine/ai_engine/models/trainer.py	
+NONRAGG	Ai Engine/ai_engine/models/voting.py	
+NONRAGG	Ai Engine/ai_engine/predict_fixture.py	
+NONRAGG	Ai Engine/ai_engine/preprocessing/__init__.py	
+NONRAGG	Ai Engine/ai_engine/preprocessing/dataset.py	
+NONRAGG	Ai Engine/ai_engine/preprocessing/selection.py	
+NONRAGG	Ai Engine/ai_engine/preprocessing/statistics.py	feature_pipeline.py
+NONRAGG	Ai Engine/ai_engine/preprocessing/temporal_split.py	ensemble_trainer.py
+NONRAGG	Ai Engine/ai_engine/report.py	runner.py
+NONRAGG	Ai Engine/ai_engine/runner.py	
+NONRAGG	Ai Engine/ai_engine/seriea_model_export.py	
+NONRAGG	Ai Engine/ai_engine/serving_batch.py	
+NONRAGG	Ai Engine/ai_engine/targets.py	training_dataset.py
+NONRAGG	Ai Engine/ai_engine/test_dataset_fixed.py	
+NONRAGG	Ai Engine/ai_engine/tests/__init__.py	
+NONRAGG	Ai Engine/ai_engine/tests/test_core.py	
+NONRAGG	Ai Engine/ai_engine/tests/test_db_adapter_letture_2026_09_21.py	
+NONRAGG	Ai Engine/ai_engine/tests/test_standings_fanout.py	
+NONRAGG	Ai Engine/ai_engine/training_dataset.py	runner.py
+NONRAGG	Ai Engine/ai_engine/validation.py	runner.py
+NONRAGG	Ai Engine/ai_engine/value_betting.py	confidence_gate.py
+NONRAGG	Ai Engine/backtest_ml.py	
+NONRAGG	Betfair/__init__.py	
+LIVE	Betfair/betfair_match.py	betfair_match.py<-omega_service.py
+NONRAGG	Betfair/betfair_report_manager.py	
+NONRAGG	Betfair/cleanup_reset.py	
+LIVE	Betfair/client.py	client.py<-betfair_tennis_odds.py
+NONRAGG	Betfair/conftest.py	
+LIVE	Betfair/mike/__init__.py	__init__.py<-service.py
+LIVE	Betfair/mike/certificazione.py	certificazione.py<-registro_bot.py<-applica_bot.py<-worker.py
+LIVE	Betfair/mike/config.py	config.py<-service.py
+LIVE	Betfair/mike/db.py	db.py<-service.py
+LIVE	Betfair/mike/dossier.py	dossier.py<-service.py
+LIVE	Betfair/mike/engine.py	engine.py<-service.py
+LIVE	Betfair/mike/feed.py	feed.py<-service.py
+LIVE	Betfair/mike/porta_ordini.py	porta_ordini.py<-service.py
+LIVE	Betfair/mike/regolato_conto.py	regolato_conto.py<-service.py
+LIVE	Betfair/mike/service.py	service.py
+NONRAGG	Betfair/mike/test_mike_banco_isolamento_2026_10_08.py	
+NONRAGG	Betfair/mike/tests/conftest.py	
+NONRAGG	Betfair/mike/tests/runner_finto.py	
+NONRAGG	Betfair/mike/tests/test_coordinatore_firma_dopo_decadenza_2026_09_28.py	
+NONRAGG	Betfair/mike/tests/test_loss_exit_deciso_rate_limit_2026_09_26.py	
+NONRAGG	Betfair/mike/tests/test_mike_allineamento_ui_2026_09_15.py	
+NONRAGG	Betfair/mike/tests/test_mike_aperture_ferme_d1quater_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_atlante_frame_dossier_2026_09_26.py	
+NONRAGG	Betfair/mike/tests/test_mike_audit_2026_09_11.py	
+NONRAGG	Betfair/mike/tests/test_mike_audit_2026_09_12.py	
+NONRAGG	Betfair/mike/tests/test_mike_avvio_app_2026_09_16.py	
+NONRAGG	Betfair/mike/tests/test_mike_banco_e2_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_banco_memorie_processo_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_banco_ondata2_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_canale_f3_2026_09_18.py	
+NONRAGG	Betfair/mike/tests/test_mike_canale_locale_2026_09_14.py	
+NONRAGG	Betfair/mike/tests/test_mike_certificazione_2026_09_13.py	
+NONRAGG	Betfair/mike/tests/test_mike_certificazione_ui_2026_09_11.py	
+NONRAGG	Betfair/mike/tests/test_mike_chiave_approvazione_b17_2026_09_25.py	
+NONRAGG	Betfair/mike/tests/test_mike_chiudi_per_bot_2026_09_24.py	
+NONRAGG	Betfair/mike/tests/test_mike_chiusura_copertura_2026_10_01.py	
+NONRAGG	Betfair/mike/tests/test_mike_chiusura_integrata_2026_10_02.py	
+NONRAGG	Betfair/mike/tests/test_mike_chiusura_profitto_senza_copertura_2026_10_04.py	
+NONRAGG	Betfair/mike/tests/test_mike_config.py	
+NONRAGG	Betfair/mike/tests/test_mike_conto_dal_canale_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_conto_e_sovracopertura_2026_09_16.py	
+NONRAGG	Betfair/mike/tests/test_mike_contratto_db_2026_09_14.py	
+NONRAGG	Betfair/mike/tests/test_mike_contratto_ordini_2026_09_15.py	
+NONRAGG	Betfair/mike/tests/test_mike_copertura_canale_2026_09_23.py	
+NONRAGG	Betfair/mike/tests/test_mike_copertura_prezzo_coerente_2026_10_04.py	
+NONRAGG	Betfair/mike/tests/test_mike_d1_aggregati_per_modalita_2026_09_28.py	
+NONRAGG	Betfair/mike/tests/test_mike_d1_paper_sul_runner_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_d1_regolazione_al_riavvio_2026_09_28.py	
+NONRAGG	Betfair/mike/tests/test_mike_d1_riserva_orfana_2026_09_28.py	
+NONRAGG	Betfair/mike/tests/test_mike_d1bis_freno_coperture_runner_2026_09_28.py	
+NONRAGG	Betfair/mike/tests/test_mike_d1ter_esito_ignoto_runner_2026_09_28.py	
+NONRAGG	Betfair/mike/tests/test_mike_d1ter_submin_fok_parita_2026_09_28.py	
+NONRAGG	Betfair/mike/tests/test_mike_dossier.py	
+NONRAGG	Betfair/mike/tests/test_mike_engine.py	
+NONRAGG	Betfair/mike/tests/test_mike_engine_cert_2026_09_12.py	
+NONRAGG	Betfair/mike/tests/test_mike_esito_e_riconciliazione_2026_09_15.py	
+NONRAGG	Betfair/mike/tests/test_mike_feed.py	
+NONRAGG	Betfair/mike/tests/test_mike_feed_stantio_loop_2026_10_02.py	
+NONRAGG	Betfair/mike/tests/test_mike_firma_stesso_motivo_2026_09_28.py	
+NONRAGG	Betfair/mike/tests/test_mike_flusso_cantiere_j2_2026_09_28.py	
+NONRAGG	Betfair/mike/tests/test_mike_flusso_fischio_2026_09_13.py	
+NONRAGG	Betfair/mike/tests/test_mike_flusso_testo_linea_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_freno_copertura_2026_09_17.py	
+NONRAGG	Betfair/mike/tests/test_mike_indagine_mercato_deciso_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_kill_switch_resting_o1_2026_09_24.py	
+NONRAGG	Betfair/mike/tests/test_mike_ko_green_3_minuti_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_ko_green_appoggiata_2026_09_16.py	
+NONRAGG	Betfair/mike/tests/test_mike_legge_canale_2026_09_23.py	
+NONRAGG	Betfair/mike/tests/test_mike_loop_chiusure_2026_09_15.py	
+NONRAGG	Betfair/mike/tests/test_mike_loop_resting_2026_09_15.py	
+NONRAGG	Betfair/mike/tests/test_mike_loop_taker_2026_09_16.py	
+NONRAGG	Betfair/mike/tests/test_mike_market_selection_id_2026_09_23.py	
+NONRAGG	Betfair/mike/tests/test_mike_mercato_deciso_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_mercato_sospeso_2026_09_15.py	
+NONRAGG	Betfair/mike/tests/test_mike_migrazione_arretrati_prova_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_motivo_blocco_catena_2026_10_04.py	
+NONRAGG	Betfair/mike/tests/test_mike_ondata2_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_p1_cancello_uscite_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p2_prepartita_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p2bis_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p3_rientro_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p4_blocco4_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p4_blocco5_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p4_conti_dati_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p4_dati_assenti_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p4_ordini_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p5_2b_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p5_4b_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p5_4c_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p5_banco_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p5_compensazione_mercato_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p5_copertura_banca_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p5_gemelli_banca_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_p5_servizio_copertura_2026_09_29.py	
+NONRAGG	Betfair/mike/tests/test_mike_paper_fill_al_best_2026_09_26.py	
+NONRAGG	Betfair/mike/tests/test_mike_paper_vs_live_2026_09_13.py	
+NONRAGG	Betfair/mike/tests/test_mike_pnl_reale_del_conto_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_prezzo_morto_2026_09_13.py	
+NONRAGG	Betfair/mike/tests/test_mike_punte_multiplo_050_2026_10_04.py	
+NONRAGG	Betfair/mike/tests/test_mike_punteggio_ingresso_2026_09_26.py	
+NONRAGG	Betfair/mike/tests/test_mike_regolamento_centesimi_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_respiro_db_2026_09_13.py	
+NONRAGG	Betfair/mike/tests/test_mike_respiro_scritture_2026_09_13.py	
+NONRAGG	Betfair/mike/tests/test_mike_resting_live_2026_09_14.py	
+NONRAGG	Betfair/mike/tests/test_mike_review_2026_09_11.py	
+NONRAGG	Betfair/mike/tests/test_mike_riga_assente_e_arresto_2026_10_02.py	
+NONRAGG	Betfair/mike/tests/test_mike_service.py	
+NONRAGG	Betfair/mike/tests/test_mike_stato_mercato_resting_2026_09_24.py	
+NONRAGG	Betfair/mike/tests/test_mike_testi_veritieri_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_tetto_partite_2026_09_13.py	
+NONRAGG	Betfair/mike/tests/test_mike_ultimo_ingresso_2026_09_30.py	
+NONRAGG	Betfair/mike/tests/test_mike_uscite_automatiche_2026_09_25.py	
+NONRAGG	Betfair/mike/tests/test_mike_uscite_manuali_al_riavvio_2026_09_28.py	
+NONRAGG	Betfair/mike/tests/test_mike_veto_p_under35_2026_09_25.py	
+NONRAGG	Betfair/mike/tests/test_mike_w3a_consapevolezza_2026_10_08.py	
+NONRAGG	Betfair/mike/tools/__init__.py	
+NONRAGG	Betfair/mike/tools/banco.py	
+NONRAGG	Betfair/mike/tools/replay_registrazioni.py	replay_registrazioni.py
+NONRAGG	Betfair/mike/tools/synth_mike.py	synth_mike.py
+NONRAGG	Betfair/money_management.py	betfair_report_manager.py;aggiorna_mm_sheets.py;aggiorna_solo_fogli.py
+LIVE	Betfair/odds_refresh.py	odds_refresh.py<-omega_market.py<-omega_service.py
+LIVE	Betfair/omega/__init__.py	__init__.py<-omega_service.py
+LIVE	Betfair/omega/certificazione.py	certificazione.py<-registro_bot.py<-applica_bot.py<-worker.py
+NONRAGG	Betfair/omega/conftest.py	
+NONRAGG	Betfair/omega/liquidity_probe.py	liquidity_probe.py
+LIVE	Betfair/omega/omega_advisor.py	omega_advisor.py<-omega_service.py
+LIVE	Betfair/omega/omega_config.py	omega_config.py<-omega_service.py
+LIVE	Betfair/omega/omega_db.py	omega_db.py<-omega_service.py
+LIVE	Betfair/omega/omega_empirical.py	omega_empirical.py<-omega_service.py
+LIVE	Betfair/omega/omega_engine.py	omega_engine.py<-omega_service.py
+LIVE	Betfair/omega/omega_market.py	omega_market.py<-omega_service.py
+LIVE	Betfair/omega/omega_model.py	omega_model.py<-omega_service.py
+LIVE	Betfair/omega/omega_proposte.py	omega_proposte.py<-omega_service.py
+LIVE	Betfair/omega/omega_service.py	omega_service.py
+LIVE	Betfair/omega/omega_v3.py	omega_v3.py<-omega_service.py
+NONRAGG	Betfair/omega/omega_validate.py	omega_validate_models.py
+LIVE	Betfair/omega/porta_ordini.py	porta_ordini.py<-omega_service.py
+NONRAGG	Betfair/omega/test_a9_solo_aperture_lay_2026_09_17.py	
+NONRAGG	Betfair/omega/test_gate_heartbeat_modalita_servite_2026_09_16.py	
+NONRAGG	Betfair/omega/test_liquidity_probe_2026_09_10.py	
+NONRAGG	Betfair/omega/test_m2_pesi_2026_09_17.py	
+NONRAGG	Betfair/omega/test_misure_m4m5m6_2026_09_17.py	
+NONRAGG	Betfair/omega/test_omega_allineamento_ui_2026_09_15.py	
+NONRAGG	Betfair/omega/test_omega_audit_2026_09_11.py	
+NONRAGG	Betfair/omega/test_omega_avvio_app_2026_09_16.py	
+NONRAGG	Betfair/omega/test_omega_banco_isolamento_2026_10_08.py	
+NONRAGG	Betfair/omega/test_omega_cache_pura_2026_09_16.py	
+NONRAGG	Betfair/omega/test_omega_cashout_feed_fermo_2026_09_11.py	
+NONRAGG	Betfair/omega/test_omega_cashout_manuale_fallito_2026_09_23.py	
+NONRAGG	Betfair/omega/test_omega_certificazione_2026_09_11.py	
+NONRAGG	Betfair/omega/test_omega_certificazione_2026_09_12.py	
+NONRAGG	Betfair/omega/test_omega_chaos_2026_09_11.py	
+NONRAGG	Betfair/omega/test_omega_chiudi_per_bot_2026_09_24.py	
+NONRAGG	Betfair/omega/test_omega_chiuso_dall_utente_2026_09_16.py	
+NONRAGG	Betfair/omega/test_omega_config.py	
+NONRAGG	Betfair/omega/test_omega_consapevolezza_2026_09_16.py	
+NONRAGG	Betfair/omega/test_omega_engine.py	
+NONRAGG	Betfair/omega/test_omega_feed_2026_09_09.py	
+NONRAGG	Betfair/omega/test_omega_flumine_live.py	
+NONRAGG	Betfair/omega/test_omega_flumine_paper.py	
+NONRAGG	Betfair/omega/test_omega_giornata_gambe_2026_09_11.py	
+NONRAGG	Betfair/omega/test_omega_greenup_2026_09_10.py	
+NONRAGG	Betfair/omega/test_omega_matematica_2026_09_12.py	
+NONRAGG	Betfair/omega/test_omega_missions.py	
+NONRAGG	Betfair/omega/test_omega_modello_definitivo_2026_09_11.py	
+NONRAGG	Betfair/omega/test_omega_pnl_netto_commissione_2026_09_30.py	
+NONRAGG	Betfair/omega/test_omega_proposte_2026_09_17.py	
+NONRAGG	Betfair/omega/test_omega_replay_2026_09_16.py	
+NONRAGG	Betfair/omega/test_omega_respiro_db_2026_09_13.py	
+NONRAGG	Betfair/omega/test_omega_service.py	
+NONRAGG	Betfair/omega/test_omega_ui_contratto_2026_09_11.py	
+NONRAGG	Betfair/omega/test_omega_uscite_manuali_al_riavvio_2026_09_28.py	
+NONRAGG	Betfair/omega/test_omega_v2_2026_09_09.py	
+NONRAGG	Betfair/omega/test_omega_v3_2026_09_16.py	
+NONRAGG	Betfair/omega/test_omega_v3_certificazione_2026_09_16.py	
+NONRAGG	Betfair/omega/test_place_and_trim_2026_09_13.py	
+NONRAGG	Betfair/omega/test_t3_consapevolezza_2026_09_17.py	
+NONRAGG	Betfair/omega/tests/runner_paper_finto.py	
+NONRAGG	Betfair/omega/tests/test_annullo_abbinato_ignoto_2026_09_23.py	
+NONRAGG	Betfair/omega/tests/test_banco_omega_reperti_rb_2026_10_08.py	
+NONRAGG	Betfair/omega/tests/test_cantiere_c_parita_paper_live_2026_09_28.py	
+NONRAGG	Betfair/omega/tests/test_cert_a11_aggregati_2026_10_07.py	
+NONRAGG	Betfair/omega/tests/test_consapevolezza_flumine_2026_09_17.py	
+NONRAGG	Betfair/omega/tests/test_coordinatore_aggregati_modalita_2026_09_28.py	
+NONRAGG	Betfair/omega/tests/test_esiti_ordini_canale_2026_09_23.py	
+NONRAGG	Betfair/omega/tests/test_flusso_ht_secondo_tempo_2026_10_07.py	
+NONRAGG	Betfair/omega/tests/test_ingresso_passivo_2026_09_17.py	
+NONRAGG	Betfair/omega/tests/test_o1_quote_prima_2026_09_25.py	
+NONRAGG	Betfair/omega/tests/test_o5_rossi_v3_2026_09_25.py	
+NONRAGG	Betfair/omega/tests/test_omega_approvazione_ricontrolla_2026_09_28.py	
+NONRAGG	Betfair/omega/tests/test_omega_approve_contesto_b17_2026_09_25.py	
+NONRAGG	Betfair/omega/tests/test_omega_canale_f3_2026_09_18.py	
+NONRAGG	Betfair/omega/tests/test_omega_client_scan_condiviso_2026_09_24.py	
+NONRAGG	Betfair/omega/tests/test_omega_freno_non_consuma_tentativi_2026_09_26.py	
+NONRAGG	Betfair/omega/tests/test_omega_kill_switch_rest_o1_2026_09_24.py	
+NONRAGG	Betfair/omega/tests/test_omega_legge_canale_2026_09_23.py	
+NONRAGG	Betfair/omega/tests/test_omega_scheda_al_ms_2026_09_24.py	
+NONRAGG	Betfair/omega/tests/test_omega_soldi_veri_catena_2026_10_04.py	
+NONRAGG	Betfair/omega/tests/test_omega_stato_mercato_2026_09_24.py	
+NONRAGG	Betfair/omega/tests/test_omega_sveglia_posizioni_vive_2026_09_23.py	
+NONRAGG	Betfair/omega/tests/test_omega_uscite_protezione_2026_09_24.py	
+NONRAGG	Betfair/omega/tests/test_omega_w3a_conto_canale_2026_10_08.py	
+NONRAGG	Betfair/omega/tests/test_politica_v4_2026_09_17.py	
+NONRAGG	Betfair/omega/tests/test_porta_ordini_omega_f6_2026_09_24.py	
+NONRAGG	Betfair/omega/tests/test_punte_multiple_050_omega_2026_10_04.py	
+NONRAGG	Betfair/omega/tests/test_quota_viva_bias_fascia_2026_09_17.py	
+NONRAGG	Betfair/omega/tests/test_raccordo_v3_2026_09_17.py	
+NONRAGG	Betfair/omega/tests/test_ref_strategia_per_attore_r1_2026_09_24.py	
+NONRAGG	Betfair/omega/tests/test_replay_nomi_aggregati_2026_10_07.py	
+NONRAGG	Betfair/omega/tests/test_riconciliazione_tradotti_omega_2026_10_02.py	
+NONRAGG	Betfair/omega/tests/test_riserva_errore_non_duplicato_2026_09_23.py	
+NONRAGG	Betfair/omega/tests/test_stop_perdita_stats_2026_09_30.py	
+NONRAGG	Betfair/omega/tests/test_v3_any_other_2026_10_07.py	
+NONRAGG	Betfair/omega/tests/traccia_canale_scan_2026_09_23.py	traccia_su_base_2026_09_23.py
+LIVE	Betfair/omega/tools/__init__.py	__init__.py<-omega_service.py
+NONRAGG	Betfair/omega/tools/banco_fusione.py	banco_fusione.py
+NONRAGG	Betfair/omega/tools/banco_modelli.py	banco_modelli.py
+NONRAGG	Betfair/omega/tools/deriva_margine.py	deriva_margine.py
+NONRAGG	Betfair/omega/tools/estrai_transizioni.py	estrai_transizioni.py
+NONRAGG	Betfair/omega/tools/ev_per_liability.py	ev_per_liability.py
+NONRAGG	Betfair/omega/tools/falsifica_canale_scan_2026_09_23.py	falsifica_canale_scan_2026_09_23.py
+NONRAGG	Betfair/omega/tools/falsifica_raccordo_v3_2026_09_17.py	
+NONRAGG	Betfair/omega/tools/genera_oro_uscita.py	genera_oro_uscita.py
+NONRAGG	Betfair/omega/tools/k_in_gioco.py	deriva_margine.py;k_in_gioco.py
+NONRAGG	Betfair/omega/tools/m2_pesi.py	m2_pesi.py
+NONRAGG	Betfair/omega/tools/misura_ingresso_passivo.py	misura_ingresso_passivo.py
+LIVE	Betfair/omega/tools/misura_k.py	misura_k.py<-omega_service.py
+NONRAGG	Betfair/omega/tools/misura_prezzo_appaiata.py	misura_prezzo_appaiata.py
+NONRAGG	Betfair/omega/tools/montecarlo_pl.py	montecarlo_pl.py
+LIVE	Betfair/omega/tools/replay_registrazioni.py	replay_registrazioni.py<-trasporto_rapido.py<-certifica.py<-applica_bot.py
+NONRAGG	Betfair/omega/tools/superficie_liability.py	deriva_margine.py;k_in_gioco.py;superficie_liability.py
+NONRAGG	Betfair/omega/tools/traccia_su_base_2026_09_23.py	traccia_su_base_2026_09_23.py
+NONRAGG	Betfair/omega/tools/verifica_transizioni_2026_09_25.py	verifica_transizioni_2026_09_25.py
+NONRAGG	Betfair/order_exec.py	order_worker.py;odds_http.py
+NONRAGG	Betfair/order_worker.py	start_order_server.py
+NONRAGG	Betfair/refresh_worker.py	start_order_server.py
+NONRAGG	Betfair/reject_categories.py	backfill_engine_signals.py
+LIVE	Betfair/safe_strategy/__init__.py	__init__.py<-service.py
+LIVE	Betfair/safe_strategy/anomaly.py	anomaly.py<-bot_service.py
+LIVE	Betfair/safe_strategy/arresto_bot.py	arresto_bot.py<-omega_service.py
+LIVE	Betfair/safe_strategy/bot_db.py	bot_db.py<-bot_service.py
+LIVE	Betfair/safe_strategy/bot_service.py	bot_service.py
+LIVE	Betfair/safe_strategy/calibration.py	calibration.py<-opportunity.py<-service.py
+LIVE	Betfair/safe_strategy/canale_scan.py	canale_scan.py<-omega_service.py
+LIVE	Betfair/safe_strategy/certificazione.py	certificazione.py<-registro_bot.py<-applica_bot.py<-worker.py
+LIVE	Betfair/safe_strategy/certificazione_k.py	certificazione_k.py<-certificazione_tennis.py<-registro_bot.py<-applica_bot.py
+LIVE	Betfair/safe_strategy/certificazione_tennis.py	certificazione_tennis.py<-registro_bot.py<-applica_bot.py<-worker.py
+LIVE	Betfair/safe_strategy/combos.py	combos.py<-registro_bot.py<-applica_bot.py<-worker.py
+LIVE	Betfair/safe_strategy/db.py	db.py<-service.py
+LIVE	Betfair/safe_strategy/engine.py	engine.py<-bot_service.py
+LIVE	Betfair/safe_strategy/execution.py	execution.py<-omega_service.py
+LIVE	Betfair/safe_strategy/exits.py	exits.py<-omega_service.py
+LIVE	Betfair/safe_strategy/opportunity.py	opportunity.py<-service.py
+LIVE	Betfair/safe_strategy/porta_ordini.py	porta_ordini.py<-bot_service.py
+LIVE	Betfair/safe_strategy/pressure.py	pressure.py<-service.py
+LIVE	Betfair/safe_strategy/proposte_opportunita.py	proposte_opportunita.py<-bot_service.py
+LIVE	Betfair/safe_strategy/risk.py	risk.py<-bot_service.py
+LIVE	Betfair/safe_strategy/scanner.py	scanner.py<-service.py
+LIVE	Betfair/safe_strategy/selezione.py	selezione.py<-service.py
+LIVE	Betfair/safe_strategy/service.py	service.py
+LIVE	Betfair/safe_strategy/stream.py	stream.py<-service.py
+LIVE	Betfair/safe_strategy/tennis_opportunity.py	tennis_opportunity.py<-registro_bot.py<-applica_bot.py<-worker.py
+NONRAGG	Betfair/safe_strategy/tests/conftest.py	
+NONRAGG	Betfair/safe_strategy/tests/runner_finto.py	
+NONRAGG	Betfair/safe_strategy/tests/test_allineamento_ui_2026_09_15.py	
+NONRAGG	Betfair/safe_strategy/tests/test_anomaly.py	
+NONRAGG	Betfair/safe_strategy/tests/test_apertura_scrive_consapevolezza_2026_09_17.py	
+NONRAGG	Betfair/safe_strategy/tests/test_arresto_bot_safe_omega_2026_10_02.py	
+NONRAGG	Betfair/safe_strategy/tests/test_atlante_collegato_2026_09_24.py	
+NONRAGG	Betfair/safe_strategy/tests/test_atlante_note_livello_2026_09_25.py	
+NONRAGG	Betfair/safe_strategy/tests/test_attesa_fischio_2026_10_01.py	
+NONRAGG	Betfair/safe_strategy/tests/test_audit_2026_09_11.py	
+NONRAGG	Betfair/safe_strategy/tests/test_avvio_app_2026_09_16.py	
+NONRAGG	Betfair/safe_strategy/tests/test_b25_lascia_e_avvisa_2026_09_24.py	
+NONRAGG	Betfair/safe_strategy/tests/test_b25_pulsanti_gamba_manuale_2026_09_24.py	
+NONRAGG	Betfair/safe_strategy/tests/test_backtest_opportunity.py	
+NONRAGG	Betfair/safe_strategy/tests/test_base_secondo_tempo_2026_10_07.py	
+NONRAGG	Betfair/safe_strategy/tests/test_bot_mai_ciechi_2026_10_01.py	
+NONRAGG	Betfair/safe_strategy/tests/test_bot_service.py	
+NONRAGG	Betfair/safe_strategy/tests/test_calibration.py	
+NONRAGG	Betfair/safe_strategy/tests/test_canale_scan_f4_2026_09_18.py	
+NONRAGG	Betfair/safe_strategy/tests/test_canale_scanner_al_ms_2026_09_18.py	
+NONRAGG	Betfair/safe_strategy/tests/test_cashout_event_ids_b17_2026_09_25.py	
+NONRAGG	Betfair/safe_strategy/tests/test_cert_2026_09_13.py	
+NONRAGG	Betfair/safe_strategy/tests/test_cert_safe_2026_09_11.py	
+NONRAGG	Betfair/safe_strategy/tests/test_certificazione_c3_2026_09_16.py	
+NONRAGG	Betfair/safe_strategy/tests/test_chiudi_per_bot_2026_09_24.py	
+NONRAGG	Betfair/safe_strategy/tests/test_chiusura_dell_utente_2026_09_16.py	
+NONRAGG	Betfair/safe_strategy/tests/test_combos.py	
+NONRAGG	Betfair/safe_strategy/tests/test_combos_anomalie_proposte_2026_09_18.py	
+NONRAGG	Betfair/safe_strategy/tests/test_consapevolezza_backfill_hedged_2026_09_17.py	
+NONRAGG	Betfair/safe_strategy/tests/test_d1_enqueue_ignoto_paper_live_2026_09_28.py	
+NONRAGG	Betfair/safe_strategy/tests/test_d1_proposte_uscita_2026_09_28.py	
+NONRAGG	Betfair/safe_strategy/tests/test_d1_regolazione_al_riavvio_2026_09_28.py	
+NONRAGG	Betfair/safe_strategy/tests/test_d1_rischio_per_modalita_2026_09_28.py	
+NONRAGG	Betfair/safe_strategy/tests/test_due_motori_tennis_2026_09_17.py	
+NONRAGG	Betfair/safe_strategy/tests/test_engine.py	
+NONRAGG	Betfair/safe_strategy/tests/test_esatto_secondo_tempo_2026_10_07.py	
+NONRAGG	Betfair/safe_strategy/tests/test_esecuzione_a_mercato_d7_2026_09_25.py	
+NONRAGG	Betfair/safe_strategy/tests/test_eta_proposta_approvata_2026_09_23.py	
+NONRAGG	Betfair/safe_strategy/tests/test_execution.py	
+NONRAGG	Betfair/safe_strategy/tests/test_exit_hold_dedup_2026_09_17.py	
+NONRAGG	Betfair/safe_strategy/tests/test_exit_hold_dovuta_tentata_2026_09_23.py	
+NONRAGG	Betfair/safe_strategy/tests/test_exits.py	
+NONRAGG	Betfair/safe_strategy/tests/test_finali_2026_09_11.py	
+NONRAGG	Betfair/safe_strategy/tests/test_firma_stesso_motivo_2026_09_29.py	
+NONRAGG	Betfair/safe_strategy/tests/test_flusso_interrotto_cantiere_j_2026_09_28.py	
+NONRAGG	Betfair/safe_strategy/tests/test_flusso_interrotto_cantiere_j_bis_2026_09_28.py	
+NONRAGG	Betfair/safe_strategy/tests/test_flusso_su_master_cantiere_j2_2026_09_28.py	
+NONRAGG	Betfair/safe_strategy/tests/test_giro_veloce_c6a_2026_09_23.py	
+NONRAGG	Betfair/safe_strategy/tests/test_hedge_sull_abbinato_2026_09_18.py	
+NONRAGG	Betfair/safe_strategy/tests/test_incidente_quote_2026_09_17.py	
+NONRAGG	Betfair/safe_strategy/tests/test_modalita_model_manual_2026_09_24.py	
+NONRAGG	Betfair/safe_strategy/tests/test_opportunity.py	
+NONRAGG	Betfair/safe_strategy/tests/test_p_blocco3_2026_09_28.py	
+NONRAGG	Betfair/safe_strategy/tests/test_p_nessun_fill_di_casa_2026_09_28.py	
+NONRAGG	Betfair/safe_strategy/tests/test_paper_fill_al_best_2026_09_26.py	
+NONRAGG	Betfair/safe_strategy/tests/test_pnl_netto_commissione_2026_09_30.py	
+NONRAGG	Betfair/safe_strategy/tests/test_porta_ordini_f5_2026_09_24.py	
+NONRAGG	Betfair/safe_strategy/tests/test_pre_ko_ou.py	
+NONRAGG	Betfair/safe_strategy/tests/test_pressure.py	
+NONRAGG	Betfair/safe_strategy/tests/test_prezzo_fuori_tolleranza_2026_09_18.py	
+NONRAGG	Betfair/safe_strategy/tests/test_prezzo_segnale_b17_2026_09_25.py	
+NONRAGG	Betfair/safe_strategy/tests/test_proposte_opportunita_2026_09_17.py	
+NONRAGG	Betfair/safe_strategy/tests/test_proposte_scadute_2026_09_26.py	
+NONRAGG	Betfair/safe_strategy/tests/test_punte_multiple_050_2026_10_04.py	
+NONRAGG	Betfair/safe_strategy/tests/test_reperto1_adozione_canale_safe_2026_10_02.py	
+NONRAGG	Betfair/safe_strategy/tests/test_replay_tennis_2026_09_16.py	
+NONRAGG	Betfair/safe_strategy/tests/test_resilienza_rete_fix_c_2026_09_26.py	
+NONRAGG	Betfair/safe_strategy/tests/test_resilienza_rete_fix_c_insieme_2026_09_26.py	
+NONRAGG	Betfair/safe_strategy/tests/test_riconciliazione_tradotti_safe_2026_10_02.py	
+NONRAGG	Betfair/safe_strategy/tests/test_risk.py	
+NONRAGG	Betfair/safe_strategy/tests/test_safe_canale_f3_2026_09_18.py	
+NONRAGG	Betfair/safe_strategy/tests/test_safe_d5_2026_09_25.py	
+NONRAGG	Betfair/safe_strategy/tests/test_safe_kill_switch_rest_o1_2026_09_24.py	
+NONRAGG	Betfair/safe_strategy/tests/test_safe_lambda_quote_prima_2026_09_25.py	
+NONRAGG	Betfair/safe_strategy/tests/test_safe_q1_q4_q5_2026_09_25.py	
+NONRAGG	Betfair/safe_strategy/tests/test_safe_q7_q12_2026_09_25.py	
+NONRAGG	Betfair/safe_strategy/tests/test_safe_stato_mercato_2026_09_24.py	
+NONRAGG	Betfair/safe_strategy/tests/test_safe_tennis_canale_f8_2026_09_25.py	
+NONRAGG	Betfair/safe_strategy/tests/test_safe_w3a_conto_canale_2026_10_08.py	
+NONRAGG	Betfair/safe_strategy/tests/test_scanner.py	
+NONRAGG	Betfair/safe_strategy/tests/test_scanner_mai_cieco_2026_10_02.py	
+NONRAGG	Betfair/safe_strategy/tests/test_scanner_mike_followed_c1.py	
+NONRAGG	Betfair/safe_strategy/tests/test_scheda_al_ms_2026_09_24.py	
+NONRAGG	Betfair/safe_strategy/tests/test_selezione_esatto_2026_09_16.py	
+NONRAGG	Betfair/safe_strategy/tests/test_settlement_betfair_truth_2026_09_17.py	
+NONRAGG	Betfair/safe_strategy/tests/test_soldi_veri_catena_2026_10_04.py	
+NONRAGG	Betfair/safe_strategy/tests/test_soldi_veri_catena_aggancio_2026_10_04.py	
+NONRAGG	Betfair/safe_strategy/tests/test_svuota_le_cache_d2_2026_09_24.py	
+NONRAGG	Betfair/safe_strategy/tests/test_tennis_opportunity.py	
+NONRAGG	Betfair/safe_strategy/tests/test_uscite_automatiche_2026_09_25.py	
+NONRAGG	Betfair/safe_strategy/tests/test_uscite_manuali_al_riavvio_2026_09_28.py	
+NONRAGG	Betfair/safe_strategy/tests/test_velocita_feed_2026_09_30.py	
+NONRAGG	Betfair/safe_strategy/tests/test_volume_mo_2026_09_26.py	
+LIVE	Betfair/safe_strategy/tools/__init__.py	__init__.py<-replay_registrazioni.py<-trasporto_rapido.py<-certifica.py
+NONRAGG	Betfair/safe_strategy/tools/backtest_opportunity.py	backtest_opportunity.py
+NONRAGG	Betfair/safe_strategy/tools/conta_operazioni_live.py	
+NONRAGG	Betfair/safe_strategy/tools/falsifica_c6a_2026_09_23.py	falsifica_c6a_2026_09_23.py
+NONRAGG	Betfair/safe_strategy/tools/falsifica_f0_f1_2026_09_18.py	falsifica_f0_f1_2026_09_18.py
+NONRAGG	Betfair/safe_strategy/tools/falsifica_f4_2026_09_18.py	falsifica_f4_2026_09_18.py
+NONRAGG	Betfair/safe_strategy/tools/genera_oro_banda_strategia.py	genera_oro_banda_strategia.py
+NONRAGG	Betfair/safe_strategy/tools/genera_oro_valuta_proposta.py	genera_oro_banda_strategia.py;genera_oro_valuta_proposta.py
+LIVE	Betfair/safe_strategy/tools/replay_registrazioni.py	replay_registrazioni.py<-trasporto_rapido.py<-certifica.py<-applica_bot.py
+NONRAGG	Betfair/safe_strategy/tools/replay_tennis.py	replay_tennis.py
+NONRAGG	Betfair/safe_strategy/tools/sonda_canale_scan_2026_09_18.py	sonda_canale_scan_2026_09_18.py
+NONRAGG	Betfair/safe_strategy/tools/sonda_righe_scan_2026_09_18.py	
+NONRAGG	Betfair/safe_strategy/tools/storia_operazioni.py	
+NONRAGG	Betfair/safe_strategy/tools/synth_safe.py	synth_safe.py
+LIVE	Betfair/safe_strategy/tools/validate_opportunity.py	validate_opportunity.py<-replay_registrazioni.py<-trasporto_rapido.py<-certifica.py
+LIVE	Betfair/safe_strategy/veto_campionati.py	veto_campionati.py<-engine.py<-bot_service.py
+LIVE	Betfair/stream/__init__.py	__init__.py<-watchdog.py
+LIVE	Betfair/stream/arresto_ordinato.py	arresto_ordinato.py<-tennis_runner.py
+LIVE	Betfair/stream/auth.py	auth.py<-tennis_runner.py
+LIVE	Betfair/stream/auto_follow.py	auto_follow.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/avvio_app.py	avvio_app.py
+LIVE	Betfair/stream/backtest/__init__.py	__init__.py<-applica_bot.py<-worker.py
+LIVE	Betfair/stream/backtest/applica_bot.py	applica_bot.py<-worker.py
+LIVE	Betfair/stream/backtest/banco_comune.py	banco_comune.py<-run_backtest.py<-worker.py
+LIVE	Betfair/stream/backtest/certifica.py	certifica.py<-applica_bot.py<-worker.py
+LIVE	Betfair/stream/backtest/chiusura_parziale.py	chiusura_parziale.py<-certifica.py<-applica_bot.py<-worker.py
+LIVE	Betfair/stream/backtest/minimi_banco.py	minimi_banco.py<-applica_bot.py<-worker.py
+NONRAGG	Betfair/stream/backtest/ordini_esterni_banco.py	replay_registrazioni.py
+LIVE	Betfair/stream/backtest/porta_banco.py	porta_banco.py<-trasporto.py<-banco_comune.py<-run_backtest.py
+LIVE	Betfair/stream/backtest/proposte_modello.py	proposte_modello.py<-certifica.py<-applica_bot.py<-worker.py
+LIVE	Betfair/stream/backtest/registro_bot.py	registro_bot.py<-applica_bot.py<-worker.py
+LIVE	Betfair/stream/backtest/run_backtest.py	run_backtest.py<-worker.py
+NONRAGG	Betfair/stream/backtest/scavalco_rifiuti.py	replay_registrazioni.py
+LIVE	Betfair/stream/backtest/sim_strategy.py	sim_strategy.py<-run_backtest.py<-worker.py
+NONRAGG	Betfair/stream/backtest/tools/__init__.py	
+NONRAGG	Betfair/stream/backtest/tools/confronta_referti.py	confronta_referti.py
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/__init__.py	m1_mike.py;o1_catena_lambda.py;o5_rossi.py
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/comune.py	m1_mike.py;o1_catena_lambda.py;o5_rossi.py
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/estrai_db.py	estrai_db.py
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/falsifica_misura_punto8.py	falsifica_misura_punto8.py
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/m1_mike.py	
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/o1_catena_lambda.py	o1_catena_lambda.py;o5_rossi.py;o6_coda.py
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/o5_rossi.py	o5_rossi.py
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/o6_coda.py	o6_coda.py
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/percorsi.py	o1_catena_lambda.py;o5_rossi.py;o6_coda.py
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/s2_calibrazione_uscita.py	s2_calibrazione_uscita.py
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/t1_superficie.py	t1_superficie.py
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/test_misura_punto8.py	
+NONRAGG	Betfair/stream/backtest/tools/misura_punto8/x1_bias.py	
+LIVE	Betfair/stream/backtest/trasporto.py	trasporto.py<-banco_comune.py<-run_backtest.py<-worker.py
+LIVE	Betfair/stream/backtest/trasporto_rapido.py	trasporto_rapido.py<-certifica.py<-applica_bot.py<-worker.py
+LIVE	Betfair/stream/backtest/uscite_manuali.py	uscite_manuali.py<-certifica.py<-applica_bot.py<-worker.py
+LIVE	Betfair/stream/backtest/varianti_bot.py	varianti_bot.py<-applica_bot.py<-worker.py
+LIVE	Betfair/stream/backtest/worker.py	worker.py
+LIVE	Betfair/stream/board_worker.py	board_worker.py<-tennis_runner.py
+LIVE	Betfair/stream/canale_bot.py	canale_bot.py<-tennis_runner.py
+LIVE	Betfair/stream/client_paper_affiancato.py	client_paper_affiancato.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/config_stream.py	config_stream.py<-tennis_runner.py
+LIVE	Betfair/stream/curator.py	curator.py<-uploader.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/daily_stop_worker.py	daily_stop_worker.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/db.py	db.py<-watchdog.py
+LIVE	Betfair/stream/engine/__init__.py	__init__.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/engine/live_engine.py	live_engine.py<-opportunity.py<-service.py
+LIVE	Betfair/stream/engine/live_engine_pro.py	live_engine_pro.py<-omega_service.py
+LIVE	Betfair/stream/engine/live_trading_strategy.py	live_trading_strategy.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/esiti_ordini_canale.py	esiti_ordini_canale.py<-omega_service.py
+LIVE	Betfair/stream/flusso_prezzi.py	flusso_prezzi.py<-service.py
+LIVE	Betfair/stream/frammenti_mercato.py	frammenti_mercato.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/ladder_canale.py	ladder_canale.py<-tennis_runner.py
+LIVE	Betfair/stream/limits.py	limits.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/live_order_build.py	live_order_build.py<-omega_service.py
+LIVE	Betfair/stream/live_order_worker.py	live_order_worker.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/local_channel.py	local_channel.py<-tennis_runner.py
+LIVE	Betfair/stream/modo_ordini.py	modo_ordini.py<-tennis_runner.py
+LIVE	Betfair/stream/motore_ordini.py	motore_ordini.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/net_retry.py	net_retry.py<-db.py<-watchdog.py
+NONRAGG	Betfair/stream/odds_http.py	start_order_server.py
+LIVE	Betfair/stream/orologio.py	orologio.py<-scanner.py<-service.py
+LIVE	Betfair/stream/raw_listener.py	raw_listener.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/reconcile_worker.py	reconcile_worker.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/recorder.py	recorder.py<-tennis_runner.py
+LIVE	Betfair/stream/riserva_prezzi.py	riserva_prezzi.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/risk_engine_worker.py	risk_engine_worker.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/runner.py	runner.py<-watchdog.py
+LIVE	Betfair/stream/runner_lifecycle.py	runner_lifecycle.py<-watchdog.py
+LIVE	Betfair/stream/saldo_evento.py	saldo_evento.py<-tennis_runner.py
+LIVE	Betfair/stream/scalper/__init__.py	__init__.py<-scalper_service.py
+LIVE	Betfair/stream/scalper/atlante_a_domanda.py	atlante_a_domanda.py<-hazard_atlas_sync.py<-service.py
+LIVE	Betfair/stream/scalper/atlante_v4.py	atlante_v4.py<-genera_atlante.py
+LIVE	Betfair/stream/scalper/auto_mode.py	auto_mode.py<-scalper_service.py
+LIVE	Betfair/stream/scalper/bias_resolver.py	bias_resolver.py<-scalper_session.py<-scalper_service.py
+LIVE	Betfair/stream/scalper/certificazione.py	certificazione.py<-registro_bot.py<-applica_bot.py<-worker.py
+LIVE	Betfair/stream/scalper/genera_atlante.py	genera_atlante.py
+LIVE	Betfair/stream/scalper/habitat_scan.py	habitat_scan.py<-scalper_service.py
+LIVE	Betfair/stream/scalper/hazard_atlas.py	hazard_atlas.py<-opportunity.py<-service.py
+LIVE	Betfair/stream/scalper/hazard_atlas_sync.py	hazard_atlas_sync.py<-service.py
+LIVE	Betfair/stream/scalper/media_under_bot.py	media_under_bot.py<-scalper_session.py<-scalper_service.py
+LIVE	Betfair/stream/scalper/risk_semaphore.py	risk_semaphore.py<-scalper_session.py<-scalper_service.py
+NONRAGG	Betfair/stream/scalper/run_scalper.py	
+NONRAGG	Betfair/stream/scalper/run_scalper_live.py	run_scalper_live.py
+NONRAGG	Betfair/stream/scalper/run_theta.py	run_theta.py
+LIVE	Betfair/stream/scalper/scalper_bot.py	scalper_bot.py<-__init__.py<-scalper_service.py
+LIVE	Betfair/stream/scalper/scalper_service.py	scalper_service.py
+LIVE	Betfair/stream/scalper/scalper_session.py	scalper_session.py<-scalper_service.py
+LIVE	Betfair/stream/scalper/sniper_bot.py	sniper_bot.py<-scalper_session.py<-scalper_service.py
+LIVE	Betfair/stream/scalper/theta_bot.py	theta_bot.py<-scalper_session.py<-scalper_service.py
+NONRAGG	Betfair/stream/scalper/tools/__init__.py	
+NONRAGG	Betfair/stream/scalper/tools/atlas_report.py	
+NONRAGG	Betfair/stream/scalper/tools/atlas_v0.py	
+NONRAGG	Betfair/stream/scalper/tools/mcm.py	
+NONRAGG	Betfair/stream/scalper/tools/replay_registrazioni.py	
+LIVE	Betfair/stream/scalper/validazione_hazard/__init__.py	__init__.py<-atlante_v4.py<-genera_atlante.py
+NONRAGG	Betfair/stream/scalper/validazione_hazard/banco.py	banco.py;taratura_b1.py
+LIVE	Betfair/stream/scalper/validazione_hazard/candidati.py	candidati.py<-atlante_v4.py<-genera_atlante.py
+LIVE	Betfair/stream/scalper/validazione_hazard/dati.py	dati.py<-atlante_v4.py<-genera_atlante.py
+LIVE	Betfair/stream/scalper/validazione_hazard/forza.py	forza.py<-atlante_v4.py<-genera_atlante.py
+NONRAGG	Betfair/stream/scalper/validazione_hazard/metriche.py	banco.py;taratura_b1.py
+NONRAGG	Betfair/stream/scalper/validazione_hazard/modello_b1.py	banco.py;taratura_b1.py
+NONRAGG	Betfair/stream/scalper/validazione_hazard/parita.py	
+NONRAGG	Betfair/stream/scalper/validazione_hazard/produzione.py	banco.py
+NONRAGG	Betfair/stream/scalper/validazione_hazard/raccogli.py	banco.py
+LIVE	Betfair/stream/scalper/validazione_hazard/stati.py	stati.py<-atlante_v4.py<-genera_atlante.py
+NONRAGG	Betfair/stream/scalper/validazione_hazard/taratura_b1.py	taratura_b1.py
+LIVE	Betfair/stream/scores/__init__.py	__init__.py<-omega_service.py
+LIVE	Betfair/stream/scores/api_football.py	api_football.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/scores/base.py	base.py<-scan_feed.py<-tennis_runner.py
+LIVE	Betfair/stream/scores/betfair_inplay.py	betfair_inplay.py<-tennis_runner.py
+LIVE	Betfair/stream/scores/poller.py	poller.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/scores/scan_feed.py	scan_feed.py<-tennis_runner.py
+LIVE	Betfair/stream/single_instance.py	single_instance.py<-tennis_runner.py
+LIVE	Betfair/stream/sottoscrizione_a_caldo.py	sottoscrizione_a_caldo.py<-iscrizione_a_caldo.py<-tennis_runner.py
+LIVE	Betfair/stream/stream_muto.py	stream_muto.py<-tennis_runner.py
+LIVE	Betfair/stream/sveglia_canale.py	sveglia_canale.py<-tennis_bot_service.py
+LIVE	Betfair/stream/tempi_ordine.py	tempi_ordine.py<-esecutore_tennis.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/__init__.py	__init__.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/auto_mode.py	auto_mode.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/canale_bot_tennis.py	canale_bot_tennis.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/certificazione_bot.py	certificazione_bot.py<-registro_bot.py<-applica_bot.py<-worker.py
+LIVE	Betfair/stream/tennis_live/chiusura_manuale.py	chiusura_manuale.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/esecutore_tennis.py	esecutore_tennis.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/guardie_tennis.py	guardie_tennis.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/iscrizione_a_caldo.py	iscrizione_a_caldo.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/mercati_registrati.py	mercati_registrati.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/ordini_esterni_tennis.py	ordini_esterni_tennis.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/paper_execution.py	paper_execution.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/tennis_bot_service.py	tennis_bot_service.py
+LIVE	Betfair/stream/tennis_live/tennis_db.py	tennis_db.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/tennis_live_order_worker.py	tennis_live_order_worker.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/tennis_recorder.py	tennis_recorder.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_live/tennis_runner.py	tennis_runner.py
+NONRAGG	Betfair/stream/tennis_live/tests/__init__.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_cantiere5_parcheggio_tennis_2026_10_08.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_cantiere6_nomi_setup_gate_2026_10_08.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_esatte_2026_09_28.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_cantiere_d2_chiusure_via_bot_2026_09_28.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_cantiere_d2_minimo_e_specchio_2026_09_28.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_cantiere_t_pro_residuo_2026_09_28.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_cantiere_t_scalper_sequenze_2026_09_28.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_certificazione_pro_scalper_2026_10_04.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_chiudi_ora_bot_tennis_2026_09_24.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_d4_gate_aperto_esposti_2026_10_08.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_falsificazione_bot_tennis_2026_09_17.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_fine_evento_tennis_2026_09_28.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_ladder_modo_effettivo_tennis_2026_10_04.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_modalita_e_guardie_tennis_2026_09_24.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_modo_effettivo_tennis_2026_10_04.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_motore_ordini_tennis_2026_09_25.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_nomi_names_json_2026_10_08.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_paper_execution_gap5.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_paper_live_separati_tennis_2026_10_04.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_ponte_interruttori_2026_09_17.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_pro_fade_dopo_break_2026_10_07.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_pro_nome_ips_troncato_2026_10_07.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_pro_prezzo_vivo_2026_10_07.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_r2_tennis_paper_al_nuovo_avvio_2026_09_25.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_rec_tutti_i_mercati_2026_10_07.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_residui_flb_swing_2026_10_04.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_residui_ricordati_2026_10_04.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_scalper_tennis_cp4_parcheggio_2026_10_07.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_set_summary_2026_09_26.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_soldi_veri_bot_tennis_2026_10_04.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_specchio_pnl_ref_2026_09_17.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_audit_runner.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_auto_mode_2026_09_25.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_bot_canale_f3_2026_09_18.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_bot_canale_posizioni_2026_09_24.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_bot_params.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_bot_service_lock.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_cashout_amount_2026_09_10.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_chiusura_2026_09_26.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_firme_e_proposte_2026_09_28.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_hardening.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_iscrizione_a_caldo_2026_09_25.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_ladder.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_mission_done.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_order_payload.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_pro_superficie_runner_2026_09_25.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_recorder.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_score_state.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_single_stream_2026_09_09.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_tennis_uscite_manuali_al_riavvio_2026_09_28.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_w3b_ordini_esterni_tennis_2026_10_08.py	
+NONRAGG	Betfair/stream/tennis_live/tests/test_worker_minimi_tennis_2026_10_04.py	
+NONRAGG	Betfair/stream/tennis_live/tools/__init__.py	
+NONRAGG	Betfair/stream/tennis_live/tools/replay_bot.py	replay_bot.py
+NONRAGG	Betfair/stream/tennis_replay/__init__.py	
+LIVE	Betfair/stream/tennis_replay/caricamento.py	caricamento.py<-tennis_recorder.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_replay/convertitore.py	convertitore.py<-tennis_recorder.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_replay/importa.py	importa.py<-tennis_recorder.py<-tennis_runner.py
+NONRAGG	Betfair/stream/tennis_replay/tests/__init__.py	
+NONRAGG	Betfair/stream/tennis_replay/tests/dati_tennis.py	
+NONRAGG	Betfair/stream/tennis_replay/tests/test_caricamento_importa_2026_10_07.py	
+NONRAGG	Betfair/stream/tennis_replay/tests/test_convertitore_2026_10_07.py	
+NONRAGG	Betfair/stream/tennis_replay/tests/test_fine_partita_runner_2026_10_07.py	
+NONRAGG	Betfair/stream/tennis_replay/tests/test_nomi_fonte_2026_10_08.py	
+LIVE	Betfair/stream/tennis_scalper/__init__.py	__init__.py<-tennis_runner.py
+NONRAGG	Betfair/stream/tennis_scalper/backtest_pro.py	backtest_pro.py
+LIVE	Betfair/stream/tennis_scalper/condotta_ordini.py	condotta_ordini.py<-tennis_swing_bot.py<-tennis_runner.py
+NONRAGG	Betfair/stream/tennis_scalper/flb_backtest.py	flb_backtest.py
+LIVE	Betfair/stream/tennis_scalper/ordini_esterni.py	ordini_esterni.py<-ordini_esterni_tennis.py<-tennis_runner.py
+NONRAGG	Betfair/stream/tennis_scalper/record_multi.py	record_multi.py
+NONRAGG	Betfair/stream/tennis_scalper/record_tennis.py	record_tennis.py
+NONRAGG	Betfair/stream/tennis_scalper/research_data.py	
+NONRAGG	Betfair/stream/tennis_scalper/run_tennis_pro.py	run_tennis_pro.py
+LIVE	Betfair/stream/tennis_scalper/run_tennis_scalper.py	run_tennis_scalper.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_scalper/superficie.py	superficie.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_scalper/tennis_flb_bot.py	tennis_flb_bot.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_scalper/tennis_pro_bot.py	tennis_pro_bot.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_scalper/tennis_scalper_bot.py	tennis_scalper_bot.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_scalper/tennis_score.py	tennis_score.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_scalper/tennis_serve_data.py	tennis_serve_data.py<-tennis_opportunity.py<-registro_bot.py<-applica_bot.py
+LIVE	Betfair/stream/tennis_scalper/tennis_swing_bot.py	tennis_swing_bot.py<-tennis_runner.py
+LIVE	Betfair/stream/tennis_scalper/tennis_winprob.py	tennis_winprob.py<-tennis_runner.py
+NONRAGG	Betfair/stream/tennis_scalper/tests/__init__.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_cantiere_u_proposte_a_zero_2026_09_29.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_condotta_ordini_2026_09_17.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_reperti_money_critical_2026_09_17.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_audit_fixes.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_config.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_flb.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_flb_hybrid.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_greenup.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_mission.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_pro.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_pro_staged.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_pro_superficie_2026_09_25.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_score.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_serve_data.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_swing.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_tennis_timeouts.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_uscite_manuali_bot_tennis_2026_09_25.py	
+NONRAGG	Betfair/stream/tennis_scalper/tests/test_uscite_proposte_bot_tennis_2026_09_28.py	
+NONRAGG	Betfair/stream/tennis_scalper/tune_tennis.py	tune_tennis.py
+NONRAGG	Betfair/stream/tests/__init__.py	
+NONRAGG	Betfair/stream/tests/banco_media_under.py	
+NONRAGG	Betfair/stream/tests/conftest.py	
+NONRAGG	Betfair/stream/tests/test_annuncio_modo_2026_09_26.py	
+NONRAGG	Betfair/stream/tests/test_applica_bot_2026_10_06.py	
+NONRAGG	Betfair/stream/tests/test_applica_bot_cartelle_tennis_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_applica_bot_tutti_2026_10_07.py	
+NONRAGG	Betfair/stream/tests/test_arresto_ordinato_comportamento_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_atlante_a_domanda_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_atlante_a_domanda_coda_scrittura_2026_09_26.py	
+NONRAGG	Betfair/stream/tests/test_atlante_v4_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_atlante_v4_collegato_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_atlante_v4_forza_id_squadra_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_atlante_v4_stagione_rif_per_lega_2026_09_26.py	
+NONRAGG	Betfair/stream/tests/test_audit_fixes_2026_07.py	
+NONRAGG	Betfair/stream/tests/test_audit_non_silenzioso_2026_09_23.py	
+NONRAGG	Betfair/stream/tests/test_auto_follow_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_avvio_app_2026_09_16.py	
+NONRAGG	Betfair/stream/tests/test_backtest.py	
+NONRAGG	Betfair/stream/tests/test_backtest_coverage_2026_07_17.py	
+NONRAGG	Betfair/stream/tests/test_banco_ambiente_dichiarato_2026_10_02.py	
+NONRAGG	Betfair/stream/tests/test_banco_annullo_confermato_2026_09_30.py	
+NONRAGG	Betfair/stream/tests/test_banco_attraversa_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_banco_comune_2026_09_16.py	
+NONRAGG	Betfair/stream/tests/test_banco_decisioni_sera_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_banco_flusso_interrotto_cantiere_j2_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_banco_identita_2026_09_16.py	
+NONRAGG	Betfair/stream/tests/test_banco_isolamento_conto_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_banco_mike_ondata2_2026_09_30.py	
+NONRAGG	Betfair/stream/tests/test_banco_minimi_it_2026_10_02.py	
+NONRAGG	Betfair/stream/tests/test_banco_prestazioni_2026_09_30.py	
+NONRAGG	Betfair/stream/tests/test_banco_replay_veloce_2026_10_02.py	
+NONRAGG	Betfair/stream/tests/test_banco_rifiuto_sul_canale_2026_09_30.py	
+NONRAGG	Betfair/stream/tests/test_banco_rivalutazione_cambio_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_banco_scalper_sniper_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_banco_scanner_reperti_rb_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_banco_scavalco_rifiuti_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_banco_uf2_parcheggio_lay_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_banco_uscite_dichiarate_n3_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_banco_uscite_manuali_n3_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_banco_velocita_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_beta_forza_da_artefatto_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_bias_resolver.py	
+NONRAGG	Betfair/stream/tests/test_board_quote_flumine_2026_09_30.py	
+NONRAGG	Betfair/stream/tests/test_build_order_client.py	
+NONRAGG	Betfair/stream/tests/test_canale_bot_cancellazione_c6c_2026_09_23.py	
+NONRAGG	Betfair/stream/tests/test_canale_bot_f3_2026_09_18.py	
+NONRAGG	Betfair/stream/tests/test_canale_origine_token_c1_2026_09_24.py	
+NONRAGG	Betfair/stream/tests/test_cantiere_s3_critical_e_replacing_2026_09_29.py	
+NONRAGG	Betfair/stream/tests/test_cantiere_s3_uf2_attribuzione_2026_09_29.py	
+NONRAGG	Betfair/stream/tests/test_cantiere_s4_scratch_firmato_esatto_2026_09_29.py	
+NONRAGG	Betfair/stream/tests/test_cantiere_s4_uf2_altro_mercato_2026_09_29.py	
+NONRAGG	Betfair/stream/tests/test_cantiere_s_bis_sniper_2026_09_29.py	
+NONRAGG	Betfair/stream/tests/test_cantiere_s_scalper_ko_2026_09_29.py	
+NONRAGG	Betfair/stream/tests/test_cantiere_v2_replay_veloce_2026_09_29.py	
+NONRAGG	Betfair/stream/tests/test_cantiere_v_replay_veloce_2026_09_29.py	
+NONRAGG	Betfair/stream/tests/test_cashout_complete_ft.py	
+NONRAGG	Betfair/stream/tests/test_cashout_pro_2026_09_10.py	
+NONRAGG	Betfair/stream/tests/test_cert_banco_2026_09_16.py	
+NONRAGG	Betfair/stream/tests/test_certifica_esito_dichiarate_2026_09_17.py	
+NONRAGG	Betfair/stream/tests/test_certifica_freni_ambiente_d1quater_2026_09_29.py	
+NONRAGG	Betfair/stream/tests/test_certifica_freni_da_banco_2026_09_24.py	
+NONRAGG	Betfair/stream/tests/test_certifica_replay_esploso_2026_09_23.py	
+NONRAGG	Betfair/stream/tests/test_chiusura_parziale_2026_09_23.py	
+NONRAGG	Betfair/stream/tests/test_conto_ordini_canale_2026_09_30.py	
+NONRAGG	Betfair/stream/tests/test_conto_w3a_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_contratto_cicli_bot_ts_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_contratto_strada_unica_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_controls.py	
+NONRAGG	Betfair/stream/tests/test_coordinatore_cancello_uscite_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_cp1_campi_non_scritti_2026_09_23.py	
+NONRAGG	Betfair/stream/tests/test_curator.py	
+NONRAGG	Betfair/stream/tests/test_curatore_stato_2026_10_07.py	
+NONRAGG	Betfair/stream/tests/test_custode_sessione_runner_2026_09_26.py	
+NONRAGG	Betfair/stream/tests/test_daily_pnl.py	
+NONRAGG	Betfair/stream/tests/test_daily_stop_worker.py	
+NONRAGG	Betfair/stream/tests/test_db_client_timeout_bot_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_db_delete_event_rows.py	
+NONRAGG	Betfair/stream/tests/test_db_insert_resilient.py	
+NONRAGG	Betfair/stream/tests/test_db_live_ladder.py	
+NONRAGG	Betfair/stream/tests/test_db_live_order.py	
+NONRAGG	Betfair/stream/tests/test_db_upsert_live_account_manual_pnl.py	
+NONRAGG	Betfair/stream/tests/test_dutching.py	
+NONRAGG	Betfair/stream/tests/test_event_exposure_control.py	
+NONRAGG	Betfair/stream/tests/test_fine_evento_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_firma_scaduta_ttl_n3_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_flumine_paper_fidelity_2026_07_16.py	
+NONRAGG	Betfair/stream/tests/test_fok_ttl.py	
+NONRAGG	Betfair/stream/tests/test_frammenti_fine_evento_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_frammenti_id_riciclato_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_frammenti_mercato_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_frammenti_tcp_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_genera_atlante_2026_09_24.py	
+NONRAGG	Betfair/stream/tests/test_genera_atlante_scrittura_ritentativi_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_greenup.py	
+NONRAGG	Betfair/stream/tests/test_greenup_fuori_bot_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_greenup_fuori_bot_annullo_app_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_hedging.py	
+NONRAGG	Betfair/stream/tests/test_ladder_canale_2026_09_23.py	
+NONRAGG	Betfair/stream/tests/test_ladder_worker.py	
+NONRAGG	Betfair/stream/tests/test_live_engine.py	
+NONRAGG	Betfair/stream/tests/test_live_engine_pro.py	
+NONRAGG	Betfair/stream/tests/test_live_journal.py	
+NONRAGG	Betfair/stream/tests/test_live_market_types_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_live_order_build.py	
+NONRAGG	Betfair/stream/tests/test_live_order_controls.py	
+NONRAGG	Betfair/stream/tests/test_live_order_dutch_cashout.py	
+NONRAGG	Betfair/stream/tests/test_live_order_greenup.py	
+NONRAGG	Betfair/stream/tests/test_live_order_queue_authz.py	
+NONRAGG	Betfair/stream/tests/test_live_order_worker.py	
+NONRAGG	Betfair/stream/tests/test_live_orders_account_open_2026_09_30.py	
+NONRAGG	Betfair/stream/tests/test_live_trading_strategy.py	
+NONRAGG	Betfair/stream/tests/test_local_channel.py	
+NONRAGG	Betfair/stream/tests/test_minimi_banco_2026_10_02.py	
+NONRAGG	Betfair/stream/tests/test_minimi_punte_050_2026_10_04.py	
+NONRAGG	Betfair/stream/tests/test_modo_ordini_ui_2026_09_24.py	
+NONRAGG	Betfair/stream/tests/test_motore_ordini_2026_09_24.py	
+NONRAGG	Betfair/stream/tests/test_motore_ordini_mercato_due_esiti_2026_09_29.py	
+NONRAGG	Betfair/stream/tests/test_motore_ordini_riavvio2_2026_09_26.py	
+NONRAGG	Betfair/stream/tests/test_motore_probabilistico_2026_09_12.py	
+NONRAGG	Betfair/stream/tests/test_motore_ritiro_pendente_d1ter_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_motore_submin_fok_caso_b_d1ter_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_net_retry.py	
+NONRAGG	Betfair/stream/tests/test_paper_live_stesso_processo_2026_09_16.py	
+NONRAGG	Betfair/stream/tests/test_pnl_betfair_reale_2026_09_24.py	
+NONRAGG	Betfair/stream/tests/test_pnl_unico_conto_2026_10_04.py	
+NONRAGG	Betfair/stream/tests/test_poller.py	
+NONRAGG	Betfair/stream/tests/test_porta_banco_f4_2026_09_24.py	
+NONRAGG	Betfair/stream/tests/test_proposta_sempre_coi_numeri_2026_09_29.py	
+NONRAGG	Betfair/stream/tests/test_proposte_modello_2026_09_23.py	
+NONRAGG	Betfair/stream/tests/test_punteggi_canale_2026_09_23.py	
+NONRAGG	Betfair/stream/tests/test_punto6_b_stato_bot_e_battito_tennis_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_punto6_battito_modo_ordini_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_r3_freno_unico_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_raw_recmeta_stall.py	
+NONRAGG	Betfair/stream/tests/test_reconcile_worker.py	
+NONRAGG	Betfair/stream/tests/test_record_optin_2026_07_17.py	
+NONRAGG	Betfair/stream/tests/test_recorder_serialize.py	
+NONRAGG	Betfair/stream/tests/test_registro_bot_2026_09_16.py	
+NONRAGG	Betfair/stream/tests/test_registro_impronta_2026_09_30.py	
+NONRAGG	Betfair/stream/tests/test_replay_professionale_2026_10_07.py	
+NONRAGG	Betfair/stream/tests/test_replay_scalper_attiva_adesso_2026_10_07.py	
+NONRAGG	Betfair/stream/tests/test_replay_scalper_db_isolato_2026_10_06.py	
+NONRAGG	Betfair/stream/tests/test_resilienza_rete_fix_c_scalper_2026_09_26.py	
+NONRAGG	Betfair/stream/tests/test_resume_db_helpers.py	
+NONRAGG	Betfair/stream/tests/test_rete_gateway_html_2026_10_01.py	
+NONRAGG	Betfair/stream/tests/test_review_finale_2026_07_17.py	
+NONRAGG	Betfair/stream/tests/test_riconciliazione_tradotti_2026_10_02.py	
+NONRAGG	Betfair/stream/tests/test_riserva_runner_cantiere_j2_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_risk_engine.py	
+NONRAGG	Betfair/stream/tests/test_risk_engine_worker.py	
+NONRAGG	Betfair/stream/tests/test_risk_semaphore_2026_07_11.py	
+NONRAGG	Betfair/stream/tests/test_runner_guardia_canale_locale_2026_09_23.py	
+NONRAGG	Betfair/stream/tests/test_runner_lifecycle.py	
+NONRAGG	Betfair/stream/tests/test_runner_live_strategy.py	
+NONRAGG	Betfair/stream/tests/test_runner_minimi_chiusure_2026_10_01.py	
+NONRAGG	Betfair/stream/tests/test_runner_minimi_correzioni_2026_10_02.py	
+NONRAGG	Betfair/stream/tests/test_runner_modo_e_guardia_2026_09_23.py	
+NONRAGG	Betfair/stream/tests/test_saldo_evento_2026_09_23.py	
+NONRAGG	Betfair/stream/tests/test_scalper_arresto_ordinato_2026_10_02.py	
+NONRAGG	Betfair/stream/tests/test_scalper_audit_2026_07_09.py	
+NONRAGG	Betfair/stream/tests/test_scalper_auto_mode_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_scalper_bot.py	
+NONRAGG	Betfair/stream/tests/test_scalper_certificazione_2026_09_24.py	
+NONRAGG	Betfair/stream/tests/test_scalper_chiusura_al_centesimo_2026_10_07.py	
+NONRAGG	Betfair/stream/tests/test_scalper_control_room_2026_09_24.py	
+NONRAGG	Betfair/stream/tests/test_scalper_fill_simultanei_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_scalper_freno_origine_2026_09_26.py	
+NONRAGG	Betfair/stream/tests/test_scalper_live_cli_guardia_2026_09_24.py	
+NONRAGG	Betfair/stream/tests/test_scalper_media_under_2026_10_05.py	
+NONRAGG	Betfair/stream/tests/test_scalper_media_under_attiva_adesso_2026_10_07.py	
+NONRAGG	Betfair/stream/tests/test_scalper_media_under_banca_spostata_2026_10_07.py	
+NONRAGG	Betfair/stream/tests/test_scalper_media_under_giro2_2026_10_05.py	
+NONRAGG	Betfair/stream/tests/test_scalper_media_under_giro3_2026_10_06.py	
+NONRAGG	Betfair/stream/tests/test_scalper_media_under_giro4_2026_10_06.py	
+NONRAGG	Betfair/stream/tests/test_scalper_mission_2026_07_10.py	
+NONRAGG	Betfair/stream/tests/test_scalper_pnl_settled_2026_07_16.py	
+NONRAGG	Betfair/stream/tests/test_scalper_presize_2026_07_11.py	
+NONRAGG	Betfair/stream/tests/test_scalper_residui_e_soldi_veri_2026_10_04.py	
+NONRAGG	Betfair/stream/tests/test_scalper_residuo_c3_e_tetto_2026_10_07.py	
+NONRAGG	Betfair/stream/tests/test_scalper_session_gates_2026_07_16.py	
+NONRAGG	Betfair/stream/tests/test_scalper_uscite_automatiche_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_scalper_uscite_manuali_al_riavvio_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_scan_feed_2026_09_09.py	
+NONRAGG	Betfair/stream/tests/test_scores_parse.py	
+NONRAGG	Betfair/stream/tests/test_segui_live_aggancio_a_caldo_2026_10_06.py	
+NONRAGG	Betfair/stream/tests/test_sniper_bot_2026_07_10.py	
+NONRAGG	Betfair/stream/tests/test_sniper_is_flat_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_sniper_uscite_automatiche_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_sottoscrizione_a_caldo_unica_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_spegnimento_ordinato_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_stato_mercato_freno_2026_09_24.py	
+NONRAGG	Betfair/stream/tests/test_stop_framework.py	
+NONRAGG	Betfair/stream/tests/test_strada_unica_banco_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_stream_heartbeat_stall_2026_07_17.py	
+NONRAGG	Betfair/stream/tests/test_stream_muto_cablato_cantiere_j2_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_stream_muto_cantiere_j_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_stream_stallo_2026_09_26.py	
+NONRAGG	Betfair/stream/tests/test_sub_worker_flat_guard_2026_07_17.py	
+NONRAGG	Betfair/stream/tests/test_submin.py	
+NONRAGG	Betfair/stream/tests/test_submin_contratto_chiamanti_2026_09_17.py	
+NONRAGG	Betfair/stream/tests/test_submin_nucleo_2026_09_17.py	
+NONRAGG	Betfair/stream/tests/test_submin_rimpiazzo_non_nato_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_sveglia_bot_f5_f6_2026_09_18.py	
+NONRAGG	Betfair/stream/tests/test_sveglia_canale_f5_f6_2026_09_18.py	
+NONRAGG	Betfair/stream/tests/test_sync_account_worker_wiring.py	
+NONRAGG	Betfair/stream/tests/test_tempi_ordine_f0_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_tennis_bot_daily_giorno_partita_2026_09_30.py	
+NONRAGG	Betfair/stream/tests/test_theta_bot_2026_07_15.py	
+NONRAGG	Betfair/stream/tests/test_theta_cecchino_2026_07_16.py	
+NONRAGG	Betfair/stream/tests/test_trasporto_parita_mode_d1ter_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_uploader_sweep_2026_07_17.py	
+NONRAGG	Betfair/stream/tests/test_uscite_manuali_al_nuovo_avvio_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_validate_recordings.py	
+NONRAGG	Betfair/stream/tests/test_validate_recordings_2026_07_17.py	
+NONRAGG	Betfair/stream/tests/test_validazione_hazard_2026_09_25.py	
+NONRAGG	Betfair/stream/tests/test_valuta_k1_2026_09_26.py	
+NONRAGG	Betfair/stream/tests/test_w3b_ordini_esterni_scalper_2026_10_08.py	
+NONRAGG	Betfair/stream/tests/test_watchdog.py	
+NONRAGG	Betfair/stream/tests/test_watchdog_nome_modulo_2026_09_26.py	
+NONRAGG	Betfair/stream/tests/test_whitelist_linee_sniper_2026_09_28.py	
+NONRAGG	Betfair/stream/tests/test_xhedge.py	
+NONRAGG	Betfair/stream/tests/test_xhedge_worker.py	
+NONRAGG	Betfair/stream/tests/tradotti_comuni.py	
+NONRAGG	Betfair/stream/tools/__init__.py	
+NONRAGG	Betfair/stream/tools/falsifica_sveglia_f5_f6_2026_09_18.py	falsifica_sveglia_f5_f6_2026_09_18.py
+NONRAGG	Betfair/stream/tools/leggi_tempi_ordine.py	leggi_tempi_ordine.py
+LIVE	Betfair/stream/tools/validate_recordings.py	validate_recordings.py<-run_backtest.py<-worker.py
+LIVE	Betfair/stream/trading/__init__.py	__init__.py<-omega_service.py
+LIVE	Betfair/stream/trading/controls.py	controls.py<-omega_service.py
+LIVE	Betfair/stream/trading/daily_pnl.py	daily_pnl.py<-daily_stop_worker.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/trading/dutching.py	dutching.py<-live_order_worker.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/trading/esposizione_fuori_bot.py	esposizione_fuori_bot.py<-ordini_esterni_tennis.py<-tennis_runner.py
+LIVE	Betfair/stream/trading/freno_rifiuti.py	freno_rifiuti.py<-condotta_ordini.py<-tennis_swing_bot.py<-tennis_runner.py
+LIVE	Betfair/stream/trading/greenup.py	greenup.py<-tennis_live_order_worker.py<-tennis_runner.py
+LIVE	Betfair/stream/trading/hedging.py	hedging.py<-live_order_worker.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/trading/minimi_it.py	minimi_it.py<-tennis_live_order_worker.py<-tennis_runner.py
+LIVE	Betfair/stream/trading/risk_engine.py	risk_engine.py<-execution.py<-omega_service.py
+LIVE	Betfair/stream/trading/stato_mercato.py	stato_mercato.py<-omega_service.py
+LIVE	Betfair/stream/trading/submin.py	submin.py<-esecutore_tennis.py<-tennis_runner.py
+LIVE	Betfair/stream/trading/xhedge.py	xhedge.py<-feed.py<-service.py
+LIVE	Betfair/stream/uploader.py	uploader.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/uscite_proposte.py	uscite_proposte.py<-tennis_runner.py
+LIVE	Betfair/stream/valuta.py	valuta.py<-tennis_runner.py
+LIVE	Betfair/stream/watchdog.py	watchdog.py
+LIVE	Betfair/stream/watchlist.py	watchlist.py<-runner.py<-watchdog.py
+LIVE	Betfair/stream/xhedge_worker.py	xhedge_worker.py<-runner.py<-watchdog.py
+NONRAGG	Betfair/test_betfair_match.py	
+NONRAGG	Betfair/test_realtime_contratto_2026_09_12.py	
+NONRAGG	Betfair/tests/test_consapevolezza_ordine_2026_09_16.py	
+NONRAGG	Betfair/tests/test_contratto_activate_params_2026_09_16.py	
+NONRAGG	Betfair/tests/test_contratto_safe_request_barriera_2026_09_17.py	
+NONRAGG	Betfair/tests/test_contratto_storico_sport_2026_09_17.py	
+NONRAGG	Betfair/tools/_genera_tabella_75.py	
+NONRAGG	Betfair/tools/genera_tabella_75_2026_09_14.py	
+NONRAGG	Betfair/tools/scostamento_fischio_2026_09_13.py	scostamento_fischio_2026_09_13.py
+NONRAGG	Betfair/tools/test_verifica_margine_2026_09_12.py	
+NONRAGG	Betfair/tools/verifica_75_condizioni_2026_09_13.py	verifica_75_condizioni_2026_09_13.py
+NONRAGG	Betfair/tools/verifica_margine_2026_09_12.py	verifica_margine_2026_09_12.py
+NONRAGG	Betfair/tools/verifica_pnl_2026_09_12.py	verifica_pnl_2026_09_12.py
+NONRAGG	Prediction/__init__.py	
+NONRAGG	Prediction/analyze_sweet_spot.py	
+NONRAGG	Prediction/backfill_historical_analysis.py	
+LIVE	Prediction/predictions_results_backfill.py	predictions_results_backfill.py
+NONRAGG	Prediction/test_predictions_results_backfill.py	
+NONRAGG	Prediction/test_today_predictions_backfill_resilienza.py	
+LIVE	Prediction/today_predictions_backfill.py	today_predictions_backfill.py
+NONRAGG	_certify_betfair.py	
+NONRAGG	_certify_betfair_full.py	
+NONRAGG	_certify_delay_context.py	
+NONRAGG	_certify_direction.py	
+NONRAGG	_certify_direction_report.py	
+NONRAGG	_certify_personal_report.py	
+NONRAGG	_certify_signal_context.py	
+NONRAGG	_league_eval.py	
+NONRAGG	_stack_eval.py	
+NONRAGG	admin_reset_password.py	
+NONRAGG	aggiorna_mm_sheets.py	
+NONRAGG	aggiorna_solo_fogli.py	
+LIVE	analytics_market_stats.py	analytics_market_stats.py<-enrich_analytics_snapshots.py
+LIVE	analytics_settlement.py	analytics_settlement.py<-build_analytics_signals.py
+NONRAGG	analyze_recovery.py	
+NONRAGG	analyze_threshold.py	
+LIVE	api_client.py	api_client.py<-daily_yesterday_backfill.py
+LIVE	api_quota.py	api_quota.py<-seasons_catchup.py
+NONRAGG	backfill_poisson_calibrated.py	
+NONRAGG	betfair_full_odds.py	
+LIVE	betfair_tennis_odds.py	betfair_tennis_odds.py
+LIVE	build_analytics_signals.py	build_analytics_signals.py
+LIVE	build_direzione.py	build_direzione.py
+NONRAGG	build_inplay_intensity.py	
+NONRAGG	calibration_analysis.py	
+NONRAGG	certify_backtest_strategy.py	
+NONRAGG	check_gh.py	
+NONRAGG	cleanup_models.py	
+LIVE	cloud_retrain_shard.py	cloud_retrain_shard.py
+NONRAGG	compress_models.py	
+LIVE	compute_ml_post_calibration.py	compute_ml_post_calibration.py
+LIVE	config.py	config.py<-seasons_catchup.py
+LIVE	daily_yesterday_backfill.py	daily_yesterday_backfill.py
+LIVE	db_client.py	db_client.py<-scalper_service.py
+LIVE	db_delete_retry.py	db_delete_retry.py<-season_aggregates.py<-seasons_catchup.py
+NONRAGG	direzione.py	
+LIVE	enrich_analytics_snapshots.py	enrich_analytics_snapshots.py
+NONRAGG	fix_storico_prob.py	
+LIVE	fixtures_backfill.py	fixtures_backfill.py<-daily_yesterday_backfill.py
+NONRAGG	football_data_scraper/__init__.py	
+NONRAGG	football_data_scraper/backfill.py	
+NONRAGG	football_data_scraper/csv_downloader.py	backfill.py
+NONRAGG	football_data_scraper/fix_snapshot_time.py	
+NONRAGG	football_data_scraper/fixture_matcher.py	backfill.py
+NONRAGG	football_data_scraper/league_mapping.py	backfill.py;csv_downloader.py
+NONRAGG	football_data_scraper/odds_column_map.py	backfill.py
+LIVE	generate_dc_rho.py	generate_dc_rho.py
+LIVE	generate_dynamic_cal.py	generate_dynamic_cal.py
+NONRAGG	import_betfair_operations.py	
+LIVE	injuries_backfill.py	injuries_backfill.py<-season_aggregates.py<-seasons_catchup.py
+NONRAGG	laboratorio/__init__.py	
+NONRAGG	laboratorio/scalper_lab/__init__.py	validate_synth.py
+NONRAGG	laboratorio/scalper_lab/bt_lab.py	bt_lab.py;exp_families.py;rdloop.py
+NONRAGG	laboratorio/scalper_lab/bt_theta.py	bt_theta.py
+NONRAGG	laboratorio/scalper_lab/exp_families.py	exp_families.py
+NONRAGG	laboratorio/scalper_lab/grid_strategy.py	
+NONRAGG	laboratorio/scalper_lab/rdloop.py	rdloop.py
+NONRAGG	laboratorio/scalper_lab/scalper_bot_base.py	__init__.py;bt_lab.py
+NONRAGG	laboratorio/scalper_lab/synth_raw.py	synth_raw.py;validate_synth.py
+NONRAGG	laboratorio/scalper_lab/theta_strategy.py	bt_theta.py
+NONRAGG	laboratorio/scalper_lab/validate_synth.py	validate_synth.py
+NONRAGG	laboratorio/tennis_lab/__init__.py	validate.py
+NONRAGG	laboratorio/tennis_lab/lab_grid.py	lab_grid.py;validate.py
+NONRAGG	laboratorio/tennis_lab/lab_grid_score.py	lab_grid_score.py;validate.py
+NONRAGG	laboratorio/tennis_lab/tennis_lab.py	lab_grid.py;tennis_lab_score.py;validate.py
+NONRAGG	laboratorio/tennis_lab/tennis_lab_score.py	lab_grid_score.py
+NONRAGG	laboratorio/tennis_lab/tests/__init__.py	
+NONRAGG	laboratorio/tennis_lab/tests/test_harness_golden.py	
+NONRAGG	laboratorio/tennis_lab/validate.py	validate.py
+NONRAGG	league_orchestrator.py	
+LIVE	leagues_mapper.py	leagues_mapper.py
+NONRAGG	load_poisson_calibration_to_db.py	
+LIVE	logger.py	logger.py<-today_predictions_backfill.py
+NONRAGG	market_intelligence/__init__.py	
+NONRAGG	market_intelligence/audit.py	__init__.py;audit.py;pipeline.py
+NONRAGG	market_intelligence/backtest.py	backtest.py
+NONRAGG	market_intelligence/backtest_audit.py	
+NONRAGG	market_intelligence/calibration.py	__init__.py;pipeline.py
+NONRAGG	market_intelligence/edge_scorer.py	predict_fixture.py;__init__.py;pipeline.py
+NONRAGG	market_intelligence/mi_config.py	audit.py;calibration.py;edge_scorer.py
+NONRAGG	market_intelligence/pipeline.py	__init__.py;edge_scorer.py;pipeline.py
+NONRAGG	market_intelligence/signals.py	__init__.py;pipeline.py
+LIVE	master_backtest.py	master_backtest.py<-generate_dynamic_cal.py
+LIVE	merge_engine_signals.py	merge_engine_signals.py
+NONRAGG	migrations/backfill_engine_signals.py	betfair_report_manager.py
+NONRAGG	missing_fixtures_backfill.py	
+NONRAGG	parse.py	
+LIVE	per_fixture_backfill.py	per_fixture_backfill.py<-daily_yesterday_backfill.py
+LIVE	poisson_calibrator.py	poisson_calibrator.py<-today_predictions_backfill.py
+LIVE	refresh_analytics_bets.py	refresh_analytics_bets.py
+NONRAGG	refresh_dashboard.py	
+NONRAGG	report_mm.py	
+NONRAGG	reset_ai_models.py	
+LIVE	retrain_all_leagues.py	retrain_all_leagues.py<-cloud_retrain_shard.py
+NONRAGG	sanity_check.py	
+LIVE	season_aggregates.py	season_aggregates.py<-seasons_catchup.py
+LIVE	season_backfill.py	season_backfill.py<-seasons_catchup.py
+LIVE	season_gaps.py	season_gaps.py<-daily_yesterday_backfill.py
+LIVE	seasons_catchup.py	seasons_catchup.py
+NONRAGG	simulate_recovery_forward.py	
+NONRAGG	sql/_build_wc_xlsx_2013.py	
+NONRAGG	sql/_cert_wc_compare.py	
+NONRAGG	sql/_cert_wc_fetch.py	
+NONRAGG	sql/_cert_wc_full.py	
+NONRAGG	sql/_verify_delays_math.py	
+LIVE	standings_backfill.py	standings_backfill.py<-season_aggregates.py<-seasons_catchup.py
+NONRAGG	start_order_server.py	
+NONRAGG	tactical_engine/__init__.py	verifica_payload_tacticai.py
+NONRAGG	tactical_engine/_check_fixpred.py	
+NONRAGG	tactical_engine/_inspect_mismatch.py	
+NONRAGG	tactical_engine/_verify_data_worldcup.py	
+NONRAGG	tactical_engine/data_loader.py	run_worldcup.py
+LIVE	tactical_engine/dixon_coles.py	dixon_coles.py<-live_engine_pro.py<-omega_service.py
+NONRAGG	tactical_engine/generate_predictions.py	
+LIVE	tactical_engine/model.py	model.py<-serving.py<-today_predictions_backfill.py
+NONRAGG	tactical_engine/report.py	run_worldcup.py
+NONRAGG	tactical_engine/run_daily.py	run_daily.py
+NONRAGG	tactical_engine/run_worldcup.py	
+LIVE	tactical_engine/serving.py	serving.py<-today_predictions_backfill.py
+NONRAGG	tactical_engine/tests/__init__.py	
+NONRAGG	tactical_engine/tests/test_math.py	
+NONRAGG	tactical_engine/tests/test_rho_ammissibile.py	
+NONRAGG	tactical_engine/tests/test_serving.py	
+NONRAGG	tactical_engine/tests/test_serving_esito_reale_2026_09_26.py	
+NONRAGG	tactical_engine/tests/test_verifica_payload.py	
+NONRAGG	tactical_engine/tools/__init__.py	
+NONRAGG	tactical_engine/tools/verifica_payload_tacticai.py	verifica_payload_tacticai.py
+NONRAGG	test.py	
+NONRAGG	test_actions_fail_rumoroso_2026_09_25.py	
+NONRAGG	test_actions_pipeline_paginazione.py	
+NONRAGG	test_analytics_market_stats.py	
+NONRAGG	test_analytics_settlement.py	
+NONRAGG	test_backfill_automatico_2026_09_25.py	
+NONRAGG	test_build_analytics_signals_kickoff_2026_09_26.py	
+NONRAGG	test_calibrazione_lettura_db.py	
+NONRAGG	test_catchup_57014_2026_09_28.py	
+NONRAGG	test_catchup_57014_ciclo_2026_10_08.py	
+NONRAGG	test_catchup_attesa_concorrenti_2026_09_26.py	
+NONRAGG	test_catchup_avviso_buchi_2026_10_04.py	
+NONRAGG	test_catchup_p4_2026_09_25.py	
+NONRAGG	test_catchup_rete_2026_10_08.py	
+NONRAGG	test_cloud_retrain_shard_ritentativi_2026_09_21.py	
+NONRAGG	test_daily_niente_aggregati_2026_09_25.py	
+NONRAGG	test_delete_ritentativi_2026_09_25.py	
+NONRAGG	test_leagues_mapper_ritentativi_2026_10_04.py	
+NONRAGG	test_merge_engine_signals_kickoff_2026_09_26.py	
+NONRAGG	test_omega_transizioni_notturne_2026_09_25.py	
+NONRAGG	test_orchestratore_niente_refresh_mv_2026_09_25.py	
+NONRAGG	test_refresh_analytics_bets_v2_2026_09_24.py	
+NONRAGG	test_riserva_dinamica_2026_09_25.py	
+NONRAGG	tmp_analysis.py	
+NONRAGG	tmp_analysis2.py	
+NONRAGG	tmp_predict_today.py	
+NONRAGG	tmp_smoke_ml_fixes.py	
+NONRAGG	tmp_smoke_poisson_fixes.py	
+NONRAGG	tmp_smoke_stack.py	
+NONRAGG	tmp_today_predictions.py	
+NONRAGG	tmp_train_today.py	
+NONRAGG	tmp_validate_league.py	
+NONRAGG	tmp_validate_predict.py	
+NONRAGG	tools/omega_validate_models.py	omega_validate_models.py
+NONRAGG	tools/omega_watch.py	
+NONRAGG	tools/replay_barra_fixture.py	
+NONRAGG	tools/test_catena_action_2026_10_09.py	
+NONRAGG	tools/test_replay_barra_fixture.py	
+LIVE	top_assists_backfill.py	top_assists_backfill.py<-season_aggregates.py<-seasons_catchup.py
+LIVE	top_cards_backfill.py	top_cards_backfill.py<-season_aggregates.py<-seasons_catchup.py
+LIVE	top_scorers_backfill.py	top_scorers_backfill.py<-season_aggregates.py<-seasons_catchup.py
+LIVE	training_planner.py	training_planner.py<-cloud_retrain_shard.py
+NONRAGG	update_dashboard_only.py	
+LIVE	update_poisson_calibration.py	update_poisson_calibration.py
+NONRAGG	valida_motore_poisson.py	
+NONRAGG	valida_ventaglio.py	
+LIVE	validate_walkforward.py	validate_walkforward.py
+NONRAGG	value_engine/__init__.py	cli.py;generate_battery.py;markets.py
+NONRAGG	value_engine/bivariate.py	generate_battery.py;markets.py
+NONRAGG	value_engine/calibrate.py	calibrate.py
+NONRAGG	value_engine/cli.py	cli.py
+LIVE	value_engine/devig.py	devig.py<-omega_model.py<-omega_service.py
+NONRAGG	value_engine/generate_battery.py	
+LIVE	value_engine/goal_timing.py	goal_timing.py<-opportunity.py<-service.py
+NONRAGG	value_engine/markets.py	__init__.py;cli.py;generate_battery.py
+LIVE	value_engine/poisson_total.py	poisson_total.py<-omega_model.py<-omega_service.py
+NONRAGG	value_engine/pricing.py	__init__.py;cli.py;generate_battery.py
+NONRAGG	value_engine/test_bivariate_mc.py	
+NONRAGG	ventaglio_segnali.py	valida_ventaglio.py

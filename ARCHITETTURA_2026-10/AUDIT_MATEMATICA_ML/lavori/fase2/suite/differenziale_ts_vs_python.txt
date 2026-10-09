@@ -1,0 +1,2 @@
+casi 20000 divergenti 0
+tick griglia 99900 divergenti 0

@@ -1,0 +1,19 @@
+
+ RUN  v3.2.6 C:/Users/Admin/Desktop/PYTHON DATABASE/python-database-automation/frontend
+
+ ✓ src/components/live/DutchingPanel.test.tsx (28 tests) 8430ms
+   ✓ DutchingPanel > l'anteprima book% si aggiorna al variare delle selezioni  584ms
+   ✓ DutchingPanel > il profitto obiettivo modifica il targetProfit inviato  376ms
+   ✓ DutchingPanel > pricing 'nominated' mostra il prezzo nominato e lo passa a sendDutch  419ms
+   ✓ DutchingPanel - M11: anteprima variable = numeri del server > caso A: quote 2.5/3/4, pesi 1/2/1, T=100 -> stake 40.51/34.18/25.32, profitti 1.26/2.53/1.27  766ms
+   ✓ DutchingPanel - M11: anteprima variable = numeri del server > caso B: quote 2/5, pesi 1/3, T=50 -> stake 31.82/18.18, profitti 13.64/40.90  588ms
+   ✓ DutchingPanel - M11: anteprima variable = numeri del server > caso C: quote fuori tick 2.01/3.03 (il server le porta a 2.02/3.05), pesi 1.5/1/2, T=37.5  885ms
+   ✓ DutchingPanel - M11: anteprima variable = numeri del server > pesi irrealizzabili (stake negativo): messaggio, nessuno stake mostrato, invio bloccato  807ms
+   ✓ DutchingPanel - M11: anteprima variable = numeri del server > book > 100% ma realizzabile: stessi numeri del server (quote 1.5/1.8/3, pesi 1/1/2, T=10)  713ms
+   ✓ DutchingPanel - M11: anteprima variable = numeri del server > 4 gambe, pesi decimali, T=123.45 (profitti negativi piccoli)  1043ms
+
+ Test Files  1 passed (1)
+      Tests  28 passed (28)
+   Start at  13:08:35
+   Duration  16.16s (transform 522ms, setup 1.19s, collect 854ms, tests 8.43s, environment 3.64s, prepare 329ms)
+

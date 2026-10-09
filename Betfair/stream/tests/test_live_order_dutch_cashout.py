@@ -261,3 +261,56 @@ def test_cashout_all_is_single_market_scope():
     wk._do_cashout_all(sb, _fl(m1), row, "paper", _STRAT)
     assert row["result"]["scope"] == "market"
     assert len(row["result"]["legs"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# A1 (audit matematica ML, fase 2): variable + LAY rifiutato dal worker.
+# dutch_variable restituisce SEMPRE side="back": prima del fix il worker piazzava
+# ordini BACK per una richiesta LAY. Come target+lay: errore esplicito, zero ordini.
+# ---------------------------------------------------------------------------
+def _variable_row(rid: int, side: str) -> Dict[str, Any]:
+    return {"id": rid, "market_id": "1.1", "handicap": 0, "action": "dutch",
+            "params": {"selections": [{"selection_id": 10, "price": 2.5, "weight": 1.0},
+                                      {"selection_id": 20, "price": 3.0, "weight": 2.0},
+                                      {"selection_id": 30, "price": 4.0, "weight": 1.0}],
+                       "total_stake": 100.0, "side": side, "mode": "variable"}}
+
+
+def test_dutch_variable_lay_is_rejected_with_zero_orders():
+    row = _variable_row(20, "lay")
+    sb = _Sb([row])
+    market = _Market("1.1")
+    with pytest.raises(ValueError, match="mode=variable: supportato solo per back"):
+        wk._do_dutch(sb, _fl(market), row, "paper", _STRAT)
+    assert market.placed == []          # zero ordini
+    assert "result" not in row          # nessun "done" scritto: lo scrive il chiamante come errore
+
+
+def test_dutch_variable_lay_is_rejected_even_when_pricing_would_fail():
+    # il rifiuto avviene PRIMA di qualsiasi calcolo/prezzo: stesso errore, non quello del prezzo
+    row = _variable_row(21, "lay")
+    del row["params"]["selections"][0]["price"]   # _price_or_raise fallirebbe con un altro messaggio
+    sb = _Sb([row])
+    market = _Market("1.1")
+    with pytest.raises(ValueError, match="mode=variable: supportato solo per back"):
+        wk._do_dutch(sb, _fl(market), row, "paper", _STRAT)
+    assert market.placed == []
+
+
+def test_dutch_variable_back_unchanged_places_server_plan():
+    # profitti attesi = VERA dutch_variable([(10,2.5,1),(20,3.0,2),(30,4.0,1)], 100) eseguita
+    # (stake 40.51/34.18/25.32). build_order porta poi la punta al multiplo di 0,50 per difetto
+    # (regola di giurisdizione, fuori da questo fix): 40.50/34.00/25.00. Caratterizzazione.
+    row = _variable_row(22, "back")
+    sb = _Sb([row])
+    market = _Market("1.1")
+    wk._do_dutch(sb, _fl(market), row, "paper", _STRAT)
+    assert len(market.placed) == 3
+    assert row["status"] == "done"
+    legs = row["result"]["legs"]
+    assert [(g["selection_id"], g["side"], g["price"], g["size"], g["profit_if_wins"]) for g in legs] == [
+        (10, "back", 2.5, 40.5, 1.26),
+        (20, "back", 3.0, 34.0, 2.53),
+        (30, "back", 4.0, 25.0, 1.27),
+    ]
+    assert all(o.side == "BACK" for o in market.placed)

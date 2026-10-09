@@ -8,8 +8,9 @@
 //
 // Matematica QUI = solo anteprima:
 //   book% = Σ(1/quota)·100  (bookPercentage da @/lib/riskMath)
-//   peso base_i = 1/quota_i ; variable → base_i·peso_utente_i
-//   stake_i = totale · peso_i / Σpeso
+//   equal : peso base_i = 1/quota_i ; stake_i = totale · peso_i / Σpeso
+//   variable: IDENTICA a `dutch_variable` del server (profitto ∝ peso utente), vedi
+//             `dutchVariablePlan` (solo BACK: sul lato Lay il worker la rifiuta)
 //   BACK: profitto_se_vince_i = stake_i·quota_i − totale (equal → uguale per tutte)
 //   LAY : responsabilità_i    = stake_i·(quota_i − 1)
 //   BACK favorevole se book% < 100 · LAY favorevole se book% > 100.
@@ -29,7 +30,7 @@ import { bookPercentage } from '@/lib/riskMath';
 import {
     sendDutch, shouldResetLiveConfirm,
     type LiveOrderMode, type LiveOrderSide, type LivePersistence,
-    type DutchMode, type DutchPricing,
+    type DutchMode, type DutchPricing, type LiveOrderResult,
 } from '@/lib/liveOrders';
 
 // 'off' = runner senza ordini: pannello in sola lettura (zero regressioni).
@@ -80,6 +81,93 @@ const num = (s: string): number | null => {
 const money = (v?: number | null) =>
     v == null || !Number.isFinite(v) ? '—' : `${v < 0 ? '−' : ''}€${Math.abs(v).toFixed(2)}`;
 const r2 = (x: number) => Math.round(x * 100) / 100;
+
+// ------------------- aritmetica IDENTICA al server (dutch_variable) -------------------
+// Il server calcola in Python: `round(x, 2)` arrotonda sul valore binario ESATTO e, sui
+// pareggi esatti (x = j/8 con j dispari: 0.125, 0.375, ...), va al pari; `sum()` dei float
+// e' compensata (Neumaier, da Python 3.12). Math.round(x*100)/100 differisce da entrambi.
+
+/** `round(x, 2)` di Python: sul valore binario esatto, pareggi esatti al centesimo pari. */
+export function pyRound2(x: number): number {
+    if (!Number.isFinite(x)) return x;
+    const a = Math.abs(x);
+    const e = a * 8; // moltiplicare per 2^k e' esatto
+    if (Number.isInteger(e) && e % 2 === 1) { // pareggio esatto: a*100 = n + 0.5
+        const lo = Math.floor(a * 100);
+        const n = lo % 2 === 0 ? lo : lo + 1;
+        return Math.sign(x) * (n / 100);
+    }
+    return Number(x.toFixed(2)); // toFixed e' corretto sul valore binario esatto
+}
+
+/** `sum()` di Python sui float (3.12+): somma compensata alla Neumaier. */
+function pySum(xs: readonly number[]): number {
+    let acc = 0;
+    let c = 0;
+    for (const x of xs) {
+        const t = acc + x;
+        if (!Number.isFinite(t)) { acc = t; continue; }
+        if (Math.abs(acc) >= Math.abs(x)) c += (acc - t) + x; else c += (x - t) + acc;
+        acc = t;
+    }
+    return c !== 0 && Number.isFinite(c) ? acc + c : acc;
+}
+
+// [limite superiore, passo in centesimi] — scala dei tick Betfair (flumine CUTOFFS)
+const TICK_CUTOFFS: ReadonlyArray<readonly [number, number]> = [
+    [2, 1], [3, 2], [4, 5], [6, 10], [10, 20], [20, 50], [30, 100], [50, 200], [100, 500], [1000, 1000],
+];
+
+/** `get_nearest_price` di flumine (quanto usa il server): tick piu' vicino, mezzo tick in su. */
+export function nearestTickPrice(price: number): number {
+    if (price <= 1.01) return 1.01;
+    if (price > 1000) return 1000;
+    let stepCents = 1000;
+    for (const [cutoff, st] of TICK_CUTOFFS) {
+        if (price < cutoff) { stepCents = st; break; }
+    }
+    // aritmetica intera su price*1e8 (i pareggi tipo 2.01 -> 2.02 non dipendono dal float)
+    const x = Math.round(price * 1e8);
+    const k = 1e6 * stepCents;
+    const n = Math.floor((2 * x + k) / (2 * k));
+    return (n * stepCents) / 100;
+}
+
+export interface VariablePlanLeg { price: number; stake: number; profit: number }
+export interface VariablePlan {
+    legs: VariablePlanLeg[];
+    total: number;
+    bookPct: number;
+    /** indice (in `input`) della prima gamba con stake negativo = pesi irrealizzabili; -1 = ok */
+    negativeIndex: number;
+}
+
+/**
+ * Stessa matematica di `dutch_variable` (Betfair/stream/trading/dutching.py): profitto
+ * proporzionale al peso, k = T(1−Σ1/p)/Σ(w/p), s_i = round((T + k·w_i)/p_i, 2),
+ * totale = round(Σs, 2), profitto_i = round(s_i·p_i − totale, 2). I prezzi sono portati al
+ * tick come fa il server. `input` e' GIA' filtrato (quota > 1, peso > 0).
+ */
+export function dutchVariablePlan(
+    input: readonly { price: number; weight: number }[],
+    totalStake: number,
+): VariablePlan {
+    const prices = input.map(l => nearestTickPrice(l.price));
+    const invSum = pySum(prices.map(p => 1 / p));
+    const wpSum = pySum(input.map((l, i) => l.weight / prices[i]));
+    const k = totalStake * (1 - invSum) / wpSum;
+    const bookPct = pyRound2(invSum * 100);
+    const stakes = input.map((l, i) => pyRound2((totalStake + k * l.weight) / prices[i]));
+    const negativeIndex = stakes.findIndex(s => s < 0);
+    if (negativeIndex >= 0) return { legs: [], total: 0, bookPct, negativeIndex };
+    const total = pyRound2(pySum(stakes));
+    return {
+        legs: stakes.map((stake, i) => ({
+            price: prices[i], stake, profit: pyRound2(stake * prices[i] - total),
+        })),
+        total, bookPct, negativeIndex: -1,
+    };
+}
 
 // ----------------------------- badge modalità -----------------------------
 function ModeBadge({ mode }: { mode: DutchPanelMode }) {
@@ -181,7 +269,17 @@ export function DutchingPanel({
         });
 
         const validRaws = raws.filter(r => r.valid);
-        const book = bookPercentage(validRaws.map(r => r.price));
+        // VARIABLE: stessa formula e stessi arrotondamenti del server (profitto ∝ peso).
+        const variable = calcMode === 'variable' && validRaws.length > 0
+            ? dutchVariablePlan(validRaws.map(r => ({ price: r.price, weight: r.userWeight })), enteredTotal)
+            : null;
+        const negLeg = variable != null && variable.negativeIndex >= 0 ? validRaws[variable.negativeIndex] : null;
+        const infeasible: string | null = variable != null && negLeg != null
+            ? `Pesi irrealizzabili con book ${variable.bookPct.toFixed(2)}%: stake negativo sulla selezione `
+                + `«${negLeg.s.name ?? `#${negLeg.s.selection_id}`}» `
+                + '— riduci i pesi o usa Equal (profitto pari). Il server non piazzerebbe nulla.'
+            : null;
+        const book = variable != null ? variable.bookPct : bookPercentage(validRaws.map(r => r.price));
 
         // TARGET (equal-profit): il server dimensiona le gambe dal profitto obiettivo.
         // Stima UI del totale per il lato back: S = T·b/(1−b) con b=book/100 (fattibile solo se book<100).
@@ -196,15 +294,18 @@ export function DutchingPanel({
         const sumW = weighted.reduce((a, b) => a + b.w, 0);
 
         // 3) stake + profitto/responsabilità per gamba.
-        const legs: Leg[] = weighted.map(({ r, w }) => {
-            const stake = sumW > 0 ? r2(total * w / sumW) : 0;
+        const legs: Leg[] = weighted.map(({ r, w }, i) => {
+            // variable: stake/profitto = quelli del server; irrealizzabile = nulla da mostrare.
+            const stake = variable != null
+                ? (variable.legs[i]?.stake ?? 0)
+                : (sumW > 0 ? r2(total * w / sumW) : 0);
             return {
                 selection_id: r.s.selection_id,
                 name: r.s.name ?? `#${r.s.selection_id}`,
                 price: r.price,
                 userWeight: r.userWeight,
                 stake,
-                profitBack: r2(stake * r.price - total),
+                profitBack: variable != null ? (variable.legs[i]?.profit ?? 0) : r2(stake * r.price - total),
                 liability: r2(stake * (r.price - 1)),
             };
         });
@@ -220,13 +321,14 @@ export function DutchingPanel({
             target,
             book,
             bookOk,
+            infeasible,
             legs,
             legById,
             count: legs.length,
             minProfit: profits.length ? Math.min(...profits) : 0,
             maxProfit: profits.length ? Math.max(...profits) : 0,
             totalLiability: liabilities.reduce((a, b) => a + b, 0),
-            sumStake: r2(legs.reduce((a, b) => a + b.stake, 0)),
+            sumStake: variable != null ? variable.total : r2(legs.reduce((a, b) => a + b.stake, 0)),
         };
         // defaultPrice dipende da `side`: incluso nelle deps sotto.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -246,7 +348,13 @@ export function DutchingPanel({
         if (side === 'lay' && isTargetMode) {
             return 'Modalità Target non disponibile sul lato Lay (il worker la rifiuta): usa Equal/Variable.';
         }
+        // A1: dutch_variable e' SOLO back (il worker rifiuta variable + lay): blocco client-side.
+        if (side === 'lay' && calcMode === 'variable') {
+            return 'Modalità Variable non disponibile sul lato Lay (il worker la rifiuta): usa Equal o passa a Back.';
+        }
         if (preview.count < 2) return 'Seleziona almeno 2 selezioni con quota valida.';
+        // M11/V3: pesi irrealizzabili = il server non piazzerebbe nulla → non inviare.
+        if (preview.infeasible) return preview.infeasible;
         if (isTargetMode) {
             if (preview.target <= 0) return 'Profitto obiettivo non valido (> 0).';
         } else if (preview.total <= 0) {
@@ -285,7 +393,15 @@ export function DutchingPanel({
                     ...(calcMode === 'variable' ? { weight: l.userWeight } : {}),
                 })),
             });
-            if (res.ok) {
+            // V3: il worker risponde ok=True ANCHE quando il piano non e' azionabile (es. pesi
+            // irrealizzabili) e non parte alcun ordine: in quel caso `legs` (scritto dal worker
+            // solo dopo il piazzamento) manca o e' vuoto → NON dire "inviato".
+            const placedLegs = (res as LiveOrderResult & { legs?: unknown }).legs;
+            if (res.ok && !(Array.isArray(placedLegs) && placedLegs.length > 0)) {
+                toast.error('Dutching NON piazzato', {
+                    description: res.detail ?? 'nessun ordine partito (piano non azionabile)',
+                });
+            } else if (res.ok) {
                 toast.success('Dutching inviato', {
                     description: [
                         `${preview.count} gambe`,
@@ -375,7 +491,10 @@ export function DutchingPanel({
                         <select className={SELECT_CLS} value={calcMode}
                             onChange={e => setCalcMode(e.target.value as DutchMode)}>
                             <option value="equal">Equal (profitto pari)</option>
-                            <option value="variable">Variable (peso)</option>
+                            {/* A1: Variable e' solo Back (il worker rifiuta variable + lay) */}
+                            <option value="variable" disabled={side === 'lay'}>
+                                Variable (peso{side === 'lay' ? ' — solo Back' : ''})
+                            </option>
                             {/* fix audit #19: Target non disponibile sul lato Lay (il worker lo rifiuta) */}
                             <option value="target" disabled={side === 'lay'}>
                                 Target (profitto obiettivo{side === 'lay' ? ' — solo Back' : ''})
@@ -483,15 +602,16 @@ export function DutchingPanel({
                                                     </td>
                                                 )}
                                                 <td className="py-1.5 px-2 text-right font-mono text-white">
-                                                    {leg ? money(leg.stake) : '—'}
+                                                    {leg && !preview.infeasible ? money(leg.stake) : '—'}
                                                 </td>
                                                 <td className={`py-1.5 pl-2 text-right font-mono ${
-                                                    !leg ? 'text-white/40'
+                                                    !leg || preview.infeasible ? 'text-white/40'
                                                         : sideIsBack
                                                             ? (leg.profitBack >= 0 ? 'text-emerald-300' : 'text-rose-300')
                                                             : 'text-rose-300'
                                                 }`}>
-                                                    {leg ? money(sideIsBack ? leg.profitBack : leg.liability) : '—'}
+                                                    {leg && !preview.infeasible
+                                                        ? money(sideIsBack ? leg.profitBack : leg.liability) : '—'}
                                                 </td>
                                             </tr>
                                         );
@@ -501,6 +621,17 @@ export function DutchingPanel({
                         </div>
                     )}
                 </div>
+
+                {side === 'lay' && calcMode === 'variable' && (
+                    <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] font-bold text-amber-300">
+                        Variable non disponibile sul lato Lay (il worker la rifiuta): passa a Back o scegli Equal.
+                    </div>
+                )}
+                {preview.infeasible && (
+                    <div className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-[11px] font-bold text-rose-300">
+                        {preview.infeasible}
+                    </div>
+                )}
 
                 {/* ---------------- ANTEPRIMA LIVE ---------------- */}
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 md:p-4">
@@ -598,6 +729,8 @@ export function DutchingPanel({
                             || (isNominated && !((num(nominatedPrice) ?? 0) > 1))
                             || bookFresh === false
                             || (side === 'lay' && isTargetMode)
+                            || (side === 'lay' && calcMode === 'variable')
+                            || preview.infeasible != null
                             || (isLive && !confirmLive)}
                         className={`font-black ${
                             sideIsBack

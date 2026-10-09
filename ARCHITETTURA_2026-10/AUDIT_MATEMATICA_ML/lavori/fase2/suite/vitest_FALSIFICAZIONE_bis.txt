@@ -1,0 +1,10 @@
+=== mutazione A1_avviso_e_bottone
+   × DutchingPanel - A1: variable non e' disponibile sul lato Lay > variable poi Lay: motivo leggibile, Piazza disabilitato, sendDutch mai chiamato 188ms
+      Tests  1 failed | 27 passed (28)
+=== mutazione tick
+   × DutchingPanel - M11: anteprima variable = numeri del server > caso C: quote fuori tick 2.01/3.03 (il server le porta a 2.02/3.05), pesi 1.5/1/2, T=37.5 985ms
+   × DutchingPanel - funzioni pure di allineamento al server > nearestTickPrice = get_nearest_price di flumine (mezzo tick verso l'alto) 3ms
+      Tests  2 failed | 26 passed (28)
+=== mutazione infeasible_invio
+   × DutchingPanel - M11: anteprima variable = numeri del server > pesi irrealizzabili (stake negativo): messaggio, nessuno stake mostrato, invio bloccato 734ms
+      Tests  1 failed | 27 passed (28)
