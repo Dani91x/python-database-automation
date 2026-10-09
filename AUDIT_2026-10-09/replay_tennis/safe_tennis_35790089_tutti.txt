@@ -1,0 +1,450 @@
+BOT: safe_tennis | spec: SPEC_STRATEGIA_S.md | registrazioni: 1 in C:\Users\Admin\Desktop\tennis_rec\20260707
+controlli attivi: 35 | flumine 2.13.11 | betfairlightweight 2.23.2 | codice bot e8df07d9904f (19 file)
+comando: python -m Betfair.stream.backtest.certifica safe_tennis 35790089 --scenari tutti
+ambiente del banco (dichiarato; il .env di chi lancia non conta): ESITI_ORDINI_CANALE=0 LIVE_KILL_SWITCH=false LIVE_ORDER_MODE=LIVE MIKE_CANALE_POSIZIONI=0 MIKE_LEGGE_CANALE=0 MIKE_LIVE_ENABLED=1 MIKE_SVEGLIA_CANALE=0 MOTORE_ORDINI_CANALE=0 MOTORE_ORDINI_CANALE_TENNIS=0 OMEGA_CANALE_POSIZIONI=0 OMEGA_LEGGE_CANALE=0 OMEGA_ORDINI_VIA_CANALE=0 OMEGA_SVEGLIA_CANALE=0 PUNTEGGI_CANALE=0 SAFE_BOT_LEGGE_CANALE=0 SAFE_BOT_SVEGLIA_CANALE=0 SAFE_CANALE_POSIZIONI=0 SAFE_ORDINI_VIA_CANALE=0 SAFE_PRE_KO_OU_HOURS=1 SAFE_SCAN_CANALE=0 SAFE_TENNIS_ORDINI_VIA_CANALE=0 SCALPER_CANALE=0 TENNIS_BOT_CANALE=0 TENNIS_BOT_SVEGLIA_CANALE=0 | interruttore ordini del bot: coda=0 canale=1
+qualita' delle registrazioni: COMPLETE x1
+SCENARI: base, paper, paper-iniettata, catalogo-assente, posizione-iniettata, approvata-subito, mai-approvata, bot-fermo, feed-stantio, esiti-ignoti, rifiuti-betfair, uscita-ignota, riavvio, chiusura-fuori-app, chiusura-fuori-app-ridotta, chiusura-abbinata-in-parte, proposta-approvata, proposta-scaduta
+        i numeri di scenari diversi sono confrontabili SOLO dove la sequenza di chiamate e' identica fino al punto confrontato: ogni chiamata bloccante consuma tempo di mercato (in produzione come nel replay) e sposta il book su cui abbina tutto cio' che viene dopo
+
+OK  35790089 [base]  tick=   697 decisioni=  697 azioni=   0 stati=- [COMPLETE]
+      nota: scenario: base — come gira in produzione, percorso LIVE su flumine, competizione dichiarata
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: -
+      nota: righe safe_strategy_trades: 0 {}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2725 | giri del servizio: 694 | righe di scan scritte dallo SCANNER VERO: 681 | mercati: {'MATCH_ODDS': 2725}
+      nota: bet delay: 0 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      motivo x637: no: sets,games,setsPlayed
+      motivo x51: no: games,odds
+      motivo x5: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [base] 4.3s (4.3 s) | 162 tick/s
+OK  35790089 [paper]  tick=   697 decisioni=  697 azioni=   0 stati=- [COMPLETE]
+      nota: scenario: paper — stessa cosa in PAPER (percorso legacy: fill sul libro del feed, FOK)
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: -
+      nota: righe safe_strategy_trades: 0 {}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2725 | giri del servizio: 694 | righe di scan scritte dallo SCANNER VERO: 681 | mercati: {'MATCH_ODDS': 2725}
+      nota: bet delay: 0 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      motivo x637: no: sets,games,setsPlayed
+      motivo x51: no: games,odds
+      motivo x5: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [paper] 3.4s (3.4 s) | 206 tick/s
+OK  35790089 [paper-iniettata]  tick=   685 decisioni=  685 azioni=   0 stati=error [COMPLETE]
+      nota: scenario: paper-iniettata — PAPER con la posizione dichiarata: e' il percorso legacy del paper (`_paper_ladder` + `omega_engine.paper_fill`, FOK) messo accanto a quello LIVE su flumine — reperto per la parita' C.5
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: replay_ingresso_dichiarato x44, skip x6
+      nota: righe safe_strategy_trades: 44 {'error': 44}
+      nota: motivi dichiarati: paper_senza_runner:follow_assente x6
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2651 | giri del servizio: 682 | righe di scan scritte dallo SCANNER VERO: 669 | mercati: {'MATCH_ODDS': 2651}
+      nota: bet delay: 0 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: scenario con ingresso dichiarato: NESSUNA posizione e' stata aperta (nessun giro con leader per set, mercato aperto e liquidita' sufficiente)
+      motivo x637: no: sets,games,setsPlayed
+      motivo x40: no: games,odds
+      motivo x4: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [paper-iniettata] 4.6s (4.6 s) | 150 tick/s
+OK  35790089 [catalogo-assente]  tick=   697 decisioni=  697 azioni=   0 stati=- [COMPLETE]
+      nota: scenario: catalogo-assente — senza competizione dichiarata: mostra il falso negativo del banco (check `bestOf` n/d -> nessun ingresso possibile)
+      nota: competizione dichiarata: None (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: -
+      nota: righe safe_strategy_trades: 0 {}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2725 | giri del servizio: 694 | righe di scan scritte dallo SCANNER VERO: 681 | mercati: {'MATCH_ODDS': 2725}
+      nota: bet delay: 0 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      motivo x637: no: sets,games,setsPlayed
+      motivo x51: no: games,odds
+      motivo x5: no: games,scoreConfirmed,odds
+      motivo x1: no: games,setsPlayed,scoreConfirmed
+      tempo: 35790089 [catalogo-assente] 3.5s (3.5 s) | 196 tick/s
+OK  35790089 [posizione-iniettata]  tick=   652 decisioni=  652 azioni=   1 stati=lost [COMPLETE]
+      nota: scenario: posizione-iniettata — ingresso DICHIARATO dal replay (la strategia non ne ha mai uno su questa partita): esercita uscite e ordini
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: exit_hold x25, place x1, replay_ingresso_dichiarato x1, feed_blind x1, settle x1, settle_position x1
+      nota: righe safe_strategy_trades: 1 {'lost': 1}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [1.2])
+      nota: P&L del replay: lordo -2.00 | commissione 0.00 (5.0%) | NETTO -2.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2525 | giri del servizio: 649 | righe di scan scritte dallo SCANNER VERO: 636 | mercati: {'MATCH_ODDS': 2525}
+      nota: bet delay: 3 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: INGRESSO DICHIARATO DAL REPLAY: i controlli T1-T4, T11 sull'ingresso NON valgono su questa riga (il trigger non e' della strategia); valgono tutti quelli su uscite e ordini
+      motivo x596: no: sets,games,setsPlayed
+      motivo x48: no: games,odds
+      motivo x4: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [posizione-iniettata] 4.8s (4.8 s) | 135 tick/s
+OK  35790089 [approvata-subito]  tick=   652 decisioni=  652 azioni=   1 stati=lost [COMPLETE]
+      nota: scenario: approvata-subito — posizione iniettata + `tennis_exit_approval` acceso e il trader che firma la proposta al giro dopo
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: exit_hold x25, place x1, replay_ingresso_dichiarato x1, feed_blind x1, settle x1, settle_position x1
+      nota: righe safe_strategy_trades: 1 {'lost': 1}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [1.2])
+      nota: P&L del replay: lordo -2.00 | commissione 0.00 (5.0%) | NETTO -2.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2525 | giri del servizio: 649 | righe di scan scritte dallo SCANNER VERO: 636 | mercati: {'MATCH_ODDS': 2525}
+      nota: bet delay: 3 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: INGRESSO DICHIARATO DAL REPLAY: i controlli T1-T4, T11 sull'ingresso NON valgono su questa riga (il trigger non e' della strategia); valgono tutti quelli su uscite e ordini
+      motivo x596: no: sets,games,setsPlayed
+      motivo x48: no: games,odds
+      motivo x4: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [approvata-subito] 4.7s (4.7 s) | 139 tick/s
+OK  35790089 [mai-approvata]  tick=   652 decisioni=  652 azioni=   1 stati=lost [COMPLETE]
+      nota: scenario: mai-approvata — posizione iniettata + `tennis_exit_approval` acceso e NESSUNA firma: la chiusura resta ferma, come in produzione
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: exit_hold x25, place x1, replay_ingresso_dichiarato x1, feed_blind x1, settle x1, settle_position x1
+      nota: righe safe_strategy_trades: 1 {'lost': 1}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [1.2])
+      nota: P&L del replay: lordo -2.00 | commissione 0.00 (5.0%) | NETTO -2.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2525 | giri del servizio: 649 | righe di scan scritte dallo SCANNER VERO: 636 | mercati: {'MATCH_ODDS': 2525}
+      nota: bet delay: 3 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: INGRESSO DICHIARATO DAL REPLAY: i controlli T1-T4, T11 sull'ingresso NON valgono su questa riga (il trigger non e' della strategia); valgono tutti quelli su uscite e ordini
+      motivo x596: no: sets,games,setsPlayed
+      motivo x48: no: games,odds
+      motivo x4: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [mai-approvata] 5.1s (5.1 s) | 127 tick/s
+OK  35790089 [bot-fermo]  tick=   652 decisioni=  652 azioni=   1 stati=lost [COMPLETE]
+      nota: scenario: bot-fermo — control.status='stopped' con posizione aperta: niente aperture, le uscite e il settlement continuano
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: exit_hold x25, place x1, replay_ingresso_dichiarato x1, feed_blind x1, settle x1, settle_position x1
+      nota: righe safe_strategy_trades: 1 {'lost': 1}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [1.2])
+      nota: P&L del replay: lordo -2.00 | commissione 0.00 (5.0%) | NETTO -2.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2525 | giri del servizio: 649 | righe di scan scritte dallo SCANNER VERO: 636 | mercati: {'MATCH_ODDS': 2525}
+      nota: bet delay: 3 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: INGRESSO DICHIARATO DAL REPLAY: i controlli T1-T4, T11 sull'ingresso NON valgono su questa riga (il trigger non e' della strategia); valgono tutti quelli su uscite e ordini
+      motivo x596: no: sets,games,setsPlayed
+      motivo x48: no: games,odds
+      motivo x4: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [bot-fermo] 5.4s (5.4 s) | 122 tick/s
+OK  35790089 [feed-stantio]  tick=   697 decisioni=  697 azioni=   0 stati=- [COMPLETE]
+      nota: scenario: feed-stantio — riga E battito dello scanner vecchi: nessun ingresso
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: -
+      nota: righe safe_strategy_trades: 0 {}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2725 | giri del servizio: 694 | righe di scan scritte dallo SCANNER VERO: 681 | mercati: {'MATCH_ODDS': 2725}
+      nota: bet delay: 0 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      motivo x637: no: sets,games,setsPlayed
+      motivo x51: no: games,odds
+      motivo x5: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [feed-stantio] 5.3s (5.3 s) | 132 tick/s
+OK  35790089 [esiti-ignoti]  tick=   692 decisioni=  692 azioni=   0 stati=error [COMPLETE]
+      nota: scenario: esiti-ignoti — i primi piazzamenti sollevano: nasce la riconciliazione
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: place_exception x1, place_pending x1, replay_ingresso_dichiarato x1, reconciled_error x1
+      nota: righe safe_strategy_trades: 1 {'error': 1}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2698 | giri del servizio: 689 | righe di scan scritte dallo SCANNER VERO: 676 | mercati: {'MATCH_ODDS': 2698}
+      nota: bet delay: 0 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: INGRESSO DICHIARATO DAL REPLAY: i controlli T1-T4, T11 sull'ingresso NON valgono su questa riga (il trigger non e' della strategia); valgono tutti quelli su uscite e ordini
+      motivo x637: no: sets,games,setsPlayed
+      motivo x47: no: games,odds
+      motivo x4: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [esiti-ignoti] 4.2s (4.2 s) | 164 tick/s
+OK  35790089 [rifiuti-betfair]  tick=   649 decisioni=  649 azioni=   1 stati=error,lost [COMPLETE]
+      nota: scenario: rifiuti-betfair — Betfair RIFIUTA (`ok=False`) i primi piazzamenti sul lato BACK, quello con cui il tennis APRE: la riga non deve mai restare viva su un ordine che non esiste (difetto 2 del 15/09, controllo K2)
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)CRITICAL:safe.bot:[safe.bot] 35790089: partita CHIUSA DALL'UTENTE (fuori_app) -> il bot non gestisce piu' nulla su di essa
+
+      nota: attivita' del servizio: exit_hold x27, replay_ingresso_dichiarato x4, place_rifiutato x3, skip x3, place_retry x2, place_exhausted x1, place x1, feed_blind x1, settle x1, settle_position x1
+      nota: righe safe_strategy_trades: 4 {'error': 3, 'lost': 1}
+      nota: motivi dichiarati: live_not_matched:EXPIRED:INVALID_ODDS x3
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [1.19])
+      nota: ordini rifiutati: 3 (es. INVALID_ODDS (rifiuto provocato))
+      nota: P&L del replay: lordo -2.00 | commissione 0.00 (5.0%) | NETTO -2.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2524 | giri del servizio: 646 | righe di scan scritte dallo SCANNER VERO: 633 | mercati: {'MATCH_ODDS': 2524}
+      nota: bet delay: 7 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: INGRESSO DICHIARATO DAL REPLAY: i controlli T1-T4, T11 sull'ingresso NON valgono su questa riga (il trigger non e' della strategia); valgono tutti quelli su uscite e ordini
+      motivo x595: no: sets,games,setsPlayed
+      motivo x47: no: games,odds
+      motivo x3: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [rifiuti-betfair] 4.6s (4.6 s) | 142 tick/s
+OK  35790089 [uscita-ignota]  tick=   652 decisioni=  652 azioni=   1 stati=lost [COMPLETE]
+      nota: scenario: uscita-ignota — il guasto colpisce la CHIUSURA, non l'apertura: resta una LAY in volo a esito ignoto e si guarda se ne nasce una seconda (regola di piattaforma: mai due lay sulla stessa selezione)
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: exit_hold x25, place x1, replay_ingresso_dichiarato x1, replay_guasto_uscita x1, feed_blind x1, settle x1, settle_position x1
+      nota: righe safe_strategy_trades: 1 {'lost': 1}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [1.2])
+      nota: P&L del replay: lordo -2.00 | commissione 0.00 (5.0%) | NETTO -2.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2525 | giri del servizio: 649 | righe di scan scritte dallo SCANNER VERO: 636 | mercati: {'MATCH_ODDS': 2525}
+      nota: bet delay: 3 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: INGRESSO DICHIARATO DAL REPLAY: i controlli T1-T4, T11 sull'ingresso NON valgono su questa riga (il trigger non e' della strategia); valgono tutti quelli su uscite e ordini
+      motivo x596: no: sets,games,setsPlayed
+      motivo x48: no: games,odds
+      motivo x4: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [uscita-ignota] 4.4s (4.4 s) | 149 tick/s
+OK  35790089 [riavvio]  tick=   652 decisioni=  652 azioni=   1 stati=lost [COMPLETE]
+      nota: scenario: riavvio — a meta' partita si buttano le cache di PROCESSO di bot_service: lo stato si deve ritrovare dal database
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: exit_hold x25, place x1, replay_ingresso_dichiarato x1, replay_riavvio x1, feed_blind x1, settle x1, settle_position x1
+      nota: righe safe_strategy_trades: 1 {'lost': 1}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [1.2])
+      nota: P&L del replay: lordo -2.00 | commissione 0.00 (5.0%) | NETTO -2.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2525 | giri del servizio: 649 | righe di scan scritte dallo SCANNER VERO: 636 | mercati: {'MATCH_ODDS': 2525}
+      nota: bet delay: 3 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: RIAVVIO a meta' partita: azzerate le cache di processo _AGG_ULTIMO_BUONO, _APERTE, _BLOCCO, _CICLO_IN_ERRORE, _COPERTURA_LOG, _EREDITA_LOG, _EVENT_NAMES, _EXIT_MODEL, _GUARDIA_AVVIO, _LAST_CONTROL, _LETTURA_FEED, _LOG_MODE, _OPPS_STATE, _PENDING_CICLO, _PLACE_SEED, _REST_STATE, _SCANNER_TS_CACHE, _SVEGLIA_FATTA, bot_db._AGG_RPC, svuota_le_cache (tutte le cache di bot_service, canale F4/F6 e giro veloce inclusi)
+      nota: INGRESSO DICHIARATO DAL REPLAY: i controlli T1-T4, T11 sull'ingresso NON valgono su questa riga (il trigger non e' della strategia); valgono tutti quelli su uscite e ordini
+      motivo x596: no: sets,games,setsPlayed
+      motivo x48: no: games,odds
+      motivo x4: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [riavvio] 4.3s (4.3 s) | 152 tick/s
+OK  35790089 [chiusura-fuori-app]  tick=   695 decisioni=  695 azioni=   1 stati=lost [COMPLETE]
+      nota: scenario: chiusura-fuori-app — posizione del bot aperta, e il trader la chiude con un ordine SUO su Betfair (ref non del bot), fuori dall'app: il bot deve accorgersene dalla POSIZIONE DI CONTO, scrivere `chiuso_dall_utente` e non fare altro
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)CRITICAL:safe.bot:[safe.bot] 35790089: partita CHIUSA DALL'UTENTE (fuori_app) -> il bot non gestisce piu' nulla su di essa
+
+      nota: attivita' del servizio: posizione_di_conto x2, place x1, replay_ingresso_dichiarato x1, replay_chiusura_fuori_app x1, chiuso_dall_utente x1, feed_blind x1, settle x1, settle_position x1
+      nota: righe safe_strategy_trades: 1 {'lost': 1}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST | proprietari_bot_conto: tabelle degli altri bot e coda del runner (proprietari degli ordini altrui sul conto): non sono nel replay, un ordine non del bot si decide dai riferimenti (nessun altro bot)
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [1.2])
+      nota: P&L del replay: lordo -2.00 | commissione 0.00 (5.0%) | NETTO -2.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2721 | giri del servizio: 692 | righe di scan scritte dallo SCANNER VERO: 679 | mercati: {'MATCH_ODDS': 2721}
+      nota: bet delay: 5 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: INGRESSO DICHIARATO DAL REPLAY: i controlli T1-T4, T11 sull'ingresso NON valgono su questa riga (il trigger non e' della strategia); valgono tutti quelli su uscite e ordini
+      motivo x637: no: sets,games,setsPlayed
+      motivo x51: no: games,odds
+      motivo x3: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [chiusura-fuori-app] 4.3s (4.3 s) | 162 tick/s
+OK  35790089 [chiusura-fuori-app-ridotta]  tick=   695 decisioni=  695 azioni=   1 stati=lost [COMPLETE]
+      nota: scenario: chiusura-fuori-app-ridotta — come sopra ma il trader chiude solo META' della posizione: il bot lo DICHIARA (`ridotta_dall_utente`) e continua a proteggere il resto
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: place x1, replay_ingresso_dichiarato x1, replay_chiusura_fuori_app x1, posizione_di_conto x1, chiuso_dall_utente x1, feed_blind x1, settle x1, settle_position x1
+      nota: righe safe_strategy_trades: 1 {'lost': 1}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST | proprietari_bot_conto: tabelle degli altri bot e coda del runner (proprietari degli ordini altrui sul conto): non sono nel replay, un ordine non del bot si decide dai riferimenti (nessun altro bot)
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [1.2])
+      nota: P&L del replay: lordo -2.00 | commissione 0.00 (5.0%) | NETTO -2.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2721 | giri del servizio: 692 | righe di scan scritte dallo SCANNER VERO: 679 | mercati: {'MATCH_ODDS': 2721}
+      nota: bet delay: 5 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: INGRESSO DICHIARATO DAL REPLAY: i controlli T1-T4, T11 sull'ingresso NON valgono su questa riga (il trigger non e' della strategia); valgono tutti quelli su uscite e ordini
+      motivo x637: no: sets,games,setsPlayed
+      motivo x51: no: games,odds
+      motivo x3: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [chiusura-fuori-app-ridotta] 4.2s (4.2 s) | 164 tick/s
+OK  35790089 [chiusura-abbinata-in-parte]  tick=   652 decisioni=  652 azioni=   1 stati=lost [COMPLETE]
+      nota: scenario: chiusura-abbinata-in-parte — posizione iniettata come `posizione-iniettata`, ma la PRIMA chiusura (green-up/copertura/uscita/cash-out) su ogni selezione trova il mercato sottile: al piu' il 40 % si abbina. Appoggiata: 40 % abbinato e residuo VIVO a mercato; FOK senza minFillSize: uccisa per intero (per Betfair un FOK e' tutto o niente). Il bot deve contare la copertura sull'ABBINATO, non dichiarare chiusa una posizione con residuo, non ripiazzare in loop (CP1-CP4)
+      nota: scenario chiusura-abbinata-in-parte: NESSUNA chiusura colpita (il bot non ha mai chiuso una posizione su questa partita: CP1-CP4 "non lo so")
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: exit_hold x25, place x1, replay_ingresso_dichiarato x1, feed_blind x1, settle x1, settle_position x1
+      nota: righe safe_strategy_trades: 1 {'lost': 1}
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 1 abbinamenti su 1 ordini per 2.0 EUR (prezzi [1.2])
+      nota: P&L del replay: lordo -2.00 | commissione 0.00 (5.0%) | NETTO -2.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2525 | giri del servizio: 649 | righe di scan scritte dallo SCANNER VERO: 636 | mercati: {'MATCH_ODDS': 2525}
+      nota: bet delay: 3 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      nota: INGRESSO DICHIARATO DAL REPLAY: i controlli T1-T4, T11 sull'ingresso NON valgono su questa riga (il trigger non e' della strategia); valgono tutti quelli su uscite e ordini
+      motivo x596: no: sets,games,setsPlayed
+      motivo x48: no: games,odds
+      motivo x4: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [chiusura-abbinata-in-parte] 4.4s (4.4 s) | 149 tick/s
+OK  35790089 [proposta-approvata]  tick=   696 decisioni=  696 azioni=   2 stati=error,won [COMPLETE]
+      nota: scenario: proposta-approvata — MODELLO MONTATO (finto deterministico con l'interfaccia del vero, prezzi dalla riga vera dello scanner): tre proposte; il trader ne approva una dopo 20 s col prezzo VIVO (ordine al prezzo visto), una col prezzo della FOTOGRAFIA appena il mercato si muove oltre la tolleranza (rifiuto per slippage) e una dopo 180 s (proposta piu' vecchia di 120 s). strategy_modes.model='live' scritto (PM1-PM5, PM7)
+      nota: [PROPOSTE] scenario=proposta-approvata sport=tennis | t0 del piano=2026-07-07T12:28:16.127000+00:00 | emesse dal finto {'A': 21, 'B': 21, 'C': 21} | richieste di proposta 5 per stato {'error': 2, 'done': 1, 'proposed': 2} (decadute 0, rifiutate dal trader 0) | esiti delle approvazioni {'non_eseguito': 1, 'ok': 1, 'fuori_banda_strategia': 1} | righe nate da proposta 2 [(1, 'error', 'live', 1.17), (2, 'won', 'live', 1.22)]
+      nota: [PROPOSTE] clic del trader: A/tennis approva #1 a t0+50s visto=1.17 rilevata=True -> ok=True | B/tennis approva #2 a t0+195s visto=1.21 rilevata=True -> ok=True | C/tennis approva #3 a t0+211s visto=4.6 rilevata=True -> ok=True
+      nota: [PROPOSTE] esito per finestra: A:ordine x1, B:ordine x1, C:fuori_banda_strategia x1
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: proposta_opportunita x5, opportunita_non_piu_valida x4, skip x2, place_rifiutato x1, place_retry x1, place x1, opportunita_piazzata x1, feed_blind x1, settle x1, settle_position x1
+      nota: righe safe_strategy_trades: 2 {'error': 1, 'won': 1}
+      nota: motivi dichiarati: live_not_matched:EXECUTION_COMPLETE x1 | fuori_banda_strategia x1
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive', 'scadi_proposte_opportunita']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: proposte/richieste di chiusura: {'error': 2, 'done': 1, 'proposed': 2} (firme del trader: 0)
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 1 abbinamenti su 1 ordini per 5.0 EUR (prezzi [1.22])
+      nota: P&L del replay: lordo +5.00 | commissione 0.25 (5.0%) | NETTO +4.75 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2707 | giri del servizio: 693 | righe di scan scritte dallo SCANNER VERO: 680 | mercati: {'MATCH_ODDS': 2707}
+      nota: bet delay: 14 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      motivo x637: no: sets,games,setsPlayed
+      motivo x50: no: games,odds
+      motivo x5: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [proposta-approvata] 4.6s (4.6 s) | 151 tick/s
+OK  35790089 [proposta-scaduta]  tick=   697 decisioni=  697 azioni=   0 stati=error [COMPLETE]
+      nota: scenario: proposta-scaduta — MODELLO MONTATO: una proposta la cui opportunita' SPARISCE: dal 24/09 (ordine dell'utente, 'decido io') NON decade piu', resta viva marcata NON PIU' VALIDA e il trader la firma lo stesso col prezzo visto (ordine manuale al prezzo visto, PM3); e una RIFIUTATA dal trader (RIFIUTA tiene, nessun ordine, nessuna riproposta). strategy_modes.model NON scritto: proposte in PAPER col servizio in LIVE (PM1, PM2, PM3, PM4, PM5)
+      nota: [PROPOSTE] scenario=proposta-scaduta sport=tennis | t0 del piano=2026-07-07T12:28:16.127000+00:00 | emesse dal finto {'D': 2, 'E': 21} | richieste di proposta 2 per stato {'error': 1, 'rejected': 1} (decadute 0, rifiutate dal trader 1) | esiti delle approvazioni {'non_eseguito': 1} | righe nate da proposta 1 [(1, 'error', 'paper', 1.17)]
+      nota: [PROPOSTE] clic del trader: E/tennis ignora #2 a t0+50s visto=None rilevata=True -> ok=True | E/tennis approva #2 a t0+74s visto=5.1 rilevata=True -> ok=False | D/tennis approva #1 a t0+204s visto=1.17 rilevata=False -> ok=True
+      nota: [PROPOSTE] esito per finestra: D:ordine x1
+      nota: competizione dichiarata: 'torneo al meglio dei 3 set (dichiarato dal replay)' (il raw dello stream NON la contiene: limite 1 del banco)
+      nota: attivita' del servizio: proposta_opportunita x2, opportunita_rifiutata x1, opportunita_non_piu_valida x1, skip x1
+      nota: righe safe_strategy_trades: 1 {'error': 1}
+      nota: motivi dichiarati: paper_senza_runner:follow_assente x1
+      nota: metodi di database chiamati dal servizio e assenti dal banco: ['proposte_di_chiusura_vive', 'scadi_proposte_opportunita']
+      nota: [NON ESERCITABILE] dati di produzione assenti dalla registrazione: live_follow_status: coda del runner (live_follow): non esiste nel replay, il gate resta chiuso e gli ordini passano dal percorso REST
+      nota: proposte/richieste di chiusura: {'error': 1, 'rejected': 1} (firme del trader: 0)
+      nota: [DICHIARATO] 3 giri del servizio DOPO il fischio, a mercato CHIUSO, per il settlement (come il replay di Omega): flumine consegna il mercato chiuso a `process_closed_market` e il ponte del banco inoltra solo `process_market_book`, quindi senza questi giri il bot non vedrebbe MAI la chiusura. L'esito viene dal `marketDefinition` registrato.
+      nota: [DICHIARATO] settlement dal mercato CHIUSO abilitato dal replay: `read_market`/`read_markets` di `MercatoSafe` (gli stessi del calcio, C.3) appoggiati al mercato del banco, contenuto dal `marketDefinition` registrato. Senza, T8 non avrebbe mai un caso (limite 8 del banco comune)
+      nota: fill: 0 abbinamenti su 0 ordini per 0 EUR (prezzi [])
+      nota: P&L del replay: lordo +0.00 | commissione 0.00 (5.0%) | NETTO +0.00 EUR (non e' il metro: il metro e' la condotta)
+      nota: tick dello stream: 2720 | giri del servizio: 694 | righe di scan scritte dallo SCANNER VERO: 681 | mercati: {'MATCH_ODDS': 2720}
+      nota: bet delay: 0 book passati durante i piazzamenti | book in ritardo (orologio fermo): 0 | LAPSE al passaggio in gioco: 0
+      nota: giri senza riga nel feed: 3
+      motivo x637: no: sets,games,setsPlayed
+      motivo x51: no: games,odds
+      motivo x5: no: games,scoreConfirmed,odds
+      motivo x1: no: games,bestOf,setsPlayed
+      tempo: 35790089 [proposta-scaduta] 3.3s (3.3 s) | 209 tick/s
+
+ESITO: 18 partite senza violazioni, 0 con violazioni, 0 senza decisioni
+       0 violazioni totali
+
+COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:
+  ?? T1  x0       SPEC §3 tennis: si PUNTA (back) chi sta vincendo, alla quota della
+  ?? T2  x0       SPEC §3 tennis: si entra con 1 set vinto e 2+ game di vantaggio ne
+  ?? T3  x0       SPEC §3 (aggiunta prudenziale, RISCONTRO): il punteggio deve esser
+  ?? T4  x0       SPEC §3 «da evitare»: doppi, Slam maschili (5 set), competizioni e
+  ?? T5  x0       RISCONTRO_TENNIS: il take profit NON si prende sotto tennis_take_p
+  ?? T6  x0       RISCONTRO_TENNIS: un ingresso a 1,01-1,02 si PORTA A FINE PARTITA 
+  ?? T7  x0       SPEC §3 tennis: due game persi di fila E vantaggio perso nel set =
+  ?? T7-APPROVAZIONE x0       CERT. 14/09: col cancelletto acceso anche l'uscita OBBLIGATORIA re
+     T8-DICHIARATA x10      SPEC §3 tennis: «perdite dal 5% fino al 25% del capitale» — voce D
+  ?? T9  x0       HANDOFF_CONTROL_ROOM §2 (certificato il 14/09 dal vivo): la chiusu
+  ?? T10 x0       SPEC §3 «da evitare: finali» — Betfair NON pubblica il turno per i
+  ?? T11 x0       B.5: lo stake dell'ingresso e' quello della STRATEGIA (stake.per_s
+     T12 x12      PROCESSO §6.4: ogni ordine parte FILL_OR_KILL — nessun residuo viv
+     T13 x14      PROCESSO §6.4: una gamba a esito IGNOTO si riconcilia per bet_id/r
+  ?? J1  x0       catalogo §7.1/7.4: mai due gambe di chiusura IN VOLO sulla stessa 
+     J2  x660     catalogo §7.2: `res.ok` si LEGGE — un place rifiutato o non abbina
+     J3  x11      catalogo §7.3: il prezzo medio si legge da `average_price_matched`
+     J4  x12      catalogo §7.4/7.6: il ref con cui si RILEGGE e' lo stesso del piaz
+  ?? J4C-DICHIARATA x0       25/09 (F8), canale del runner: l'ordine nato da un comando porta s
+     J5  x12      catalogo §7.7: il `bet_id` si salva SEMPRE, anche quando l'ordine 
+  ?? L1  x0       REGOLA DI PIATTAFORMA (utente, 16/09): MAI due lay vive o in volo 
+  ?? L2  x0       REGOLA DI PIATTAFORMA (utente, 16/09): una lay non si SOSTITUISCE 
+     S4  x1389    16/09 (consegna S1): dopo una chiusura DELL'UTENTE (cash-out globa
+     C1  x61      C.12a: ogni riga eseguita porta CHIESTO, ABBINATO, RESIDUO e PREZZ
+     S1  x12161   CERT. 14/09: i soldi veri si raggiungono SOLO scrivendo `strategy_
+     S2  x652     PROCESSO §6.3 / COSTITUZIONE: fermare toglie le APERTURE, non le u
+     S3  x765     12/09: nessun ingresso su una riga del feed NON FRESCA
+     A1  x12161   il giro del servizio (`run_once`) non deve mai sollevare
+     K1  x7279    cio' che la RIGA crede (abbinato e prezzo medio) coincide con cio'
+     K2  x649     una riga il cui ordine Betfair ha RIFIUTATO non resta mai viva (di
+     K3  x7285    il riferimento con cui il bot ha piazzato si RILEGGE con la stessa
+     K4  x7268    una riga 'open' dichiara un ordine che a mercato ESISTE (difetto 4
+     K5  x7279    il RESIDUO che la riga dichiara e' quello che il mercato dichiara 
+  ?? K6  x0       ogni gamba di CHIUSURA dichiara l'apertura che chiude in COLONNA e
+     K7  x7279    ogni ordine ABBINATO a mercato appartiene a una riga del bot che l
+  -- controlli del banco comune, scenario chiusura-abbinata-in-parte:
+  ?? CP1 x0       chiusura abbinata in parte: la riga (o la credenza) del bot porta 
+  ?? CP2 x0       la copertura dichiarata (hedge_state, meta.hedged_size) si conta s
+  ?? CP3 x0       una posizione con esposizione residua o con il residuo della chius
+  ?? CP4 x0       dopo una chiusura abbinata in parte nessun loop: mai una chiusura 
+  -- controlli del banco comune, scenari del modello montato (proposta-approvata, proposta-scaduta):
+     PM1 x3       mai un ordine da una proposta NON approvata: ogni riga strategy='m
+     PM2 x703     mai due proposte VIVE identiche (indice unico uq_safe_requests_pro
+     PM3 x4       prezzo al clic rispettato. D7 (25/09): una proposta con la BANDA d
+     PM4 x3       proposta scaduta, decaduta o RIFIUTATA = nessun ordine; un clic su
+     PM5 x7       parita' paper/live delle proposte: la modalita' della proposta e' 
+     PM7 x4       un PIAZZA con clic fresco su una proposta viva non si perde per l'
+
+?? MAI SOLLECITATI: 20 controlli su 35. Su questi il referto NON dice «sano», dice «non lo so»:
+     T1: SPEC §3 tennis: si PUNTA (back) chi sta vincendo, alla quota della banda d'ingresso (backMin = 1,02 decisione 25/09 .. backMax)
+     T2: SPEC §3 tennis: si entra con 1 set vinto e 2+ game di vantaggio nel set in corso, dallo STESSO giocatore
+     T3: SPEC §3 (aggiunta prudenziale, RISCONTRO): il punteggio deve essere STABILE da scoreConfirmSec prima di entrare
+     T4: SPEC §3 «da evitare»: doppi, Slam maschili (5 set), competizioni escluse — nessun ingresso
+     T5: RISCONTRO_TENNIS: il take profit NON si prende sotto tennis_take_profit_min_odds (sotto e' una perdita garantita)
+     T6: RISCONTRO_TENNIS: un ingresso a 1,01-1,02 si PORTA A FINE PARTITA (nessuna chiusura volontaria)
+     T7: SPEC §3 tennis: due game persi di fila E vantaggio perso nel set = uscita OBBLIGATORIA, senza eccezioni
+     T7-APPROVAZIONE: CERT. 14/09: col cancelletto acceso anche l'uscita OBBLIGATORIA resta ferma finche' un essere umano non la promuove (scelta dichiarata dell'utente, non un difetto)
+     T9: HANDOFF_CONTROL_ROOM §2 (certificato il 14/09 dal vivo): la chiusura si abbina al PREZZO ESATTO del segnale, 0 tick di scostamento sulle uscite non urgenti
+     T10: SPEC §3 «da evitare: finali» — Betfair NON pubblica il turno per il tennis (399 mercati interrogati, zero con final/semi/quarter): dato assente, controllo non esercitabile
+     T11: B.5: lo stake dell'ingresso e' quello della STRATEGIA (stake.per_strategia['tennis'], poi stake.backSize)
+     J1: catalogo §7.1/7.4: mai due gambe di chiusura IN VOLO sulla stessa posizione (e' la forma del loop dei 32 green-up)
+     J4C-DICHIARATA: 25/09 (F8), canale del runner: l'ordine nato da un comando porta su Betfair il customerOrderRef di FLUMINE, non `safe_tennis-t<id>`; il bot lo rilegge dagli eventi `order` (ref del protocollo). Oltre la scadenza senza eventi la rilettura REST per ref NON lo trova (limite del protocollo, identico al calcio: reperto aperto)
+     L1: REGOLA DI PIATTAFORMA (utente, 16/09): MAI due lay vive o in volo sullo stesso mercato/selezione — se si abbinano entrambe la posizione resta SCOPERTA
+     L2: REGOLA DI PIATTAFORMA (utente, 16/09): una lay non si SOSTITUISCE con cancel+place nello stesso giro — fra l'annullo e il nuovo ordine l'esito del primo non e' certo
+     K6: ogni gamba di CHIUSURA dichiara l'apertura che chiude in COLONNA e nel META (difetto 5 del 15/09: `closes_trade_id` in colonna ma letto nel meta -> nessuna chiusura riconosciuta, place-and-trim rifiutato in loop e freno live sulle uscite)
+     CP1: chiusura abbinata in parte: la riga (o la credenza) del bot porta l'abbinato VERO della chiusura - chiesto, abbinato, residuo e prezzo medio come a mercato (PROCESSO par.6.4 parziali, par.6.5)
+     CP2: la copertura dichiarata (hedge_state, meta.hedged_size) si conta sull'ABBINATO della chiusura, mai sul chiesto (fix del 18/09)
+     CP3: una posizione con esposizione residua o con il residuo della chiusura ancora vivo a mercato non e' mai dichiarata CHIUSA
+     CP4: dopo una chiusura abbinata in parte nessun loop: mai una chiusura nuova con un'altra viva sulla stessa selezione, mai una size che chiede piu' di quanto resta da chiudere, al piu' 10 chiusure dopo, mai sovracopertura (catalogo par.7.1: 32 ordini veri in loop il 15/09)
+TEMPO TOTALE: 1m23.6s (83.6 s) su 18 replay | obiettivo 300 s, tetto 600 s (CERTIFICA_TETTO_S)

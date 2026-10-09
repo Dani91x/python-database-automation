@@ -5606,3 +5606,21 @@ degradato dal 08/2026; la run e' creata 5-6 h dopo l'orario) -> Daily alle 07:00
   `%TMP%/catena_prova_oggi.log`. L'utente usa l'app (senza bot) durante la prova. Replay tennis_flb e safe_tennis su 35790089
   (tutti gli scenari) lanciati alle 11:47 su ordine dell'utente; delegato «fallimenti action» al lavoro (classificazione di ogni run
   rossa + rimedi).
+- 09/10 11:47-12:10 REPLAY TENNIS FLB e SAFE TENNIS (ordine dell'utente) su 35790089, tutti gli scenari, codice `25cab047`:
+  tennis_flb 17/17 OK 0 violazioni (75 s), safe_tennis 18/18 OK 0 violazioni (84 s); referti in `AUDIT_2026-10-09/replay_tennis/`.
+  Confronto per blocco con i riferimenti del 07/10: safe_tennis IDENTICO salvo `chiusura-fuori-app-ridotta` (W3a: riduzione = STOP,
+  decisione D-11.1 confermata dall'utente); tennis_flb identico salvo righe di nota nuove (fill per mercato che attraversa, cache
+  azzerate, nota del gate veritiera) e UNA azione in meno in gate-aperto/live/chiusura-abbinata-in-parte/soldi-veri (17->16) e
+  uscite-manuali-firmate (19->18). BISEZIONE del coordinatore (worktree a `40051ed9` e `d257abea` + attuale, sonda sul sink delle
+  attivita' del bot: `replay_tennis/sonda_attivita_flb.py`, dump PRIMA/DOPO): la riga che sparisce e' `uscita_esatta_abort`
+  «replace rifiutato: nessun ordine alla quota voluta... nuovo tentativo», cioe' il falso DONE del place-and-trim corretto con D-2
+  (`790bbb97`): oggi la chiusura completa senza abort e ritentativo, stesso green a 1.4, stessi 7 ordini, stati identici.
+  TUTTI I BOT TENNIS CERTIFICATI sul codice attuale (scalper/pro/swing stamattina, flb/safe ora).
+- 09/10 12:00-12:06 FALLIMENTI DELLE ACTION: referto `AUDIT_2026-10-09/fallimenti_action/REFERTO.md` (34 run rosse/cancellate
+  14/09-09/10 classificate dai log: 25 DB transitorio di cui 18 57014 gia' risolti, 2 crash del 09/10, 3 API vuota gia' risolte,
+  1 configurazione, 0 GitHub; reperto: la scrittura globale dell'atlante da ~27 MB va in 520 ogni giorno e nello stesso secondo
+  cadono altre run). Rimedi `5d1a8fc1` fusi con l'ordine in `e8225f3a` su master: TrasportoResiliente (solo action, env
+  DB_RESILIENZA_ACTION acceso da esegui_main_action; i bot restano su HTTPTransport: verificato), 14 script con riga chiara sul
+  guasto persistente, rechain del retrain che non fa rossa la run, atlante compatto + controllo «gia' scritto», tetti dei job dalle
+  durate misurate. Verifica del coordinatore: 233 test, mutazione mia (ogni POST idempotente -> 3 rossi), prova del trasporto
+  acceso/spento. DECISIONE APERTA D-A (atlante 24 MB): ridurre/gzip/separare `h2h_hint` e `by_team`.

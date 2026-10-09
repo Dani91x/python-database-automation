@@ -1,0 +1,18 @@
+azioni nel referto: 16 | attivita' catturate: 17
+  1 entry                        {"price": 1.2, "side": "LAY"}
+  2 entry_timeout                {"note": "ingresso scaduto: cancel chiesto, aspetto la conferma prima di dichiarare chiuso"}
+  3 entry                        {"price": 1.26, "side": "LAY"}
+  4 entry_timeout                {"note": "ingresso scaduto: cancel chiesto, aspetto la conferma prima di dichiarare chiuso"}
+  5 entry                        {"price": 1.27, "side": "LAY"}
+  6 uscita_esatta                {"price": 1.4, "side": "BACK", "size": 0.91}
+  7 uscita_esatta_passo          {}
+  8 green_placed                 {"price": 1.4}
+  9 uscita_esatta_passo          {}
+ 10 uscita_esatta_passo          {}
+ 11 uscita_esatta_passo          {}
+ 12 green                        {"price": 1.4}
+ 13 entry                        {"price": 1.25, "side": "LAY"}
+ 14 entry_timeout                {"note": "ingresso scaduto: cancel chiesto, aspetto la conferma prima di dichiarare chiuso"}
+ 15 entry                        {"price": 1.2, "side": "LAY"}
+ 16 entry_timeout                {"note": "ingresso scaduto: cancel chiesto, aspetto la conferma prima di dichiarare chiuso"}
+ 17 mercato_chiuso               {"note": "il mercato e' CHIUSO: da qui in poi l'esito lo decide Betfair. La memoria del bot su queste selezioni e' stata chiusa, il P&L regolato e' in `pnl_settled`."}
