@@ -3552,7 +3552,11 @@ def _main() -> None:
     # SINGOLA ISTANZA (fix 2026-07-08): la seconda istanza esce subito.
     global _INSTANCE_LOCK  # noqa: PLW0603 - referenza viva per tutta la vita del processo
     _INSTANCE_LOCK = acquire_single_instance_lock(_TENNIS_LOCK_PORT, "tennis-runner")
+    # 09/10 (T0A "Salute"): acceso solo con MONITOR_SALUTE=1 (di serie spento)
+    from ...monitor import sonde as _mon
+    _mon.avvia("runner-tennis", sport="tennis")
     done = setup_and_run(only_event=args.event, auto_follow=not args.no_auto_follow)
+    _mon.ferma()
     logger.info("[tennis-runner] terminato. Eventi: %s", done)
     if _PLANNED_RESTART:
         logger.info("[tennis-runner] ricambio pianificato (vita massima, desktop): exit %d.",

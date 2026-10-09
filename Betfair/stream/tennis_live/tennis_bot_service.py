@@ -1135,6 +1135,9 @@ def _main() -> None:
         created = ensure_follows_for_bots()
         logger.info("[tennis-bot-svc] follow creati: %s", created)
         return
+    # 09/10 (T0A "Salute"): acceso solo con MONITOR_SALUTE=1 (di serie spento)
+    from ...monitor import sonde as _mon
+    _mon.avvia("tennis-bot-service", sport="tennis")
     if args.bridge_only:
         # MODALITÀ APP DESKTOP (audit 09/09): l'app avvia GIÀ il runner tennis
         # sotto watchdog. Questo processo faceva la CORSA al lock 47312: se

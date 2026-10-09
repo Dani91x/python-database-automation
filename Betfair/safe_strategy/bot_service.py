@@ -11218,6 +11218,9 @@ def main() -> None:
     )
     lock = acquire_single_instance_lock(_SINGLE_INSTANCE_PORT, "safe-bot")
     logger.info("[safe.bot] servizio avviato (lock %s)", _SINGLE_INSTANCE_PORT)
+    # 09/10 (T0A "Salute"): acceso solo con MONITOR_SALUTE=1 (di serie spento)
+    from Betfair.monitor import sonde as _mon
+    _mon.avvia("safe-strategy-bot", sport="calcio")
     # 02/10/2026 (R1): SIGTERM/SIGBREAK escono dal ciclo come Ctrl-C, cosi' passano
     # dall'arresto ordinato
     from Betfair.safe_strategy import arresto_bot as _AB

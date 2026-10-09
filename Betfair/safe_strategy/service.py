@@ -3351,6 +3351,9 @@ def main() -> None:
     lock = None
     if not args.once:
         lock = acquire_single_instance_lock(_LOCK_PORT, "safe-strategy")
+        # 09/10 (T0A "Salute"): acceso solo con MONITOR_SALUTE=1 (di serie spento)
+        from Betfair.monitor import sonde as _mon
+        _mon.avvia("safe-strategy-service", sport="calcio")
     # CANTIERE P (28/09): timeout PostgREST del profilo bot (5 s connessione,
     # 20 s lettura) invece dei 120 s della libreria. Misurato su
     # pg_stat_statements: nessuna query dello scanner oltre 6,3 s, e il ruolo

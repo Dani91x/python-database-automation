@@ -89,6 +89,11 @@ export const NAV: readonly GruppoNav[] = [
             { id: 'analytics', etichetta: 'Analytics', rotta: '/analytics', icona: 'grafico', sport: 'comune' },
             { id: 'report-personale', etichetta: 'Report personale', rotta: '/report-personale', icona: 'report', sport: 'comune' },
             { id: 'trade-journal', etichetta: 'Trade journal', rotta: '/trade-journal', icona: 'libro', sport: 'comune' },
+            // 09/10 (T0A): la pagina «Salute» (monitor dei servizi dell'app, sola lettura)
+            {
+                id: 'salute', etichetta: 'Salute', rotta: '/salute', icona: 'impulso', sport: 'comune',
+                nota: 'CPU, memoria, richieste e tempi dei servizi (MONITOR_SALUTE=1)',
+            },
         ],
     },
     {
@@ -104,7 +109,7 @@ export const ROTTE_NEL_GUSCIO: readonly string[] = [
     '/board', '/control-room', '/cash-out', '/dashboard', '/omega', '/safe-strategy', '/mike', '/segui-live',
     '/multi-ladder', '/market-watch', '/live-pnl', '/storico/calcio', '/storico/tennis', '/tennis',
     '/tennis/terminal', '/tennis/replay', '/trade-journal', '/report-personale', '/watchlist', '/analytics',
-    '/match-replay', '/select-sport',
+    '/match-replay', '/select-sport', '/salute',
 ];
 
 export type FiltroSport = 'tutti' | 'calcio' | 'tennis';

@@ -107,7 +107,20 @@ def get_supabase_client() -> Client:
     if resilienza_action_attiva():
         # 09/10: solo nei processi delle action (mai nei bot), vedi TrasportoResiliente
         _installa_trasporto_resiliente(client)
+    _aggancia_monitor(client)
     return client
+
+
+def _aggancia_monitor(client: Any) -> None:
+    """09/10 (T0A "Salute"): con ``MONITOR_SALUTE=1`` e il monitor avviato dal main
+    del servizio, conta le richieste PostgREST per tabella (hook di httpx). Spento:
+    nessun effetto."""
+    try:
+        from Betfair.monitor import sonde as _mon
+    except Exception:  # noqa: BLE001 - fuori dal repo dei bot (action): niente monitor
+        return
+    if _mon.ATTIVO:
+        _mon.aggancia_client_db(client)
 
 
 # ---------------------------------------------------------------------------

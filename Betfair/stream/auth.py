@@ -21,6 +21,8 @@ from config import (
     BETFAIR_USERNAME,
 )
 
+from ..monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,6 +66,9 @@ def build_client(login: bool = True) -> betfairlightweight.APIClient:
         cert_files=(BETFAIR_CERT_FILE, BETFAIR_KEY_FILE),
         session=requests.Session(),
     )
+    if _mon.ATTIVO:
+        # 09/10 (T0A "Salute"): conta login/keepAlive/metodi REST della sessione
+        _mon.aggancia_client_betfair(client)
 
     if login:
         try:

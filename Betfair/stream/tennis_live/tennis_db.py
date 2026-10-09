@@ -24,6 +24,7 @@ from supabase import Client, create_client
 from config import SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL
 
 from .. import canale_bot as _cb
+from ...monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,8 @@ def get_tennis_client() -> Client:
     sb = getattr(_local, "client", None)
     if sb is None:
         sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        if _mon.ATTIVO:  # 09/10 (T0A "Salute"): conteggio richieste per tabella
+            _mon.aggancia_client_db(sb)
         _local.client = sb
     return sb
 

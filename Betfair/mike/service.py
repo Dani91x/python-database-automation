@@ -7750,6 +7750,10 @@ def main() -> None:
     if not args.once:
         lock = acquire_single_instance_lock(_LOCK_PORT, "mike")
     logger.info("[mike] servizio avviato (lock %s, dry=%s)", _LOCK_PORT, args.dry)
+    if not args.once:
+        # 09/10 (T0A "Salute"): acceso solo con MONITOR_SALUTE=1 (di serie spento)
+        from Betfair.monitor import sonde as _mon
+        _mon.avvia("mike-service", sport="calcio")
     # D1 (28/09): timeout PostgREST del profilo bot per TUTTO il processo
     # (connessione 5 s, lettura 20 s; la libreria ne dava 120 a ogni fase): con
     # la rete «a buco nero» un giro non resta piu' appeso minuti. Il database
