@@ -1,0 +1,6 @@
+WARNING:safe.porta_ordini:[safe.porta] canale di comando ws://127.0.0.1:0/comando/omega non disponibile (socket del banco chiuso)
+CRITICAL:omega.service:[omega] place LIVE a esito IGNOTO (trade 1, evento 35797769): in riconciliazione
+CRITICAL:omega.service:[omega] place LIVE a esito IGNOTO (trade 2, evento 35797769): in riconciliazione
+WARNING:safe.execution:[safe.exec] punta 1.11 -> 1.00 (multiplo di 0,50 per difetto): residuo 0.11 dichiarato (trade 2)
+CRITICAL:omega.service:[omega] evento 35797769: posizione chiusa DALL'UTENTE fuori dall'app -> il bot non gestisce piu' questa partita
+WARNING:safe.execution:[safe.exec] punta 1.11 -> 1.00 (multiplo di 0,50 per difetto): residuo 0.11 dichiarato (trade 2)

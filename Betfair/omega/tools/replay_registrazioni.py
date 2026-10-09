@@ -611,23 +611,42 @@ class DbMemoriaOmega(DbMemoria):
         return None
 
     # ------------------------------------------------------------ aggregati
-    def aggregates(self, day_start: Any = None) -> Dict[str, Any]:
+    def aggregates(self, day_start: Any = None,
+                   mode: Optional[str] = None) -> Dict[str, Any]:
         """La STESSA funzione pura del fallback di produzione
         (`omega_db.aggregates` -> `omega_engine.aggregate_trades`): niente
-        aritmetica scritta qui dentro."""
-        return self.aggregates_coppia(day_start)[0]
+        aritmetica scritta qui dentro. Firma IDENTICA al vero
+        (`omega_db.aggregates(day_start=None, mode=None)`): il primo della
+        coppia, della sola modalita' chiesta."""
+        return self.aggregates_coppia(day_start, mode=mode)[0]
 
-    def aggregates_coppia(self, day_start: Any = None) -> Any:
+    def aggregates_coppia(self, day_start: Any = None,
+                          mode: Optional[str] = None) -> Any:
         """`(totali di pagina, numeri con cui il bot decide)` — la stessa
         coppia che torna `omega_db.aggregates_coppia` in produzione, con le
         stesse chiavi (R6, 16/09). Il finto NON deve saper fare meno del vero:
         se qui tornasse un dizionario solo, il servizio userebbe la via
         degradata e il banco certificherebbe una strada che in produzione non
-        si percorre."""
+        si percorre.
+
+        T0B punto (4) (09/10/2026, U-32; E2 difetto 5; PSB par. 7 n.21 e
+        n.27): ``mode`` con la STESSA semantica del vero. 'paper'|'live'
+        (normalizzata come nel vero: spazi e maiuscole) -> le sole righe di
+        quella modalita', scelte dalla funzione PURA del vero
+        (`omega_engine.righe_della_modalita`: una chiusura vale la modalita'
+        della sua apertura, una riga senza modalita' vale 'paper'); qualsiasi
+        altro valore (None, vuota, sconosciuta) -> tutte, come il vero. Prima
+        il finto non accettava ``mode``: il servizio lo vedeva
+        (`omega_service._con_modalita`), gridava "paper e live SOMMATI" e
+        decideva sui numeri di tutte le modalita', percorso che in produzione
+        non si fa."""
         campi = ("id", "event_id", "status", "pnl", "liability", "bet_id",
                  "placed_at", "settled_at", "meta", "mode", "closes_trade_id",
                  "size", "price", "commission", "phase", "side", "origin")
         righe = [{k: r.get(k) for k in campi} for r in self.trades]
+        m = str(mode or "").strip().lower()
+        if m in ("paper", "live"):
+            righe = E.righe_della_modalita(righe, m)
         return (E.aggregate_trades(righe, day_start),
                 E.aggregate_trades(righe, day_start, solo_auto=True))
 

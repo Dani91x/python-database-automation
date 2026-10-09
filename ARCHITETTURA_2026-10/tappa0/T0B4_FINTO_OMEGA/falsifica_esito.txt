@@ -1,0 +1,11 @@
+sha256 originale 97809deb06cb8a3332c530cb0ab6f29504c6b8222c35f9fab433c1577d9133e3
+M1 il finto accetta mode ma lo ignora (somma paper e live): rossi=16 | 16 failed, 12 passed in 3.57s | ripristino sha ok=True
+M2 firma di prima: aggregates_coppia senza mode: rossi=18 | 18 failed, 10 passed in 3.35s | ripristino sha ok=True
+M3 modalita' non normalizzata (niente strip/lower): rossi=6 | 6 failed, 22 passed in 3.24s | ripristino sha ok=True
+M4 filtro ingenuo per colonna mode (chiusure e righe senza mode perse): rossi=13 | 13 failed, 15 passed in 3.38s | ripristino sha ok=True
+M5 modalita' sconosciuta filtra tutto invece di tornare tutte: rossi=3 | 3 failed, 25 passed in 3.46s | ripristino sha ok=True
+M6 aggregates torna i numeri del bot invece dei totali di pagina: rossi=6 | 6 failed, 22 passed in 2.89s | ripristino sha ok=True
+M7 default della firma diverso dal vero (mode='paper'): rossi=2 | 2 failed, 26 passed in 3.41s | ripristino sha ok=True
+M8 aggregates non passa mode alla coppia: rossi=5 | 5 failed, 23 passed in 2.89s | ripristino sha ok=True
+sha256 dopo il ripristino 97809deb06cb8a3332c530cb0ab6f29504c6b8222c35f9fab433c1577d9133e3
+ESITO: tutte le mutazioni ROSSE, file ripristinato
