@@ -12,7 +12,7 @@ Nessuna formula nuova, tutte RIUSATE o riprese riga per riga con test di parita'
     e da cui partono il green-up ``trading/greenup.py`` e lo specchio
     ``betfair_live_positions``): si CHIAMA, non si copia;
   * per il mercato, il P&L se vince ``k`` = la formula del frontend
-    ``frontend/src/lib/replayOperazioni.ts:186-194`` ``pnlSeVince``: back
+    ``frontend/src/lib/replayOperazioni.ts:189-197`` ``pnlSeVince``: back
     ``importo*(prezzo-1)`` se e' la sua selezione, altrimenti ``-importo``; lay
     l'opposto; somma su tutti gli abbinati, arrotondata al centesimo UNA volta;
   * prezzo medio per lato = ``flumine.utils.wap`` (media pesata sull'abbinato);
@@ -105,7 +105,7 @@ def esposizioni_per_selezione(ordini: Iterable[OrdineConto]) -> Dict[Tuple[int, 
 
 
 def pnl_se_vince(abbinati: Sequence[OrdineConto], vincitore: Optional[int]) -> float:
-    """``pnlSeVince`` di ``replayOperazioni.ts:186-194``, riga per riga
+    """``pnlSeVince`` di ``replayOperazioni.ts:189-197``, riga per riga
     (``vincitore=None`` = vince un runner senza ordini). Non arrotondato."""
     v = 0.0
     for a in abbinati:

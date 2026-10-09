@@ -14,7 +14,6 @@ ASCII-only.
 from __future__ import annotations
 
 import copy
-import json
 from types import SimpleNamespace
 from typing import Any, Dict, List, Tuple
 
@@ -25,7 +24,7 @@ from flumine.order.trade import Trade
 
 from Betfair.nucleo.ordini import riconciliazione as R
 from Betfair.nucleo.ordini.libro_conto import ordine_da_corrente
-from Betfair.nucleo.ordini.tests.test_c2_aiuti import (AWAY, HOME, MKT, Registro,
+from Betfair.nucleo.ordini.tests.test_c2_aiuti import (AWAY, MKT, Registro,
                                                        client_supabase, correnti, ordine_json)
 
 

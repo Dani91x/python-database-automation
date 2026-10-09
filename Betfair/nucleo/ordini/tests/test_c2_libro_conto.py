@@ -281,3 +281,30 @@ def test_modo_non_ammesso():
     with pytest.raises(ValueError):
         L.componi_ordine_conto("x", dal_conto(ordine_json("1", "BACK", 1.0, 2.0)),
                                A.Attribuzione("sito", "sito", "riferimenti"))
+
+
+def test_lettura_aspetta_lo_scrittore_deterministico(monkeypatch):
+    """Il lucchetto, provato senza dipendere dal caso: lo scrittore si ferma
+    DENTRO la composizione dell'ordine; un lettore deve aspettarlo."""
+    dentro, rilascia, letto = threading.Event(), threading.Event(), threading.Event()
+    vera = L.fase_dell_ordine
+
+    def lenta(o):
+        dentro.set()
+        assert rilascia.wait(5)
+        return vera(o)
+
+    lib = L.LibroConto()
+    A.regole_di_oggi()
+    monkeypatch.setattr(L, "fase_dell_ordine", lenta)
+    w = threading.Thread(target=lib.ricevi_live, args=(dal_conto(ordine_json("1", "BACK", 2.0, 2.0)),))
+    w.start()
+    assert dentro.wait(5)
+    r = threading.Thread(target=lambda: (lib.ordini(MKT), letto.set()))
+    r.start()
+    assert not letto.wait(0.3), "il lettore non ha aspettato lo scrittore"
+    rilascia.set()
+    assert letto.wait(5)
+    w.join()
+    r.join()
+    assert [o.bet_id for o in lib.ordini(MKT)] == ["1"]

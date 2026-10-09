@@ -3,7 +3,7 @@
   * per selezione: ``Blotter.get_exposures`` VERO di flumine su ``BetfairOrder``
     VERI con il ``CurrentOrder`` vero di betfairlightweight come risposta;
   * per il mercato: la formula ``pnlSeVince`` di
-    ``frontend/src/lib/replayOperazioni.ts`` (righe 186-194) ripresa qui riga per
+    ``frontend/src/lib/replayOperazioni.ts`` (righe 189-197) ripresa qui riga per
     riga (``_ts_pnl_se_vince``); il test verifica anche che il sorgente TS
     contenga ancora quelle righe (se cambia, il test diventa rosso);
   * P&L bloccato: ``lockedPnlAt`` di ``frontend/src/lib/ladderMath.ts`` (righe
@@ -12,10 +12,9 @@ ASCII-only.
 """
 from __future__ import annotations
 
-import itertools
 import pathlib
 import random
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import pytest
 from flumine import BaseStrategy
@@ -42,7 +41,7 @@ def oc(bet: str, sel: int, lato: str, abbinato: float, pm: Optional[float], *,
 
 # --------------------------------------------------------------------- la formula del frontend
 def _ts_pnl_se_vince(abb: List[Tuple[int, str, float, float]], vincitore: Optional[int]) -> float:
-    """replayOperazioni.ts:186-194, riga per riga:
+    """replayOperazioni.ts:189-197, riga per riga:
         let v = 0;
         for (const a of abb) {
             const suo = vincitore != null && a.selectionId === vincitore;

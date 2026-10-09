@@ -44,7 +44,6 @@ lo fa, al primo uso). ASCII-only; commenti in italiano.
 from __future__ import annotations
 
 import logging
-import re
 import threading
 from dataclasses import dataclass
 from typing import (Any, Dict, FrozenSet, Iterable, List, Literal, Mapping, Optional,
