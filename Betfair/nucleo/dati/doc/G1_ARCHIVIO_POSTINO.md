@@ -34,12 +34,14 @@ altrove; `ARCH_ARCHIVIO_DIR` la allinea all'app desktop. Mai dentro il repo. Un 
 
 ## 3. Uscite
 
-- Righe nel cloud tramite UNA RPC generica `postino_consegna` (insert `ON CONFLICT DO NOTHING`, upsert con versione
-  monotona `WHERE excluded.rev > t.rev`, patch, delete; esito per riga). In ombra: `<tabella>_ombra`.
+- Righe nel cloud tramite UNA RPC generica `postino_consegna` (insert `ON CONFLICT DO NOTHING`, upsert = fusione delle
+  colonne come oggi, patch, delete; versione LOCALE per origine, par. 12; esito per riga). In ombra: `<tabella>_ombra`.
 - Eventi (`eventi(nome, dati)`, di serie nel log del processo): `dati.postino_offline(da)`, `dati.postino_online`,
   `dati.dead_letter(tabella, riga, errore)`, `dati.postino_bloccato(tabella, errore)`, `dati.tetto_disco` (+ segnale
-  `ripiego_diretto`), `dati.riga_troncata`, `dati.archivio_guasto`/`_ripreso`, `dati.riconciliazione`.
-- `StatoPostino` (in coda, eta' massima, per tabella, ultimo errore, offline da, dead_letter), `RapportoRiconciliazione`,
+  `ripiego_diretto`), `dati.riga_troncata`, `dati.archivio_guasto`/`_ripreso`, `dati.riconciliazione`,
+  `dati.riga_vecchia`, `dati.dead_letter_archiviata`/`_superata`, `dati.archivio_guasto_codice`.
+- `StatoPostino` (in coda, eta' massima, per tabella, ultimo errore, offline da, dead_letter) come
+  `StatoPostinoArchivio` (+ `archiviate`, `guasti_codice`, `guasto_codice`), `RapportoRiconciliazione`,
   `misure()` (p50/p95/p99/max di accodamento, commit, durevole-dopo, checkpoint).
 
 ## 4. Dipendenze ammesse
@@ -103,22 +105,20 @@ Metro: (a) il cloud non perde NESSUN dato rispetto a oggi; (b) il DB locale e' i
 - **Upsert = fusione delle colonne** (B2, scelta dichiarata): come l'upsert di PostgREST di oggi, le colonne non scritte
   restano; vale per la riga locale, per `leggi` e per la coalescenza (una voce per chiave con le colonne FUSE). Un upsert
   parziale e' quindi sicuro; nessun rifiuto in `scrivi`.
-- **Versione per riga** (M3, scelta dichiarata): versione piu' nuova -> passa; UGUALE o piu' vecchia di al massimo 5 s
-  (`TOLLERANZA_OROLOGIO_US`, l'orologio di Windows che torna indietro) -> diventa "precedente + 1 us" e VINCE, come vince
-  oggi l'ultimo upsert; piu' vecchia oltre 5 s (versione intera: qualunque regressione) -> dato stantio, scartato con
-  l'evento `dati.riga_vecchia`. Nel cloud la RPC risponde `vecchia` (evento per riga) quando la riga c'e' con una
-  versione piu' nuova. Il SQL resta con `>` stretto: le versioni arrivano gia' monotone dall'archivio.
-- **Scrittore** (A2, M5, M6): tre unita' indipendenti per lotto (log, denaro, vivo); la voce impossibile da salvare
-  (intero oltre 2^63, chiave con un surrogato) va in `scarti_scrittore.jsonl` (fsync) e il resto prosegue; gli errori
-  di I/O si ritentano per sempre; alla chiusura con il disco guasto le voci accettate vanno in `salvataggio-*.jsonl` e
+- **Versione** (M3, RISCRITTA dalla terza revisione R1: vedi par. 12): non piu' l'orologio del bot.
+- **Scrittore** (A2, M5, M6; R3 della terza revisione): tre unita' indipendenti per lotto (log, denaro, vivo); la voce
+  impossibile da salvare per un errore di DATO provato (`errore_di_dato`: surrogato, intero fuori misura, vincolo SQLite)
+  va in `scarti_scrittore.jsonl` (fsync) e il resto prosegue; gli errori di I/O si ritentano per sempre; un errore di
+  CODICE su tutte le voci non scarta nulla (par. 12); alla chiusura con il disco guasto le voci accettate vanno in `salvataggio-*.jsonl` e
   rientrano all'apertura dopo; `conferma()` e' una soglia contigua; un lavoro sincrono scaduto prima di partire si
   annulla (esito vero: non avvenuto), se e' partito si aspetta il suo esito vero.
 - **Postino** (A1, A4, M1, M4): valore non JSON (NaN, Infinity, surrogato) -> dead_letter prima della chiamata; errore di
   dato su tutta la chiamata (\u0000, classe 22) -> bisezione fino alla riga sola; per riga: classe 22 e 23 (tranne 23503)
   -> dead_letter `dato`; classe 42/0A e intestazione `GP001` -> tabella bloccata, segnalata UNA volta, riga in coda;
   tutto il resto -> transitorio, ~6 h di ritenti (360 tentativi, attese fino a 60 s), poi dead_letter `transitorio`.
-  **Rientro automatico** delle dead_letter: transitorie ogni 15 min, `dato` e `registro` ogni 24 h, senza tetto di
-  rientri (contatore `rientri`): una migrazione che corregge un CHECK fa rientrare da sola le righe (PSB 7 n.18).
+  **Rientro automatico** delle dead_letter: transitorie ogni 15 min, `dato` e `registro` ogni 24 h (contatore
+  `rientri`): una migrazione che corregge un CHECK fa rientrare da sola le righe (PSB 7 n.18); dopo 7 rientri falliti
+  una `dato` diventa ARCHIVIATA (par. 12).
   Voce di una tabella non registrata -> dead_letter `registro`. Per chiave: al massimo una voce per chiamata, FIFO
   fra un giro e l'altro (`outbox_pronta`), le voci dopo una chiave fallita aspettano.
 - **Log** (A3, M2, B7): riparazione della riga troncata cercando l'ultimo `\n` a blocchi fino all'inizio del file;
@@ -127,3 +127,55 @@ Metro: (a) il cloud non perde NESSUN dato rispetto a oggi; (b) il DB locale e' i
 - **Manutenzione** (M7, B1): pulizia a pezzi di 1.000 righe (lavori di millisecondi); `auto_vacuum=INCREMENTAL`
   effettivo (VACUUM una tantum) e spazio restituito a pezzi.
 - `apri()` puo' sollevare `OSError` (cartella non creabile) o `ArchivioOccupato` (B3): l'aggancio resta su "vecchio".
+
+## 12. Regole della terza revisione (09/10, "PASSA con 4 riserve")
+
+Principio vincolante: **IDENTICO A OGGI**. Oggi vince l'ultima scrittura fatta dal bot e nessuna scrittura viene
+scartata; la versione serve SOLO a impedire che una voce VECCHIA della STESSA origine (ritento del postino, rientro da
+dead_letter, voce ripetuta dopo un crash) sovrascriva una voce piu' nuova della stessa origine.
+
+- **Versione LOCALE (R1)**. Ogni scrittura (`scrivi`, `accoda`, `transizione`) riceve, nel momento in cui e' accodata e
+  sotto lo stesso lucchetto dell'accodamento, la `vseq`: un numero MONOTONO del suo file (`denaro`/`vivo`), persistito in
+  `meta.vseq` nella stessa transazione delle righe (mai riusato, nemmeno dopo pulizia e riapertura). Ogni file ha la sua
+  `origine` (`processo/regime/id casuale del file`, `meta.origine`): un file ricreato e' un'origine nuova.
+  In locale vince SEMPRE l'ultima accodata (fusione delle colonne); `updated_at` del bot si scrive TALE E QUALE (niente
+  piu' "+1 us", niente scarti per l'orologio). La colonna `rev_colonna` del registro serve solo alla riconciliazione.
+- **Nel cloud** la RPC `postino_consegna(p_tabella, p_op, p_conflitto, p_righe, p_origine, p_versioni)` confronta la
+  `vseq` SOLO con le voci della STESSA origine (tabella `public.postino_versioni`: per tabella, chiave, origine la versione
+  piu' alta applicata): piu' vecchia -> `vecchia` (riga intatta, evento `dati.riga_vecchia`), uguale -> `ignorata` (era gia'
+  applicata: ritento dopo una risposta persa), piu' nuova o origine diversa -> scritta: **fra origini diverse vince
+  l'ultima arrivata, come oggi**. La versione registrata e' nella stessa sottotransazione della riga (una riga rifiutata
+  non lascia la sua versione); le versioni di oltre 90 giorni le toglie la RPC stessa (100 per chiamata).
+- **Rientro delle dead_letter (R2)**: (a) una riga di stato la cui chiave ha gia' una scrittura PIU' NUOVA (vseq piu'
+  alta nella riga locale o in outbox) non rientra: resta ARCHIVIATA con la nota "superata" (evento
+  `dati.dead_letter_superata`); se la riga locale non c'e' piu', il cloud la scarta comunque come `vecchia` (seconda
+  difesa). (b) Una dead_letter di DATO che fallisce `RIENTRI_MAX_DATO` = 7 rientri (uno ogni 24 h) diventa ARCHIVIATA:
+  resta su disco, esce dal conteggio d'allarme, non costa piu' chiamate; `stato()` (un `StatoPostinoArchivio`, sottoclasse
+  di `StatoPostino` con i campi del contratto invariati) la conta in `archiviate`. Le transitorie (un padre che arriva
+  tardi) e quelle di registro rientrano per sempre. (c) `pulisci()` toglie le archiviate dopo
+  `CONSERVA_ARCHIVIATE_GIORNI` = 30 giorni dall'archiviazione; mai le attive.
+- **Guasto del codice (R3)**: `errore_di_dato` copre SOLO i casi di dato provati (`UnicodeEncodeError`/`DecodeError`,
+  `OverflowError`, `sqlite3.IntegrityError`/`DataError`, JSON guasto). Un errore di altro tipo (TypeError,
+  ProgrammingError...) che colpisce TUTTE le voci e' un guasto del codice: le voci restano in coda e si ritentano con
+  attesa crescente (mai scarti), log CRITICAL al piu' una volta al minuto, contatore `guasti_codice` ed evento d'allarme
+  `dati.archivio_guasto_codice`, esposti in `stato()` (`guasti_codice`, `guasto_codice`); se colpisce una voce sola
+  mentre le altre passano, la voce va negli scarti. Gli scarti restano nell'allarme 7 giorni (come una `dato` prima
+  dell'archiviazione), poi contano fra le archiviate; la pulizia li toglie dopo altri 30 giorni.
+- **Disco guasto a processo vivo (R4)**: si ritenta per sempre con attesa crescente (tetto 30 s); il file di salvataggio
+  si scrive SOLO alla chiusura. Il chiamante di un lavoro gia' partito (transizione, `accoda`) aspetta l'esito vero.
+
+## 13. Per W1-C1 (porta ordini): semantica di `transizione` e regime delle tabelle della porta
+
+Semantica verificata dal revisore (`transizione.py`) e provata da `test_g1_terza_revisione.py::test_C1_*`:
+- riga assente -> `False`; riga con la colonna di stato diversa da `da` (o assente) -> `False`; un secondo claim uguale
+  -> `False`; tabella di log -> `ValueError`; tabella non registrata -> `KeyError`;
+- cambia UNA colonna sola, `status` (`colonna_stato`); le altre, `updated_at` compreso, restano tali e quali;
+- vede tutte le scritture accodate PRIMA (anche non ancora su disco): e' eseguita dal thread di scrittura;
+- atomicita' LOCALE: riga e voce di outbox nella stessa transazione, un solo scrittore per archivio. NON e' un lucchetto
+  fra processi (due archivi diversi non si vedono): i claim fra processi restano quelli del cloud di oggi;
+- durabilita' PIENA (WAL `synchronous=FULL`) solo per le tabelle del regime `stato_denaro`; su `stato_vivo` (NORMAL)
+  un claim confermato puo' perdersi a PC spento;
+- con il disco guasto il chiamante resta BLOCCATO finche' il disco non torna (mai un esito falso); l'unica eccezione e'
+  il lavoro che scade PRIMA di partire: `TimeoutError` "annullato prima di partire (non eseguito)", esito vero.
+- Le tabelle della porta (`ordini_ref_visti`, `ordini_seq`) vanno REGISTRATE nel registro con regime `stato_denaro`
+  (durabilita' piena: un riferimento d'ordine gia' visto o una sequenza non devono tornare indietro dopo un crash).

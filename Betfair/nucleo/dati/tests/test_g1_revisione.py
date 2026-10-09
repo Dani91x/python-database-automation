@@ -231,16 +231,21 @@ def test_rev_D6b_orologio_indietro_di_3_s_vince_l_ultima_scritta(banco: Banco) -
     a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTION_COMPLETE", "2025-10-09T10:00:07+00:00"))   # NTP: -3 s
     assert a.conferma() and p.drena().errore is None
     assert banco.righe("betfair_live_orders")[0]["status"] == "EXECUTION_COMPLETE"
-    assert a.contatori["versioni_corrette"] == 1
+    # terza revisione R1: updated_at TALE E QUALE (prima: spostato a "precedente + 1 us")
+    assert banco.righe("betfair_live_orders")[0]["updated_at"] == "2025-10-09T10:00:07+00:00"
 
 
-def test_rev_M3_versione_vecchia_oltre_tolleranza_scartata_con_evento(banco: Banco) -> None:
+def test_rev_M3_orologio_indietro_di_9_s_vince_l_ultima_scritta(banco: Banco) -> None:
+    """Terza revisione R1 (principio "identico a oggi"): prima della terza revisione la
+    scrittura con updated_at 9 s piu' vecchio era scartata come stantia; ora VINCE, come
+    oggi vince l'ultimo upsert, e nessun evento di riga vecchia."""
     a, p = banco.archivio, banco.postino
     a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTABLE", "2025-10-09T10:00:10+00:00"))
-    a.scrivi("betfair_live_orders", riga_ordine("r1", "PENDING", "2025-10-09T10:00:01+00:00"))       # -9 s: stantia
+    a.scrivi("betfair_live_orders", riga_ordine("r1", "PENDING", "2025-10-09T10:00:01+00:00"))       # -9 s
     assert a.conferma() and p.drena().errore is None
-    assert banco.righe("betfair_live_orders")[0]["status"] == "EXECUTABLE"
-    assert banco.nomi().count("dati.riga_vecchia") == 1
+    assert banco.righe("betfair_live_orders")[0]["status"] == "PENDING"
+    assert banco.righe("betfair_live_orders")[0]["updated_at"] == "2025-10-09T10:00:01+00:00"
+    assert banco.nomi().count("dati.riga_vecchia") == 0
 
 
 # ---------------------------------------------------------------- B2 coalescenza che fonde
@@ -654,11 +659,13 @@ def test_rev_R1_pulizia_non_toglie_un_file_di_log_non_consegnato(banco: Banco) -
     assert banco.postino.drena().consegnate == 3
 
 
-def test_rev_R13_leggi_non_regredisce_con_versione_stantia(banco: Banco) -> None:
-    """R13: due scrivi con versione decrescente OLTRE la tolleranza: leggi() vede la piu' nuova."""
+def test_rev_R13_leggi_vede_l_ultima_scritta_prima_e_dopo_il_commit(banco: Banco) -> None:
+    """R13 (riletto con la terza revisione R1): leggi() vede SEMPRE l'ultima scrittura
+    accodata, prima e dopo il commit, qualunque sia il suo updated_at (stessa regola dello
+    scrittore: nessuna regressione fra vista in attesa e disco)."""
     a = banco.archivio
-    a.scrivi("betfair_live_orders", riga_ordine("r1", "NUOVO", "2025-10-09T10:00:10+00:00"))
-    a.scrivi("betfair_live_orders", riga_ordine("r1", "VECCHIO", "2025-10-09T10:00:01+00:00"))
-    assert a.leggi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r1"})["status"] == "NUOVO"
+    a.scrivi("betfair_live_orders", riga_ordine("r1", "PRIMA", "2025-10-09T10:00:10+00:00"))
+    a.scrivi("betfair_live_orders", riga_ordine("r1", "ULTIMA", "2025-10-09T10:00:01+00:00"))
+    assert a.leggi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r1"})["status"] == "ULTIMA"
     assert a.conferma()
-    assert a.leggi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r1"})["status"] == "NUOVO"
+    assert a.leggi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r1"})["status"] == "ULTIMA"

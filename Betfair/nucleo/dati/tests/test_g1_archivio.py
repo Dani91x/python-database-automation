@@ -184,15 +184,17 @@ def test_leggi_vede_subito_e_versione_mai_indietro(tmp_path: Path) -> None:
         a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTION_COMPLETE", "2026-10-09T10:00:05+00:00"))
         assert a.leggi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r1"})["status"] == \
             "EXECUTION_COMPLETE"                                          # prima del commit
-        # piu' vecchia OLTRE la tolleranza dell'orologio (5 s): dato stantio, scartato con un evento
+        # terza revisione R1 ("identico a oggi"): una scrittura successiva con updated_at piu'
+        # vecchio (orologio indietro di 65 s) VINCE e si scrive tale e quale; nessuno scarto
         a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTABLE", "2026-10-09T09:59:00+00:00"))
         assert a.conferma()
-        assert a.leggi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r1"})["status"] == \
-            "EXECUTION_COMPLETE"
-        assert a.contatori["righe_vecchie_scartate"] == 1
-        assert len(a.outbox_pronta("stato_denaro", 2 ** 62, 10)) == 1     # la vecchia non va in coda
-        with pytest.raises(ValueError):
-            a.scrivi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r2", "status": "X"})
+        r = a.leggi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r1"})
+        assert r["status"] == "EXECUTABLE" and r["updated_at"] == "2026-10-09T09:59:00+00:00"
+        voci = a.outbox_pronta("stato_denaro", 2 ** 62, 10)
+        assert len(voci) == 2 and voci[1].vseq > voci[0].vseq                # entrambe in coda, in ordine
+        # come oggi: una riga senza updated_at si scrive (la versione e' locale, non del bot)
+        a.scrivi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r2", "status": "X"})
+        assert a.conferma()
         with pytest.raises(KeyError):
             a.scrivi("tabella_mai_registrata", {"x": 1})
         with pytest.raises(ValueError):
@@ -229,14 +231,19 @@ def test_transizione_claim_atomico_una_volta_sola(tmp_path: Path) -> None:
         a.chiudi()
 
 
-def test_transizione_alza_la_versione(tmp_path: Path) -> None:
+def test_transizione_cambia_solo_lo_stato_e_alza_la_vseq_locale(tmp_path: Path) -> None:
+    """Terza revisione R1: la transizione cambia SOLO la colonna di stato (``updated_at``
+    del bot resta tale e quale) e la sua voce porta una vseq locale piu' alta."""
     a = apri(tmp_path)
     try:
         a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTABLE", "2099-01-01T00:00:00+00:00"))
         assert a.transizione("betfair_live_orders", {"mode": "paper", "client_order_ref": "r1"},
                              "EXECUTABLE", "EXECUTION_COMPLETE")
         r = a.leggi("betfair_live_orders", {"mode": "paper", "client_order_ref": "r1"})
-        assert S.rev_ordinabile(r["updated_at"]) > S.rev_ordinabile("2099-01-01T00:00:00+00:00")
+        assert r["updated_at"] == "2099-01-01T00:00:00+00:00" and r["status"] == "EXECUTION_COMPLETE"
+        voci = a.outbox_pronta("stato_denaro", 2 ** 62, 10)
+        assert [json.loads(v.testo)["status"] for v in voci] == ["EXECUTABLE", "EXECUTION_COMPLETE"]
+        assert voci[0].vseq is not None and voci[1].vseq == voci[0].vseq + 1
     finally:
         a.chiudi()
 

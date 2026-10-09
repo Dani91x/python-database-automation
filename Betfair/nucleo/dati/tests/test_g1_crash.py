@@ -124,6 +124,7 @@ class Persistente(PostgrestFinto):
     def consegna(self, *a):
         esiti = super().consegna(*a)
         dump = {n: t.righe for n, t in self.tabelle.items()}
+        dump["__versioni__"] = self.versioni          # il cloud tiene anche public.postino_versioni
         with open(stato_cloud, "w") as f:
             json.dump(dump, f); f.flush(); os.fsync(f.fileno())
         return esiti
@@ -151,8 +152,9 @@ def test_postino_ucciso_fra_risposta_e_conferma_zero_duplicati(tmp_path: Path) -
     r = subprocess.run([sys.executable, "-c", FIGLIO_POSTINO, str(tmp_path), str(stato_cloud)], cwd=RADICE,
                        capture_output=True, text=True, timeout=120)
     assert r.returncode == 7, r.stderr[-2000:]
-    dump: Dict[str, List[Dict[str, Any]]] = json.loads(stato_cloud.read_text())
+    dump: Dict[str, Any] = json.loads(stato_cloud.read_text())
     srv = PostgrestFinto()
+    srv.versioni = dump.pop("__versioni__")
     for nome, righe in dump.items():
         srv.tabelle[nome].righe = righe
         srv.tabelle[nome].prossimo_id = len(righe) + 1
@@ -198,10 +200,12 @@ class Persistente(PostgrestFinto):
             for n, righe in d["righe"].items():
                 self.tabelle[n].righe = righe
                 self.tabelle[n].prossimo_id = d["id"][n]
+            self.versioni = d["versioni"]
 
     def consegna(self, *a):
         esiti = super().consegna(*a)
-        d = {"righe": {n: t.righe for n, t in self.tabelle.items()}, "id": {n: t.prossimo_id for n, t in self.tabelle.items()}}
+        d = {"righe": {n: t.righe for n, t in self.tabelle.items()}, "id": {n: t.prossimo_id for n, t in self.tabelle.items()},
+             "versioni": self.versioni}
         tmp = cloudfile.with_suffix(".tmp")
         tmp.write_text(json.dumps(d))
         os.replace(tmp, cloudfile)
@@ -230,9 +234,17 @@ def manutenzione():
             sys.stderr.write("manutenzione: %r\n" % (exc,))
 
 if modo == "finale":
-    for _ in range(600):
+    # finestra ADATTIVA: si drena finche' la coda scende; ci si ferma solo se non scende per
+    # FERMO_S secondi (cosi' la prova e' rossa solo per una perdita vera, mai per la lentezza)
+    FERMO_S = float(os.environ.get("G1_FERMO_S", "60"))
+    minimo, ultimo_calo = None, time.monotonic()
+    while True:
         st = p.stato()
         if st.in_coda == 0:
+            break
+        if minimo is None or st.in_coda < minimo:
+            minimo, ultimo_calo = st.in_coda, time.monotonic()
+        elif time.monotonic() - ultimo_calo > FERMO_S:
             break
         time.sleep(0.1)
     print(json.dumps({"in_coda": p.stato().in_coda, "dead": len(a.dead_letter()), "segn": [s["tipo"] for s in a.segnalazioni()]}))
@@ -284,7 +296,7 @@ def test_sigkill_casuali_nessuna_riga_confermata_persa(tmp_path: Path) -> None:
         err = p.communicate()[1]
         assert "Traceback" not in err, err[-1500:]
     r = subprocess.run([sys.executable, "-c", FIGLIO_SIGKILL, str(base), str(cloud), str(ack), "fin", "finale"],
-                       cwd=RADICE, capture_output=True, text=True, timeout=180)
+                       cwd=RADICE, capture_output=True, text=True, timeout=3600)  # il figlio si ferma da solo (fermo 60 s)
     esito = json.loads(r.stdout.strip().splitlines()[-1])
     assert esito["in_coda"] == 0 and esito["dead"] == 0, esito
     d = json.loads(cloud.read_text())["righe"]

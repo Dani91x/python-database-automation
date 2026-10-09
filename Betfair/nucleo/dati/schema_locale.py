@@ -40,7 +40,7 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 
 from .contratto import SpecTabella
 
-VERSIONE_SCHEMA = 2
+VERSIONE_SCHEMA = 3
 
 #: migrazioni in ordine; l'indice + 1 e' la ``user_version`` raggiunta
 MIGRAZIONI: Tuple[Tuple[str, ...], ...] = (
@@ -111,6 +111,23 @@ MIGRAZIONI: Tuple[Tuple[str, ...], ...] = (
         "CREATE INDEX dead_letter_rientro ON dead_letter (prossimo_rientro_ms)",
         "ALTER TABLE outbox ADD COLUMN rientri INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE consegna ADD COLUMN firma TEXT",
+    ),
+    # v3 (terza revisione 09/10, R1/R2): versione LOCALE delle scritture. ``meta.vseq`` e'
+    # l'ultima sequenza confermata del file (mai indietro, mai riusata), ``meta.origine``
+    # l'identita' del file (casuale alla nascita: un file ricreato e' un'origine nuova).
+    # ``righe.rev`` non si usa piu' (la versione del bot resta nel JSON tale e quale).
+    # dead_letter: ``vseq`` d'origine, ``archiviata_ms`` (R2b: fuori dall'allarme e dai
+    # rientri) e ``nota`` (perche' archiviata).
+    (
+        "CREATE TABLE meta (nome TEXT PRIMARY KEY, valore) WITHOUT ROWID",
+        "INSERT INTO meta (nome, valore) VALUES ('vseq', 0)",
+        "INSERT INTO meta (nome, valore) VALUES ('origine', lower(hex(randomblob(16))))",
+        "ALTER TABLE righe ADD COLUMN vseq INTEGER",
+        "ALTER TABLE outbox ADD COLUMN vseq INTEGER",
+        "ALTER TABLE dead_letter ADD COLUMN vseq INTEGER",
+        "ALTER TABLE dead_letter ADD COLUMN archiviata_ms INTEGER",
+        "ALTER TABLE dead_letter ADD COLUMN nota TEXT",
+        "CREATE INDEX dead_letter_archiviata ON dead_letter (archiviata_ms)",
     ),
 )
 

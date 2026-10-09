@@ -37,12 +37,30 @@ def banco(tmp_path: Path):
     b.chiudi()
 
 
+class _ConnOverflow:
+    """Il binding di SQLite che rifiuta un intero fuori misura (OverflowError) per UNA chiave:
+    dalla terza revisione la versione del bot non va piu' in una colonna INTEGER (R1), quindi
+    l'errore di dato dello scrittore si provoca qui, con la STESSA eccezione di sqlite3."""
+
+    def __init__(self, conn: sqlite3.Connection, chiave: str) -> None:
+        self._c, self.chiave = conn, chiave
+
+    def execute(self, sql: str, *a: Any) -> Any:
+        if sql.startswith(("INSERT INTO righe", "UPDATE righe")) and a and self.chiave in a[0]:
+            raise OverflowError("Python int too large to convert to SQLite INTEGER")
+        return self._c.execute(sql, *a)
+
+    def __getattr__(self, k: str) -> Any:
+        return getattr(self._c, k)
+
+
 # ---------------------------------------------------------------- A2 scrittore: voce velenosa isolata
 def test_A2_versione_oltre_2_alla_63_isolata_negli_scarti_il_resto_prosegue(tmp_path: Path) -> None:
     eventi: List[Tuple[str, Dict[str, Any]]] = []
     a = ArchivioLocale("prova", {**SPEC, CONTATORI.nome: CONTATORI}, base=tmp_path,
                        eventi=lambda n, d: eventi.append((n, dict(d)))).apri()
     try:
+        a._scrittori["stato_vivo"] = _ConnOverflow(a._scrittori["stato_vivo"], "[1]")  # type: ignore[assignment]
         a.scrivi("contatori_prova", {"k": 1, "rev": 2 ** 64, "v": "veleno"})       # OverflowError in SQLite
         a.scrivi("contatori_prova", {"k": 2, "rev": 1, "v": "buona"})
         a.scrivi("mike_activity", riga_attivita(1))
@@ -260,17 +278,20 @@ def test_M4_voce_successiva_non_supera_quella_in_attesa_nei_giri_dopo(tmp_path: 
 
 
 # ---------------------------------------------------------------- M3 con versione INTERA
-def test_M3_versione_intera_uguale_vince_l_ultima_minore_e_stantia(tmp_path: Path) -> None:
+def test_M3_versione_intera_vince_sempre_l_ultima_scritta_tale_e_quale(tmp_path: Path) -> None:
+    """Terza revisione R1: anche con una versione INTERA del bot vince l'ultima scrittura,
+    con il valore del bot tale e quale (prima: uguale -> +1, minore -> scartata)."""
     eventi: List[str] = []
     a = ArchivioLocale("prova", {**SPEC, CONTATORI.nome: CONTATORI}, base=tmp_path,
                        eventi=lambda n, d: eventi.append(n)).apri()
     try:
         a.scrivi("contatori_prova", {"k": 1, "rev": 5, "v": "a"})
-        a.scrivi("contatori_prova", {"k": 1, "rev": 5, "v": "b"})        # stessa versione: vince l'ultima, rev 6
+        a.scrivi("contatori_prova", {"k": 1, "rev": 5, "v": "b"})
         assert a.conferma()
-        assert a.leggi("contatori_prova", {"k": 1}) == {"k": 1, "rev": 6, "v": "b"}
-        a.scrivi("contatori_prova", {"k": 1, "rev": 4, "v": "c"})        # intero piu' basso: stantio, scartato
+        assert a.leggi("contatori_prova", {"k": 1}) == {"k": 1, "rev": 5, "v": "b"}
+        a.scrivi("contatori_prova", {"k": 1, "rev": 4, "v": "c"})
         assert a.conferma()
-        assert a.leggi("contatori_prova", {"k": 1})["v"] == "b" and eventi.count("dati.riga_vecchia") == 1
+        assert a.leggi("contatori_prova", {"k": 1}) == {"k": 1, "rev": 4, "v": "c"}
+        assert eventi.count("dati.riga_vecchia") == 0
     finally:
         a.chiudi()

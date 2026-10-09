@@ -31,7 +31,7 @@ ARGS = psql_argomenti()
 pytestmark = pytest.mark.skipif(ARGS is None, reason="G1_PG_PSQL non impostata: PostgreSQL usa-e-getta assente")
 
 TABELLE = ["mike_activity", "mike_activity_ombra", "live_alerts", "live_follow", "betfair_live_orders",
-           "betfair_live_orders_ombra", "betfair_live_order_requests"]
+           "betfair_live_orders_ombra", "betfair_live_order_requests", "postino_versioni"]
 
 
 def _solo_locale() -> None:
@@ -95,20 +95,31 @@ def test_pg_check_dead_letter_e_23503_poi_padre(pg) -> None:
     assert [x["code"] for x in righe("live_alerts")] == ["b"]
 
 
-def test_pg_versione_mai_indietro(pg) -> None:
-    a, p, srv, ora, _ = pg
-    a.accoda("betfair_live_orders", "upsert", None, riga_ordine("r1", "EXECUTION_COMPLETE", "2025-10-09T10:00:09+00:00"))
-    assert p.drena().consegnate == 1
-    a.accoda("betfair_live_orders", "upsert", None, riga_ordine("r1", "EXECUTABLE", "2025-10-09T10:00:01+00:00"))
-    # l'archivio locale la ignora gia' (versione piu' vecchia): la mando io a mano al cloud
-    esiti = srv.rpc("postino_consegna", {"p_tabella": "betfair_live_orders", "p_op": "upsert",
-                                         "p_conflitto": ["mode", "client_order_ref"], "p_rev": "updated_at",
-                                         "p_righe": [riga_ordine("r1", "EXECUTABLE", "2025-10-09T10:00:01+00:00")]})
-    assert esiti == [{"esito": "vecchia"}]                                   # M3: scartata e DETTA
+def test_pg_versione_per_origine_mai_dall_orologio(pg) -> None:
+    """Terza revisione R1 sul PostgreSQL vero: l'orologio indietro di 115 s non fa perdere
+    EXECUTION_COMPLETE (updated_at tale e quale); la versione decide SOLO fra voci della
+    stessa origine; fra origini diverse vince l'ultima arrivata."""
+    a, p, srv, ora, eventi = pg
+    a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTABLE", "2025-10-09T10:02:00+00:00"))
+    a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTION_COMPLETE", "2025-10-09T10:00:05+00:00"))
+    assert a.conferma() and p.drena().consegnate == 2
+    r = righe("betfair_live_orders")[0]
+    assert r["status"] == "EXECUTION_COMPLETE" and r["updated_at"].startswith("2025-10-09T10:00:05")
+    assert "dati.riga_vecchia" not in eventi
+    base = {"p_tabella": "betfair_live_orders", "p_op": "upsert", "p_conflitto": ["mode", "client_order_ref"]}
+    origine = a.origine("stato_denaro")
+    vecchia = srv.rpc("postino_consegna", {**base, "p_origine": origine, "p_versioni": [1], "p_righe": [
+        riga_ordine("r1", "EXECUTABLE", "2025-10-09T10:09:00+00:00")]})
+    stessa = srv.rpc("postino_consegna", {**base, "p_origine": origine, "p_versioni": [2], "p_righe": [
+        riga_ordine("r1", "EXECUTABLE", "2025-10-09T10:09:00+00:00")]})
+    assert (vecchia, stessa) == ([{"esito": "vecchia"}], [{"esito": "ignorata"}])
     assert righe("betfair_live_orders")[0]["status"] == "EXECUTION_COMPLETE"
-    a.scrivi("betfair_live_orders", riga_ordine("r1", "CANCELLED", "2025-10-09T10:00:10+00:00"))
-    assert a.conferma() and p.drena().consegnate == 1
-    assert righe("betfair_live_orders")[0]["status"] == "CANCELLED"
+    altra = srv.rpc("postino_consegna", {**base, "p_origine": "altro/stato_denaro/x", "p_versioni": [1], "p_righe": [
+        riga_ordine("r1", "CANCELLED", "2025-10-09T09:00:00+00:00")]})
+    assert altra == [{"esito": "ok"}] and righe("betfair_live_orders")[0]["status"] == "CANCELLED"
+    senza = srv.rpc("postino_consegna", {**base, "p_righe": [riga_ordine("r1", "LAPSED", "2025-10-09T08:00:00+00:00")]})
+    assert senza == [{"esito": "ok"}] and righe("betfair_live_orders")[0]["status"] == "LAPSED"
+    assert sql("SELECT count(*) FROM public.postino_versioni;") == "2"
 
 
 def test_pg_ombra_e_confronto(tmp_path: Path, pg) -> None:
@@ -148,19 +159,56 @@ def test_pg_riconcilia(pg) -> None:
 
 
 # ---------------------------------------------------------------- correzioni dopo la revisione (09/10)
-def test_pg_R12_patch_con_versione_piu_vecchia_non_tocca_il_cloud(pg) -> None:
+def test_pg_R12_patch_con_versione_piu_vecchia_della_stessa_origine_non_tocca_il_cloud(pg) -> None:
     a, p, srv, ora, _ = pg
     a.accoda("betfair_live_orders", "upsert", None, riga_ordine("r1", "EXECUTION_COMPLETE", "2025-10-09T10:00:09+00:00"))
     assert p.drena().consegnate == 1
     base = {"p_tabella": "betfair_live_orders", "p_op": "patch", "p_conflitto": ["mode", "client_order_ref"],
-            "p_rev": "updated_at"}
-    vecchia = srv.rpc("postino_consegna", {**base, "p_righe": [
+            "p_origine": a.origine("stato_denaro")}
+    vecchia = srv.rpc("postino_consegna", {**base, "p_versioni": [0], "p_righe": [
         {"mode": "paper", "client_order_ref": "r1", "status": "EXECUTABLE", "updated_at": "2025-10-09T10:00:01+00:00"}]})
     assert vecchia == [{"esito": "vecchia"}]
     assert righe("betfair_live_orders")[0]["status"] == "EXECUTION_COMPLETE"
-    nuova = srv.rpc("postino_consegna", {**base, "p_righe": [
-        {"mode": "paper", "client_order_ref": "r1", "status": "CANCELLED", "updated_at": "2025-10-09T10:00:10+00:00"}]})
+    nuova = srv.rpc("postino_consegna", {**base, "p_versioni": [10], "p_righe": [
+        {"mode": "paper", "client_order_ref": "r1", "status": "CANCELLED", "updated_at": "2025-10-09T10:00:01+00:00"}]})
     assert nuova == [{"esito": "ok"}] and righe("betfair_live_orders")[0]["status"] == "CANCELLED"
+    # una riga rifiutata (CHECK) non lascia la sua versione: il ritento corretto passa
+    rifiutata = srv.rpc("postino_consegna", {**base, "p_versioni": [11], "p_righe": [
+        {"mode": "paper", "client_order_ref": "r1", "side": "BACK"}]})
+    assert rifiutata[0]["esito"] == "errore" and rifiutata[0]["codice"] == "23514"
+    assert srv.rpc("postino_consegna", {**base, "p_versioni": [11], "p_righe": [
+        {"mode": "paper", "client_order_ref": "r1", "side": "lay"}]}) == [{"esito": "ok"}]
+
+
+def test_pg_R2a_dl_stale_il_rientro_non_riporta_indietro_il_cloud(tmp_path: Path, pg) -> None:
+    """dl_stale.py del revisore sul PostgreSQL vero (live_alerts come stato senza versione)."""
+    from Betfair.nucleo.dati.contratto import SpecTabella
+    _, _, srv, ora, _ = pg
+    spec = dict(SPEC)
+    spec["live_alerts"] = SpecTabella("live_alerts", ("uid",), "CMD", "stato_vivo", 5.0, False, None, ("live_follow",))
+    a = ArchivioLocale("dl", spec, base=tmp_path / "dl", orologio_ms=lambda: ora[0]).apri()
+    try:
+        p = PostinoLocale(a, CloudProva(srv), orologio_ms=lambda: ora[0], eventi=lambda n, d: None,
+                          tetto_tentativi_riga=3)
+        uid = "00000000-0000-0000-0000-000000000001"
+        a.scrivi("live_alerts", {"uid": uid, "level": "INFO", "code": "c", "message": "VECCHIO", "event_id": "padre"})
+        assert a.conferma()
+        for _ in range(4):
+            p.drena()
+            ora[0] += 61_000
+        assert [d["motivo"] for d in a.dead_letter()] == ["transitorio"]
+        a.scrivi("live_alerts", {"uid": uid, "level": "INFO", "code": "c", "message": "NUOVO", "event_id": None})
+        assert a.conferma() and p.drena().consegnate == 1
+        sql("INSERT INTO public.live_follow (event_id, home_name, away_name, open_date) VALUES ('padre', 'A', 'B', now());")
+        ora[0] += 16 * 60_000
+        a._esegui_sincrono("stato_vivo", lambda c: c.execute("DELETE FROM righe"))   # anche senza la difesa locale
+        for _ in range(3):
+            p.drena()
+            ora[0] += 1000
+        assert [(x["message"], x["event_id"]) for x in righe("live_alerts")] == [("NUOVO", None)]
+        assert p.contatori["vecchie"] == 1 and p.stato().in_coda == 0
+    finally:
+        a.chiudi()
 
 
 def test_pg_A1_carattere_nullo_rifiutato_dal_jsonb_bisezione(pg) -> None:
@@ -198,14 +246,19 @@ def test_pg_intestazione_ha_il_suo_sqlstate(pg) -> None:
     a, p, srv, ora, _ = pg
     with pytest.raises(ErrorePg) as e:
         srv.rpc("postino_consegna", {"p_tabella": "mike_activity", "p_op": "fondi", "p_conflitto": ["uid"],
-                                     "p_rev": None, "p_righe": []})
+                                     "p_righe": []})
     assert e.value.codice == "GP001" and classe_riga("GP001") == "schema"
+    with pytest.raises(ErrorePg) as e2:
+        srv.rpc("postino_consegna", {"p_tabella": "mike_activity", "p_op": "upsert", "p_conflitto": ["uid"],
+                                     "p_righe": [{"uid": "00000000-0000-0000-0000-000000000009"}],
+                                     "p_origine": "o", "p_versioni": [1, 2]})
+    assert e2.value.codice == "GP001"
 
 
 
 def test_pg_R11_riga_senza_chiave_naturale_rifiutata(pg) -> None:
     a, p, srv, ora, _ = pg
     esiti = srv.rpc("postino_consegna", {"p_tabella": "mike_activity", "p_op": "insert", "p_conflitto": ["uid"],
-                                         "p_rev": None, "p_righe": [{"kind": "senza_uid", "payload": {}}]})
+                                         "p_righe": [{"kind": "senza_uid", "payload": {}}]})
     assert esiti[0]["esito"] == "errore" and esiti[0]["codice"] == "22023"
     assert righe("mike_activity") == []

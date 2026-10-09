@@ -235,13 +235,17 @@ def test_figlio_aspetta_se_il_padre_non_passa(banco: Banco) -> None:
 
 
 def test_riga_vecchia_tardiva_non_riporta_indietro_il_cloud(banco: Banco) -> None:
+    """Terza revisione R1: la voce vecchia e' della STESSA origine (vseq piu' bassa): la
+    piu' nuova e' gia' arrivata (es. da una sessione prima); la vecchia torna "vecchia"."""
     a, p = banco.archivio, banco.postino
-    # il cloud ha gia' la versione nuova (scritta da un altro giro); arriva tardi la vecchia
-    banco.server.consegna("betfair_live_orders", "upsert", ["mode", "client_order_ref"], "updated_at",
-                          [riga_ordine("r1", "EXECUTION_COMPLETE", "2025-10-09T10:00:09+00:00")])
-    a.accoda("betfair_live_orders", "upsert", None, riga_ordine("r1", "EXECUTABLE", "2025-10-09T10:00:01+00:00"))
-    e = p.drena()
-    assert e.consegnate == 1 and p.contatori["vecchie"] == 1
+    a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTABLE", "2025-10-09T10:00:01+00:00"))
+    a.scrivi("betfair_live_orders", riga_ordine("r1", "EXECUTION_COMPLETE", "2025-10-09T10:00:09+00:00"))
+    assert a.conferma()
+    vecchia, nuova = a.outbox_pronta("stato_denaro", 2 ** 62, 10)
+    banco.server.consegna("betfair_live_orders", "upsert", ["mode", "client_order_ref"], [json.loads(nuova.testo)],
+                          a.origine("stato_denaro"), [nuova.vseq])
+    e = p.drena()                                    # nello stesso giro: la vecchia, poi la nuova (FIFO)
+    assert e.consegnate == 2 and p.contatori["vecchie"] == 1 and p.contatori["ignorate"] == 1
     assert "dati.riga_vecchia" in banco.nomi()                                  # un evento per riga scartata
     assert banco.righe("betfair_live_orders")[0]["status"] == "EXECUTION_COMPLETE"
     # e la nuova invece passa

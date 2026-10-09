@@ -19,9 +19,11 @@
 --      regola 1 rettificata, R02, R21). T13 non ha tabelle: usa la chiave JSONB
 --      `pnl_reale_oggi_ombra` (05 T13), fuori da questa migrazione;
 --   4. RPC `postino_consegna`: UNA porta generica e idempotente per tutte le tabelle del
---      registro: insert ON CONFLICT DO NOTHING, upsert con VERSIONE MONOTONA PER RIGA
---      (`... DO UPDATE ... WHERE excluded.rev > t.rev`: una riga vecchia arrivata tardi
---      non riporta mai indietro il cloud, R02), patch e delete per chiave naturale;
+--      registro: insert ON CONFLICT DO NOTHING, upsert (fusione delle colonne come oggi),
+--      patch e delete per chiave naturale; VERSIONE LOCALE PER ORIGINE (tabella
+--      `postino_versioni`): una voce vecchia della STESSA origine (ritento, rientro da
+--      dead_letter) non riporta mai indietro il cloud; fra origini diverse vince l'ultima
+--      arrivata come oggi; l'orologio e `updated_at` non decidono nulla (R1, terza revisione);
 --      esito PER RIGA (una riga rifiutata da un CHECK non ferma le altre, e torna con il
 --      suo SQLSTATE: 23503 = transitorio con tetto lato postino, R06);
 --   5. RPC `postino_impronte` (riconciliazione notturna: coppie [chiave, versione]);
@@ -194,24 +196,59 @@ FROM unnest(ARRAY[
 ]) AS t;
 
 -- ============================================================================
--- 4. RPC postino_consegna
+-- 4. RPC postino_consegna e tabella postino_versioni
 -- ============================================================================
+-- VERSIONE (terza revisione del 09/10, R1, principio "IDENTICO A OGGI"): oggi vince
+-- l'ultima scrittura arrivata e nessuna scrittura viene scartata. La versione serve SOLO a
+-- impedire che una voce VECCHIA della STESSA origine (ritento del postino, rientro da
+-- dead_letter, voce ripetuta dopo un crash) sovrascriva una voce piu' nuova della stessa
+-- origine. L'origine e' il file locale che ha scritto la voce (processo/regime/id del file)
+-- e la versione e' la sua sequenza LOCALE monotona (`vseq`), assegnata quando il bot scrive:
+-- l'orologio non c'entra (un orologio che torna indietro non fa perdere nulla) e la colonna
+-- del bot (`updated_at`) arriva TALE E QUALE. Fra origini diverse vince l'ultima arrivata.
+--
+-- `postino_versioni`: per (tabella, chiave naturale, origine) la versione piu' alta gia'
+-- applicata. Le righe piu' vecchie di 90 giorni le toglie la RPC stessa (al massimo 100 per
+-- chiamata): nessuna voce locale vive tanto (outbox FIFO per chiave, dead_letter di dato
+-- archiviate dopo 7 rientri; resto dichiarato nel referto W1-G1).
+CREATE TABLE IF NOT EXISTS public.postino_versioni (
+    tabella    text        NOT NULL,
+    chiave     jsonb       NOT NULL,
+    origine    text        NOT NULL,
+    versione   bigint      NOT NULL,
+    aggiornato timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tabella, chiave, origine)
+);
+CREATE INDEX IF NOT EXISTS postino_versioni_aggiornato ON public.postino_versioni (tabella, aggiornato);
+ALTER TABLE public.postino_versioni ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.postino_versioni FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.postino_versioni TO service_role;
+COMMENT ON TABLE public.postino_versioni IS
+    'Postino (architettura 2026-10, R1): versione locale piu'' alta applicata per (tabella, chiave, origine). '
+    'Scarta SOLO le voci vecchie della stessa origine; fra origini diverse vince l''ultima arrivata.';
+
 -- Argomenti (JSON di PostgREST): p_tabella, p_op ('insert'|'upsert'|'patch'|'delete'),
--- p_conflitto (colonne della chiave naturale), p_rev (colonna della versione o NULL),
--- p_righe (array di oggetti con le colonne VERE della tabella).
+-- p_conflitto (colonne della chiave naturale), p_righe (array di oggetti con le colonne VERE
+-- della tabella), p_origine (origine delle voci o NULL), p_versioni (array parallelo a
+-- p_righe: la vseq di ogni voce o null; NULL = nessuna versione).
 -- Risposta: array, un elemento per riga e nello stesso ordine:
 --   {"esito":"ok"}       la riga e' stata scritta;
---   {"esito":"ignorata"} c'era gia' (insert idempotente) o era piu' vecchia (versione);
+--   {"esito":"ignorata"} c'era gia' (insert idempotente, o la STESSA versione della stessa
+--                        origine gia' applicata: ritento dopo una risposta persa);
+--   {"esito":"vecchia"}  la stessa origine ha gia' applicato una versione PIU' NUOVA: la riga
+--                        non si tocca (il postino lo segnala con un evento);
 --   {"esito":"errore","codice":SQLSTATE,"messaggio":...} rifiutata (la sola riga).
 -- Gli errori d'INTESTAZIONE (tabella assente, colonne di conflitto senza indice unico, op
 -- sconosciuta) falliscono TUTTA la chiamata: il postino blocca la tabella e NON manda le
 -- righe in dead_letter (non e' colpa delle righe).
+DROP FUNCTION IF EXISTS public.postino_consegna(text, text, text[], text, jsonb);
 CREATE OR REPLACE FUNCTION public.postino_consegna(
     p_tabella   text,
     p_op        text,
     p_conflitto text[],
-    p_rev       text,
-    p_righe     jsonb)
+    p_righe     jsonb,
+    p_origine   text DEFAULT NULL,
+    p_versioni  jsonb DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql
 VOLATILE
@@ -221,7 +258,13 @@ AS $$
 DECLARE
     v_rel       regclass;
     v_colonne   text[];
+    v_el        record;
     v_riga      jsonb;
+    v_ver       bigint;
+    v_prec      bigint;
+    v_k         jsonb;
+    v_kcol      text;
+    v_guardia   boolean;
     v_chiavi    text[];
     v_ignote    text[];
     v_nonchiave text[];
@@ -232,7 +275,7 @@ DECLARE
     v_dove      text;
     v_sql       text;
     v_n         bigint;
-    v_vecchia   boolean;
+    v_esito     text;
     v_esiti     jsonb := '[]'::jsonb;
     v_stato     text;
     v_msg       text;
@@ -242,6 +285,10 @@ BEGIN
     END IF;
     IF p_righe IS NULL OR jsonb_typeof(p_righe) <> 'array' THEN
         RAISE EXCEPTION 'postino_consegna: p_righe deve essere un array' USING ERRCODE = 'GP001';
+    END IF;
+    IF p_versioni IS NOT NULL AND jsonb_typeof(p_versioni) <> 'null' AND (jsonb_typeof(p_versioni) <> 'array'
+       OR jsonb_array_length(p_versioni) <> jsonb_array_length(p_righe)) THEN
+        RAISE EXCEPTION 'postino_consegna: p_versioni deve essere un array lungo quanto p_righe' USING ERRCODE = 'GP001';
     END IF;
     IF coalesce(cardinality(p_conflitto), 0) = 0 THEN
         RAISE EXCEPTION 'postino_consegna: chiave naturale vuota' USING ERRCODE = 'GP001';
@@ -255,9 +302,6 @@ BEGIN
     IF NOT (p_conflitto <@ v_colonne) THEN
         RAISE EXCEPTION 'postino_consegna: % non ha le colonne di conflitto %', p_tabella, p_conflitto
             USING ERRCODE = '42703';
-    END IF;
-    IF p_rev IS NOT NULL AND NOT (p_rev = ANY (v_colonne)) THEN
-        RAISE EXCEPTION 'postino_consegna: % non ha la colonna di versione %', p_tabella, p_rev USING ERRCODE = '42703';
     END IF;
     IF p_op IN ('insert', 'upsert') AND NOT EXISTS (
         SELECT 1 FROM pg_index i
@@ -276,8 +320,17 @@ BEGIN
     END IF;
     v_conf := (SELECT string_agg(format('%I', c), ', ') FROM unnest(p_conflitto) AS c);
     v_dove := (SELECT string_agg(format('t.%1$I IS NOT DISTINCT FROM r.%1$I', c), ' AND ') FROM unnest(p_conflitto) AS c);
+    v_kcol := (SELECT string_agg(format('r.%I', c), ', ') FROM unnest(p_conflitto) AS c);
 
-    FOR v_riga IN SELECT e.value FROM jsonb_array_elements(p_righe) AS e LOOP
+    -- versioni di oltre 90 giorni: al massimo 100 per chiamata (indice su tabella, aggiornato)
+    IF p_origine IS NOT NULL THEN
+        DELETE FROM public.postino_versioni WHERE ctid = ANY (ARRAY(
+            SELECT ctid FROM public.postino_versioni
+            WHERE tabella = p_tabella AND aggiornato < now() - interval '90 days' LIMIT 100));
+    END IF;
+
+    FOR v_el IN SELECT e.value, e.ord FROM jsonb_array_elements(p_righe) WITH ORDINALITY AS e(value, ord) LOOP
+        v_riga := v_el.value;
         BEGIN
             IF jsonb_typeof(v_riga) <> 'object' THEN
                 RAISE EXCEPTION 'riga non oggetto' USING ERRCODE = '22023';
@@ -290,56 +343,62 @@ BEGIN
             IF NOT (p_conflitto <@ v_chiavi) THEN
                 RAISE EXCEPTION 'manca la chiave naturale %', p_conflitto USING ERRCODE = '22023';
             END IF;
-            IF p_rev IS NOT NULL AND p_op <> 'delete' AND NOT (v_riga ? p_rev) THEN
-                RAISE EXCEPTION 'manca la versione di riga %', p_rev USING ERRCODE = '22023';
+            v_ver := NULL;
+            IF p_versioni IS NOT NULL AND jsonb_typeof(p_versioni) = 'array'
+               AND jsonb_typeof(p_versioni -> (v_el.ord::int - 1)) = 'number' THEN
+                v_ver := (p_versioni ->> (v_el.ord::int - 1))::bigint;
             END IF;
-            v_lista := (SELECT string_agg(format('%I', c), ', ') FROM unnest(v_chiavi) AS c);
-            v_sel := (SELECT string_agg(format('r.%I', c), ', ') FROM unnest(v_chiavi) AS c);
-            v_nonchiave := ARRAY(SELECT unnest(v_chiavi) EXCEPT SELECT unnest(p_conflitto));
+            v_guardia := p_origine IS NOT NULL AND v_ver IS NOT NULL AND p_op <> 'insert';
+            v_esito := NULL;
+            IF v_guardia THEN
+                -- chiave canonica: i valori con il TIPO della colonna (1 e '1' di un bigint coincidono)
+                EXECUTE format('SELECT jsonb_build_array(%s) FROM jsonb_populate_record(NULL::public.%I, $1) AS r',
+                               v_kcol, p_tabella) INTO v_k USING v_riga;
+                SELECT pv.versione INTO v_prec FROM public.postino_versioni pv
+                WHERE pv.tabella = p_tabella AND pv.chiave = v_k AND pv.origine = p_origine FOR UPDATE;
+                IF FOUND AND v_prec > v_ver THEN
+                    v_esito := 'vecchia';
+                ELSIF FOUND AND v_prec = v_ver THEN
+                    v_esito := 'ignorata';
+                END IF;
+            END IF;
 
-            IF p_op = 'insert' THEN
-                v_sql := format('INSERT INTO public.%I AS t (%s) SELECT %s FROM jsonb_populate_record(NULL::public.%I, $1) AS r '
-                                'ON CONFLICT (%s) DO NOTHING', p_tabella, v_lista, v_sel, p_tabella, v_conf);
-            ELSIF p_op = 'upsert' THEN
-                IF cardinality(v_nonchiave) = 0 THEN
+            IF v_esito IS NULL THEN
+                v_lista := (SELECT string_agg(format('%I', c), ', ') FROM unnest(v_chiavi) AS c);
+                v_sel := (SELECT string_agg(format('r.%I', c), ', ') FROM unnest(v_chiavi) AS c);
+                v_nonchiave := ARRAY(SELECT unnest(v_chiavi) EXCEPT SELECT unnest(p_conflitto));
+
+                IF p_op = 'insert' OR (p_op = 'upsert' AND cardinality(v_nonchiave) = 0) THEN
                     v_sql := format('INSERT INTO public.%I AS t (%s) SELECT %s FROM jsonb_populate_record(NULL::public.%I, $1) AS r '
                                     'ON CONFLICT (%s) DO NOTHING', p_tabella, v_lista, v_sel, p_tabella, v_conf);
-                ELSE
+                ELSIF p_op = 'upsert' THEN
+                    -- come l'upsert di PostgREST di oggi: le colonne scritte vincono, le altre restano
                     v_set := (SELECT string_agg(format('%1$I = EXCLUDED.%1$I', c), ', ') FROM unnest(v_nonchiave) AS c);
                     v_sql := format('INSERT INTO public.%I AS t (%s) SELECT %s FROM jsonb_populate_record(NULL::public.%I, $1) AS r '
                                     'ON CONFLICT (%s) DO UPDATE SET %s', p_tabella, v_lista, v_sel, p_tabella, v_conf, v_set);
-                    IF p_rev IS NOT NULL THEN
-                        v_sql := v_sql || format(' WHERE t.%1$I IS NULL OR EXCLUDED.%1$I > t.%1$I', p_rev);
+                ELSIF p_op = 'patch' THEN
+                    IF cardinality(v_nonchiave) = 0 THEN
+                        RAISE EXCEPTION 'patch senza colonne da cambiare' USING ERRCODE = '22023';
                     END IF;
+                    v_set := (SELECT string_agg(format('%1$I = r.%1$I', c), ', ') FROM unnest(v_nonchiave) AS c);
+                    v_sql := format('UPDATE public.%I AS t SET %s FROM jsonb_populate_record(NULL::public.%I, $1) AS r WHERE %s',
+                                    p_tabella, v_set, p_tabella, v_dove);
+                ELSE
+                    v_sql := format('DELETE FROM public.%I AS t USING jsonb_populate_record(NULL::public.%I, $1) AS r WHERE %s',
+                                    p_tabella, p_tabella, v_dove);
                 END IF;
-            ELSIF p_op = 'patch' THEN
-                IF cardinality(v_nonchiave) = 0 THEN
-                    RAISE EXCEPTION 'patch senza colonne da cambiare' USING ERRCODE = '22023';
-                END IF;
-                v_set := (SELECT string_agg(format('%1$I = r.%1$I', c), ', ') FROM unnest(v_nonchiave) AS c);
-                v_sql := format('UPDATE public.%I AS t SET %s FROM jsonb_populate_record(NULL::public.%I, $1) AS r WHERE %s',
-                                p_tabella, v_set, p_tabella, v_dove);
-                IF p_rev IS NOT NULL THEN
-                    v_sql := v_sql || format(' AND (t.%1$I IS NULL OR r.%1$I > t.%1$I)', p_rev);
-                END IF;
-            ELSE
-                v_sql := format('DELETE FROM public.%I AS t USING jsonb_populate_record(NULL::public.%I, $1) AS r WHERE %s',
-                                p_tabella, p_tabella, v_dove);
-                IF p_rev IS NOT NULL THEN
-                    v_sql := v_sql || format(' AND (t.%1$I IS NULL OR r.%1$I IS NULL OR r.%1$I >= t.%1$I)', p_rev);
+                EXECUTE v_sql USING v_riga;
+                GET DIAGNOSTICS v_n = ROW_COUNT;
+                v_esito := CASE WHEN v_n > 0 THEN 'ok' ELSE 'ignorata' END;
+                IF v_guardia THEN
+                    -- nella STESSA sottotransazione della riga: se la riga fallisce, la versione non resta
+                    INSERT INTO public.postino_versioni AS pv (tabella, chiave, origine, versione, aggiornato)
+                    VALUES (p_tabella, v_k, p_origine, v_ver, now())
+                    ON CONFLICT (tabella, chiave, origine) DO UPDATE
+                        SET versione = greatest(pv.versione, EXCLUDED.versione), aggiornato = now();
                 END IF;
             END IF;
-            EXECUTE v_sql USING v_riga;
-            GET DIAGNOSTICS v_n = ROW_COUNT;
-            v_vecchia := false;
-            IF v_n = 0 AND p_rev IS NOT NULL AND p_op IN ('upsert', 'patch') THEN
-                -- revisione M3: la riga c'e' con una versione PIU' NUOVA: "vecchia" (il postino lo segnala)
-                EXECUTE format('SELECT EXISTS (SELECT 1 FROM public.%I AS t, jsonb_populate_record(NULL::public.%I, $1) AS r '
-                               'WHERE %s AND t.%I > r.%I)', p_tabella, p_tabella, v_dove, p_rev, p_rev)
-                    INTO v_vecchia USING v_riga;
-            END IF;
-            v_esiti := v_esiti || jsonb_build_array(jsonb_build_object('esito',
-                CASE WHEN v_n > 0 THEN 'ok' WHEN v_vecchia THEN 'vecchia' ELSE 'ignorata' END));
+            v_esiti := v_esiti || jsonb_build_array(jsonb_build_object('esito', v_esito));
         EXCEPTION WHEN OTHERS THEN
             GET STACKED DIAGNOSTICS v_stato = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT;
             v_esiti := v_esiti || jsonb_build_array(jsonb_build_object(
@@ -349,8 +408,8 @@ BEGIN
     RETURN v_esiti;
 END $$;
 
-REVOKE ALL ON FUNCTION public.postino_consegna(text, text, text[], text, jsonb) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.postino_consegna(text, text, text[], text, jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.postino_consegna(text, text, text[], jsonb, text, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.postino_consegna(text, text, text[], jsonb, text, jsonb) TO service_role;
 
 -- ============================================================================
 -- 5. RPC postino_impronte (riconciliazione notturna)

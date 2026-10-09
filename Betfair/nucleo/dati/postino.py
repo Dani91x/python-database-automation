@@ -15,10 +15,15 @@ Come consegna
     protocollo ``Cloud.rpc`` (il client unico di W1-G2): per ogni riga
       * ``insert`` -> ``INSERT ... ON CONFLICT (chiave naturale) DO NOTHING``
         (log con ``uid``: il ritento non duplica);
-      * ``upsert`` -> ``ON CONFLICT ... DO UPDATE ... WHERE excluded.rev > t.rev``
-        quando la tabella ha ``rev_colonna``: una riga vecchia arrivata tardi
-        non riporta MAI indietro il cloud (R02); torna ``vecchia`` con un evento;
-      * ``patch``/``delete`` per chiave naturale, con la stessa regola di versione.
+      * ``upsert`` -> ``ON CONFLICT ... DO UPDATE`` (fusione delle colonne, come oggi);
+      * ``patch``/``delete`` per chiave naturale.
+    VERSIONE (R1, terza revisione, "identico a oggi"): ogni voce porta la ``vseq``
+    LOCALE del suo file e la chiamata l'``origine`` del file (``p_origine``,
+    ``p_versioni``). Il cloud confronta le versioni SOLO fra voci della STESSA
+    origine (tabella ``postino_versioni``): una voce vecchia della stessa origine
+    (ritento, rientro da dead_letter) torna ``vecchia`` e non tocca la riga; fra
+    origini diverse vince l'ultima arrivata, come oggi. La colonna del bot
+    (``updated_at``) non decide nulla e arriva tale e quale.
     La RPC risponde con un esito PER RIGA (``ok`` | ``ignorata`` | ``vecchia`` |
     ``errore`` con SQLSTATE): una riga guasta non ferma le altre del blocco.
 
@@ -39,7 +44,10 @@ Regole sugli errori (revisione 09/10, A1-A4, M1, M4)
       transitorio, ritento con tetto ``TETTO_TENTATIVI_RIGA`` (~6 h), poi dead_letter
       ``transitorio``;
     * le dead_letter RIENTRANO DA SOLE (archivio ``rientro_dead_letter``): transitorie
-      ogni 15 min, dato e registro ogni 24 h, senza tetto di rientri;
+      ogni 15 min, dato e registro ogni 24 h; una di dato che fallisce
+      ``RIENTRI_MAX_DATO`` rientri diventa ARCHIVIATA (fuori dall'allarme, contata a
+      parte in ``stato().archiviate``); una superata da una scrittura piu' nuova della
+      stessa chiave non rientra (R2);
     * voce di una tabella non registrata -> dead_letter ``registro`` (M1);
     * ordine: tabelle padre prima (``dipende_da``); per chiave al massimo UNA voce
       per chiamata; dopo un fallimento di una chiave le voci successive della
@@ -95,6 +103,22 @@ CODICE_INTESTAZIONE = "GP001"
 
 class RispostaInattesa(RuntimeError):
     """La RPC ha risposto con una forma diversa da quella attesa (mai colpa delle righe)."""
+
+
+@dataclass(frozen=True)
+class StatoPostinoArchivio(StatoPostino):
+    """``StatoPostino`` del contratto (campi invariati) piu' i conteggi del comparto G:
+
+    * ``dead_letter``  (del contratto): righe nell'ALLARME (dead_letter attive + scarti
+      recenti dello scrittore);
+    * ``archiviate``   R2b: archiviate (rientri esauriti o superate) + scarti oltre la
+      finestra d'allarme: su disco, visibili nel referto e in Salute, nessun allarme;
+    * ``guasti_codice`` R3: volte in cui un errore di codice ha colpito TUTTE le voci
+      (``guasto_codice`` = l'ultimo, None se lo scrittore e' ripartito)."""
+
+    archiviate: int = 0
+    guasti_codice: int = 0
+    guasto_codice: Optional[str] = None
 
 
 def _attese_rete() -> Tuple[float, ...]:
@@ -170,6 +194,7 @@ class _Voce:
     regime: Optional[str] = None       # outbox: regime del file
     seq: Optional[int] = None          # outbox: seq; log: offset di FINE riga
     file: Optional[str] = None         # log: nome del file
+    vseq: Optional[int] = None         # outbox: versione LOCALE della voce (R1)
 
 
 @dataclass
@@ -236,7 +261,7 @@ class PostinoLocale:
         adesso = self._ora_ms()
         per: Counter[str] = Counter()
         vecchio: Optional[int] = None
-        morti = len(self.archivio.scarti_scrittore())
+        morti = self.archivio.conteggio_scarti(adesso)[0]
         for regime in REGIMI_SQLITE:
             p, v, m = self.archivio.conteggi_outbox(regime)
             per.update(p)
@@ -252,10 +277,13 @@ class PostinoLocale:
             if v is not None:
                 vecchio = v if vecchio is None else min(vecchio, v)
         self._controlla_disco()
-        return StatoPostino(in_coda=sum(per.values()),
-                            eta_max_s=None if vecchio is None else max(0.0, (adesso - vecchio) / 1000.0),
-                            per_tabella=dict(per), ultimo_errore=self.ultimo_errore, offline_da=self.offline_da,
-                            dead_letter=morti)
+        return StatoPostinoArchivio(in_coda=sum(per.values()),
+                                    eta_max_s=None if vecchio is None else max(0.0, (adesso - vecchio) / 1000.0),
+                                    per_tabella=dict(per), ultimo_errore=self.ultimo_errore,
+                                    offline_da=self.offline_da, dead_letter=morti,
+                                    archiviate=self.archivio.conteggio_archiviate(),
+                                    guasti_codice=int(self.archivio.contatori["guasti_codice"]),
+                                    guasto_codice=self.archivio.guasto_codice)
 
     def drena(self, max_righe: int = 200) -> EsitoDrenaggio:
         """UN giro: raccoglie fino a ``max_righe`` righe pronte e le consegna."""
@@ -366,7 +394,8 @@ class PostinoLocale:
 
     @staticmethod
     def _da_outbox(v: VoceOutbox) -> _Voce:
-        return _Voce(v.tabella, v.op, v.chiave, v.testo, v.creato_ms, v.tentativi, regime=v.regime, seq=v.seq)
+        return _Voce(v.tabella, v.op, v.chiave, v.testo, v.creato_ms, v.tentativi, regime=v.regime, seq=v.seq,
+                     vseq=v.vseq)
 
     def _marcatore_valido(self, percorso: Path) -> int:
         """M2: un marcatore oltre la fine del file o di un file sostituito torna a 0 e si segnala."""
@@ -550,9 +579,12 @@ class PostinoLocale:
             valide.append((v, riga))
         if not valide:
             return True
+        versioni = [v.vseq for v, _ in valide]
+        origine = next((self.archivio.origine(v.regime) for v, _ in valide
+                        if v.vseq is not None and v.regime is not None), None)
         argomenti = {"p_tabella": self.destinazione(spec.nome), "p_op": op,
-                     "p_conflitto": list(spec.chiave_naturale), "p_rev": spec.rev_colonna,
-                     "p_righe": [r for _, r in valide]}
+                     "p_conflitto": list(spec.chiave_naturale), "p_righe": [r for _, r in valide],
+                     "p_origine": origine, "p_versioni": versioni if origine is not None else None}
         try:
             esiti = self.cloud.rpc(RPC_CONSEGNA, argomenti)
             if not isinstance(esiti, list) or len(esiti) != len(valide):
@@ -589,8 +621,8 @@ class PostinoLocale:
         if tipo in ("ok", "ignorata", "vecchia"):
             giro.consegnate += 1
             self.contatori["consegnate" if tipo == "ok" else ("vecchie" if tipo == "vecchia" else "ignorate")] += 1
-            if tipo == "vecchia":                        # M3: un evento per ogni riga scartata dal cloud
-                self._evento("dati.riga_vecchia", {"tabella": v.tabella, "chiave": v.chiave,
+            if tipo == "vecchia":                        # R1: voce vecchia della STESSA origine, scartata dal cloud
+                self._evento("dati.riga_vecchia", {"tabella": v.tabella, "chiave": v.chiave, "vseq": v.vseq,
                                                    "destinazione": self.destinazione(v.tabella)})
             if v.file is None and v.regime is not None and v.seq is not None:
                 giro.ok_seq.setdefault(v.regime, []).append(v.seq)

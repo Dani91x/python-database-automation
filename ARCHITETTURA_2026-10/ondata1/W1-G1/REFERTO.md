@@ -250,9 +250,9 @@ Migrazione applicata DUE volte senza errori sul PostgreSQL 16 usa-e-getta (ricre
 **Divergenze nuove per l'utente** (in aggiunta al par. 9):
 14. **Riga velenosa** (NaN, Infinity, surrogato, `\u0000`): oggi httpx/PostgREST la rifiutano e la riga si PERDE con un
     warning; col postino va in dead_letter locale (motivo `dato`), visibile, e rientra da sola ogni 24 h.
-15. **Versione** (M3): una riga con versione uguale o fino a 5 s piu' vecchia vince e il suo `updated_at` diventa
-    "precedente + 1 us" (cambia il valore della colonna di al massimo 5 s, solo quando l'orologio e' tornato indietro);
-    oltre 5 s e' considerata stantia e scartata con un evento. Oggi vince sempre l'ultima arrivata.
+15. ~~**Versione** (M3): una riga con versione uguale o fino a 5 s piu' vecchia vince e il suo `updated_at` diventa
+    "precedente + 1 us"; oltre 5 s e' considerata stantia e scartata con un evento.~~ RITIRATA dalla terza revisione
+    (par. 11, R1): resta solo la 15-bis, piu' piccola.
 16. **Upsert = fusione**: identico all'upsert di oggi nel cloud; in locale la riga e' la fusione delle colonne scritte.
 17. **Dead_letter visibili** (aggancio proposto, NON fatto: nessun file esistente toccato): nel thread del postino, dopo
     ogni giro, `Betfair/monitor/sonde.py:167` `valore("dati", "dead_letter", stato.dead_letter)`, `valore("dati",
@@ -287,3 +287,85 @@ contesa del GIL (R08) non peggiorano; a 60 righe/s il giro acceso sta dentro la 
 **11.673 passed, 98 skipped, 6 xfailed, 0 failed** in 525 s (i 98 saltati comprendono gli 11 di `test_g1_pg_reale.py`
 senza `G1_PG_PSQL`). Prima delle correzioni: 11.626 passed, 92 skipped. I test G1 sono stati rilanciati dopo la nota
 del coordinatore sul `pkill -f` del revisore (tutti verdi).
+
+
+## 11. Terza revisione (seconda revisione di `a151a38a`: PASSA con 4 riserve)
+
+Commit NUOVO sopra `a151a38a` (nessuna riscrittura, nessun push). Principio vincolante del coordinatore: **IDENTICO A
+OGGI** - oggi vince l'ultima scrittura fatta dal bot e nessuna scrittura viene scartata; la versione serve SOLO a impedire
+che una voce VECCHIA della STESSA origine (ritento del postino, rientro da dead_letter, voce ripetuta dopo un crash)
+sovrascriva una voce piu' nuova della stessa origine; mai scartare una scrittura nuova del bot per l'orologio.
+
+sha256 dei file consegnati (prefisso; gli stessi di `mutazioni.txt`, ogni file ripristinato identico dopo ogni
+mutazione): `archivio.py` `e05a3f1e7b9bfd89`, `postino.py` `09d59f49d4a57a08`, `schema_locale.py` `77e3078b878ca798`, `riconcilia.py` `116e3f38169ba61c` (invariato), `percorso.py` `906480ce5510683d` (invariato), migrazione `3ed0741942c15fdd`.
+
+| Riserva | Correzione (file:riga) | Test (verde ora) | Mutazioni rosse |
+|---|---|---|---|
+| **R1** (MEDIO) orologio indietro > 5 s: aggiornamenti scartati | Tolti `TOLLERANZA_OROLOGIO_US`, `_versione`, `_stantia`, `_sali_rev` e il "+1 us". `archivio.py:531` `_metti`: numero d'ordine, `vseq` LOCALE del file e accodamento sotto UN lucchetto (l'ordine delle vseq e' l'ordine in cui lo scrittore applica); `:672` `meta.vseq` alzato nella STESSA transazione delle righe (mai riusata; schema v3 `schema_locale.py:115`: `meta`, `vseq` su righe/outbox/dead_letter); `:547` `origine()` = processo/regime/id casuale del file; `:858` `_applica`: vince SEMPRE l'ultima accodata (fusione), valori del bot TALI E QUALI; `:455` `transizione` cambia solo `status`, con la sua vseq. Postino `postino.py:587` manda `p_origine` e `p_versioni`. Migrazione `:214` `public.postino_versioni` (tabella, chiave tipata, origine -> versione piu' alta), `:245` RPC con firma nuova (`DROP` della vecchia: non ancora applicata): `:360` piu' vecchia della STESSA origine -> `vecchia`, uguale -> `ignorata`, origine diversa -> scritta (vince l'ultima arrivata); `:395` versione registrata nella stessa sottotransazione della riga; `:329` versioni oltre 90 giorni tolte (100 per chiamata) | `test_g1_terza_revisione.py::test_R1_orologio_indietro_115_s_*` (m3.py scenario 4: EXECUTION_COMPLETE in locale e nel cloud, `updated_at` 10:00:05 tale e quale), `test_R1_esito_vecchio_di_3_s_*` (scenario 1), `test_R1_ritento_di_una_voce_gia_superata_*`, `test_R1_due_processi_vince_l_ultima_arrivata` (scenario 2, piu' il ritento vecchio di A scartato dopo B), `test_R1_vseq_persistita_*`; PostgreSQL vero: `test_pg_versione_per_origine_mai_dall_orologio`, `test_pg_R12_*_stessa_origine_*` | M03, N06, N07, N20, N23, R13, V08r, V09r, V10r, T01-T05, S01, S04, S06, S07, R12 |
+| **R2** (MEDIO-BASSO) dead_letter transitoria che rientra e riporta indietro il cloud | (a) `archivio.py:1075` `rientro_dead_letter`: la riga rientra con la SUA vseq; se la chiave ha una vseq piu' alta nella riga locale o in outbox e' SUPERATA: resta archiviata con la nota, evento `dati.dead_letter_superata`; seconda difesa nel cloud (`postino_versioni`: `vecchia`). (b) `:1038` `chiudi_voci`: una `dato` che muore dopo `RIENTRI_MAX_DATO` = 7 rientri (`:150`, uno ogni 24 h) nasce ARCHIVIATA (`archiviata_ms`, nota "rientri esauriti", evento `dati.dead_letter_archiviata`), esce dal conteggio d'allarme (`:1013`), non rientra piu'; `postino.py:109` `StatoPostinoArchivio` (sottoclasse di `StatoPostino`, campi del contratto invariati) con `archiviate`. Le transitorie e quelle di registro rientrano per sempre (dichiarato). (c) `archivio.py:1329` `pulisci`: archiviate tolte dopo `CONSERVA_ARCHIVIATE_GIORNI` = 30 (`:153`), a pezzi, mai le attive | `test_R2a_dl_stale_*` (dl_stale.py del revisore: il cloud resta NUOVO), `test_R2a_anche_senza_la_riga_locale_*` (seconda difesa), `test_R2b_dato_archiviata_dopo_N_rientri_*` (7 rientri, poi `(dead_letter, archiviate) = (0, 1)` e nessuna chiamata in 3 giorni), `test_R2c_pulisci_*`; PostgreSQL vero: `test_pg_R2a_dl_stale_*` | V05, T02, T06-T12, S08 |
+| **R3** (BASSO) scarti senza rientro, `errore_di_dato` troppo largo | `archivio.py:168` `errore_di_dato` SOLO casi provati (UnicodeEncode/DecodeError, OverflowError, IntegrityError, DataError, JSON guasto); `:181` `errore_di_codice`; `:711` `_isola`: errore di codice = voce SOSPETTA (le voci della stessa chiave aspettano dietro), se nessuna voce passa e' un guasto del codice: `:759` `_guasto_codice` (niente scarti, voci in coda, CRITICAL al piu' una volta al minuto, contatore `guasti_codice`, evento `dati.archivio_guasto_codice`, esposti in `stato()`); se le altre passano, la sospetta va negli scarti. Scarti: nell'allarme 7 giorni, poi fra le archiviate (`:1027`), tolti dalla pulizia dopo altri 30 (`:1365`) | `test_R3_errore_di_dato_solo_i_casi_provati`, `test_R3_errore_di_codice_su_tutte_le_voci_*` (TypeError su ogni scrittura: 0 scarti, 1 CRITICAL in piu' giri, poi tutto confermato), `test_R3_errore_di_codice_su_una_sola_voce_*`, `test_R3_scarti_nell_allarme_poi_archiviati_poi_tolti_*` | N02, T13-T19 |
+| **R4** (test mancante) V14 sopravvissuta | nessuna correzione del codice (`archivio.py:623`: il salvataggio solo `if self._in_chiusura`): mancava la prova. `ATTESA_RITENTO_BASE_S` (`:139`) dichiarata per accorciare l'attesa nel test | `test_R4_disco_guasto_per_3_o_piu_tentativi_poi_ripristino_a_processo_vivo` (disco_guasto.py del revisore: COMMIT del denaro guasto per 5+ tentativi con un claim e un `accoda` in corso; il disco torna; claim VERO, `accoda` con il seq, tutto confermato, nessun `salvataggio-*.jsonl`) | V14 |
+| Prova SIGKILL fragile | `test_g1_crash.py` modo "finale": finestra ADATTIVA, si drena finche' la coda scende e ci si ferma solo se non scende per 60 s (`G1_FERMO_S`); tetto di sicurezza del figlio 3.600 s. Il cloud finto persistente salva anche `postino_versioni` (come il vero) | `test_sigkill_casuali_nessuna_riga_confermata_persa` | - |
+
+**Prove cambiate perche' il comportamento richiesto e' cambiato** (asserzioni riscritte sul principio "identico a oggi",
+dichiarate): `test_leggi_vede_subito_e_versione_mai_indietro` (la scrittura con `updated_at` 65 s piu' vecchio ora VINCE;
+una riga senza `updated_at` si scrive, come oggi), `test_transizione_cambia_solo_lo_stato_e_alza_la_vseq_locale` (era
+`test_transizione_alza_la_versione`: `updated_at` non si tocca piu'), `test_rev_D6b_*` (`updated_at` tale e quale),
+`test_rev_M3_orologio_indietro_di_9_s_vince_l_ultima_scritta` (era `..._scartata_con_evento`), `test_rev_R13_leggi_vede_l_ultima_scritta_*`,
+`test_M3_versione_intera_vince_sempre_l_ultima_scritta_tale_e_quale`, `test_riga_vecchia_tardiva_*` (ora la voce vecchia e'
+della STESSA origine), `test_finto_semantica_versione_e_vincoli`, `test_pg_versione_per_origine_*` e `test_pg_R12_*` (RPC
+nuova). `test_A2_versione_oltre_2_alla_63_*`: la versione non va piu' in una colonna INTEGER, quindi l'`OverflowError` di
+SQLite si provoca con un involucro della connessione (stessa eccezione); `pulisci()` ritorna le stesse chiavi di prima, i
+conteggi nuovi sono in `contatori` (`archiviate_tolte`, `scarti_tolti`).
+
+**Riletture del materiale del revisore** (`scratchpad/rev_w1g1_2/`, lanciato sul codice nuovo): `m3.py` -> scenario 1 e
+1b: locale e cloud EXECUTABLE con `updated_at` tale e quale; 2: cloud EXECUTABLE (B, l'ultimo arrivato, come oggi); 3:
+EXECUTION_COMPLETE; 4: EXECUTION_COMPLETE con 10:00:05, nessun evento. `dl_stale.py` -> cloud dopo il rientro del VECCHIO:
+`[('NUOVO', None)]`, evento `dati.dead_letter_superata`. `disco_guasto.py` -> claim bloccato 12 s col disco guasto, poi
+`True` dopo il ripristino.
+
+**Mutazioni** (`mutazioni.py --sql`, uscita `mutazioni.txt`): **111/111 ROSSE (101 Python + 10 SQL sul PostgreSQL usa-e-getta)**, ogni file ripristinato con sha256 identico.
+Le 16 del revisore (V01-V16) si giudicano come le giudicava lui, su TUTTI i test G1; V04, V05, V15 riportate sul codice
+nuovo (stesso difetto); V08, V09, V10 mutavano la tolleranza e il "+1 us" che R1 ha TOLTO: sostituite da V08r (la versione
+mandata al cloud torna a essere l'orologio del bot), V09r (vseq che non sale), V10r (transizione con una versione vecchia).
+Nuove della terza revisione: T01-T19 e S06-S08; riscritte sul codice nuovo: M03, M09, M27, N02, N06, N07, N20, N23, R13,
+S01, S03, S04, R12.
+
+**Prova di crash con SIGKILL casuali**: 14 cicli seme 7 -> **4.325 righe confermate, 0 perse** (0 uid, 0 ordini, 0 eventi mancanti o indietro), 14 cicli seme 3 -> **5.225 confermate, 0 perse**; 0 doppioni, 0 dead_letter (6 cicli di serie nella suite).
+
+**Test del comparto**: con il PostgreSQL usa-e-getta **129 verdi**; senza **117 verdi + 12 saltati** (i test PG). Migrazione applicata DUE volte senza errori sul PostgreSQL 16 usa-e-getta (ricreato per questa revisione, poi fermato e cancellato).
+
+**Divergenza #15 (par. 10) RITIRATA**: non c'e' piu' alcun "+1 us" ne' scarto per l'orologio; una scrittura del bot vince
+sempre in locale e, fra processi diversi, vince l'ultima arrivata nel cloud, come oggi. Resta una sola differenza, piu'
+piccola e dichiarata: **15-bis** una voce vecchia della STESSA origine che il postino ritenta o fa rientrare DOPO che una
+voce piu' nuova della stessa chiave e della stessa origine e' gia' arrivata NON si riapplica (oggi un ritento del genere non
+esiste: la riga persa resta persa, quindi non e' una perdita rispetto a oggi).
+**Divergenze nuove**: 17. le dead_letter di dato dopo 7 rientri (una settimana) diventano archiviate: niente piu'
+allarme ne' chiamate, restano 30 giorni su disco; 18. gli scarti dello scrittore restano nell'allarme 7 giorni, poi
+archiviati, tolti dopo altri 30; 19. tabella nuova nel cloud `public.postino_versioni` (una riga per tabella, chiave e
+origine, toccata a ogni consegna di stato: il costo di una scrittura in piu' per riga nella RPC); 20. residuo dichiarato:
+una dead_letter TRANSITORIA (rientra per sempre) che resta morta oltre 90 giorni e la cui riga locale e' gia' stata pulita
+perde la seconda difesa (versione tolta dal cloud): il caso richiede un padre assente per tre mesi.
+
+### 11-bis. Suite intera dopo la terza revisione
+
+`python -m pytest Betfair/ -q -p no:cacheprovider`, UNA volta alla fine, sul codice definitivo (PostgreSQL usa-e-getta gia'
+fermato): **11.688 passed, 99 skipped, 6 xfailed, 0 failed** in 394 s (i 99 saltati comprendono i 12 di
+`test_g1_pg_reale.py` senza `G1_PG_PSQL`). Le 2 avvertenze di thread vengono da `cambio-gbp-eur`, fuori dal comparto G.
+
+## 12. Per W1-C1 (porta ordini)
+
+Semantica di `transizione` verificata dal revisore (`transizione.py`) e provata da
+`test_g1_terza_revisione.py::test_C1_semantica_dichiarata_di_transizione` e `test_R4_*`:
+- riga assente -> `False`; colonna di stato diversa da `da` o assente -> `False`; secondo claim uguale -> `False`; tabella
+  di log -> `ValueError`; tabella non registrata -> `KeyError`;
+- cambia UNA colonna sola, `status`; le altre (`updated_at` compreso) restano tali e quali; la voce porta la sua vseq;
+- vede tutte le scritture accodate prima (anche non ancora su disco): la esegue il thread di scrittura;
+- atomicita' LOCALE (riga e outbox nella stessa transazione, un solo scrittore per archivio): NON e' un lucchetto fra
+  processi;
+- durabilita' PIENA (`synchronous=FULL`) SOLO sul regime `stato_denaro`; sul `stato_vivo` un claim confermato puo'
+  perdersi a PC spento;
+- con il disco guasto il chiamante resta bloccato finche' il disco non torna, poi riceve l'esito VERO (mai un esito
+  falso); l'unica eccezione e' il lavoro che scade PRIMA di partire: `TimeoutError` "annullato prima di partire (non
+  eseguito)", che e' l'esito vero.
+- Le tabelle della porta (`ordini_ref_visti`, `ordini_seq`) vanno REGISTRATE nel registro con regime `stato_denaro`.

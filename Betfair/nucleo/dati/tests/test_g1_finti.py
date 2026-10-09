@@ -144,6 +144,8 @@ class PostgrestFinto:
         self.offline = False
         self.richieste: List[Tuple[str, Dict[str, Any]]] = []
         self.senza_rpc = False
+        # come public.postino_versioni: json([tabella, chiave, origine]) -> versione piu' alta applicata
+        self.versioni: Dict[str, int] = {}
 
     # -- trasporto ---------------------------------------------------------
     def trasporto(self) -> httpx.MockTransport:
@@ -190,62 +192,68 @@ class PostgrestFinto:
     # -- RPC -----------------------------------------------------------------
     def rpc(self, nome: str, a: Dict[str, Any]) -> Any:
         if nome == "postino_consegna":
-            return self.consegna(a["p_tabella"], a["p_op"], a["p_conflitto"], a.get("p_rev"), a["p_righe"])
+            return self.consegna(a["p_tabella"], a["p_op"], a["p_conflitto"], a["p_righe"], a.get("p_origine"),
+                                 a.get("p_versioni"))
         if nome == "postino_impronte":
             return self.impronte(a)
         if nome == "postino_confronta_ombra":
             return self.confronta_ombra(a)
         raise ErrorePg("PGRST202", f"Could not find the function public.{nome}")
 
-    def consegna(self, tabella: str, op: str, conflitto: List[str], rev: Optional[str],
-                 righe: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def consegna(self, tabella: str, op: str, conflitto: List[str], righe: List[Dict[str, Any]],
+                 origine: Optional[str] = None, versioni: Optional[List[Optional[int]]] = None) -> List[Dict[str, Any]]:
         if op not in ("insert", "upsert", "patch", "delete"):
             raise ErrorePg("GP001", f"operazione non ammessa: {op}")
+        if versioni is not None and len(versioni) != len(righe):
+            raise ErrorePg("GP001", "postino_consegna: p_versioni deve essere un array lungo quanto p_righe")
         t = self.tabelle.get(tabella)
         if t is None:
             raise ErrorePg("42P01", f"postino_consegna: tabella public.{tabella} assente")
-        if not set(conflitto) <= set(t.colonne) or (rev is not None and rev not in t.colonne):
+        if not set(conflitto) <= set(t.colonne):
             raise ErrorePg("42703", f"postino_consegna: {tabella} non ha le colonne di conflitto")
         if op in ("insert", "upsert") and tuple(sorted(conflitto)) not in {tuple(sorted(u)) for u in t.uniche}:
             raise ErrorePg("42P10", f"postino_consegna: nessun indice unico su {tabella}")
         esiti = []
-        for r in righe:
+        for i, r in enumerate(righe):
+            ver = versioni[i] if versioni is not None and isinstance(versioni[i], int) else None
             try:
-                esiti.append({"esito": self._una(t, op, conflitto, rev, r)})
+                esiti.append({"esito": self._una(t, op, conflitto, r, origine, ver)})
             except ErrorePg as exc:
                 esiti.append({"esito": "errore", "codice": exc.codice, "messaggio": exc.messaggio})
         return esiti
 
-    def _una(self, t: TabellaFinta, op: str, conflitto: List[str], rev: Optional[str], r: Dict[str, Any]) -> str:
+    def _una(self, t: TabellaFinta, op: str, conflitto: List[str], r: Dict[str, Any], origine: Optional[str],
+             ver: Optional[int]) -> str:
         ignote = sorted(set(r) - set(t.colonne))
         if ignote:
             raise ErrorePg("42703", f"colonne sconosciute in {t.nome}: {ignote}")
         if not set(conflitto) <= set(r):
             raise ErrorePg("22023", f"manca la chiave naturale {conflitto}")
-        if rev is not None and op != "delete" and rev not in r:
-            raise ErrorePg("22023", f"manca la versione di riga {rev}")
         chiave = tuple(r[c] for c in conflitto)
-        esistente = next((x for x in t.righe if tuple(x.get(c) for c in conflitto) == chiave), None)
-
-        def piu_nuova(nuova: Any, vecchia: Any) -> bool:
-            return vecchia is None or (nuova is not None and rev_ordinabile(nuova) > rev_ordinabile(vecchia))
-
-        def vecchia() -> str:
-            # come la RPC: la riga c'e' con una versione PIU' NUOVA -> "vecchia", altrimenti "ignorata"
-            if rev and esistente is not None and esistente.get(rev) is not None and r.get(rev) is not None \
-                    and rev_ordinabile(esistente[rev]) > rev_ordinabile(r[rev]):
+        # come la RPC: versione LOCALE confrontata SOLO con la stessa origine (postino_versioni)
+        guardia = origine is not None and ver is not None and op != "insert"
+        kv = json.dumps([t.nome, list(chiave), origine])
+        if guardia and kv in self.versioni:
+            if self.versioni[kv] > ver:
                 return "vecchia"
-            return "ignorata"
+            if self.versioni[kv] == ver:
+                return "ignorata"
+        esito = self._scrivi_riga(t, op, conflitto, chiave, r)       # ErrorePg: la versione non resta
+        if guardia:
+            self.versioni[kv] = max(self.versioni.get(kv, ver), ver)
+        return esito
 
+    def _scrivi_riga(self, t: TabellaFinta, op: str, conflitto: List[str], chiave: Tuple[Any, ...],
+                     r: Dict[str, Any]) -> str:
+        esistente = next((x for x in t.righe if tuple(x.get(c) for c in conflitto) == chiave), None)
         if op == "delete":
-            if esistente is None or (rev and r.get(rev) is not None and esistente.get(rev) is not None
-                                     and rev_ordinabile(r[rev]) < rev_ordinabile(esistente[rev])):
+            if esistente is None:
                 return "ignorata"
             t.righe.remove(esistente)
             return "ok"
         if op == "patch":
-            if esistente is None or (rev and not piu_nuova(r.get(rev), esistente.get(rev))):
-                return vecchia()
+            if esistente is None:
+                return "ignorata"
             nuova = {**esistente, **r}
             self._vincoli(t, nuova)
             esistente.update(r)
@@ -253,8 +261,6 @@ class PostgrestFinto:
         if esistente is not None:
             if op == "insert" or set(r) <= set(conflitto):
                 return "ignorata"
-            if rev and not piu_nuova(r.get(rev), esistente.get(rev)):
-                return vecchia()
             nuova = {**esistente, **r}
             self._vincoli(t, nuova)
             esistente.update(r)
@@ -322,7 +328,7 @@ class PostgrestFinto:
 _SQL_RPC = {
     "postino_consegna": ("public.postino_consegna(p_tabella := a->>'p_tabella', p_op := a->>'p_op', "
                          "p_conflitto := ARRAY(SELECT jsonb_array_elements_text(a->'p_conflitto')), "
-                         "p_rev := a->>'p_rev', p_righe := a->'p_righe')"),
+                         "p_righe := a->'p_righe', p_origine := a->>'p_origine', p_versioni := a->'p_versioni')"),
     "postino_impronte": ("public.postino_impronte(p_tabella := a->>'p_tabella', "
                          "p_chiave := ARRAY(SELECT jsonb_array_elements_text(a->'p_chiave')), p_rev := a->>'p_rev', "
                          "p_colonna_tempo := a->>'p_colonna_tempo', p_da := (a->>'p_da')::timestamptz, "
@@ -394,13 +400,14 @@ def test_client_vero_sul_finto_rpc_ed_errori() -> None:
     srv = PostgrestFinto()
     cloud = CloudProva(srv)
     esiti = cloud.rpc("postino_consegna", {"p_tabella": "mike_activity", "p_op": "insert", "p_conflitto": ["uid"],
-                                           "p_rev": None, "p_righe": [{"uid": "u1", "kind": "k"}]})
+                                           "p_righe": [{"uid": "u1", "kind": "k"}], "p_origine": None,
+                                           "p_versioni": None})
     assert esiti == [{"esito": "ok"}]
     assert srv.richieste[-1][0] == "/rpc/postino_consegna"
     # tabella assente: APIError VERA costruita da postgrest sul corpo di PostgREST
     with pytest.raises(APIError) as e:
         cloud.rpc("postino_consegna", {"p_tabella": "nessuna", "p_op": "insert", "p_conflitto": ["uid"],
-                                       "p_rev": None, "p_righe": []})
+                                       "p_righe": []})
     assert e.value.code == "42P01"
     srv.copione = ["pgrst202"]
     with pytest.raises(APIError) as e2:
@@ -412,14 +419,26 @@ def test_client_vero_sul_finto_rpc_ed_errori() -> None:
 
 
 def test_finto_semantica_versione_e_vincoli() -> None:
+    """R1 (terza revisione): versione per ORIGINE; la colonna del bot non decide nulla."""
     srv = PostgrestFinto()
-    a = srv.consegna("betfair_live_orders", "upsert", ["mode", "client_order_ref"], "updated_at", [
+    k = ["mode", "client_order_ref"]
+    a = srv.consegna("betfair_live_orders", "upsert", k, [
         riga_ordine("r1", "EXECUTABLE", "2026-10-09T10:00:02+00:00"),
-        riga_ordine("r1", "PENDING", "2026-10-09T10:00:01+00:00"),
-        riga_ordine("r2", "EXECUTABLE", "2026-10-09T10:00:01+00:00", side="BACK")])
-    assert [x["esito"] for x in a] == ["ok", "vecchia", "errore"]
+        riga_ordine("r1", "PENDING", "2026-10-09T10:00:01+00:00"),           # updated_at piu' vecchio: VINCE
+        riga_ordine("r2", "EXECUTABLE", "2026-10-09T10:00:01+00:00", side="BACK")], "A", [5, 6, 7])
+    assert [x["esito"] for x in a] == ["ok", "ok", "errore"]
     assert a[2]["codice"] == "23514"
-    assert srv.tabelle["betfair_live_orders"].righe[0]["status"] == "EXECUTABLE"
-    b = srv.consegna("live_alerts", "insert", ["uid"], None, [
+    assert srv.tabelle["betfair_live_orders"].righe[0]["status"] == "PENDING"
+    assert srv.tabelle["betfair_live_orders"].righe[0]["updated_at"] == "2026-10-09T10:00:01+00:00"
+    # stessa origine, versione piu' vecchia (ritento tardivo): vecchia; stessa versione: ignorata
+    b = srv.consegna("betfair_live_orders", "upsert", k, [riga_ordine("r1", "EXECUTABLE", "x"),
+                                                          riga_ordine("r1", "EXECUTABLE", "x")], "A", [5, 6])
+    assert [x["esito"] for x in b] == ["vecchia", "ignorata"]
+    # altra origine, versione piu' bassa: vince l'ultima arrivata (come oggi)
+    c = srv.consegna("betfair_live_orders", "upsert", k, [riga_ordine("r1", "CANCELLED", "y")], "B", [1])
+    assert c == [{"esito": "ok"}] and srv.tabelle["betfair_live_orders"].righe[0]["status"] == "CANCELLED"
+    # la riga rifiutata non lascia la sua versione
+    assert json.dumps(["betfair_live_orders", ["paper", "r2"], "A"]) not in srv.versioni
+    d = srv.consegna("live_alerts", "insert", ["uid"], [
         {"uid": "x", "level": "INFO", "code": "c", "message": "m", "event_id": "senza_padre"}])
-    assert b[0]["codice"] == "23503"
+    assert d[0]["codice"] == "23503"
