@@ -30,6 +30,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Radio, ShieldAlert, Circle, SlidersHorizontal } from 'lucide-react';
 import { PageShell } from '@/components/trading/PageShell';
+import { InterruttoreVista } from '@/components/trading/InterruttoreVista';
+import { useVisibile } from '@/lib/preferenzaVista';
 import { EmptyState } from '@/components/trading/EmptyState';
 import type { DayBarProps } from '@/components/trading/DayBar';
 import { ModeBanner } from '@/components/trading/ModeBanner';
@@ -950,6 +952,10 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
             canale: vm.fonteRighe[b].fonte === 'locale',
         })),
     ]);
+    // 09/10 (ordine dell'utente): un interruttore nasconde tutta la sezione
+    // «AI Terminal» (soldi, runner, stop, bot, fonti). Resta la riga del titolo
+    // con l'interruttore; default visibile, scelta ricordata per viewer.
+    const [visibile, setVisibile] = useVisibile('cr.testata');
     return (
         <header
             className={`sticky ds-v2-non-sticky ds-v2-cr-testata top-0 z-30 border-b backdrop-blur ${inLive ? 'border-orange-500/40 bg-orange-950/30' : 'border-white/10 bg-background/80'}`}
@@ -962,7 +968,11 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                     </Link>
                     <span className="font-semibold tracking-wide ds-v2-cr-nome">CONTROL ROOM</span>
                     <span className="text-xs text-white/50">{dayLabel(romeDay(new Date(vm.nowMs)))}</span>
+                    <InterruttoreVista visibile={visibile} onCambia={setVisibile}
+                        cosa="la sezione AI Terminal" testId="cr-testata-interruttore" className="self-center" />
                 </div>
+
+                {visibile && (<>
 
                 {/* P3 (30/09) - SOLDI VERI ADESSO: l'esposizione e' quella del
                     CONTO (getAccountFunds, con fonte ed eta'), accanto il rischio
@@ -1044,6 +1054,7 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                 <Button size="sm" variant="ghost" onClick={vm.ricarica} className="h-7 px-2 text-white/60" data-testid="cr-ricarica">
                     <RefreshCw className="w-3.5 h-3.5" />
                 </Button>
+                </>)}
             </div>
         </header>
     );
