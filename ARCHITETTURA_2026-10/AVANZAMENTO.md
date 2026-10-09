@@ -20,6 +20,43 @@ in `06_RIEPILOGO_PER_L_UTENTE.md`. Le decisioni gia' prese NON si richiedono all
 5. Dopo ogni ingresso su master il ramo dell'architettura riparte da master aggiornato per la tappa successiva.
 6. Alla fine nessuna fusione gigante: il codice definitivo e' gia' su master tappa per tappa; resta solo da archiviare il vecchio.
 
+## PRIORITA' DELL'UTENTE (09/10): prima TUTTA la parte Betfair, con il DB locale
+
+«Sistemare il prima possibile tutta la parte Betfair (con il DB locale) e lasciare il cloud alle operazioni che fa gia'; il resto
+del codice si sistema dopo. Almeno cosi' posso operare una volta finito.» L'ordine delle tappe segue il grafo di 05 §3:
+
+1. T0 (metro) — obbligatoria, in corso.
+2. TRAGUARDO 1 «operare a mano come i competitor» (~4-5 settimane dopo T0): T5 sessione e REST -> T6 ladder a ogni cambio ->
+   T10 contratto e porta degli ordini -> T11 riconciliatore in ombra + stream degli ordini del CONTO (senza filtro, sola lettura)
+   che alimenta il ladder di Trading con TUTTI gli ordini (tuoi, bot, sito), etichetta di chi li ha fatti, abbinato, prezzo medio,
+   P&L di mercato.
+3. TRAGUARDO 2 «tutto Betfair nell'app, nessun DB nel percorso» (totale ~12-15 settimane): T2 -> T8 archivio locale e postino;
+   T7 algoritmi del cloud letti prima (mai nel percorso dell'ordine); T9 stato partita; T12 runtime + pilota Omega; T14 stato del
+   denaro in locale + postino; T15 Mike (paper); T4 + T17 Safe e scanner; T19 gestore dei flussi; T20 scalper calcio; T21 tennis.
+   T16 (Mike live dalla porta) solo su ordine dell'utente.
+4. DOPO: T1, T3, T13, T18, T22-T26 (pulizia, contabilita' unica, UI dai manifesti, supervisore, banco unico, flumine 3).
+Il cloud resta com'e' (algoritmi, analisi pre-partita, archivio di tutto): nessuna tappa cambia cio' che il cloud calcola.
+
+## ONDATA 1 — costruzione dei comparti del modulo Betfair (avviata il 09/10)
+
+Regola: codice NUOVO solo sotto `Betfair/nucleo/`, nessun file esistente toccato, niente agganciato all'app; parita' col codice di oggi
+provata da test; aggancio = ondata 2 (dopo la tappa 0, una tappa alla volta, interruttore spento, firma del PC, si' dell'utente).
+«Niente andra' su master finche' non siamo certi che funzioni allo stesso modo O MEGLIO» (utente, 09/10).
+Contratti fissi e brief comune: `559a96df` (`Betfair/nucleo/*/contratto.py`, `ondata1/BRIEF_COMUNE_ONDATA1.md`).
+
+| ID | Comparto | Ramo | Stato |
+|---|---|---|---|
+| W1-A1 | sessione unica e REST (T5) | `architettura/w1-a1` | in costruzione |
+| W1-A2 | stream ordini del CONTO, ladder a ogni cambio, profili, gestore stream (T6, T19, T11 parte A) | `architettura/w1-a2` | in costruzione |
+| W1-C1 | porta ordini: adattatore, minimi .it unici, controlli, seq/da_seq, porta (T10) | `architettura/w1-c1` | in costruzione |
+| W1-C2 | libro ordini del conto con autore, P&L di mercato, riconciliazione in ombra (T11) | `architettura/w1-c2` | in costruzione |
+| W1-G1 | archivio locale invisibile, postino, riconcilia, migrazione uid/ombra (T8, T14 base) | `architettura/w1-g1` | in costruzione |
+| W1-G2 | registro delle tabelle, client cloud unico, cache degli algoritmi (T2, T7) | `architettura/w1-g2` | in costruzione |
+| W1-B | stato della partita (T9) | `architettura/w1-b` | in costruzione |
+
+Dopo ogni consegna: verifica del coordinatore (diff, test, mutazioni proprie) + revisore indipendente (Sonnet), poi il ramo entra
+nel ramo dell'architettura. Ondata 2 (aggancio, ombra, replay sul PC) solo dopo la tappa 0 chiusa.
+
 ## Obiettivo (parole dell'utente, 09/10)
 
 - Tutto cio' che e' Betfair vive nell'app desktop, «esattamente come i competitor»: nessun database nel percorso
