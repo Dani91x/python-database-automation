@@ -5593,3 +5593,16 @@ degradato dal 08/2026; la run e' creata 5-6 h dopo l'orario) -> Daily alle 07:00
   catena=false)` -> 204, run 37909480534 creata alle 09:09:42Z, success, job `passa-testimone` skipped, nessun'altra run; secondo
   lancio -> «gia' chiesto oggi: nessuna chiamata», coda pg_net vuota.
 - PRIMA NOTTE VERA: 10/10 00:12 UTC. Lettura della mattina: sospesi §7. Nessun workflow lanciato a mano da adesso in poi.
+- 09/10 11:30-11:53 ORDINE DEFINITIVO APPROVATO DALL'UTENTE («ok perfetto approvata», dopo tabella side by side prima/dopo):
+  1 Daily -> 2 Leagues Mapping -> 3 Today Predictions -> 4 Predictions Results -> 5 Hazard Atlas -> 6 Catchup -> 7 Retrain ->
+  8 Post-Cal -> 9 Weekly Poisson (lunedi'). Verificato dal coordinatore sulle tabelle lette/scritte da ogni script (Today NON legge i
+  modelli del retrain; Results alimenta la dashboard; dopo il Catchup nessuna chiamata API-Football). Commit `0c227d4d` su master
+  (monte_ok inoltrato da ogni staffetta; CATCHUP_RISERVA_PER=nessuna nella catena). INCIDENTE MIO delle 11:22: rilanciato il Daily
+  (gia' riuscito alle 09:19) con catena=true mentre Today Predictions manuale era in corso: cancellato alle 11:24 (staffetta
+  cancellata, nessun anello a valle). Regola da ora: nessun lancio senza «vai» esplicito con scritto cosa parte.
+- 09/10 PROVA DEL PROGRAMMA DI OGGI (decisione dell'utente): saltare i riusciti, rigiocare i falliti/mancanti come farebbe la
+  catena: Today Predictions manuale (catena=false, 11:20) e poi, a fine corsa, Predictions Results con catena=true -> Hazard Atlas ->
+  Catchup -> Retrain -> Post-Cal (Weekly salta: non e' lunedi'). Osservatore in sottofondo; registro
+  `%TMP%/catena_prova_oggi.log`. L'utente usa l'app (senza bot) durante la prova. Replay tennis_flb e safe_tennis su 35790089
+  (tutti gli scenari) lanciati alle 11:47 su ordine dell'utente; delegato «fallimenti action» al lavoro (classificazione di ogni run
+  rossa + rimedi).
