@@ -27,10 +27,10 @@ Nessun file di oggi e' cambiato: l'aggancio e' dell'ondata 2 (referto `ARCHITETT
 
 | Modulo | Uscite |
 |---|---|
-| `flusso_ordini_conto` | `OrdineDalConto` ai consumatori (thread di consegna; filtro per mercato), `ordini(market_id)`, `posizioni(market_id)` (`mb`/`ml` del conto), `ordini_non_confermati()`, `stato()` (vivo/muto/assente, clk, riconnessioni, eta' ultimo messaggio e ultimo ordine) |
+| `flusso_ordini_conto` | `OrdineDalConto` ai consumatori (thread di consegna; filtro per mercato), `ordini(market_id)`, `posizioni(market_id)` (`mb`/`ml` del conto), `ordini_non_confermati()`, `stato()` (vivo/muto/assente, clk, riconnessioni, eta' ultimo messaggio e ultimo ordine, `sottoscrizione` ripresa_clk|da_zero, `seme_rest_necessario`, `ordini_scartati`) |
 | `ladder` | `pubblica("ladder", riga)` (riga = `{event_id, market_id, market_type, market_name, status, ladder:{updated_ms, selections}}`), `scrivi_db(riga)` a `db_sec` write-on-change, `snapshot(market_id)`, `stato()` |
 | `profili` | `ProfiloFlusso`, `filtro_dati(profilo)` (il `marketDataFilter` di betfairlightweight) |
-| `flusso` | `MarketBook` ai consumatori, `book(id)`, `stato()` (stesse chiavi di `GestoreFrammenti.stato()` + `profilo`, `battito_eta_s`), `stato_flusso(id)` in `vivo|muto|assente`, `capacita()` |
+| `flusso` | `MarketBook` GIA' in EUR (`valuta.converti_libro`, K1) ai consumatori, `book(id)`, `stato()` (stesse chiavi di `GestoreFrammenti.stato()` + `profilo`, `battito_eta_s`), `stato_flusso(id)` in `vivo|muto|assente`, `capacita()` |
 
 ## 4. Dipendenze ammesse (04 par. 2.3)
 
@@ -38,7 +38,7 @@ Nessun file di oggi e' cambiato: l'aggancio e' dell'ondata 2 (referto `ARCHITETT
   `UnmatchedOrder`, enum `Streaming*`, `filters`.
 - Funzioni pure di oggi IMPORTATE (riuso, mai copia): `Betfair/stream/recorder.serialize_book`,
   `Betfair/stream/ladder_canale.StatoLadder.versione` e `updated_ms_del_book`, `Betfair/stream/stream_muto.stato_da_battiti`
-  (+ costanti `BATTITI_PER_SOGLIA`, `HEARTBEAT_MS_RICHIESTO`).
+  (+ costanti `BATTITI_PER_SOGLIA`, `HEARTBEAT_MS_RICHIESTO`), `Betfair/stream/valuta.converti_libro` e `valuta.CAMBIO` (K1).
 - Riscritte con test di parita' (pezzi di file grandi legati a flumine): helper del ladder di `runner.py`/`tennis_runner.py`,
   `frammenti_mercato.pianifica` e `GestoreFrammenti.massimo_adesso`.
 - Nessun import di bot, di Supabase, di flumine (salvo `recorder.py` che importa flumine per la sua classe; la funzione
@@ -59,7 +59,8 @@ Nessun file di oggi e' cambiato: l'aggancio e' dell'ondata 2 (referto `ARCHITETT
 | A-033 | connessione muta > 180 s chiusa e mercati ripiazzati; rifiuto e pausa 300 s | `test_a2_flusso.py::test_manutenzione_chiude_la_connessione_muta_e_ripiazza`, `::test_rifiuto_di_betfair_*` |
 | A-034 | sottoscrizione a caldo sostitutiva sulla stessa connessione | `test_a2_flusso.py::test_suddivisione_180_e_risottoscrizione_solo_della_connessione_che_cambia` |
 | A-077 (parte stream) | salute per mercato, 503 = latente | `test_a2_flusso.py::test_salute_vivo_muto_assente_e_503` |
-| T11 (nuova, priorita' dell'utente) | stream ordini del conto senza filtro, sola lettura | `test_a2_flusso_ordini_conto.py` (19 test) |
+| T11 (nuova, priorita' dell'utente) | stream ordini del conto senza filtro, sola lettura, anche ordini del sito senza `rfo`/`rfs` (esempio ufficiale), BSP, partenza da zero dichiarata | `test_a2_flusso_ordini_conto.py` (22 test) |
+| K1 (valuta) | size dello stream GBP -> EUR alla fonte | `test_a2_flusso.py::test_size_dello_stream_convertite_gbp_eur_alla_fonte` |
 
 Restano al codice di oggi (ondata 2 o tappe successive): A-020..A-028, A-035..A-045 (follow, catalogo, ciclo di vita del
 runner, framework flumine), A-047..A-051 (tee raw: P5), A-055..A-061 (live_now, board, canali), A-063..A-068, A-070..A-075

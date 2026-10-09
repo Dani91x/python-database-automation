@@ -27,11 +27,18 @@ Le scelte del filtro (``filters.streaming_order_filter``):
   ``rfo``) nel comparto C. Meno traffico sulla connessione.
 
 Ordini senza riferimenti (reperto di W1-C2, 09/10): in betfairlightweight 2.23.2
-``UnmatchedOrder`` vuole ``rfo`` e ``rfs`` come argomenti obbligatori; un ordine del
-sito o di un'altra app che non li porta farebbe cadere la cache (``TypeError``) e con
-lei lo stream. ``normalizza_ordini`` li mette a ``""`` (= nessun riferimento, None in
-``OrdineDalConto``) PRIMA della cache; un ordine senza un altro campo obbligatorio non
-si inventa: si toglie dal messaggio, si conta e si segnala (``ordini_non_confermati``).
+``UnmatchedOrder`` vuole ``rfo``, ``rfs`` (e ``p``, ``s``, ``pd``, gli importi) come
+argomenti obbligatori e valida i codici in ``serialise``; l'esempio UFFICIALE di
+Betfair non porta ``rfo``/``rfs``: un solo ordine cosi' farebbe cadere il messaggio e
+lo stream. ``normalizza_ordini`` mette i valori di serie documentati (``_DI_SERIE_UO``)
+e prova OGNI ordine con la classe vera PRIMA della cache: chi non va si toglie dal
+messaggio, si logga, si conta e si segnala (``ordini_non_confermati``); gli altri
+passano. Un BSP senza prezzo/size resta con ``prezzo``/``importo`` None (assenti).
+
+Partenza da zero: una sottoscrizione SENZA clk riceve solo gli ordini EXECUTABLE (gli
+EXECUTION_COMPLETE di prima arrivano "only when transitioning", documentazione
+ufficiale): ``stato()["sottoscrizione"]`` dice ``ripresa_clk`` o ``da_zero`` e
+``seme_rest_necessario`` avvisa il libro ordini di seminare da ``listCurrentOrders``.
 
 Valuta: gli importi dello stream ORDINI sono gia' nella valuta del conto (EUR,
 ``Betfair/stream/valuta.py`` testata); la conversione GBP->EUR riguarda solo i book.
@@ -126,8 +133,9 @@ def ordine_dalla_cache(uo: UnmatchedOrder, market_id: str, selection_id: int,
         selection_id=int(selection_id),
         handicap=float(handicap or 0.0),
         lato=_LATI[uo.side],  # type: ignore[arg-type]
-        prezzo=float(uo.price),
-        importo=float(uo.size),
+        # BSP senza prezzo/size: ASSENTI (None), mai 0 (PSB 7 n.21); proposta Optional nel contratto
+        prezzo=float(uo.price) if uo.price is not None else None,  # type: ignore[arg-type]
+        importo=float(uo.size) if uo.size is not None else None,  # type: ignore[arg-type]
         stato=StreamingStatus[uo.status].value,
         persistenza=(StreamingPersistenceType[uo.persistence_type].value
                      if uo.persistence_type else None),
@@ -156,23 +164,43 @@ _OBBLIGATORI_UO = tuple(
     n for n, p in inspect.signature(UnmatchedOrder.__init__).parameters.items()
     if n not in ("self", "publish_time") and p.default is p.empty
     and p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY))
-#: riferimenti che Betfair puo' NON mandare (ordine del sito, di un'altra app):
-#: assenti = nessun riferimento; la conversione li porta comunque a None
-_RIFERIMENTI = ("rfo", "rfs")
+#: valori DI SERIE dei campi che Betfair puo' non mandare, con la fonte
+#: (``AUDIT_2026-10-02/_fonti_betfair/bf_2687396.txt``, pagina "Exchange Stream API"):
+#: * ``rfo``/``rfs``: "default is ''" (riga 909); l'esempio ufficiale di riga 1108 non li porta;
+#: * ``sm``/``sr``/``sl``/``sc``/``sv``: importi; assenti = nessun importo ("there will be no
+#:   sc because a BSP bet does not have any Size before reconciliation", riga 1120);
+#: * ``p``/``s``/``pd``: un BSP (MARKET_ON_CLOSE) puo' non avere prezzo o size (non verificato
+#:   dal vivo): restano ASSENTI (None), mai inventati.
+_DI_SERIE_UO: Dict[str, Any] = {"rfo": "", "rfs": "", "sm": 0, "sr": 0, "sl": 0, "sc": 0, "sv": 0,
+                                "p": None, "s": None, "pd": None}
 
 
-def normalizza_ordini(data: list) -> List[str]:
+def _prova_ordine(uo: Mapping[str, Any], publish_time: int, market_id: Any, sel: Any,
+                  hc: Any) -> Optional[str]:
+    """Prova l'ordine con la classe VERA della libreria (costruzione + ``serialise``)
+    PRIMA di dargli il messaggio: None se va, altrimenti il motivo."""
+    try:
+        UnmatchedOrder(publish_time, **uo).serialise(True, market_id, sel, hc)
+    except (TypeError, KeyError, ValueError, AttributeError) as e:
+        return "%s: %s" % (type(e).__name__, e)
+    return None
+
+
+def normalizza_ordini(data: list, publish_time: int = 0) -> Tuple[List[str], int]:
     """Prepara IN PLACE il messaggio ``oc`` per la cache della libreria.
 
-    betfairlightweight 2.23.2 costruisce ``UnmatchedOrder(**uo)`` con ``rfo`` e
-    ``rfs`` obbligatori: un ordine senza riferimenti (sito Betfair, altre app)
-    farebbe ``TypeError`` e lo stream cadrebbe proprio sugli ordini che si vogliono
-    vedere (reperto di W1-C2, 09/10). Qui: ``rfo``/``rfs`` assenti -> ``""`` (nessun
-    riferimento: in ``OrdineDalConto`` diventano None come oggi gli stringa vuota);
-    un ordine senza un ALTRO campo obbligatorio (id, prezzo, size, stato, importi...)
-    non si inventa: si toglie dal messaggio (il resto passa) e il suo ``id`` torna
-    nella lista degli scartati (lo stato lo conta, il comparto C lo riconcilia via REST)."""
+    betfairlightweight 2.23.2 costruisce ``UnmatchedOrder(**uo)`` con ``rfo``, ``rfs``,
+    ``p``, ``s``, ``pd``, ``sm``... OBBLIGATORI e codici (``side``, ``status``, ``ot``)
+    validati in ``serialise``: UN ordine senza riferimenti (sito Betfair, altre app)
+    o con un codice nuovo farebbe cadere l'INTERO messaggio e lo stream (reperto di
+    W1-C2, 09/10). Qui, ordine per ordine: i campi assenti prendono il valore di
+    serie documentato (``_DI_SERIE_UO``); poi l'ordine si prova con la classe vera
+    (``_prova_ordine``); se non va si toglie dal messaggio (gli altri passano), si
+    logga col motivo e il suo ``id`` torna fra gli scartati (lo stato li conta e li
+    segnala in ``ordini_non_confermati``: il comparto C li riconcilia via REST).
+    Ritorna (scartati, campi riempiti)."""
     scartati: List[str] = []
+    riempiti = 0
     for oc in data or []:
         for orc in oc.get("orc") or []:
             uos = orc.get("uo")
@@ -180,17 +208,20 @@ def normalizza_ordini(data: list) -> List[str]:
                 continue
             tenuti = []
             for uo in uos:
-                for k in _RIFERIMENTI:
-                    uo.setdefault(k, "")
-                mancanti = [k for k in _OBBLIGATORI_UO if k not in uo]
-                if mancanti:
+                for k, v in _DI_SERIE_UO.items():
+                    if k not in uo:
+                        uo[k] = v
+                        riempiti += 1
+                motivo = _prova_ordine(uo, publish_time, oc.get("id"), orc.get("id"), orc.get("hc", 0))
+                if motivo is not None:
                     scartati.append(str(uo.get("id")))
-                    logger.error("[ordini-conto] ordine %s del mercato %s senza %s: non applicabile, "
-                                 "da riconciliare via REST", uo.get("id"), oc.get("id"), mancanti)
+                    logger.error("[ordini-conto] ordine %s del mercato %s non applicabile (%s): "
+                                 "tolto dal messaggio, da riconciliare via REST",
+                                 uo.get("id"), oc.get("id"), motivo)
                     continue
                 tenuti.append(uo)
             orc["uo"] = tenuti
-    return scartati
+    return scartati, riempiti
 
 
 class _OrderStreamConto(OrderStream):
@@ -199,7 +230,8 @@ class _OrderStreamConto(OrderStream):
     cache (``super()._process``), passa al listener il messaggio appena applicato."""
 
     def _process(self, data: list, publish_time: int) -> bool:
-        scartati = normalizza_ordini(data)
+        scartati, riempiti = normalizza_ordini(data, publish_time)
+        self._listener.campi_riempiti += riempiti
         img = super()._process(data, publish_time)
         self._listener.cambiati(self, data, scartati)
         return img
@@ -225,6 +257,7 @@ class ListenerConto(StreamListener):
         self.heartbeat_ms_server: Optional[int] = None
         self.errori_conversione = 0
         self.errore_elaborazione = False
+        self.campi_riempiti = 0
         self.messaggi = 0
 
     def _add_stream(self, unique_id: int, operation: str) -> Any:
@@ -378,6 +411,12 @@ class FlussoOrdiniContoBetfair:
             "rinnovi_sessione": 0,
         }
         self._avviato_ms: Optional[float] = None
+        #: la sottoscrizione CORRENTE: "ripresa_clk" (RESUB_DELTA: nulla perso) o "da_zero"
+        #: (immagine piena: Betfair manda SOLO gli EXECUTABLE; gli EXECUTION_COMPLETE di
+        #: prima arrivano "only when transitioning", bf_2687396.txt:941 -> il libro ordini
+        #: deve fare il seme REST da listCurrentOrders)
+        self._sottoscrizione: Optional[str] = None
+        self._sottoscrizione_ms: Optional[float] = None
 
     # ------------------------------------------------------------ contratto
     @property
@@ -492,6 +531,12 @@ class FlussoOrdiniContoBetfair:
             "consumatori": n_cons,
             "errori_conversione": li.errori_conversione,
             "messaggi": li.messaggi,
+            "campi_riempiti": li.campi_riempiti,
+            "sottoscrizione": self._sottoscrizione,
+            "sottoscrizione_ms": self._sottoscrizione_ms,
+            # dopo una partenza da zero gli EXECUTION_COMPLETE precedenti NON arrivano:
+            # il libro ordini (comparto C) semina da listCurrentOrders
+            "seme_rest_necessario": self._sottoscrizione == "da_zero",
             **self.conti,
         }
 
@@ -537,6 +582,8 @@ class FlussoOrdiniContoBetfair:
         self._forza_immagine = False
         self.conti["connessioni"] += 1
         self.conti["riprese_con_clk" if ripresa else "immagini_piene"] += 1
+        self._sottoscrizione = "ripresa_clk" if ripresa else "da_zero"
+        self._sottoscrizione_ms = self._ora_ms()
         logger.info("[ordini-conto] sottoscrizione %s (%s)", self._id,
                     "ripresa con clk" if ripresa else "immagine piena")
         if self._fermo.is_set():

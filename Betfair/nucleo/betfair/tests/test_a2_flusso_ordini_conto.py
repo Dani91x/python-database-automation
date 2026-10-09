@@ -143,7 +143,9 @@ def test_ordine_del_sito_SENZA_rfo_rfs_rc_non_fa_cadere_la_cache():
     dell'Order e' obbligatoria), chiavi tolte, catena vera della libreria."""
     from betfairlightweight.streaming.cache import UnmatchedOrder
 
-    assert {"rfo", "rfs"} <= set(FOC._OBBLIGATORI_UO)          # il difetto della libreria c'e'
+    obbligatori = {n for n, q in inspect.signature(UnmatchedOrder.__init__).parameters.items()
+                   if q.default is q.empty}
+    assert {"rfo", "rfs"} <= obbligatori                       # il difetto della libreria c'e'
     with pytest.raises(TypeError):
         UnmatchedOrder(PT0, **_senza(uo("x"), "rfo", "rfs", "rac", "rc"))
     li, r = listener_vero()
@@ -161,16 +163,55 @@ def test_ordine_del_sito_SENZA_rfo_rfs_rc_non_fa_cadere_la_cache():
     assert li.clk == "2" and not li.errore_elaborazione
 
 
-def test_ordine_senza_un_campo_obbligatorio_si_scarta_e_si_segnala_il_resto_passa():
+def test_esempio_UFFICIALE_senza_rfo_rfs_parziale_poi_completo():
+    """I tre messaggi ``ocm`` dell'esempio della documentazione ufficiale, VERBATIM
+    (``AUDIT_2026-10-02/_fonti_betfair/bf_2687396.txt:1108-1114``): gli ordini NON
+    portano ``rfo``/``rfs``. Con la libreria da sola il primo messaggio fa ``TypeError``."""
+    righe = [
+        '{"op":"ocm","id":2,"clk":"AK0CAPsBALEC","pt":1467219304831,"oc":[{"id":"1.102151675","orc":[{"fullImage":true,"id":6113662,"uo":[{"id":"10822867886","p":12,"s":2,"side":"B","status":"E","pt":"L","ot":"L","pd":1467219304000,"sm":0,"sr":2,"sl":0,"sc":0,"sv":0,"rac":"","rc":"REG_GGC"}]}]}]}',
+        '{"op":"ocm","id":2,"clk":"AK0CAPsBALMC","pt":1467219316709,"oc":[{"id":"1.102151675","orc":[{"id":6113662,"uo":[{"id":"10822867886","p":12,"s":2,"side":"B","status":"EC","pt":"L","ot":"L","pd":1467219304000,"md":1467219316000,"avp":12,"sm":2,"sr":0,"sl":0,"sc":0,"sv":0}],"mb":[[12,2]]}]}]}',
+        '{"op":"ocm","id":2,"clk":"AK0CAJACALsC","pt":1467219376611,"oc":[{"id":"1.102151675","orc":[{"id":6113662,"uo":[{"id":"10822867886","p":12,"s":2,"side":"B","status":"EC","pt":"L","ot":"L","pd":1467219304000,"md":1467219316000,"avp":9.47,"sm":2,"sr":0,"sl":0,"sc":0,"sv":0}],"mb":[[9.47,2],[12,0]]}]}]}',
+    ]
+    r = Raccolta()
+    li = FOC.ListenerConto(r, lambda: 1.0e12)
+    li.register_stream(2, "orderSubscription")
+    for riga in righe:
+        li.on_data(riga)
+    o = r.ultimi["10822867886"]
+    assert (o.stato, o.abbinato, o.residuo, o.prezzo_medio) == ("EXECUTION_COMPLETE", 2.0, 0.0, 9.47)
+    assert (o.customer_order_ref, o.customer_strategy_ref, o.regulator_code) == (None, None, None)
+    assert (o.piazzato_ms, o.abbinato_ms) == (1467219304000, 1467219316000)
+    assert li.clk == "AK0CAJACALsC" and not li.errore_elaborazione
+    assert r.info[-1]["posizioni"][("1.102151675", 6113662, 0.0)]["abbinati_back"] == [[9.47, 2]]
+
+
+def test_ordine_BSP_senza_prezzo_ne_size_resta_con_valori_assenti():
+    """BSP (MARKET_ON_CLOSE) senza ``p``/``s`` (non verificato dal vivo): l'ordine resta,
+    prezzo e importo ASSENTI (None, mai 0), la liability non si inventa."""
+    li, r = listener_vero()
+    bsp = _senza(uo("BSP1", ot="MOC", pt="MOC", bsp=10.0), "p", "s", "rfo", "rfs", "sc")
+    li.on_data(ocm([mercato(MID, [runner(19, [bsp, uo("NORMALE")])], full=True)],
+                   ct="SUB_IMAGE", clk="1"))
+    u = r.ultimi
+    assert set(u) == {"BSP1", "NORMALE"}
+    assert (u["BSP1"].prezzo, u["BSP1"].importo, u["BSP1"].tipo) == (None, None, "MARKET_ON_CLOSE")
+    assert u["BSP1"].annullato == 0.0
+
+
+def test_ordine_non_applicabile_si_scarta_e_si_segnala_il_resto_passa():
+    """Un ordine senza ``side`` o con un codice sconosciuto: provato con la classe vera
+    PRIMA della cache, tolto dal messaggio (gli altri passano), contato e segnalato."""
     f = FOC.FlussoOrdiniContoBetfair(SessioneFinta())
     li = f._listener
     li.register_stream(5, "orderSubscription")
-    li.on_data(ocm([mercato(MID, [runner(19, [_senza(uo("ROTTO"), "sm"), uo("BUONO")])], full=True)],
+    li.on_data(ocm([mercato(MID, [runner(19, [_senza(uo("SENZA_LATO"), "side"), uo("X1", side="X"),
+                                              uo("BUONO")])], full=True)],
                    ct="SUB_IMAGE", clk="1"))
     assert [o.bet_id for o in f.ordini()] == ["BUONO"]
-    assert "ROTTO" in f.ordini_non_confermati()           # il comparto C lo riconcilia via REST
+    assert {"SENZA_LATO", "X1"} <= f.ordini_non_confermati()   # il comparto C li riconcilia via REST
     st = f.stato()
-    assert st["ordini_scartati"] == 1 and st["riconnessioni"] == 0
+    assert st["ordini_scartati"] == 2 and st["riconnessioni"] == 0
+    assert li.clk == "1" and not li.errore_elaborazione
 
 
 def test_parziale_poi_completo_poi_annullato_scaduto_e_annullato_da_betfair():
@@ -249,16 +290,6 @@ def test_immagine_piena_dopo_caduta_segnala_gli_eseguiti_mentre_era_giu():
     assert f.ordini_non_confermati() == {"2"}
     assert {o.bet_id for o in f.ordini(MID)} == {"1", "2"}       # nessuno sparisce
     assert f.ordini(MID2) == ()
-
-
-def test_codice_sconosciuto_solleva_nella_libreria_prima_della_conversione():
-    """Un ``side`` sconosciuto lo rifiuta GIA' la cache di betfairlightweight
-    (``UnmatchedOrder.serialise``): l'errore risale al ciclo della connessione,
-    che si riconnette (``test_messaggio_malformato_si_riconnette_con_clk``)."""
-    li, r = listener_vero()
-    with pytest.raises(KeyError):
-        li.on_data(ocm([mercato(MID, [runner(19, [uo("1", side="X")])])], ct="SUB_IMAGE"))
-    assert r.lotti == []
 
 
 def test_sola_lettura_nessun_metodo_che_piazza_o_annulla():
@@ -346,6 +377,7 @@ def test_connessione_vera_sottoscrive_senza_filtro_e_riprende_con_clk(server_str
         assert auth[0]["appKey"] == "chiave_finta" and auth[0]["session"] == "token-finto-1"
         st = f.stato()
         assert st["riprese_con_clk"] == 1 and st["immagini_piene"] == 1
+        assert (st["sottoscrizione"], st["seme_rest_necessario"]) == ("ripresa_clk", False)
         assert st["riconnessioni"] >= 1 and st["ultimo_clk"] == "CLK-3"
         assert attendi(lambda: {o.bet_id for o in visti} == {"1", "2"})
         uno = [o for o in f.ordini() if o.bet_id == "1"][0]
@@ -373,6 +405,7 @@ def test_invalid_clock_riparte_da_immagine_piena(server_stream, backoff_breve):
         assert subs[1]["clk"] == "CLK-1"
         assert (subs[2]["initialClk"], subs[2]["clk"]) == (None, None)
         assert attendi(lambda: f.stato()["ultimo_clk"] == "CLK-3")
+        assert (f.stato()["sottoscrizione"], f.stato()["seme_rest_necessario"]) == ("da_zero", True)
     finally:
         f.ferma()
 
@@ -461,12 +494,13 @@ def test_connessione_vera_regge_l_ordine_del_sito_senza_riferimenti(server_strea
 
 
 def test_messaggio_malformato_si_riconnette_da_immagine_piena(server_stream, backoff_breve):
+    """Un ``oc`` senza id di mercato fa sollevare la libreria (``stream.py`` ``_process``)."""
     """La libreria segna ``clk`` = CLK-X prima di fallire sul messaggio: riprendere
     da li' lo salterebbe. Si riparte da immagine piena (clk nulli)."""
     def risposta(n: int, m: Dict[str, Any], k: int) -> List[Any]:
         if k == 1:
             return [_immagine(1), {"op": "ocm", "clk": "CLK-X", "pt": PT0 + 5,
-                                   "oc": [mercato(MID, [runner(19, [uo("9", side="X")])])]}]
+                                   "oc": [{"orc": [runner(19, [uo("9")])]}]}]   # oc senza id
         return [{"op": "ocm", "initialClk": "INI-2", "clk": "CLK-4", "pt": PT0 + 9,
                  "ct": "SUB_IMAGE",
                  "oc": [mercato(MID, [runner(19, [uo("1"), uo("2"), uo("9")])], full=True)]}]
