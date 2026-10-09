@@ -1,0 +1,10 @@
+{"update_id": 9, "type": "KickOff", "team": null, "team_name": null, "minute": 1, "elapsed_regular": 1, "elapsed_added": null, "ts": "2026-07-05T20:00:18.014958+00:00"}
+{"update_id": 16, "type": "Goal", "team": "away", "team_name": "Norway", "minute": 3, "elapsed_regular": 3, "elapsed_added": null, "ts": "2026-07-05T20:02:58.260093+00:00"}
+{"update_id": 25, "type": "MissedPenalty", "team": null, "team_name": null, "minute": 14, "elapsed_regular": 14, "elapsed_added": null, "ts": "2026-07-05T20:13:40.676342+00:00"}
+{"update_id": 56, "type": "FirstHalfEnd", "team": null, "team_name": null, "minute": 52, "elapsed_regular": 45, "elapsed_added": 7, "ts": "2026-07-05T20:51:26.800143+00:00"}
+{"update_id": 59, "type": "SecondHalfKickOff", "team": null, "team_name": null, "minute": 46, "elapsed_regular": 46, "elapsed_added": null, "ts": "2026-07-05T21:07:32.529395+00:00"}
+{"update_id": 93, "type": "Goal", "team": "away", "team_name": "Norway", "minute": 80, "elapsed_regular": 80, "elapsed_added": null, "ts": "2026-07-05T21:41:28.414616+00:00"}
+{"update_id": 104, "type": "Goal", "team": "away", "team_name": "Norway", "minute": 90, "elapsed_regular": 90, "elapsed_added": null, "ts": "2026-07-05T21:51:43.288859+00:00"}
+{"update_id": 108, "type": "YellowCard", "team": "home", "team_name": "Brazil", "minute": 96, "elapsed_regular": 90, "elapsed_added": 6, "ts": "2026-07-05T21:57:44.770125+00:00"}
+{"update_id": 116, "type": "Goal", "team": "home", "team_name": "Brazil", "minute": 100, "elapsed_regular": 90, "elapsed_added": 10, "ts": "2026-07-05T22:02:12.332707+00:00"}
+{"update_id": 119, "type": "SecondHalfEnd", "team": null, "team_name": null, "minute": 102, "elapsed_regular": 90, "elapsed_added": 12, "ts": "2026-07-05T22:04:15.608031+00:00"}

@@ -1,0 +1,12 @@
+{"update_id": 9, "type": "KickOff", "team": null, "team_name": null, "minute": 1, "elapsed_regular": 1, "elapsed_added": null, "ts": "2026-06-30T15:00:09.238177+00:00"}
+{"update_id": 9, "type": "KickOff", "team": null, "team_name": null, "minute": 1, "elapsed_regular": 1, "elapsed_added": null, "ts": "2026-06-30T15:05:52.434466+00:00"}
+{"update_id": 34, "type": "Goal", "team": "away", "team_name": "SKU Amstetten", "minute": 16, "elapsed_regular": 16, "elapsed_added": null, "ts": "2026-06-30T15:15:14.677372+00:00"}
+{"update_id": 9, "type": "KickOff", "team": null, "team_name": null, "minute": 1, "elapsed_regular": 1, "elapsed_added": null, "ts": "2026-06-30T15:21:16.943809+00:00"}
+{"update_id": 34, "type": "Goal", "team": "away", "team_name": "SKU Amstetten", "minute": 16, "elapsed_regular": 16, "elapsed_added": null, "ts": "2026-06-30T15:21:16.944747+00:00"}
+{"update_id": 80, "type": "YellowCard", "team": "away", "team_name": "SKU Amstetten", "minute": 46, "elapsed_regular": 45, "elapsed_added": 1, "ts": "2026-06-30T15:45:17.815159+00:00"}
+{"update_id": 84, "type": "FirstHalfEnd", "team": null, "team_name": null, "minute": 47, "elapsed_regular": 45, "elapsed_added": 2, "ts": "2026-06-30T15:46:34.145462+00:00"}
+{"update_id": 87, "type": "SecondHalfKickOff", "team": null, "team_name": null, "minute": 46, "elapsed_regular": 46, "elapsed_added": null, "ts": "2026-06-30T15:58:56.875875+00:00"}
+{"update_id": 107, "type": "YellowCard", "team": "home", "team_name": "MAS Taborsko", "minute": 59, "elapsed_regular": 59, "elapsed_added": null, "ts": "2026-06-30T16:12:07.172955+00:00"}
+{"update_id": 136, "type": "Goal", "team": "away", "team_name": "SKU Amstetten", "minute": 81, "elapsed_regular": 81, "elapsed_added": null, "ts": "2026-06-30T16:34:09.882064+00:00"}
+{"update_id": 148, "type": "Goal", "team": "away", "team_name": "SKU Amstetten", "minute": 88, "elapsed_regular": 88, "elapsed_added": null, "ts": "2026-06-30T16:41:34.000173+00:00"}
+{"update_id": 154, "type": "SecondHalfEnd", "team": null, "team_name": null, "minute": 91, "elapsed_regular": 90, "elapsed_added": 1, "ts": "2026-06-30T16:44:21.060866+00:00"}

@@ -1,0 +1,12 @@
+{"update_id": 10, "type": "KickOff", "team": null, "team_name": null, "minute": 1, "elapsed_regular": 1, "elapsed_added": null, "ts": "2026-07-02T19:00:25.730429+00:00"}
+{"update_id": 10, "type": "KickOff", "team": null, "team_name": null, "minute": 1, "elapsed_regular": 1, "elapsed_added": null, "ts": "2026-07-02T19:03:15.437600+00:00"}
+{"update_id": 10, "type": "KickOff", "team": null, "team_name": null, "minute": 1, "elapsed_regular": 1, "elapsed_added": null, "ts": "2026-07-02T19:04:41.638416+00:00"}
+{"update_id": 10, "type": "KickOff", "team": null, "team_name": null, "minute": 1, "elapsed_regular": 1, "elapsed_added": null, "ts": "2026-07-02T19:25:32.794014+00:00"}
+{"update_id": 42, "type": "Goal", "team": "home", "team_name": "Spain", "minute": 29, "elapsed_regular": 29, "elapsed_added": null, "ts": "2026-07-02T19:29:04.408740+00:00"}
+{"update_id": 52, "type": "Goal", "team": "home", "team_name": "Spain", "minute": 36, "elapsed_regular": 36, "elapsed_added": null, "ts": "2026-07-02T19:36:24.292212+00:00"}
+{"update_id": 65, "type": "FirstHalfEnd", "team": null, "team_name": null, "minute": 50, "elapsed_regular": 45, "elapsed_added": 5, "ts": "2026-07-02T19:49:45.149703+00:00"}
+{"update_id": 68, "type": "SecondHalfKickOff", "team": null, "team_name": null, "minute": 46, "elapsed_regular": 46, "elapsed_added": null, "ts": "2026-07-02T20:07:16.844791+00:00"}
+{"update_id": 89, "type": "Goal", "team": "home", "team_name": "Spain", "minute": 66, "elapsed_regular": 66, "elapsed_added": null, "ts": "2026-07-02T20:27:48.959797+00:00"}
+{"update_id": 113, "type": "YellowCard", "team": "away", "team_name": "Austria", "minute": 83, "elapsed_regular": 83, "elapsed_added": null, "ts": "2026-07-02T20:44:57.260556+00:00"}
+{"update_id": 119, "type": "Goal", "team": "home", "team_name": "Spain", "minute": 89, "elapsed_regular": 89, "elapsed_added": null, "ts": "2026-07-02T20:50:32.766566+00:00"}
+{"update_id": 126, "type": "SecondHalfEnd", "team": null, "team_name": null, "minute": 96, "elapsed_regular": 90, "elapsed_added": 6, "ts": "2026-07-02T20:58:20.861737+00:00"}
