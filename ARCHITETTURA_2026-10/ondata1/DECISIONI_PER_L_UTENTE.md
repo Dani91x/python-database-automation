@@ -25,3 +25,21 @@ ripiego come Omega, aggiornamenti mai scartati per l'orologio, nessuna ripresa d
 | 13 | Connessioni a Betfair in LIVE (W1-A2, terza revisione) | Ogni processo flumine LIVE (runner calcio, tennis, ogni scalper) apre gia' il suo stream ordini: caso peggiore 10 su 10 | Lo stream ordini del conto AGGIUNTO e basta: 11 su 10 (non entra). SOSTITUENDO gli stream ordini di flumine all'aggancio: 9 su 10 | **Sostituire** all'ondata 2: un solo stream ordini per l'app (e' anche cio' che porta tutti gli ordini sul ladder). Mai aggiunto senza sostituire |
 
 Riferimenti: referti in `ARCHITETTURA_2026-10/ondata1/W1-*/REFERTO.md` (par. 9 "Divergenze per l'utente").
+
+## Risposte dell'utente (10/10/2026) - VINCOLANTI per l'ondata 2
+
+| # | Decisione | Cosa significa per il codice |
+|---|---|---|
+| 1 | **Si'**: una sola sessione per tutta l'app | Il custode di W1-A1 e' l'unico punto di login/keepAlive del processo dell'app; i servizi non fanno piu' login propri all'aggancio |
+| 2 | **Si'**, e «sempre una sola connessione» | Anche `segnala_errore` rispetta l'attesa dopo un login fallito (da allineare in W1-A1 all'aggancio) |
+| 3 | **Si'**: puntata dal desktop non multipla di 0,50 rifiutata | La porta usa `minimi.verdetto_desktop` (politica "rifiuta") per l'attore desktop; i bot invariati |
+| 4 | **Si'**: fase dedotta dal minuto come Omega | Gia' cosi' in W1-B |
+| 5 | **Tutti i mercati**: il "se vince" sul ladder per ogni mercato | Da cambiare in W1-C2: il "se vince" per selezione si calcola su ogni mercato, come i competitor; per i mercati a piu' vincitori o con handicap il numero resta mostrato con l'indicazione che e' per selezione (non e' un esito unico del mercato). Lavoro da fare all'inizio dell'ondata 2 |
+| 6 | **Si'**: ordine col solo riferimento manuale = "da confermare" | Gia' cosi' in W1-C2 |
+| 7 | **Si'**: calcio e tennis su cartelle diverse | All'aggancio |
+| 8 | **No**: lo stream si usa dove possibile, la REST e' SOLO di riserva, come i competitor | Il problema dello slot nasce perche' oggi ogni processo apre le sue connessioni. All'aggancio: UN gestore dei flussi per tutta l'app (W1-A2 `GestoreFlussi`, 200 mercati per connessione) piu' UNO stream ordini; i servizi non aprono piu' stream propri. Con 10 connessioni = fino a 2.000 mercati in streaming: lo slot non manca piu' e nessun flusso ripiega sulla REST se non per guasto |
+| 9 | **Si'**: riga illeggibile messa da parte e ritentata | Gia' cosi' in W1-G1 |
+| 10 | **Tutta l'app in tempo reale per Betfair; il cloud solo come backup; il resto sul DB locale** | Nessun dato Betfair passa dal cloud (gia' cosi' nel disegno: stream -> app -> DB locale -> postino verso il cloud). Per i dati che il cloud CALCOLA (analisi pre-partita di Mike, tabelle di Omega) l'attesa fissa di 5 minuti va sostituita da un aggiornamento appena il cloud ricalcola (sentinella gia' presente in W1-G2), all'aggancio |
+| 11 | **Si'**: i due script batch restano come oggi | Nessun cambio |
+| 12 | **Massima velocita'** del ladder | Cadenza di serie 20 ms (W1-A2 la supporta); in ombra si misura la CPU vera del processo |
+| 13 | **Un solo flusso ordini** per tutta l'app | All'aggancio lo stream ordini del conto (W1-A2) SOSTITUISCE quelli che flumine apre in ogni processo; mai aggiunto |

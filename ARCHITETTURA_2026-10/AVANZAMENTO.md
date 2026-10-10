@@ -62,6 +62,13 @@ nel ramo dell'architettura. Ondata 2 (aggancio, ombra, replay sul PC) solo dopo 
 Decisioni per l'utente (13 voci, con raccomandazione): `ondata1/DECISIONI_PER_L_UTENTE.md`. Prossimo: ondata 2 (aggancio dietro
 `ARCH_<COMP>`, ombra, replay sul PC) dopo la tappa 0 chiusa (misura di 24 h di T0A) e le risposte dell'utente.
 
+**10/10 - RISPOSTE DELL'UTENTE alle 13 decisioni** (dettaglio e conseguenze in `ondata1/DECISIONI_PER_L_UTENTE.md`, sezione
+"Risposte dell'utente"): una sola sessione e un solo flusso ordini per l'app; lo stream ovunque possibile, la REST solo di riserva
+(un gestore dei flussi unico, non connessioni per processo); tutta l'app in tempo reale per Betfair, il cloud solo backup, il resto sul
+DB locale; "se vince" su tutti i mercati; ladder alla massima velocita' (20 ms); puntata desktop non multipla di 0,50 rifiutata;
+calcio e tennis su cartelle diverse. Lavori aperti per l'ondata 2: W1-C2 "se vince" su ogni mercato; aggiornamento dei dati calcolati
+dal cloud appena cambiano (non ogni 5 min); allineamento di `segnala_errore` all'attesa del login.
+
 ## Obiettivo (parole dell'utente, 09/10)
 
 - Tutto cio' che e' Betfair vive nell'app desktop, «esattamente come i competitor»: nessun database nel percorso
