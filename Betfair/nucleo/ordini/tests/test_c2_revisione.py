@@ -417,7 +417,11 @@ def test_imposta_mercato_vincitori_e_tipo_dal_book():
     lib.imposta_mercato(MKT, vincitori=1)
     assert lib.posizione(MKT, "live").se_vince == {HOME: 4.0, AWAY: -4.0}
     lib.imposta_mercato(MKT, tipo_scommessa="LINE")
-    assert lib.posizione(MKT, "live").se_vince == {}
+    # decisione 5 dell'utente (10/10): il "se vince" c'e' anche sui mercati LINE
+    # (quota 2,0: qui il prezzo e' gia' 2,0), con la qualita' per_selezione
+    c = lib.calcolo_posizione(MKT, "live")
+    assert c.posizione.se_vince == {HOME: 4.0, AWAY: -4.0}
+    assert c.qualita == "per_selezione" and "linea_a_quota_2" in c.motivi
 
 
 def test_g2_tipo_non_odds_dichiarato():

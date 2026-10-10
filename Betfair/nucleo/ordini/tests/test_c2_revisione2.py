@@ -238,7 +238,9 @@ def _oc(sel: int, abb: float, pm: float) -> OrdineConto:
 def test_m4_tipi_non_a_vincitore_unico(tipo):
     c = P.calcola(MKT, "live", [_oc(HOME, 10.0, 2.0)], runner=[HOME, AWAY], tipo_scommessa=tipo,
                   vincitori=1)
-    assert not c.supportato and c.posizione.se_vince == {}
+    # decisione 5 dell'utente (10/10): "se vince" per selezione, qualita' per_selezione
+    assert not c.supportato and c.posizione.se_vince == {HOME: 10.0, AWAY: -10.0}
+    assert c.qualita == P.QUALITA_PER_SELEZIONE
     assert f"tipo_non_supportato:{tipo}" in c.motivi
 
 
@@ -246,7 +248,9 @@ def test_m4_tipi_non_a_vincitore_unico(tipo):
 def test_vincitori_ignoti_e_tipi_a_vincitore_unico_per_definizione():
     o = [_oc(HOME, 10.0, 2.0)]
     ign = P.calcola(MKT, "live", o, runner=[HOME, AWAY], tipo_scommessa="ODDS")
-    assert not ign.supportato and "vincitori_ignoti" in ign.motivi and ign.posizione.se_vince == {}
+    assert not ign.supportato and "vincitori_ignoti" in ign.motivi
+    assert ign.posizione.se_vince == {HOME: 10.0, AWAY: -10.0}          # decisione 5 (10/10)
+    assert ign.qualita == P.QUALITA_PER_SELEZIONE
     assert ign.esposizione_massima == -10.0 and "stima_prudente" in ign.motivi
     for tipo in ("MATCH_ODDS", "OVER_UNDER_25", "CORRECT_SCORE", "FIRST_HALF_GOALS_05"):
         ok = P.calcola(MKT, "live", o, runner=[HOME, AWAY], tipo_scommessa="ODDS", tipo_mercato=tipo)

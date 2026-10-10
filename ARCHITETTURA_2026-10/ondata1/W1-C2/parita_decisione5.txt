@@ -1,0 +1,3 @@
+A vincitore unico: 109 definizioni registrate, 6540 casi, diversi 0
+B non a vincitore unico (senza LINE): 2800 casi, esposizione o motivi diversi 0
+C LINE: 400 casi, esposizione cambiata (quota 2,0 e stima per ordine) 335
