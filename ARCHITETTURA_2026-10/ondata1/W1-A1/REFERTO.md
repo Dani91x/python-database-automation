@@ -125,10 +125,8 @@ identico. Lo script di falsificazione conta come vista anche una mutazione che b
 | BASSE | `market_ids` stringa spezzata in caratteri; periodo non validato; profondita' bool/decimale accettata; ban senza margine; `chiudi` azzerava la generazione; `customerRef` della ripetizione non dichiarato; testi illeggibili inghiottiti senza log | stringa -> `[stringa]`; `0 < periodo <= 1080 s` (`ValueError`); profondita' solo intera >= 1; ban 1200 + 30 s; generazione che non riparte mai (connessa = custode presente); ripetizione con gli STESSI parametri (stesso `customerRef` se passato; non imposto: la richiesta rifiutata non e' arrivata all'exchange) e test; `logger.debug` col motivo | revisore `test_misura_market_ids_stringa_...`, `test_periodo_keepalive_oltre_...`; `test_a1_correzioni`; R31, S30, S31, S32, L22 |
 
 Conseguenza sul comportamento (dichiarata): dopo un login fallito del custode, per 15/30/60 s nessun relogin parte da
-`rifai_login` (cioe' su richiesta del REST): «mai durante il backoff» vale SOLO per `rifai_login`. La strada
-`segnala_errore` (quella del custode di oggi, `auth.py:214-224`, usata da `safe_strategy/service.py`) invece anticipa il
-giro dopo ad ADESSO e SCAVALCA il backoff: parita' con oggi tenuta apposta, divergenza fra le due strade per l'utente
-(par. 9 punto 14). Durante il backoff: le letture e le mutazioni in quel tempo falliscono con l'errore di sessione invece di tentare un login
+`rifai_login` (cioe' su richiesta del REST). [10/10, decisione 2 dell'utente: anche `segnala_errore` ora rispetta il
+backoff; prima scavalcava l'attesa per parita' con `auth.py:214-224`. Vedi par. 10.] Durante il backoff: le letture e le mutazioni in quel tempo falliscono con l'errore di sessione invece di tentare un login
 (oggi `odds_refresh`/`call` rifarebbero subito il login a ogni chiamata). E' il backoff del custode di oggi applicato a tutti.
 Il primo login (`client()`) non ha backoff, come `build_client` oggi: lo limita il tetto dei TENTATIVI del freno
 (`test_freno_tetto_dei_tentativi_al_minuto`).
@@ -273,10 +271,9 @@ lucchetto (`msvcrt.locking`) in `_logs/`.
     (a) la sessione unica dell'app (par. 8.5: 1 login per tutta l'app, il problema sparisce); (b) quota per processo
     `tetto_login_per_processo(13)` = 7 login riusciti al minuto (13 x 7 = 91 <= 100).
 13. **Backoff esteso al REST (ALTA-2)**: vedi par. 5-ter, «Conseguenza sul comportamento».
-14. **Due strade di relogin con regole diverse sul backoff** (da decidere): `rifai_login` (REST, nuovo) rispetta il backoff
-    del custode; `segnala_errore` (stream, parita' con `auth.CustodeSessione.segnala_errore` di oggi) lo scavalca: un errore
-    di sessione dello stream durante il backoff fa partire subito un login. Non l'ho cambiato (parita' con oggi, usata da
-    `safe_strategy/service.py`); l'utente decide se uniformarle (proposta: anche `segnala_errore` rispetta il backoff).
+14. **Due strade di relogin con regole diverse sul backoff** - **DECISA dall'utente il 10/10/2026 (decisione 2: «si',
+    sempre una sola connessione»)**: anche `segnala_errore` rispetta il backoff come `rifai_login`. Fatto in D-A (par. 10):
+    divergenza VOLUTA dal custode di oggi (`auth.CustodeSessione.segnala_errore`, che scavalca l'attesa).
 15. **Mutazione caduta per timeout DOPO l'esecuzione su Betfair**: A1 non la riconcilia ne' la ripete (una sola richiesta
     sul filo, l'eccezione risale al chiamante). Sapere se l'ordine c'e' e' compito del comparto C: riconciliazione per
     `customerOrderRef` (stream degli ordini del conto / `listCurrentOrders`), MAI un secondo invio.
@@ -284,3 +281,55 @@ lucchetto (`msvcrt.locking`) in `_logs/`.
     connessione parte, non letta al momento dell'errore; altrimenti 5 errori scaglionati della stessa connessione fanno 5
     login invece di 1 (`test_contratto_d_uso_generazione_catturata_alla_connessione`; prova del revisore
     `scratchpad/rev_w1a1_2/prove/test_e2.py`).
+
+## 10. Decisioni dell'utente del 10/10/2026 (agente D-A, ramo `decisioni/d-a` su `d073ddcb`)
+
+Fonte: `ondata1/DECISIONI_PER_L_UTENTE.md`, sezione «Risposte dell'utente (10/10/2026)», vincolanti.
+
+### 10.1 Decisione 2 - `segnala_errore` rispetta il backoff (fatto)
+
+- Codice: `Betfair/nucleo/betfair/sessione.py` `SessioneBetfair.segnala_errore` (docstring del modulo e del metodo
+  aggiornate). Sotto il lucchetto del custode: fuori dal backoff `custode.segnala_errore(exc)` (giro dopo = ADESSO, come
+  oggi); durante il backoff `custode.segnala_errore(exc, adesso=math.inf)`: `min(prossimo, inf)` lascia il giro alla fine
+  dell'attesa e la sessione resta segnata da rifare (a fine attesa il custode fa il LOGIN, non il keepAlive). Nessun campo
+  privato del custode toccato; `auth.py` non toccato. Il lucchetto serve a non intrecciare il controllo del backoff con un
+  login che fallisce in quel momento (altrimenti l'attesa appena nata potrebbe essere scavalcata): e' una finestra di
+  microsecondi, non provocabile in modo deterministico da un test, quindi non c'e' una mutazione che la tolga (dichiarato).
+- Test nuovi: `Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py` (5): 5 thread che segnalano durante l'attesa
+  dopo un login rifiutato -> 0 login prima della fine (giri a +0, +5, +14,9 s), 1 a fine attesa, nessun altro dopo; errore
+  nel backoff nato da un keepAlive caduto -> a fine attesa LOGIN e non keepAlive (presa in carico); errore non di sessione
+  nel backoff -> non preso in carico, a fine attesa keepAlive; fuori dal backoff anticipa ad adesso come oggi; prima del
+  primo login non fa nulla. La parita' col custode di oggi (`test_parita_custode_di_oggi_stesso_copione`) resta verde: il
+  suo copione segnala FUORI dal backoff.
+- Falsificazione manuale (script fuori dal repo, nello scratchpad dell'agente: `d-a/falsifica_d2_manuale.py`): corpo di oggi rimesso (scavalca) -> **2
+  rossi su 5**; ripristino -> 5 verdi; sha256 di `sessione.py` prima = dopo
+  (`54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9`).
+- `mutazioni_a1.py`: aggiunte D2a (scavalcamento rimesso), D2b (nel backoff accettato ma non preso in carico), D2c (nel
+  backoff rifiutato), D2d (nel backoff il giro torna ad ADESSO), D2e (fuori dal backoff giro non piu' anticipato); S16 e
+  S27 con la stringa aggiornata (`if self.in_backoff():` c'e' ora anche in `segnala_errore`: S27 porta la riga dopo, per
+  colpire ancora `rifai_login`). Esiti sulla copia del repo (tutti i test del comparto per mutazione):
+
+  - S16 (segnala accetta tutto): **4 rossi**, ripristino sha256 identico; rossi: `test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo`, `test_fuori_dal_backoff_segnala_anticipa_ad_adesso_come_oggi`, `test_parita_custode_di_oggi_stesso_copione`, `test_rifai_login_ignora_errori_non_di_sessione`
+  - S27 (ALTA-2: backoff scavalcato): **3 rossi**, ripristino sha256 identico; rossi: `test_rifai_login_rifiutato_durante_il_backoff_poi_permesso`, `test_login_fallito_il_backoff_del_custode_non_viene_aggirato_dalle_letture`, `test_freno_tetto_dei_login_riusciti_al_minuto`
+  - D2a (D2: scavalcamento del backoff rimesso (come auth.py di oggi)): **2 rossi**, ripristino sha256 identico; rossi: `test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo`, `test_segnalazione_nel_backoff_dopo_un_keepalive_caduto_porta_al_login_non_al_keepalive`
+  - D2b (D2: errore nel backoff accettato ma NON preso in carico): **2 rossi**, ripristino sha256 identico; rossi: `test_errore_non_di_sessione_nel_backoff_non_e_preso_in_carico`, `test_segnalazione_nel_backoff_dopo_un_keepalive_caduto_porta_al_login_non_al_keepalive`
+  - D2c (D2: errore nel backoff rifiutato (perso)): **2 rossi**, ripristino sha256 identico; rossi: `test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo`, `test_segnalazione_nel_backoff_dopo_un_keepalive_caduto_porta_al_login_non_al_keepalive`
+  - D2d (D2: nel backoff il giro torna ad ADESSO): **2 rossi**, ripristino sha256 identico; rossi: `test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo`, `test_segnalazione_nel_backoff_dopo_un_keepalive_caduto_porta_al_login_non_al_keepalive`
+  - D2e (D2: fuori dal backoff il giro NON e' piu' anticipato): **3 rossi**, ripristino sha256 identico; rossi: `test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo`, `test_fuori_dal_backoff_segnala_anticipa_ad_adesso_come_oggi`, `test_parita_custode_di_oggi_stesso_copione`
+
+  Totale: **7 su 7 rosse**, ripristino identico (copia del repo presa prima dei soli ritocchi ASCII alle docstring). Le
+  altre 115 mutazioni di `mutazioni_a1.py` NON sono state rilanciate (il codice che colpiscono non e' cambiato): le loro
+  stringhe sono ancora tutte presenti (controllo automatico: 122/122 trovate). Comando:
+  `python3 -P mutazioni_a1.py <copia> <uscita.json> S16 S27 D2a D2b D2c D2d D2e`; esiti in `falsificazione_decisione2.json`.
+
+### 10.2 Decisione 1 - una sola sessione per tutta l'app (solo documento)
+
+Nessun aggancio adesso. Sezione «Sessione unica dell'app (decisione 10/10)» in `Betfair/nucleo/betfair/doc/A1_SESSIONE_REST.md`
+(par. 6-ter): come i servizi otterranno il client dal custode unico (nello stesso processo: `sessione_del_processo()`; negli
+altri processi: prestito del token con la generazione, mai login ne' keepAlive propri) e l'elenco dei 15 punti di login di
+oggi (file:riga verificati su `d073ddcb`: `auth.py`, `odds_refresh`, `omega_market`, Mike, Safe bot e scanner, `order_exec`,
+runner calcio e tennis con i due relogin diretti del tennis, scalper, il job tennis `betfair_tennis_odds.py:307-308`, script)
+da sostituire all'ondata 2. Il par. 8.5 (proposta) diventa la decisione; la scelta del processo che tiene il custode resta al
+coordinatore all'aggancio.
+
+**Prove finali (D-A)**: test del comparto A `python -m pytest Betfair/nucleo/betfair -q -p no:cacheprovider` = **415 verdi** (395 di prima + 20 nuovi: 5 decisione 2, 8 gestore unico, 7 cadenza); suite intera UNA volta, `python -m pytest Betfair/ -q -p no:cacheprovider` = **12.953 verdi, 0 rossi, 101 saltati, 6 xfail** in 833 s (integrazione dell'ondata 1: 12.933 + i 20 nuovi).

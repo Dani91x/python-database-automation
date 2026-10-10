@@ -28,11 +28,13 @@ UNA sessione per processo:
     non riparte mai; la generazione va CATTURATA quando la connessione parte, non
     letta all'errore) e MAI durante il backoff del custode dopo un fallimento
     (credenziali rifiutate: nessuna raffica di login falliti verso Betfair).
-    ATTENZIONE: ``segnala_errore(errore)`` invece e' quella del custode di oggi
-    (``auth.CustodeSessione.segnala_errore``, ``auth.py:214-224``, usata da
-    ``safe_strategy/service.py``): anticipa il giro dopo a ADESSO e SCAVALCA il
-    backoff. Parita' con oggi tenuta apposta; divergenza fra le due strade
-    dichiarata nel referto (decisione dell'utente);
+    Anche ``segnala_errore(errore)`` (errore visto dallo stream) rispetta il
+    backoff (decisione dell'utente 2 del 10/10/2026, "sempre una sola
+    connessione"): fuori dal backoff anticipa il giro dopo ad ADESSO come il
+    custode di oggi (``auth.CustodeSessione.segnala_errore``, ``auth.py:214-224``,
+    usata da ``safe_strategy/service.py``); durante il backoff prende in carico
+    l'errore e il relogin parte alla fine dell'attesa, mai prima. Il custode di
+    oggi scavalca l'attesa: divergenza voluta, decisa dall'utente;
   * due lucchetti: ``client()`` con la sessione gia' fatta non prende lucchetti
     (una cancellazione non aspetta un keepAlive in volo); il lucchetto del custode
     serializza keepAlive e login, quello di stato protegge solo i campi;
@@ -56,6 +58,7 @@ from __future__ import annotations
 
 import collections
 import logging
+import math
 import threading
 import time
 from typing import Any, Callable, Deque, Dict, List, Mapping, Optional, Sequence
@@ -354,14 +357,29 @@ class SessioneBetfair:
 
     def segnala_errore(self, exc: BaseException) -> bool:
         """Un errore visto altrove (stream): se e' di sessione il prossimo giro
-        rifa' il login. True se preso in carico. Come oggi (``auth.py:214-224``)
-        il giro dopo diventa ADESSO anche durante il backoff: a differenza di
-        ``rifai_login``, questa strada SCAVALCA il backoff (parita' con oggi,
-        divergenza nel referto)."""
-        custode = self._custode
-        if custode is None:
-            return False
-        return bool(custode.segnala_errore(exc))
+        rifa' il login. True se preso in carico.
+
+        Decisione dell'utente 2 (10/10/2026, "sempre una sola connessione"):
+        come ``rifai_login``, questa strada RISPETTA il backoff del custode dopo
+        un login fallito. Fuori dal backoff il giro dopo diventa ADESSO (come il
+        custode di oggi, ``auth.py:214-224``); DURANTE il backoff l'errore e'
+        preso in carico (sessione segnata da rifare) ma il giro resta alla fine
+        dell'attesa: il relogin parte allora, mai prima. Il custode di oggi
+        invece scavalca l'attesa: divergenza voluta, decisa dall'utente.
+
+        Prende il lucchetto del custode: il controllo del backoff e la presa in
+        carico non si intrecciano con un login che fallisce in quel momento
+        (l'attesa nuova non viene scavalcata). Chi chiama puo' quindi aspettare
+        un keepAlive o un login gia' in volo."""
+        with self._lock_custode:
+            custode = self._custode
+            if custode is None:
+                return False
+            if self.in_backoff():
+                # adesso = +inf: min(prossimo, inf) lascia il giro alla fine
+                # dell'attesa; la sessione resta segnata da rifare
+                return bool(custode.segnala_errore(exc, adesso=math.inf))
+            return bool(custode.segnala_errore(exc))
 
     def rifai_login(self, exc: BaseException, generazione_vista: int) -> bool:
         """Errore di SESSIONE su una chiamata fatta con la ``generazione_vista``:
