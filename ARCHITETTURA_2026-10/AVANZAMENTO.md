@@ -69,6 +69,14 @@ DB locale; "se vince" su tutti i mercati; ladder alla massima velocita' (20 ms);
 calcio e tennis su cartelle diverse. Lavori aperti per l'ondata 2: W1-C2 "se vince" su ogni mercato; aggiornamento dei dati calcolati
 dal cloud appena cambiano (non ogni 5 min); allineamento di `segnala_errore` all'attesa del login.
 
+**10/10 - PRINCIPIO DELL'UTENTE, VINCOLANTE: «Tutto deve essere come i competitor! Voglio un prodotto professionale!»**
+Metro di accettazione di OGNI tappa dell'ondata 2: la parita' con i competitor (Bet Angel, Geeks Toy, Cymatic, Fairbot, Gruss),
+voce per voce della tabella `02_COMPETITOR.md` par. 2, misurata con la stessa metrica (messaggio Betfair -> ladder a schermo;
+decisione -> risposta di placeOrders). Primo lavoro dell'ondata 2: la MATRICE DI PARITA' - per ogni voce (stream ovunque, ladder a
+20 ms, tutti gli ordini del conto sul ladder con autore e P&L, fill or kill, tick offset, stop/trailing, green-up, dutching,
+persistenza in-play, posizione in coda, monitor dell'API con pausa del trading, practice) cosa abbiamo oggi (file:riga), cosa manca,
+in quale tappa entra. Una tappa e' chiusa solo se la sua voce e' "uguale o meglio" del competitor migliore, provato.
+
 ## Obiettivo (parole dell'utente, 09/10)
 
 - Tutto cio' che e' Betfair vive nell'app desktop, «esattamente come i competitor»: nessun database nel percorso
