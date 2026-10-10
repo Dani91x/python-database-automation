@@ -14,7 +14,8 @@ regole del .it:
   livello di processo (`freno_del_conto`: 10 riusciti e 20 tentativi al minuto di serie; ban di Betfair = 20 minuti + 30 s
   senza tentativi, ricordato anche se la sessione si chiude e si riapre), un solo relogin anche se piu' thread vedono lo
   stesso errore (contatore di generazione che non riparte mai), nessun relogin durante il backoff del custode
-  (`in_backoff()`), evento `sessione_rifatta`, thread del custode solo con `avvia()`. Due lucchetti: `client()` con la
+  (`in_backoff()`) ne' da `rifai_login` ne' da `segnala_errore` (decisione 2 dell'utente, 10/10), evento
+  `sessione_rifatta`, thread del custode solo con `avvia()`. Due lucchetti: `client()` con la
   sessione gia' fatta non ne prende nessuno (una cancellazione non aspetta un keepAlive in volo).
   `sessione_del_processo()` = l'istanza unica del processo.
 - `rest.py` - `ClienteRestBetfair` (implementa `contratto.ClienteRest`): `lettura` ritentabile con la classificazione
@@ -65,7 +66,7 @@ al caricamento).
 | A-002 | keepAlive senza token nei log | `test_a1_sessione::test_parita_custode_di_oggi_stesso_copione`, `test_stato_senza_token_con_tutte_le_chiavi` |
 | A-003 | errore di sessione riconosciuto | `test_a1_rest::test_classificazione_coincide_con_le_funzioni_di_oggi` |
 | A-004 | descrizione errore senza token | idem (caso col token nel testo) |
-| A-005 | custode: periodo, backoff, relogin al 90%, `stato()` | `test_parita_custode_di_oggi_stesso_copione`, `test_contatori_della_salute_seguono_il_copione`, `test_custode_tiene_viva_la_sessione_oltre_i_20_minuti` |
+| A-005 | custode: periodo, backoff, relogin al 90%, `stato()` | `test_parita_custode_di_oggi_stesso_copione`, `test_contatori_della_salute_seguono_il_copione`, `test_custode_tiene_viva_la_sessione_oltre_i_20_minuti`; backoff rispettato anche da `segnala_errore` (decisione 2): `test_a1_decisione2_backoff` (5 test) |
 | A-006 | logout | `test_una_sessione_per_processo_un_login_con_dieci_thread` |
 | A-007/A-008 | login e RPC con ritenti (oggi `client.py`) | sostituiti da A-001 + `lettura`: `test_lettura_errore_di_rete_un_ritento_con_pausa`, `test_lettura_due_errori_di_rete_rilancia`, `test_reperto_rest_del_runner_muore_a_20_minuti` |
 | A-009..A-011 | `listEvents`, `listMarketCatalogue`, `listMarketBook` | `test_list_market_book_parita_col_ripiego_dello_scanner`, `test_letture_non_suddivise_passano_intere`, griglia di suddivisione |
@@ -89,12 +90,83 @@ Restano al codice di oggi: A-017/A-018 (prodotto «Aggiorna quote» e la sua cod
   (`gen = sessione.generazione` subito dopo `client()`), NON letta al momento dell'errore. Letta all'errore, 5 errori
   scaglionati della stessa connessione fanno 5 login invece di 1 (`test_a1_correzioni::test_contratto_d_uso_generazione_catturata_alla_connessione`).
   `rifai_login` non fa login durante il backoff del custode (`in_backoff()`).
-- **`segnala_errore(errore)`** e' la strada del custode di oggi (`auth.py:214-224`): anticipa il giro dopo ad ADESSO e
-  scavalca il backoff (parita' con oggi; divergenza fra le due strade da decidere all'utente, referto par. 9 punto 14).
+- **`segnala_errore(errore)`** (errore di sessione visto dallo stream) RISPETTA il backoff come `rifai_login`
+  (**decisione 2 dell'utente, 10/10/2026: «si', sempre una sola connessione»**). Fuori dal backoff anticipa il giro dopo ad
+  ADESSO, come il custode di oggi (`auth.py:214-224`). DURANTE il backoff dopo un login fallito l'errore e' preso in carico
+  (ritorna True, la sessione e' segnata da rifare: a fine attesa il custode fa il LOGIN, non il keepAlive) ma il giro resta
+  alla fine dell'attesa: il relogin parte allora, mai prima. Un errore NON di sessione non e' preso in carico (False). La
+  chiamata prende il lucchetto del custode (controllo del backoff e presa in carico non si intrecciano con un login che
+  fallisce in quel momento): chi chiama puo' aspettare un keepAlive o un login gia' in volo. **Per il thread dello
+  stream (nota della revisione di 2d38504f)**: `segnala_errore` NON e' istantanea; con un keepAlive lento 0,5 s in volo il
+  revisore ha misurato 0,40 s di attesa (qui 0,50 s), e un login in volo puo' durare quanto il timeout HTTP del client. Chi
+  la chiama dal thread che legge il socket deve saperlo: o la chiama fuori dalla lettura (ad esempio nel ciclo di
+  riconnessione, dove l'attesa non ferma la consegna di altri book), o accetta quel ritardo. Prova (sulla proprieta', non
+  sul tempo): `test_a1_decisione2_revisione::test_segnala_errore_aspetta_il_keepalive_in_volo` (al ritorno nessun keepAlive
+  in volo; rossa con la mutazione D2f = R7 del revisore, `segnala_errore` senza lucchetto). Prova:
+  `test_a1_decisione2_backoff::test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo` (5 thread che
+  segnalano durante l'attesa: 0 login prima della fine, 1 dopo). Divergenza VOLUTA dal custode di oggi, che scavalca
+  l'attesa (`auth.CustodeSessione.segnala_errore`, usata da `safe_strategy/service.py:755,2975,3000,3088`): all'aggancio
+  quelle chiamate passano dalla sessione nuova e prendono la regola nuova.
 - **Mutazione caduta per timeout DOPO l'esecuzione su Betfair**: A1 manda UNA richiesta e rilancia l'eccezione; non
   riconcilia e non ripete. Sapere se l'ordine c'e' e' compito del comparto C: riconciliazione per `customerOrderRef`
   (stream degli ordini del conto, `listCurrentOrders`), MAI un secondo invio.
 - **Dopo ogni mutazione tornata** l'adattatore dell'aggancio chiama `_segnala_saldo("ordine")` come `call_mutating` oggi.
+
+## 6-ter. Sessione unica dell'app (decisione 10/10)
+
+**Decisione 1 dell'utente (10/10/2026): «si', una sola sessione per tutta l'app».** Il custode di questo comparto
+(`SessioneBetfair`: login, keepAlive .it, backoff, freno, relogin una volta sola) e' l'UNICO punto di login e di keepAlive;
+all'aggancio (ondata 2) nessun servizio fa piu' login proprio. Qui solo il documento: nessun file di produzione toccato,
+nessun aggancio fatto.
+
+**Come i servizi otterranno il client (ondata 2).** Due casi, perche' l'architettura obiettivo tiene 7 servizi in processi
+separati (`04_ARCHITETTURA_OBIETTIVO.md` par. 5.1: isolamento del guasto sui soldi):
+
+1. *Nello stesso processo del custode*: `sessione_del_processo().client()` per l'`APIClient` e
+   `ClienteRestBetfair(sessione_del_processo())` per ogni chiamata REST (pesi, 3 concorrenti, blocchi). Gli stream
+   (W1-A2 `GestoreFlussi`, `FlussoOrdiniContoBetfair`) prendono la stessa sessione e si registrano con
+   `alla_sessione_rifatta(cb)`; su `INVALID_SESSION_INFORMATION`/`NO_SESSION` chiamano `rifai_login(exc, generazione_vista)`
+   (REST) o `segnala_errore(exc)` (stream), mai `login()`.
+2. *Negli altri processi* (finche' restano processi a parte: Mike, Omega, Safe bot, scanner, scalper, il job tennis):
+   **prestito del token**. Il processo del custode tiene la sola sessione; gli altri costruiscono l'`APIClient` di oggi SENZA
+   login (`auth.build_client(login=False)`) e ricevono il token dal custode sul canale locale 127.0.0.1 (betfairlightweight:
+   `APIClient.set_session_token`), con la sua `generazione`. Su un errore di sessione chiedono il token nuovo dichiarando la
+   generazione vista (stessa regola di `rifai_login`: UN relogin del custode per tutti, mai durante il backoff); non fanno
+   ne' login ne' keepAlive (la vita .it di 20 minuti la tiene il custode per tutti: per la regola ufficiale solo keepAlive e
+   login la prolungano, `limiti.VITA_SESSIONE_ITALIA_S`). Il token non va mai nei log ne' nello `stato()`. Da costruire
+   all'ondata 2 come `Sessione` del contratto (stesso protocollo: `client()`, `rinnova_se_serve()` che non fa nulla,
+   `stato()`), con test di parita' e di caduta del processo del custode (i servizi aspettano il token nuovo, nessuno fa
+   login da solo). Il processo che tiene il custode lo sceglie il coordinatore all'aggancio (quello che vive di piu': il
+   supervisore, se puo' importare betfairlightweight; altrimenti il primo servizio avviato).
+
+Risultato atteso: **1 login e 1 keepAlive per tutta l'app** (oggi uno per processo piu' i relogin di ogni copia, fino a 13
+processi insieme: referto W1-A1 par. 9 punto 12); il freno dei login per processo diventa un freno per l'app; il ban di 20
+minuti per troppi login non e' piu' raggiungibile da un ciclo impazzito in un solo servizio.
+
+**I login di oggi da sostituire all'ondata 2** (righe verificate sul commit base `d073ddcb`; "processo" = chi lo esegue,
+`desktop/main.js:419-480`):
+
+| # | Dove (file:riga) | Cosa fa oggi | Processo | All'aggancio |
+|---|---|---|---|---|
+| 1 | `Betfair/stream/auth.py:33-75` `build_client(login=True)` (`client.login()` a `:75`) | il costruttore di tutti i login dello stream | tutti quelli sotto | resta come fabbrica con `login=False` (lo usa gia' `_fabbrica_di_oggi`); il login lo fa solo il custode |
+| 2 | `Betfair/stream/auth.py:244` `CustodeSessione.tick` -> `client.login()` | relogin del custode di OGNI processo | runner calcio, runner tennis, scanner, scalper | un solo custode (questo); gli altri custodi spariscono |
+| 3 | `Betfair/odds_refresh.py:66-67` `_get_client` (`BetfairClient().login_cert()`), relogin con `_reset_client` in `_with_client` `:78-92`, pubblici `get_shared_client`/`reset_shared_client` `:95-102` | sessione JSON-RPC "condivisa" ma PER PROCESSO, relogin anche su errore di RETE | ogni processo che la usa (righe 4-6 e 8) | `get_shared_client()` = adattatore sopra `ClienteRestBetfair` (referto W1-A1 par. 8.2), nessun login |
+| 4 | `Betfair/omega/omega_market.py:62-78` `get_client`/`call` e `:89-109` `call_mutating` (relogin con `reset_shared_client`), `:140-150` `keep_alive` (listEventTypes ogni 600 s, che sul .it NON rinnova: reperto in `test_a1_sessione`) | sessione di Omega per letture e ordini | omega-service | adattatore della riga 3; il "keepAlive" con `listEventTypes` sparisce |
+| 5 | `Betfair/mike/service.py:130-150` (`_RealMarket`: la sessione di `omega_market` nel processo Mike, lucchetto 47319) | ordini e letture di Mike: un login in piu' (processo separato) | mike-service | come riga 4 |
+| 6 | `Betfair/safe_strategy/bot_service.py:54` e `:11232`, `Betfair/safe_strategy/execution.py:1561` (`omega_market`) | ordini del Safe bot | safe-strategy-bot | come riga 4 |
+| 7 | `Betfair/safe_strategy/service.py:3370` `build_client(login=True)` (+ custode del servizio; `segnala_errore` a `:755,2975,3000,3088`) | scanner: login + custode 900 s | safe-strategy-service | token prestato (o `sessione_del_processo(periodo_keepalive_s=900)` se il custode vive li') |
+| 8 | `Betfair/order_exec.py:126-138` `_call` (relogin con `reset_shared_client`) | ordini manuali dalla UI | il processo che serve `order_exec` | adattatore della riga 3 |
+| 9 | `Betfair/stream/runner.py:2710-2711` `BetfairClient().login_cert()` (sessione `rest` SENZA keepAlive ne' relogin: reperto) e `:2712` `build_client(login=True)` | DUE sessioni nello stesso processo | runner-calcio | una: `ClienteRestBetfair(sessione)` per il `rest`, la stessa sessione per flumine |
+| 10 | `Betfair/stream/tennis_live/tennis_runner.py:3195` `build_client(login=True)`; relogin diretti `:839` (catalogo KO) e `:2946` (`session.trading.login()`) | login + relogin fuori dal custode | runner-tennis | sessione unica; i due relogin diretti diventano `rifai_login` |
+| 11 | `Betfair/stream/scalper/scalper_session.py:1544` `build_client(login=True)` ("login DEDICATO a questo processo") | UN login per ogni partita con scalper | processo scalper per partita | token prestato (N partite = 0 login in piu') |
+| 12 | `Betfair/stream/scalper/scalper_service.py:890`, `habitat_scan.py:89`, `run_scalper_live.py:230` | login del servizio e degli strumenti | scalper-service / a mano | token prestato |
+| 13 | `betfair_tennis_odds.py:307-308` (`BetfairClient().login_cert()`) | il job tennis, lanciato dall'app ogni 30 min (`desktop/main.js:480`): un login a ogni lancio | job `tennis-odds` | token prestato (o assorbito nel runner tennis, `04` par. 5.1) |
+| 14 | `betfair_full_odds.py:146-147`, `import_betfair_operations.py:393-394`, `Betfair/betfair_report_manager.py:68,149` | script e report: un login ciascuno | a mano / job | token prestato |
+| 15 | `Betfair/stream/tennis_scalper/{record_multi.py:280, record_tennis.py:41, run_tennis_pro.py:88, run_tennis_scalper.py:219}` | script di ricerca: login proprio | a mano | token prestato (fuori dal giro h24) |
+
+Fuori conto (non produzione): `laboratorio/`, le sonde `AUDIT_*`, `tennis_scalper/research_data.py:22` (`login=False`).
+Interruttore dell'aggancio: `ARCH_SESSIONE=vecchio|ombra|nuovo` (par. 6); ombra e criterio «uguale o meglio» nel referto
+W1-A1 par. 8.3 (in ombra: login e keepAlive del nuovo <= vecchio, 0 `INVALID_SESSION_INFORMATION` sul nuovo).
 
 ## 7. Come si sostituisce
 
@@ -113,6 +185,8 @@ Betfair le applica con una tabella sua.
   `odds_refresh` anche sugli errori di RETE; domani uno per processo, relogin solo su errore di sessione (misura:
   `test_parita_letture_con_odds_refresh_with_client`, rete: 2 login -> 1).
 - Login falliti con credenziali rifiutate: 30 letture = 1 login fallito (prima della correzione ALTA-2: 19).
+- Errori di sessione dello stream durante il backoff (decisione 2): 5 thread che segnalano = 0 login prima della fine
+  dell'attesa, 1 dopo (con lo scavalcamento di oggi rimesso il login parte al primo giro: test rosso).
 - Attesa di una cancellazione con un keepAlive di 1 s in volo: < 0,5 s (via veloce di `client()`).
 - Richieste `listMarketBook` EX_BEST_OFFERS: blocchi da 40 invece di 25 (scanner) o 20 (`odds_refresh`): 73 mercati in 2
   richieste invece di 3 (`test_list_market_book_parita_col_ripiego_dello_scanner`); i blocchi di oggi restano

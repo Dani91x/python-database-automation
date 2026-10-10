@@ -458,3 +458,67 @@ coordinatore, DIVERGENZA da confermare):
 - scanner (`Betfair/safe_strategy/stream.py`): lo shard rifiutato non consegna book e i suoi mercati tornano al poll REST di
   ripiego (`:21`, `:524`), piu' lento;
 - tennis e scalper (stream di flumine): senza prezzi finche' lo slot non si libera (flumine ritenta la connessione).
+
+## 13. Decisioni dell'utente del 10/10/2026 (agente D-A, ramo `decisioni/d-a` su `d073ddcb`)
+
+Fonte: `ondata1/DECISIONI_PER_L_UTENTE.md`, «Risposte dell'utente (10/10/2026)», vincolanti. Dettaglio nel doc
+`Betfair/nucleo/betfair/doc/A2_FLUSSI_LADDER.md` par. 14 e 15.
+
+**Decisione 12 (massima velocita' del ladder)**: verificato che la cadenza di serie del ladder nuovo e' 20 ms ovunque
+(costante `ladder.py:54`, default del costruttore `:276`, `stato()`, doc); nessun 200 di serie da cambiare (il profilo del
+ladder non ha campi di cadenza della UI; `LIVE_LADDER_CANALE_MS`/`TENNIS_LADDER_CANALE_MS` sono del worker di oggi e il
+nuovo non le legge); cadenza del DB invariata (2 s). `CONTROLLO_CANALE_S = 0,2 s` e' il risveglio a vuoto per un canale
+che torna ad avere client, non la cadenza: lasciato (vedi doc par. 14). Test `test_a2_ladder_cadenza.py` (7, 20 ms
+letterale); mutazioni C1-C5: 5/5 rosse. La proposta M5c (variabile `LIVE_LADDER_EVENTO_MIN_MS` per alzarla) resta NON
+applicata: la decisione e' la massima velocita'; si misura la CPU vera in ombra.
+
+**Decisioni 8 e 13 (gestore unico, uno stream ordini)**: aggiunto a `flusso.GestoreFlussi` il registro delle richieste
+(`richiedi_mercati`, `rilascia_mercati`, `richieste`, `aggiungi_consumatore(richiesta=...)`, `RICHIESTA_DIRETTA`): si
+sottoscrive l'UNIONE delle richieste. `imposta_mercati` e' la richiesta diretta: identico a prima senza altre richieste
+(test di prima verdi). `FlussoOrdiniContoBetfair` era gia' pronto (consumatori multipli, `avvia` idempotente). Test
+`test_a2_gestore_unico.py` (8): **3 consumatori sugli stessi 300 mercati = 2 connessioni (200 + 100), non 6**; 3
+consumatori degli ordini = 1 connessione. Mutazioni G1-G9, O1: 10/10 rosse. Conteggio delle connessioni di oggi per
+processo (file:riga) e con il gestore unico: doc par. 15. Estensione del contratto proposta: `NomeProfilo` += `"app"`
+(profilo superinsieme del gestore unico); la fusione a 1000 ms dello scanner va dal lato del suo consumatore, con parita'
+sul banco (strategia intoccabile).
+
+**Mutazioni** (`python ARCHITETTURA_2026-10/ondata1/W1-A2/falsifica.py C1_cadenza ... O1_ordini`, sul codice finale):
+15 nuove, **15 rosse, 15 ripristinate** (sha256 prima = dopo). Le 114 di prima: tutte le stringhe ancora presenti una volta
+sola (controllo automatico); le **42 che colpiscono `flusso.py`** (il corpo di `imposta_mercati` e' passato in
+`_applica_richieste`) rilanciate sul codice nuovo: **42 rosse, 42 ripristinate**. Esiti riga per riga (15 + 42 + i due
+riepiloghi): `falsifica_esito_decisioni.jsonl`.
+
+**Divergenza per l'utente / coordinatore**: la decisione 8 dice «10 connessioni = fino a 2.000 mercati»; con lo stream
+ordini (decisione 13) le connessioni dei prezzi sono al massimo 9, cioe' 1.800 mercati distinti (doc par. 15).
+
+## 14. Dopo la revisione indipendente di `2d38504f` (PASSA sul codice; due lavori di TEST)
+
+- **Mutante sopravvissuta R6** (`_generazione` non incrementata in `_applica_richieste`): nuovo test deterministico
+  `test_a2_gestore_unico_revisione.py::test_risottoscrizione_di_un_piano_vecchio_arrivata_dopo_non_vince` (dal revisore,
+  riscritto): il thread A e' fermato DENTRO `_Connessione.risottoscrivi` finche' B ha pianificato e mandato; poi A riparte.
+  Piano, mercati e ultima sottoscrizione vista dal server = insieme di B; le sottoscrizioni mandate sono [10, 30] (quella di
+  A non parte). Mutazione `R6_generazione` in `falsifica.py`: **rossa**.
+- Altri test del revisore che coprono casi nuovi (stesso file, 6 test): i fuori entrano DA SOLI quando un altro consumatore
+  rilascia; capacita' piena su 9 connessioni (1.800 mercati: fuori dichiarati per entrambi i consumatori); consumatori calcio
+  e tennis legati alla loro richiesta (nessuno vede l'altro; la verifica "nessun book in piu'" aspetta che un consumatore
+  senza filtro abbia visto tutti i book, al posto dello sleep di 0,5 s); stress 5 thread x 50 cambi con barriera (2 giri).
+  Mutazione nuova `R5_filtro_unione` (il consumatore filtra sull'unione e non sulla sua richiesta): **rossa**. Non ripreso
+  `test_imposta_mercati_come_prima` (duplica i test di prima su `imposta_mercati`).
+- La mutazione R1 del revisore (unione letta FUORI dal lucchetto del piano) senza sleep artificiale resta verde: la gara e' di
+  microsecondi e non provocabile in modo deterministico; il revisore l'ha giudicata con lo stress (PASSA). Dichiarato, NON
+  messa in `falsifica.py` (ogni voce li' deve essere rossa).
+- **Sleep fissi tolti** in `test_a2_flusso_ladder_revisione.py`: `test_consegna_non_si_blocca_se_una_connessione_tiene_il_suo_lock`
+  e `test_rete_lenta_di_una_connessione_non_blocca_il_gestore` aspettavano 0,3 s che il thread di `imposta_mercati` arrivasse
+  al lucchetto della connessione: ora aspettano la condizione (`c.piano` / `c.mercati` cambiati, l'ultimo passo prima del
+  blocco); `test_meta_assente_non_fa_girare_a_vuoto_il_thread` aspettava 0,6 s e voleva almeno un tentativo (rosso se il
+  thread parte tardi sotto carico): ora aspetta il primo tentativo, poi la finestra fissa per il tetto. Le mutazioni che
+  colpiscono questi test (R12, Y11_M4) restano **rosse**.
+- Ripetizioni sotto carico (4 processi in parallelo): i tre test corretti + `test_a1_decisione2_revisione.py` **100 su 100
+  verdi**; `test_a2_gestore_unico.py` + `test_a2_gestore_unico_revisione.py` **40 su 40 verdi**.
+- Mutazioni rilanciate: R6_generazione, R5_filtro_unione, R12, Y11_M4 = **4 su 4 rosse**, ripristino identico (aggiunte in
+  coda a `falsifica_esito_decisioni.jsonl`). `falsifica.py` ora ha 131 mutazioni, tutte con la stringa presente una volta.
+- Prove: cartella `Betfair/nucleo/betfair` **5 volte di fila: 5 su 5 verdi (426)**.
+
+**Prove finali (D-A)**: test del comparto A `python -m pytest Betfair/nucleo/betfair -q -p no:cacheprovider` = **415 verdi** (395 di prima + 20 nuovi: 5 decisione 2, 8 gestore unico, 7 cadenza); suite intera UNA volta, `python -m pytest Betfair/ -q -p no:cacheprovider` = **12.953 verdi, 0 rossi, 101 saltati, 6 xfail** in 833 s (integrazione dell'ondata 1: 12.933 + i 20 nuovi).
+
+**Prove dopo la revisione (D-A)**: comparto A 5 volte di fila = 5 su 5 verdi (426 test); suite intera UNA volta, `python -m pytest Betfair/ -q -p no:cacheprovider` = **12.964 verdi, 0 rossi, 101 saltati, 6 xfail** in 692 s (12.953 + gli 11 test nuovi).

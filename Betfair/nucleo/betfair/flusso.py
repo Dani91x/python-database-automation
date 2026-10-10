@@ -35,6 +35,14 @@ Le regole (tutte nei test ``tests/test_a2_flusso*.py``):
   la connessione si chiude e riparte da immagine piena con l'insieme nuovo; se la
   libreria ricollega lo stream fermato DENTRO l'invio (``BetfairStream._send``),
   quel socket orfano si chiude subito (budget di 10 connessioni).
+* CONSUMATORI MULTIPLI (decisioni 8 e 13 dell'utente, 10/10/2026: un gestore per
+  tutta l'app, mai connessioni doppie): ogni consumatore (bot, ladder, scanner)
+  dichiara il SUO insieme con ``richiedi_mercati(chi, mercati)``; si sottoscrive
+  l'UNIONE delle richieste (stessi mercati da tre consumatori = le connessioni di
+  uno). ``imposta_mercati`` (il contratto) e' la richiesta ``RICHIESTA_DIRETTA``:
+  senza altre richieste fa esattamente quello che faceva. Un consumatore legato a
+  una richiesta (``aggiungi_consumatore(cb, richiesta=chi)``) riceve solo i book
+  dei mercati di quella richiesta, seguendola quando cambia.
 * BOOK: ``book()`` e i consumatori vedono SOLO i mercati dell'insieme corrente
   (pianificato): un book in volo di un mercato tolto non si scrive ne' si consegna.
 * SALUTE: per connessione, la regola di ``Betfair/stream/stream_muto.py``
@@ -481,6 +489,9 @@ class _Connessione:
 EVENTO_MERCATO_CHIUSO = "mercato_chiuso"
 EVENTO_FLUSSO_MUTO = "flusso_muto"
 EVENTO_CAPACITA_CAMBIATA = "capacita_cambiata"
+#: il nome della richiesta di chi chiama ``imposta_mercati`` (il contratto): e' un
+#: consumatore come gli altri del registro delle richieste (decisione 8, 10/10)
+RICHIESTA_DIRETTA = "imposta_mercati"
 
 
 class GestoreFlussi:
@@ -525,7 +536,13 @@ class GestoreFlussi:
         self._libri_lock = threading.Lock()
         self._generazione = 0
         self._chiusi: Set[str] = set()
-        self._consumatori: List[Tuple[Callable[[Any], None], Optional[Set[str]]]] = []
+        #: (callback, filtro fisso, richiesta seguita): la lista si SOSTITUISCE per intero
+        self._consumatori: List[Tuple[Callable[[Any], None], Optional[Set[str]], Optional[str]]] = []
+        #: registro delle richieste (decisione 8 dell'utente, 10/10): consumatore -> i SUOI
+        #: mercati. Si sottoscrive l'UNIONE: un mercato chiesto da piu' consumatori occupa UN
+        #: posto su UNA connessione. Il dizionario si SOSTITUISCE per intero (sotto ``_lock``):
+        #: la consegna lo legge senza lucchetti
+        self._richieste: Dict[str, frozenset] = {}
         self._osservatori: List[Callable[[str, Any], None]] = []
         self._coda: "queue.Queue[Optional[List[Any]]]" = queue.Queue()
         self._fermo = threading.Event()
@@ -548,20 +565,71 @@ class GestoreFlussi:
         """Porta le connessioni a ``mercati``. Ritorna i mercati voluti che NON
         sono su nessuna connessione (capacita' o budget): il chiamante decide chi
         lasciare fuori (l'auto-follow di oggi pianifica sulla ``capacita()``).
-        Il piano si fa sotto ``_lock``; le risottoscrizioni (rete) DOPO."""
+        Il piano si fa sotto ``_lock``; le risottoscrizioni (rete) DOPO.
+
+        E' la richiesta del consumatore ``RICHIESTA_DIRETTA``: senza altre richieste nel
+        registro il risultato e' IDENTICO a prima (si sottoscrive esattamente
+        ``mercati``); con altre richieste si sottoscrive l'unione (``richiedi_mercati``)."""
         voluti = {str(m) for m in mercati if m}
         if not voluti:
             raise ValueError("sottoscrizione vuota rifiutata")
+        return self.richiedi_mercati(RICHIESTA_DIRETTA, voluti)
+
+    def richiedi_mercati(self, chi: str, mercati: Iterable[str]) -> Set[str]:
+        """Il consumatore ``chi`` (bot, ladder, scanner, ...) vuole ``mercati``: e' il
+        SUO insieme intero e sostituisce la sua richiesta precedente (vuoto = rilascia).
+        Il gestore sottoscrive l'UNIONE delle richieste di tutti i consumatori: stessi
+        mercati chiesti da tre consumatori = le connessioni di UNO (decisione 8 e 13
+        dell'utente, 10/10/2026: un gestore per tutta l'app, mai connessioni doppie).
+        Ritorna i mercati di ``chi`` rimasti fuori (capacita' o budget).
+
+        Concorrenza: il registro si aggiorna e l'unione si pianifica nello STESSO
+        ``_lock`` (``_applica_richieste``): l'ultimo piano vede sempre tutte le richieste
+        arrivate prima di lui; la rete resta FUORI dal lucchetto e una risottoscrizione
+        vecchia non vince su una nuova (generazione di ``_Connessione.risottoscrivi``)."""
+        nome = str(chi)
+        if not nome:
+            raise ValueError("richiesta senza nome del consumatore")
+        voluti = frozenset(str(m) for m in mercati if m)
+        with self._lock:
+            nuove = dict(self._richieste)
+            if voluti:
+                nuove[nome] = voluti
+            else:
+                nuove.pop(nome, None)
+            self._richieste = nuove
+        coperti = self._applica_richieste()
+        return set(voluti - coperti)
+
+    def rilascia_mercati(self, chi: str) -> Set[str]:
+        """Il consumatore ``chi`` non vuole piu' nulla: i mercati che nessun altro
+        chiede escono dalle connessioni; senza richieste le connessioni si chiudono."""
+        return self.richiedi_mercati(chi, ())
+
+    def richieste(self) -> Dict[str, frozenset]:
+        """Il registro delle richieste (copia): consumatore -> i suoi mercati."""
+        return dict(self._richieste)
+
+    def _applica_richieste(self) -> frozenset:
+        """Porta le connessioni all'UNIONE delle richieste. Piano sotto ``_lock`` (con
+        l'unione letta li', non prima), risottoscrizioni dopo. Unione vuota = nessuna
+        connessione (mai una sottoscrizione vuota, che vorrebbe dire tutto l'exchange).
+        Ritorna i mercati coperti dopo il piano."""
         self.avvia()
         da_mandare: List[Tuple[_Connessione, Set[str]]] = []
         with self._lock:
+            voluti = frozenset().union(*self._richieste.values()) if self._richieste else frozenset()
+            self._generazione += 1
+            generazione = self._generazione
+            if not voluti:
+                for c in self._vive():
+                    self._chiudi(c, "nessun consumatore chiede mercati")
+                return self._coperti
             self.manutenzione()
             conn = self._vive()
             attuali = [set(c.piano) for c in conn]
             massimo = self.massimo_adesso()
             piano = piano_connessioni(attuali, voluti, self.per_conn, max(massimo, len(conn)))
-            self._generazione += 1
-            generazione = self._generazione
             for i, (c, bersaglio) in enumerate(zip(conn, piano.bersagli)):
                 if bersaglio == attuali[i]:
                     continue
@@ -578,13 +646,20 @@ class GestoreFlussi:
             coperti = self._coperti
         for c, bersaglio in da_mandare:
             c.risottoscrivi(bersaglio, generazione)
-        return voluti - coperti
+        return coperti
 
     def aggiungi_consumatore(self, cb: Callable[[Any], None], *,
-                             mercati: Optional[Set[str]] = None) -> None:
+                             mercati: Optional[Set[str]] = None,
+                             richiesta: Optional[str] = None) -> None:
+        """``cb(book)`` nel thread di consegna. ``mercati`` = filtro fisso (None = tutti);
+        ``richiesta`` = il consumatore riceve i book dei mercati della richiesta con quel
+        nome, seguendola quando cambia (estensione additiva del contratto). Non tutti e due."""
+        if mercati is not None and richiesta is not None:
+            raise ValueError("filtro fisso e richiesta insieme: scegliere uno dei due")
         filtro = {str(m) for m in mercati} if mercati is not None else None
+        segui = str(richiesta) if richiesta is not None else None
         with self._lock:
-            self._consumatori = list(self._consumatori) + [(cb, filtro)]
+            self._consumatori = list(self._consumatori) + [(cb, filtro, segui)]
 
     def aggiungi_osservatore(self, cb: Callable[[str, Any], None]) -> None:
         """``cb(evento, dato)`` per gli eventi del contratto: ``mercato_chiuso``
@@ -638,6 +713,9 @@ class GestoreFlussi:
             "battito_eta_s": min((r["eta_msg_s"] for r in righe if r["eta_msg_s"] is not None),
                                  default=None),
             "soglia_watchdog_s": max((self._soglia_s(c) for c in self._vive()), default=None),
+            "richieste": {chi: len(m) for chi, m in sorted(self._richieste.items())},
+            "mercati_richiesti_somma": sum(len(m) for m in self._richieste.values()),
+            "mercati_unione": len(frozenset().union(*self._richieste.values())) if self._richieste else 0,
             "mercati_chiusi": sorted(self._chiusi)[:50],
             "conti": dict(self.conti),
             "frammenti": righe,
@@ -852,6 +930,7 @@ class GestoreFlussi:
             if libri is None:
                 return
             consumatori = self._consumatori      # lista sostituita per intero: nessun lock
+            richieste = self._richieste          # idem
             for b in libri:
                 try:
                     b = _valuta.converti_libro(b, self._cambio or _valuta.CAMBIO)
@@ -876,8 +955,10 @@ class GestoreFlussi:
                 if getattr(b, "status", None) == "CLOSED" and mid not in self._chiusi:
                     self._chiusi.add(mid)
                     self._evento(EVENTO_MERCATO_CHIUSO, mid)
-                for cb, mercati in consumatori:
+                for cb, mercati, segui in consumatori:
                     if mercati is not None and mid not in mercati:
+                        continue
+                    if segui is not None and mid not in richieste.get(segui, ()):
                         continue
                     try:
                         cb(b)

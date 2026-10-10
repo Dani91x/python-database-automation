@@ -12,7 +12,8 @@ Nessun file di oggi e' cambiato: l'aggancio e' dell'ondata 2 (referto `ARCHITETT
   20 ms per mercato) invece del giro fisso di 200 ms, con lo STESSO JSON del topic `ladder` di oggi; il DB in un thread suo.
 - `profili`: i quattro `ProfiloFlusso` (runner calcio, runner tennis, scanner, sessione scalper) con i valori ESATTI di oggi.
 - `flusso.GestoreFlussi` (`contratto.FlussoMercato`): gli stream dei prezzi per profilo: suddivisione in connessioni,
-  sottoscrizione sostitutiva, budget delle connessioni, ripresa, salute, consumatori.
+  sottoscrizione sostitutiva, budget delle connessioni, ripresa, salute, consumatori; registro delle richieste di piu'
+  consumatori sugli stessi mercati (UNIONE, mai connessioni doppie: decisioni 8 e 13 dell'utente, par. 15).
 
 ## 2. Entrate
 
@@ -21,7 +22,7 @@ Nessun file di oggi e' cambiato: l'aggancio e' dell'ondata 2 (referto `ARCHITETT
 | `flusso_ordini_conto` | `contratto.Sessione` (`client()` = `betfairlightweight.APIClient` con sessione valida; `rinnova_se_serve()`); messaggi `ocm` dal socket Betfair |
 | `ladder` | `MarketBook` della libreria (`consumatore(book)` o `sorgente(market_id)`), `push_a_ogni_cambio(market_id)`, `meta(market_id) -> MetaLadder | None`, `canale_attivo()` |
 | `profili` | nome del profilo, ambiente (`os.environ` di serie, letto alla chiamata) |
-| `flusso` | `contratto.Sessione`, `ProfiloFlusso`, `imposta_mercati(ids)`, `manutenzione()`; messaggi `mcm`/`status` dal socket |
+| `flusso` | `contratto.Sessione`, `ProfiloFlusso`, `imposta_mercati(ids)`, `richiedi_mercati(chi, ids)`/`rilascia_mercati(chi)`, `manutenzione()`; messaggi `mcm`/`status` dal socket |
 
 ## 3. Uscite
 
@@ -172,3 +173,111 @@ Correzioni (dettaglio, file:riga, test e mutazioni nel referto par. 11):
   l'attesa di slot per un valore vecchio.
 - **Connessioni**: lo stream ordini del conto e' una connessione in piu'; proposta di sostituire con lui gli stream ordini
   di flumine all'aggancio (referto par. 12.1).
+
+## 14. Decisione 12 dell'utente: cadenza di serie del ladder 20 ms (10/10/2026)
+
+**«Massima velocita'» del ladder.** Verificato (agente D-A): la cadenza DI SERIE del ladder nuovo verso la UI e' 20 ms per
+mercato ovunque nel comparto: `ladder.INTERVALLO_MIN_MS = 20` (`ladder.py:54`), default del costruttore
+`LadderEvento(intervallo_min_ms=INTERVALLO_MIN_MS)` (`ladder.py:276`), `stato()["intervallo_min_ms"]` = 20, questo doc
+(par. 1 e 9). `ProfiloLadder` NON ha un campo di cadenza della UI (solo profondita', livelli, WOM, `db_sec`, chiusura): le
+variabili del worker di oggi che la tengono a 200 ms (`LIVE_LADDER_CANALE_MS`, `TENNIS_LADDER_CANALE_MS`,
+`Betfair/stream/config_stream.py:74`) il ladder nuovo NON le legge. Nessuna costante o profilo da portare a 20: non c'era
+un 200 di serie da cambiare. La cadenza del DB (`*_LADDER_PUBLISH_SEC`, 2 s, `profilo_ladder`) resta com'e'.
+
+- `CONTROLLO_CANALE_S = 0.2` (`ladder.py:57`) NON e' una cadenza del ladder: e' il risveglio del thread quando non arriva
+  nessun book, per accorgersi che il canale e' tornato ad avere client. Con i book che arrivano il thread si sveglia a ogni
+  push (`push_a_ogni_cambio` -> `notify`) e il client nuovo e' visto al book successivo; solo su un mercato FERMO il primo
+  fotogramma a un client appena collegato puo' tardare fino a 200 ms. Lasciato com'e' (portarlo a 20 ms = 50 risvegli al
+  secondo a vuoto per sempre); se l'utente vuole anche questo caso a 20 ms, basta cambiare la costante.
+- Test: `tests/test_a2_ladder_cadenza.py` (7): 20 ms scritto LETTERALMENTE nel test (non letto dal modulo): costante,
+  default del costruttore, ladder costruito di serie per calcio e tennis anche con `LIVE_LADDER_CANALE_MS=200` e
+  `TENNIS_LADDER_CANALE_MS=200` nell'ambiente vero del processo, `db_sec` = 2,0, nessun campo di cadenza nel profilo, e il
+  comportamento sull'orologio finto (cambi a 25 ms: due pubblicazioni subito; a 10 ms: la seconda alla scadenza dei 20).
+- Mutazioni (in `ondata1/W1-A2/falsifica.py`): C1 (costante a 200), C2 (default del costruttore a 200), C3 (la variabile di
+  oggi a 200 riporta la cadenza), C4 (coalescenza fissa a 200 ms), C5 (DB trascinato alla velocita' del ladder): 5/5 rosse.
+- In ombra si misura la CPU vera del processo (decisione 12): `misura_cpu_ladder.py` resta lo strumento di laboratorio.
+
+## 15. Gestore unico dell'app (decisione 10/10)
+
+**Decisioni 8 e 13 dell'utente (10/10/2026)**: lo stream ovunque possibile, la REST solo di riserva; UN gestore dei flussi
+per tutta l'app (200 mercati per connessione) e UNO stream ordini; i servizi non aprono piu' stream propri; lo stream ordini
+del conto SOSTITUISCE quelli che flumine apre in ogni processo, mai aggiunto.
+
+**Capacita' aggiunta (agente D-A) a `flusso.GestoreFlussi`: il registro delle richieste.** Prima il gestore aveva UN solo
+insieme (`imposta_mercati`, sostitutivo): due consumatori che lo chiamavano si cancellavano i mercati a vicenda. Ora:
+
+- `richiedi_mercati(chi, mercati)`: il consumatore `chi` (bot, ladder, scanner, ...) dichiara il SUO insieme intero
+  (sostituisce la sua richiesta precedente; vuoto = rilascia). Il gestore sottoscrive l'UNIONE: un mercato chiesto da tre
+  consumatori occupa UN posto su UNA connessione. Ritorna i mercati di `chi` rimasti fuori (capacita' o budget).
+- `rilascia_mercati(chi)`; `richieste()`; senza richieste le connessioni si chiudono (mai una sottoscrizione vuota).
+- `aggiungi_consumatore(cb, richiesta=chi)`: il consumatore riceve i book dei mercati della sua richiesta e la segue quando
+  cambia (estensione additiva: `mercati=` resta il filtro fisso; i due insieme = `ValueError`).
+- `imposta_mercati(mercati)` (il contratto) e' la richiesta del consumatore `RICHIESTA_DIRETTA`: senza altre richieste il
+  risultato e' IDENTICO a prima (tutti i test di prima verdi; le 42 mutazioni di prima su `flusso.py` rilanciate: 42
+  rosse); con altre richieste NON toglie i loro mercati.
+- `stato()`: `richieste` (consumatore -> quanti mercati), `mercati_richiesti_somma`, `mercati_unione` (il risparmio).
+- Concorrenza: il registro si aggiorna sotto `_lock` e l'unione si legge DENTRO il lucchetto del piano
+  (`_applica_richieste`): l'ultimo piano vede tutte le richieste arrivate prima; la rete resta fuori dal lucchetto e una
+  risottoscrizione di un piano vecchio non vince (generazione di `_Connessione.risottoscrivi`).
+
+`FlussoOrdiniContoBetfair` era gia' pronto per essere l'unico: una connessione, consumatori multipli con filtro per mercato
+(`aggiungi_consumatore`), `avvia()` idempotente, chi arriva dopo legge lo stato da `ordini()`/`posizioni()` e riceve i cambi.
+
+Test: `tests/test_a2_gestore_unico.py` (8), sulla libreria vera contro il server finto TLS: **3 consumatori sugli stessi
+300 mercati = 2 connessioni (200 + 100), non 6**, 2 sole `marketSubscription` (il 2o e il 3o consumatore non mandano nulla),
+ogni consumatore riceve i 300 mercati; il confronto col modello di oggi (un gestore per consumatore: 6 connessioni);
+richieste diverse (unione, filtro per consumatore, `imposta_mercati` che non toglie gli altri, rilascio che toglie solo i
+mercati di nessuno, tutti rilasciano = 0 connessioni); capacita' piena (i fuori sono del consumatore che non entra);
+3 thread che cambiano richiesta insieme (l'ultimo piano = l'unione finale); 3 consumatori degli ordini = 1 connessione e 1
+`orderSubscription`. Mutazioni G1-G9 e O1 in `ondata1/W1-A2/falsifica.py`: 10/10 rosse. Dopo la revisione indipendente:
+`tests/test_a2_gestore_unico_revisione.py` (6: risottoscrizione di un piano vecchio arrivata dopo quella nuova, fuori che
+entrano quando un altro rilascia, capacita' piena su 9 connessioni, consumatori calcio/tennis separati, stress 5 thread x 50
+cambi); mutazioni R6_generazione e R5_filtro_unione rosse (referto W1-A2 par. 14).
+
+**Connessioni di oggi per processo** (caso peggiore, LIVE; le 10 per app key sono del CONTO, condivise da tutti i processi):
+
+| Processo | Stream dei prezzi | Stream ordini | Dove (file:riga) |
+|---|---:|---:|---|
+| runner-calcio | fino a 3 (180 mercati l'una, riserva 1) | 1 in LIVE (flumine, senza filtro), 0 in PAPER | `Betfair/stream/frammenti_mercato.py:88-91` (`DEFAULT_MAX_CONNESSIONI = 3`, `DEFAULT_RISERVA = 1`), `Betfair/stream/runner.py:2253` (`order_stream=True`, LIVE) |
+| runner-tennis | 1 (stream unico cross-evento) | 1 in LIVE | `Betfair/stream/tennis_live/tennis_runner.py:476-492`, `:159` |
+| safe-strategy-service (scanner) | fino a 4 (180 l'una) | 0 | `Betfair/safe_strategy/stream.py:82` (`DEFAULT_MAX_CONNECTIONS = 4`), `:474-476` |
+| sessione scalper (un processo per partita, fino a 4: `scalper/auto_mode.py:72`) | 1 per partita | 1 per partita in LIVE | `Betfair/stream/scalper/scalper_session.py:936-942` (`order_stream: True`), `:1926` (`Flumine` proprio) |
+| mike-service, omega-service, safe-strategy-bot, tennis-bot-service, job `tennis-odds` | 0 (leggono il feed dello scanner o la REST) | 0 (ordini via REST) | `ARCHITETTURA_2026-10/03_SCHEDE_COMPONENTI/A_CONNESSIONE_BETFAIR.md` par. 1.6 |
+| **Totale** | **8** | **2** (+1 per partita scalper LIVE) | **10/10** senza scalper; ogni partita scalper LIVE +2: OLTRE il limite (referto W1-A2 par. 12.1) |
+
+Gli STESSI mercati vengono sottoscritti piu' volte: la partita di calcio seguita dal runner (EX_ALL_OFFERS), dallo scanner
+(EX_BEST_OFFERS, conflate 1000 ms) e dallo scalper della partita (filtro di flumine) occupa tre posti su tre connessioni;
+e il problema dello slot (decisione 8) nasce da qui, non dal numero di mercati.
+
+**Con il gestore unico** (un `GestoreFlussi` per l'app, 200 mercati per connessione, piu' UN `FlussoOrdiniContoBetfair`):
+
+| Mercati DISTINTI seguiti da tutta l'app (unione) | Connessioni dei prezzi | Stream ordini | Totale |
+|---:|---:|---:|---:|
+| fino a 200 | 1 | 1 | 2 |
+| 300 (la prova del test: 3 consumatori sugli stessi 300) | 2 (200 + 100) | 1 | 3 |
+| 1.000 | 5 | 1 | 6 |
+| 1.800 (massimo) | 9 | 1 | **10/10** |
+
+Le partite scalper non aggiungono connessioni: i loro mercati sono gia' nell'unione (o ne aggiungono pochi). Nota sul
+testo della decisione 8 («con 10 connessioni = fino a 2.000 mercati»): con lo stream ordini che prende una connessione
+le connessioni dei prezzi sono al massimo 9, quindi **1.800 mercati** (il gestore lo tiene con `riserva_connessioni = 1`,
+che lascia uno slot libero allo stream ordini, regola dello slot del referto W1-A2 par. 11-12).
+
+**Cosa resta all'ondata 2 (aggancio, NON fatto qui)**:
+
+1. Un `GestoreFlussi` e un `FlussoOrdiniContoBetfair` per l'app (nel processo del custode della sessione unica, doc A1 par.
+   6-ter), con i servizi come consumatori (`richiedi_mercati` + `aggiungi_consumatore(richiesta=...)`); per i servizi in
+   processi separati i book arrivano dal canale locale (oggi 47336), mai da uno stream proprio.
+2. **Profilo dell'app**: un gestore = un profilo. Il profilo unico e' il SUPERINSIEME (campi di calcio e scalper:
+   EX_ALL_OFFERS, EX_TRADED, EX_TRADED_VOL, EX_LTP, EX_MARKET_DEF, SP_*; il libro EX_ALL_OFFERS serializza
+   `available_to_back` a profondita' piena, `betfairlightweight/streaming/cache.py:153-161`, quindi copre chi legge le
+   migliori offerte), `conflateMs` assente, 200 mercati per connessione, 9 connessioni e riserva 1 per lo stream ordini.
+   Serve un nome nuovo in `contratto.NomeProfilo` (contratto fisso: **estensione proposta**, `"app"`). Le differenze per
+   consumatore si applicano DAL LATO DEL CONSUMATORE: lo scanner oggi riceve i book a 1000 ms (U-01) e la strategia non si
+   altera, quindi il suo consumatore deve fondere a 1000 ms per avere gli STESSI ingressi, con prova di parita' sul banco
+   prima del `nuovo`.
+3. Calcio e tennis: le connessioni sono trasporto, i consumatori restano separati per richiesta (un consumatore calcio
+   chiede solo mercati di calcio). Se il coordinatore vuole anche le connessioni separate per sport, due gestori (calcio,
+   tennis) costano al massimo una connessione mezza vuota in piu'.
+4. Lo stream ordini del conto SOSTITUISCE quelli di flumine (`runner.py:2253`, `tennis_runner.py:159`,
+   `scalper_session.py:936-942`): flumine riceve gli ordini dal nucleo (tappa C), mai uno stream in piu'.

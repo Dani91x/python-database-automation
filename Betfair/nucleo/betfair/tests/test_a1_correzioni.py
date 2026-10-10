@@ -211,7 +211,10 @@ def test_chiudi_aspetta_il_keepalive_in_volo_prima_del_logout(finto):
     s.client()
     t = _rinnova_in_volo(finto, s)
     s.chiudi()
-    assert not t.is_alive(), "chiudi e' tornato con il keepAlive ancora in volo"
+    # la proprieta' sul finto, non la morte del thread: dopo il lucchetto ``rinnova`` notifica
+    # ed esce, e sotto carico ``chiudi`` puo' tornare prima che il thread sia finito
+    # (revisione D-A: ~9% di rossi sotto carico con ``is_alive``)
+    assert finto.in_volo["keepAlive"] == 0, "chiudi e' tornato con il keepAlive ancora in volo"
     t.join(5)
     assert finto.tipi()[-2:] == ["keepAlive", "logout"]
     assert s.stato()["connessa"] is False
