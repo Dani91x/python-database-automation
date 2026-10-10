@@ -222,7 +222,12 @@ def test_mercato_a_linee_handicap():
     ordini = [oc("1", HOME, "back", 10.0, 1.9, handicap=-0.5),
               oc("2", AWAY, "lay", 5.0, 2.1, handicap=0.5)]
     c = P.calcola(MKT, "live", tipo_scommessa="ODDS", vincitori=1, ordini=ordini)
-    assert c.a_linee and c.posizione.se_vince == {} and c.posizione.se_vince_per_autore == {}
+    # decisione 5 dell'utente (10/10): il "se vince" per linea anche con l'handicap,
+    # qualita' per_selezione (prima: vuoto)
+    assert c.a_linee and c.qualita == P.QUALITA_PER_SELEZIONE and not c.supportato
+    assert c.se_vince_per_linea == {(HOME, -0.5): 14.0, (AWAY, 0.5): -15.5}
+    assert c.posizione.se_vince == {HOME: 14.0, AWAY: -15.5}
+    assert c.posizione.se_vince_per_autore == {"desktop": {HOME: 14.0, AWAY: -15.5}}
     e = P.esposizioni_per_selezione(ordini)
     assert set(e) == {(HOME, -0.5), (AWAY, 0.5)}
     assert c.posizione.esposizione_massima == round(-10.0 + -5.5, 2)
@@ -286,19 +291,26 @@ def test_rev_g2_dutch_su_tutti_i_runner():
 
 def test_rev_m4_asiatico_con_sola_linea_zero_non_supportato():
     """M4: un asiatico con la sola linea 0,0 NON e' a vincitore unico (push):
-    serve il bettingType; assente o non ODDS -> se_vince vuoto e dichiarato."""
+    serve il bettingType; assente o non ODDS -> qualita' per_selezione, dichiarata
+    (decisione 5 dell'utente, 10/10: il "se vince" c'e' comunque; prima era vuoto)."""
     ordini = [oc("1", HOME, "back", 10.0, 2.0)]
+    per_sel = {HOME: 10.0, AWAY: -10.0}
     asi = P.calcola(MKT, "live", ordini, runner=[HOME, AWAY],
                     tipo_scommessa="ASIAN_HANDICAP_DOUBLE_LINE")
-    assert asi.posizione.se_vince == {} and not asi.supportato
+    assert asi.posizione.se_vince == per_sel and not asi.supportato
+    assert asi.qualita == P.QUALITA_PER_SELEZIONE
     assert "tipo_non_supportato:ASIAN_HANDICAP_DOUBLE_LINE" in asi.motivi
+    assert "asiatico_push_non_modellato" in asi.motivi
     assert asi.esposizione_massima == -10.0 and "stima_prudente" in asi.motivi
     ignoto = P.calcola(MKT, "live", ordini, runner=[HOME, AWAY])
-    assert ignoto.posizione.se_vince == {} and "tipo_ignoto" in ignoto.motivi
+    assert ignoto.posizione.se_vince == per_sel and "tipo_ignoto" in ignoto.motivi
+    assert ignoto.qualita == P.QUALITA_PER_SELEZIONE
     piu = P.calcola(MKT, "live", ordini, runner=[HOME, AWAY], tipo_scommessa="ODDS", vincitori=3)
-    assert piu.posizione.se_vince == {} and "vincitori:3" in piu.motivi
+    assert piu.posizione.se_vince == per_sel and "vincitori:3" in piu.motivi
+    assert piu.qualita == P.QUALITA_PER_SELEZIONE
     ok = P.calcola(MKT, "live", ordini, runner=[HOME, AWAY], tipo_scommessa="ODDS", vincitori=1)
     assert ok.supportato and ok.posizione.se_vince == {HOME: 10.0, AWAY: -10.0}
+    assert ok.qualita == P.QUALITA_ESATTO and ok.esposizione_esatta
     assert ok.solo_abbinato                               # i non abbinati non entrano: dichiarato
 
 

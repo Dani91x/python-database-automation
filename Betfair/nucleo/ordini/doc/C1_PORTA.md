@@ -31,6 +31,13 @@ stesso archivio. Sotto, un `Esecutore` iniettato (oggi: il dispatch del runner, 
   `kill_switch`, `reduces_liability_non_verificabile`, `guardia_avvio`, `settings_stantie`, `comando_scaduto`,
   `diario_non_scrivibile`, `SOTTO_MINIMO_NON_PIAZZABILE`, `ref_gia_visto`; nuovi: `MAX_TRANSACTION_COUNT`,
   `archivio_non_disponibile`, `azione_composta_sopra_la_porta`, `params_non_serviti`).
+  Decisione 3 dell'utente (10/10): per l'attore `desktop` una punta non multipla di 0,50 (o sotto il minimo) e' RIFIUTATA
+  col testo del terminale di oggi (`order_exec.place_order`, es. `2,30: la punta va a multipli di 0,50, usa 2,00 o
+  2,50.`), mai troncata; per i bot nulla cambia (troncano come il motore, `punta_050` nell'evento).
+  Nel TENNIS il desktop NON e' portato al minimo (come oggi `tennis_live_order_worker._do_place`): sotto il minimo
+  rifiuto col testo del worker (`stake non valido: ...`, `minimi.verdetto_desktop_tennis`); l'apertura al minimo resta
+  solo per i bot. Oggi il ladder desktop (calcio via canale locale e tennis) TRONCA la punta: rifiutarla e' la decisione
+  3 dell'utente, non una parita'.
   Ref gia' visto (memoria, diario o `ordini_ref_visti`), in ogni fase (in volo, ignoto, terminale), anche dopo il riavvio:
   l'`Ack` ORIGINALE (`accettato` e `seq` della prima risposta), motivo `ref_gia_visto`, 0 invii: parita' col motore
   (`motore_ordini.py:997-1005`). Lo stato del ref non cambia; l'esito lo dicono `stato`/`eventi`.
@@ -65,6 +72,7 @@ Nessun import di supabase, di flumine o di un bot (i bot sono solo ARBITRI nei t
 | C-022 (rate) | transazioni/ora per CONTO, solo live | `controlli.ContatoreTransazioni` | parita' col control VERO `MaxTransactionCount` e con l'esecuzione VERA di flumine; somma su 3 attori; paper escluso (`test_c1_revisione.py`) |
 | C-030, C-031, C-035, C-036, C-072 (taglia) | minimi .it, punta 0,50, porta al minimo, taglia tennis, scalper | `minimi.py` | `test_c1_minimi.py` (griglia contro le 5 definizioni + `verdetto_minimi` + politica RIFIUTA del desktop `order_exec` + apertura tennis al minimo `esecutore_tennis`) |
 | C-032 (senza equivalente), C-044 (taglia non ritentata) | verdetto dei minimi della porta | `porta._minimi` | `test_c1_porta.py::test_ciclo_di_vita_con_le_risposte_vere`, `test_minimi_punta_050_e_sotto_minimo` |
+| C-030 (desktop, decisione 3 del 10/10) | punta dal desktop non multipla di 0,50 rifiutata col motivo del terminale; bot invariati | `porta._minimi` + `minimi.verdetto_desktop` (`ATTORE_DESKTOP`) | `test_c1_desktop_rifiuta.py` (2,30 rifiutato col testo di `order_exec`, 2,50 intero, bot 2,30 -> 2,00, banca 2,30 e sotto minimo come il terminale, griglia di parita' col terminale VERO per i due lati; tennis contro `tennis_live_order_worker._do_place` VERO) |
 | C-040, C-041 (place/cancel/replace) | esecuzione | `esecutori/runner.py` (wrapper di `_dispatch`) | `test_c1_esecutore_runner.py` (client della riga, fase = motore) |
 | C-042 (riduzione mai creduta) | `reduces_liability` | `adattatore_comando`, `controlli.controlla` | rifiuto `reduces_liability_non_verificabile` col kill-switch |
 | C-050 | fasi, `esito_ms`, seq mai indietro | `porta._emetti`, `FASE_DA_MOTORE` | `test_c1_porta.py`, `test_c1_esecutore_runner.py::test_fase_uguale_al_motore_di_oggi` |

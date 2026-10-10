@@ -1,0 +1,27 @@
+ROSSO  M30 prezzo medio <= 1 accettato  [1 failed, 393 passed in 23.63s]  sha256 uguale 9ce202e97c95
+ROSSO  M112 libro non passa il marketType  [1 failed, 447 passed in 24.07s]  sha256 uguale 2c0f67e294ad
+ROSSO  M113 imposta_mercato ignora il marketType  [1 failed, 447 passed in 26.16s]  sha256 uguale 2c0f67e294ad
+ROSSO  D501 per_selezione: se vince di nuovo vuoto  [1 failed, 394 passed in 22.24s]  sha256 uguale 9ce202e97c95
+ROSSO  D502 qualita sempre esatto  [1 failed, 394 passed in 23.30s]  sha256 uguale 9ce202e97c95
+ROSSO  D503 LINE: la linea usata come quota  [1 failed, 429 passed in 25.48s]  sha256 uguale 9ce202e97c95
+ROSSO  D504 linea: handicap ignorato nel suo  [1 failed, 508 passed in 27.84s]  sha256 uguale 9ce202e97c95
+ROSSO  D505 linee multiple nel contratto  [1 failed, 508 passed in 28.56s]  sha256 uguale 9ce202e97c95
+ROSSO  D506 esposizione per_selezione spacciata per esatta  [1 failed, 508 passed in 28.07s]  sha256 uguale 9ce202e97c95
+ROSSO  D507 LINE: stima linea per linea  [1 failed, 512 passed in 27.56s]  sha256 uguale 9ce202e97c95
+ROSSO  D508 runner nudi inventano la linea 0,0  [1 failed, 511 passed in 25.87s]  sha256 uguale 9ce202e97c95
+ROSSO  D509 book: handicap perso  [1 failed, 508 passed in 27.59s]  sha256 uguale 9ce202e97c95
+ROSSO  D510 book: runner REMOVED tenuti  [1 failed, 516 passed in 31.52s]  sha256 uguale 9ce202e97c95
+ROSSO  D511 JSON: esposizione sempre esatta  [1 failed, 505 passed in 26.21s]  sha256 uguale 9ce202e97c95
+ROSSO  D512 libro: coppie del book ridotte a int  [1 failed, 508 passed in 25.40s]  sha256 uguale 2c0f67e294ad
+ROSSO  D513 per autore per linea su tutti gli ordini  [1 failed, 508 passed in 25.12s]  sha256 uguale 9ce202e97c95
+ROSSO  D514 esatto: linee vuote  [1 failed, 515 passed in 30.51s]  sha256 uguale 9ce202e97c95
+ROSSO  D515 asiatico senza motivo  [1 failed, 400 passed in 26.26s]  sha256 uguale 9ce202e97c95
+ROSSO  D516 handicap del solo book ignorato  [1 failed, 519 passed in 28.80s]  sha256 uguale 9ce202e97c95
+ROSSO  D517 quota fissa ignorata nelle esposizioni  [1 failed, 512 passed in 26.98s]  sha256 uguale 9ce202e97c95
+ROSSO  D518 quota dei mercati LINE sbagliata  [1 failed, 429 passed in 23.89s]  sha256 uguale 9ce202e97c95
+ROSSO  D519 linee multiple non dichiarate  [1 failed, 508 passed in 29.14s]  sha256 uguale 9ce202e97c95
+ROSSO  D520 per_selezione: runner_ignoti non detto  [1 failed, 520 passed in 28.99s]  sha256 uguale 9ce202e97c95
+ROSSO  D521 LINE: abbinato senza prezzo medio scartato  [1 failed, 513 passed in 27.29s]  sha256 uguale 9ce202e97c95
+ROSSO  D522 LINE: esposizioni scartano senza prezzo  [1 failed, 513 passed in 28.90s]  sha256 uguale 9ce202e97c95
+ROSSO  D523 prezzo non richiesto ignorato  [1 failed, 513 passed in 27.79s]  sha256 uguale 9ce202e97c95
+TOTALE rosse 26/26 (guasti 0)

@@ -195,6 +195,9 @@ Restano al vecchio: C-052, C-054, D-046, D-054, F-009, ogni scrittura (specchio,
    Frontend: `frontend/src/components/live/LadderView.tsx:248-303` (`buildLadder`: oggi `position.matched_if_win/lose`
    dallo specchio) e la tabella ordini del ladder (J-078): colonna «autore», P&L per selezione da `selezioni`, P&L di
    mercato da `posizione.se_vince`. Contratto TS generato dallo schema (nessuna costante duplicata, PSB 7 n.33).
+   Decisione 5 (10/10, par. 13): la `posizione` del topic e' `pnl_mercato.calcolo_per_json` (in piu' `qualita`,
+   `esposizione_tipo`, `motivi`, `se_vince_per_linea` e `se_vince_per_linea_per_autore` come liste di
+   `{selection_id, handicap, se_vince}`); il libro riceve i runner dal book con `parametri_dal_book`.
 3. **Comandi**: `comandi_ammessi` (`libro_conto.py:378`): annulla/sposta SOLO sugli ordini dell'utente (`desktop`,
    `sito`); sugli ordini dei bot, `risk` e `sconosciuto` SPENTI. Decisione dell'utente (U-nuova): permettere l'annullo
    di un ordine di un bot dal ladder? (oggi W3a/W3b fermano il bot quando l'utente interviene sui suoi mercati).
@@ -235,7 +238,9 @@ Restano al vecchio: C-052, C-054, D-046, D-054, F-009, ogni scrittura (specchio,
   (provato: `OrderBookCache.update_cache` con un `uo` senza `rfo`/`rfs`). Se Betfair omette `rfo`/`rfs` per gli ordini
   del SITO, lo stream degli ordini del conto cadrebbe proprio sugli ordini che vogliamo vedere. Da verificare su un
   messaggio `ocm` reale con un ordine del sito prima dell'ondata 2.
-- Mercati a linee (handicap): `se_vince` vuoto, esposizione prudente; la UI deve dirlo, non mostrare zero.
+- ~~Mercati a linee (handicap): `se_vince` vuoto, esposizione prudente~~ -> superato dalla decisione 5 dell'utente
+  (10/10, par. 13): «se vince» su ogni mercato con la qualita' `per_selezione`; la UI deve mostrare la qualita' e il tipo
+  dell'esposizione (`calcolo_per_json`).
 - `regole_di_oggi()` importa ~3,6 s di codice di oggi: mai nel percorso caldo.
 - Nessun ordine reale del conto nelle registrazioni: la prova sul campo e' l'ombra di T11.
 
@@ -455,3 +460,124 @@ nel frattempo l'ordine resta provvisorio):
   (d) in ombra.
 
 D11 resta per l'utente (par. 11). D9 resta.
+
+## 13. Decisione 5 dell'utente (10/10): il «se vince» sul ladder per OGNI mercato (agente D-C, ramo `decisioni/d-c`)
+
+Risposta dell'utente (`ondata1/DECISIONI_PER_L_UTENTE.md`, «Risposte dell'utente», voce 5, VINCOLANTE): «Tutti i
+mercati: il "se vince" sul ladder per ogni mercato», come i competitor. Prima (par. 10-11) il «se vince» c'era solo per i
+mercati a vincitore unico (`TIPI_UN_VINCITORE` + `marketType` a vincitore unico per definizione); altrove era VUOTO.
+
+**Cosa e' cambiato** (`Betfair/nucleo/ordini/pnl_mercato.py`, commit `154e02c1`):
+
+| Punto | file:riga | Cosa |
+|---|---|---|
+| qualita' | `:120-127`, `CalcoloPosizione.qualita` `:167`, `esposizione_esatta` `:173` | `esatto` (vincitore unico, nessun handicap: i criteri di prima, invariati) o `per_selezione` (tutto il resto: piu' vincitori, handicap/linee, asiatici, `LINE`, tipo o vincitori ignoti). `supportato` resta e vale `qualita == esatto` |
+| formula per linea | `pnl_se_vince_linea` `:232` | la formula del ladder (`pnlSeVince`) con la LINEA (selezione + handicap): vince lei, perdono TUTTE le altre; quota fissa per i `LINE` |
+| ramo esatto | `calcola` `:313` | IL CODICE DI PRIMA, riga per riga (stesse righe di `pnl_se_vince`, stesso arrotondamento, stessa esposizione); in piu' solo `se_vince_per_linea = {(s, 0,0): v}` |
+| ramo per selezione | `_per_selezione` `:386` | `se_vince_per_linea` (e per autore) su ogni linea: degli ordini, del book (coppie) e degli int nudi come (s, 0,0) SOLO se quella selezione non ha gia' una linea; nel contratto (`PosizioneMercato.se_vince`, chiave selection_id) le selezioni con UNA linea (`linee_multiple` altrimenti: mai una somma di linee diverse sotto la stessa chiave); `runner_ignoti` come nel ramo esatto |
+| esposizione | `:424-434` | esatta SOLO dove il modello e' esatto (come prima); altrove la STIMA PRUDENTE di prima, identica (`sum min(0, se vince, se perde)` linea per linea, `stima_prudente`): resta un limite anche con push e mezze vincite (provato con l'oracolo del regolamento, sotto) |
+| mercati `LINE` | `TIPI_A_LINEA`/`QUOTA_MERCATI_A_LINEA` `:124-125`, `_quota_fissa` `:381`, `esposizioni_per_selezione(quota=)` `:192` | il prezzo dell'ordine e' la LINEA, la quota e' 2,0 (doc Betfair `MarketBettingType.LINE`, `AUDIT_2026-10-02/_fonti_betfair/bf_2687455.txt` r.278; flumine `blotter.py:256-259` usa 2,0 per il ladder `LINE_RANGE`); stima ORDINE PER ORDINE (`stima_per_ordine`) |
+| book | `parametri_dal_book` `:500` | dalla `MarketDefinition` VERA di betfairlightweight: runner come coppie (selection_id, handicap) senza i `REMOVED`, `betting_type`, `number_of_winners`, `market_type`; nulla di inventato |
+| UI | `calcolo_per_json` `:477` | posizione + `qualita`, `esposizione_tipo` (`esatta`/`stima_prudente`/`non_calcolabile`), `motivi`, `solo_abbinato`, linee come liste `{selection_id, handicap, se_vince}` (anche per autore): il ladder sa cosa mostrare e come dirlo |
+| libro | `libro_conto.py:684` `imposta_mercato` | i runner possono essere coppie (selection_id, handicap) (prima: `int(r)`, che sugli asiatici perdeva l'handicap) |
+
+Contratti INVARIATI (`contratto.py` non toccato): le estensioni sono campi nuovi di `CalcoloPosizione` (con default) e
+funzioni nuove. `riconciliazione.py` invariato (chiama `esposizioni_per_selezione` senza `quota`: identico).
+
+**Correzione dichiarata sui mercati `LINE` (non a vincitore unico, quindi ammessa; da sapere)**: la stima di prima usava
+la LINEA come quota (back 10 a linea 150,5 -> «se vince» +1.495) e la sommava linea per linea; con una vendita a 2,5 e
+un acquisto a 3,5 sulla stessa selezione dava -6,0, ma il risultato 3 li fa perdere ENTRAMBI: -14,0. Non era un limite.
+Ora quota 2,0 e stima ordine per ordine (-14,0, stretta). `test_mercato_line_quota_due_e_stima_ordine_per_ordine`
+mostra entrambi i numeri. Nessun mercato `LINE` nelle registrazioni ne' nei bot di oggi.
+
+**Asiatici: verifica sulla documentazione Betfair del repo** (`AUDIT_2026-10-02/_fonti_betfair/bf_*.txt`, le sole fonti
+Betfair testuali nel repo). Cosa dice: `ASIAN_HANDICAP_DOUBLE_LINE` = «traditional Asian handicap» (`bf_2687455.txt`
+r.283-284), `ASIAN_HANDICAP_SINGLE_LINE` = «0 or multiple winners» (r.286-287), il runner ha il suo handicap (`hc`,
+`bf_2687396.txt` r.772 e r.859; key line = selectionId + handicap r.633, 788-799), ladder `FINEST` per gli asiatici
+(`bf_2687455.txt` r.624-626). Cosa NON dice: come
+Betfair mostra il P&L di un asiatico. Il testo di `listMarketProfitAndLoss` non e' nel repo (solo il suo peso,
+`bf_2687478.txt` r.65); la risorsa VERA di betfairlightweight `ProfitAndLosses` (`resources/bettingresources.py:859-877`)
+ha `selectionId`, `ifWin`, `ifLose`, `ifPlace` e NESSUN handicap: l'API non sa nemmeno rappresentare un P&L per linea
+(indizio, non prova; il ricordo che `listMarketProfitAndLoss` serva solo i mercati `ODDS` NON e' verificabile qui).
+**Esito: non verificabile -> `per_selezione` con nota** (`asiatico_push_non_modellato`): il numero e' per LINEA (vince
+quella linea, perdono tutte le altre; push e mezze vincite non entrano nel numero), l'esposizione e' la stima prudente,
+che invece li regge (oracolo del regolamento asiatico nei test, quarti di linea compresi). Da verificare alla prima
+occasione sul sito Betfair o su Bet Angel con un asiatico vero (vedi «non verificato», sotto).
+
+**Test** (`test_c2_tutti_i_mercati.py`, 16 nuovi; righe vere = `marketDefinition` REGISTRATE in `registrazioni_banco/`
+passate dalla `MarketBookCache` VERA, ordini = `CurrentOrder` VERI nel `LibroConto`):
+- doppia chance REGISTRATA (35760084, `numberOfWinners` 2, l'unico mercato a piu' vincitori registrato): `per_selezione`,
+  «se vince» = formula del ladder, il numero NON e' un esito (con due vincitori nessun esito vale il «se vince» di una
+  selezione), esposizione <= ogni esito vero;
+- TEAM_A_1 REGISTRATO (handicap europeo, vincitore unico): `esatto`, esposizione esatta e stretta;
+- vincitore unico: TUTTI i 109 mercati registrati (`bettingType` ODDS, un vincitore; calcio e tennis): `esatto`, «se
+  vince» = `pnlSeVince`, posizione coi runner del book (coppie) IDENTICA a quella coi runner int (come il libro li
+  teneva prima), esposizione = esito peggiore;
+- piazzati (3 vincitori su 5), asiatico doppia linea (8 linee, due squadre, oracolo del regolamento con push e quarti su
+  13 risultati, `numberOfWinners` 0 e 1), asiatico a una linea per squadra (entra nel contratto), int nudi su un
+  asiatico (nessuna linea 0,0 inventata), `LINE` (quota 2,0, stima per ordine contro l'oracolo su 21 valori), handicap
+  dal solo book (non e' esatto), senza runner (`runner_ignoti`), `parametri_dal_book` (REMOVED tolto, `hc` assente =
+  0,0), libro con le coppie, `calcolo_per_json`.
+- Test di prima AGGIORNATI alla decisione (asserivano il «se vince» vuoto): `test_c2_pnl_mercato.py::
+  test_mercato_a_linee_handicap`, `::test_rev_m4_asiatico_con_sola_linea_zero_non_supportato`; `test_c2_revisione.py::
+  test_imposta_mercato_vincitori_e_tipo_dal_book`; `test_c2_revisione2.py::test_m4_tipi_non_a_vincitore_unico` (4 tipi)
+  e `::test_vincitori_ignoti_e_tipi_a_vincitore_unico_per_definizione`: ora asseriscono il «se vince» e la qualita'
+  `per_selezione`; gli altri test (parita' con `pnlSeVince` del frontend, `calculate_matched_exposure` del blotter VERO
+  di flumine, `compute_greenup`, `lockedPnlAt`) NON toccati e verdi.
+
+**Parita' PRIMA/DOPO** (`ARCHITETTURA_2026-10/ondata1/W1-C2/parita_decisione5.py`, esito in `parita_decisione5.txt`):
+il `pnl_mercato` di `d073ddcb` letto da git e quello nuovo sugli stessi ingressi. A: 109 definizioni registrate a
+vincitore unico x 60 griglie = **6.540 casi, 0 diversi** (posizione, motivi, esposizione: identici, testo JSON). B:
+2.800 casi non a vincitore unico (doppia chance, piazzati, tipo ignoto, asiatici doppia/singola linea, handicap su ODDS):
+**0 diversi** su esposizione e motivi di prima; «se vince» prima vuoto, ora pieno. C: `LINE`, 335 casi su 400 con
+l'esposizione cambiata (la correzione sopra). Lo script sa diventare rosso: con la commissione nel ramo esatto 5.940 casi
+A diversi; con la stima senza lo zero 295 casi B diversi (esce 1 entrambe le volte; ripristino sha256 uguale).
+
+**Falsificazione**: `mutazioni.py` + 20 mutazioni (D501-D520: «se vince» di nuovo vuoto, qualita' sempre esatta, linea
+come quota, handicap ignorato nella linea, linee multiple nel contratto, esposizione per selezione spacciata per esatta,
+`LINE` linea per linea, linea 0,0 inventata, handicap o `REMOVED` dal book, JSON, libro che riduce le coppie a int, per
+autore su tutti gli ordini, linee vuote nel ramo esatto, motivi `asiatico_push_non_modellato`/`linee_multiple`/
+`runner_ignoti`, handicap del solo book, quota ignorata nelle esposizioni, quota sbagliata); M22, M87, M91, R05 adeguate al
+codice nuovo (stessa mutazione, stringa con piu' contesto o riga nuova). Al primo giro D520 (motivo `runner_ignoti` sul
+ramo per selezione) sopravviveva: aggiunto `test_per_selezione_senza_runner_lo_dice`, ora rossa.
+Giro completo sul commit `154e02c1` (copia estratta con `git archive`, per non toccare il worktree durante il lavoro su
+C1; due copie in parallelo, M01-R05 e R06-D520): 193/195 rosse al primo giro; sopravvissute **M112** e **M113** (il
+`marketType` passato dal libro): prima decideva se il «se vince» era vuoto o pieno, ora decide la QUALITA', e nessun test
+la guardava; rafforzato `test_c2_revisione2.py::test_vincitori_ignoti_e_tipi_a_vincitore_unico_per_definizione`
+(qualita' `esatto` ed esposizione esatta dopo `imposta_mercato(tipo_mercato="MATCH_ODDS")`), le due rilanciate sul
+codice finale: rosse. **TOTALE rosse 195/195 (guasti 0)**, uscita in `mutazioni_esito.txt`. sha256 dopo ogni ripristino
+= file committati: `pnl_mercato.py` f4b62260205ffcdc1fefa0b75d755ae87af060978e7b489c41f2ae72218f2dc6, `libro_conto.py`
+2c0f67e294adf41fe725e389d03a74227f96903270bd64001be29c9350a60c39 (`attribuzione.py`, `riconciliazione.py` invariati).
+Test W1-C2: **280 verdi** (prima 265); test della cartella `ordini`: **510 verdi** (prima 479). Suite intera (una corsa
+completa, alla fine, codice e test finali di D-C3 e D-C5): **12.964 verdi, 0 rossi, 101 saltati, 6 xfailed** (719 s).
+
+**Cosa NON ho potuto verificare**: come Betfair (sito) e Bet Angel/Geeks Toy mostrano DAVVERO il P&L di un asiatico e di
+un `LINE` (nessuna fonte nel repo; nessuna rete in questa ondata): `per_selezione` con nota, come chiesto. Nessun mercato
+asiatico, `LINE` o piazzato nelle registrazioni: per quelli la definizione e' quella vera registrata coi soli campi del
+tipo cambiati (dichiarato nel docstring del test). `abbinato_back/lay` e prezzi medi del contratto restano per
+selection_id (su un asiatico sommano le linee di una squadra): il ladder per riga li prende dagli ordini; se servono per
+linea, estensione da aggiungere all'aggancio. D11 (elenco chiuso dei `marketType` a vincitore unico) pesa meno: un
+mercato fuori elenco senza `numberOfWinners` ora mostra il numero con `per_selezione` invece di niente.
+
+### 13.1 Revisione indipendente del 10/10: «PASSA», e un limite LINE corrigibile (corretto)
+
+Il revisore ha verificato: 8 casi a mano coincidenti, la parita' sui mercati a vincitore unico dal vecchio codice letto
+da git, l'oracolo LINE dal regolamento (il nuovo non sottostima mai), 13/13 mutazioni sue rosse.
+
+**Limite trovato**: `_abbinati_validi` scartava gli abbinati con prezzo medio None o <= 1,0. Sui `LINE` il prezzo e' la
+LINEA e `averagePriceMatched` «is not meaningful for activity on Line markets and is not guaranteed to be returned»
+(`AUDIT_2026-10-02/_fonti_betfair/bf_2687396.txt` r.1148): un `LINE` con linea 0,5 o 1,0, o senza prezzo medio, finiva
+FUORI dal P&L con esposizione 0. **Corretto** (piccolo): `_abbinati_validi(..., prezzo_richiesto=False)` per i `LINE`
+(la quota e' 2,0 per regolamento, il prezzo medio non serve) in `calcola` e in `esposizioni_per_selezione(quota=...)`;
+sugli altri mercati invariato (un abbinato senza prezzo medio resta scartato e dichiarato: mai un prezzo inventato).
+`riconciliazione.py` invariato (chiama senza `quota`). Parita' prima/dopo rilanciata: stessi numeri (A 6.540/0 diversi,
+B 2.800/0 diversi).
+
+**Test**: `test_c2_tutti_i_mercati.py::test_mercato_line_senza_prezzo_medio_o_linea_bassa_non_si_scarta` (`CurrentOrder`
+VERI: vendita 10 a linea 0,5 senza `averagePriceMatched`, acquisto 4 a linea 1,0; «se vince» 6,0, esposizione -14,0,
+nessuno scartato; gli stessi ordini su un ODDS restano scartati).
+**Mutazioni**: D521 (LINE: abbinato senza prezzo scartato in `calcola`), D522 (idem nelle esposizioni), D523 (il ramo
+«prezzo non richiesto» tolto): **26/26 rosse, 0 guasti** (giro sulle nuove, su tutte le D5xx e su M30/M112/M113),
+uscita in `mutazioni_esito_correzione.txt`; sha256 dopo ogni ripristino = `pnl_mercato.py`
+9ce202e97c951f4f9b93f695f8bf750a82af2bfa4c0879527ea86868b37b35a2. Test W1-C2: **281 verdi**; cartella `ordini`:
+**521 verdi**. Suite intera (una corsa, alla fine della correzione): **12.975 verdi, 0 rossi, 101 saltati, 6 xfailed** (740 s).

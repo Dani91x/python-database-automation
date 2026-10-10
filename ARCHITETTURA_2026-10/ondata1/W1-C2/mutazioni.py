@@ -14,7 +14,10 @@ cambia. M01-M43: consegna ``5b958ba7`` (stringhe adeguate alle correzioni);
 M44-M63: correzioni dopo la revisione (``99e75fbe``); M64-M93: un ramo per
 mutazione dopo la verifica del coordinatore su ``83f376e0``; R01-R21: del
 revisore della seconda revisione; M94-M115: correzioni della seconda revisione;
-M116-M154: terza verifica (replaceOrders: il nuovo eredita dal sostituito).
+M116-M154: terza verifica (replaceOrders: il nuovo eredita dal sostituito);
+D501-D520: decisione 5 dell'utente del 10/10 ("se vince" su ogni mercato, qualita',
+linee, LINE a quota 2,0), con M22/M87/M91/R05 adeguate al codice nuovo.
+D521-D523: revisione del 10/10 (LINE: abbinato senza prezzo medio o con linea <= 1,0 nel P&L).
 ASCII-only.
 """
 import hashlib
@@ -92,8 +95,12 @@ MUT = [
      'if o.residuo <= 0 or o.autore not in attr.AUTORI_UTENTE:',
      'if o.residuo <= 0:'),
     ('M22 formula del lay sbagliata', 'pnl_mercato.py',
-     'v += -importo * (prezzo - 1) if suo else importo',
-     'v += importo * (prezzo - 1) if suo else importo'),
+     '        prezzo = float(a.prezzo_medio or 0.0)\n        if a.lato == "back":\n'
+     '            v += importo * (prezzo - 1) if suo else -importo\n        else:\n'
+     '            v += -importo * (prezzo - 1) if suo else importo',
+     '        prezzo = float(a.prezzo_medio or 0.0)\n        if a.lato == "back":\n'
+     '            v += importo * (prezzo - 1) if suo else -importo\n        else:\n'
+     '            v += importo * (prezzo - 1) if suo else importo'),
     ('M23 paper e live sommati nel P&L', 'pnl_mercato.py',
      '        if o.modo != modo:',
      '        if False:'),
@@ -287,7 +294,9 @@ MUT = [
      '        for b in orfani[:max(0, len(orfani) - self._max_indizi)]:',
      '        for b in orfani[:0]:'),
     ('M87 G2 imposta_mercato ignora i runner', 'libro_conto.py',
-     '                info.runner = tuple(int(r) for r in runner)',
+     '                info.runner = tuple((int(r[0]), float(r[1] or 0.0))\n'
+     '                                    if isinstance(r, (tuple, list)) else int(r)\n'
+     '                                    for r in runner)',
      '                pass'),
     ('M88 M4 imposta_mercato ignora il tipo', 'libro_conto.py',
      '                info.tipo_scommessa = str(tipo_scommessa)',
@@ -299,8 +308,8 @@ MUT = [
      '                info.chiuso = bool(chiuso)',
      '                pass'),
     ('M91 G2 motivo runner_ignoti tolto', 'pnl_mercato.py',
-     '        motivi.append("runner_ignoti")',
-     '        pass'),
+     '    else:\n        motivi.append("runner_ignoti")',
+     '    else:\n        pass'),
     ('M92 G2 zero al posto di NaN', 'pnl_mercato.py',
      '                           else math.nan)',
      '                           else 0.0)'),
@@ -322,7 +331,7 @@ MUT = [
      '    if base.provvisoria:\n        for ind in ordinati:',
      '    if base.provvisoria and not any(i.tipo == "tabella" for i in ordinati):\n        for ind in ordinati:'),
     ("R05 G2 runner non entrano nelle selezioni", "pnl_mercato.py",
-     'selezioni = sorted(set(back) | set(lay) | {int(s) for s in (runner or ())})',
+     'selezioni = sorted(set(back) | set(lay) | set(nudi) | {s for s, _h in coppie})',
      'selezioni = sorted(set(back) | set(lay))'),
     ("R06 G2 esposizione senza lo zero", "pnl_mercato.py",
      'esposizione = round(min([0.0] + list(se_vince.values())), 2)',
@@ -553,6 +562,77 @@ MUT = [
     ("M154 legame: successore non registrato", "libro_conto.py",
      '            self._successori.setdefault((modo, v), set()).add(n)',
      '            pass'),
+    # ---- decisione 5 dell'utente (10/10): il "se vince" su ogni mercato
+    ("D501 per_selezione: se vince di nuovo vuoto", "pnl_mercato.py",
+     '    se_vince = {s: v for (s, _h), v in per_linea.items() if quante[s] == 1}',
+     '    se_vince = {}'),
+    ("D502 qualita sempre esatto", "pnl_mercato.py",
+     '                            qualita=QUALITA_PER_SELEZIONE, se_vince_per_linea=per_linea,',
+     '                            qualita=QUALITA_ESATTO, se_vince_per_linea=per_linea,'),
+    ("D503 LINE: la linea usata come quota", "pnl_mercato.py",
+     '    return QUOTA_MERCATI_A_LINEA if str(tipo_scommessa or "").upper() in TIPI_A_LINEA else None',
+     '    return None'),
+    ("D504 linea: handicap ignorato nel suo", "pnl_mercato.py",
+     '        suo = int(a.selection_id) == sid and abs(float(a.handicap) - hc) <= 1e-9',
+     '        suo = int(a.selection_id) == sid'),
+    ("D505 linee multiple nel contratto", "pnl_mercato.py",
+     '    se_vince = {s: v for (s, _h), v in per_linea.items() if quante[s] == 1}',
+     '    se_vince = {s: v for (s, _h), v in per_linea.items()}'),
+    ("D506 esposizione per_selezione spacciata per esatta", "pnl_mercato.py",
+     '    peggio = round(sum(min(0.0, e.se_vince, e.se_perde) for e in espo.values()), 2)\n    if quota',
+     '    peggio = round(min([0.0] + list(per_linea.values())), 2)\n    if quota'),
+    ("D507 LINE: stima linea per linea", "pnl_mercato.py",
+     '    if quota is not None:\n        # mercati LINE: il prezzo e\' la linea',
+     '    if False:\n        # mercati LINE: il prezzo e\' la linea'),
+    ("D508 runner nudi inventano la linea 0,0", "pnl_mercato.py",
+     '{(s, 0.0) for s in nudi if s not in con_linea}',
+     '{(s, 0.0) for s in nudi}'),
+    ("D509 book: handicap perso", "pnl_mercato.py",
+     '    runner = [(int(r.selection_id), float(r.handicap or 0.0))',
+     '    runner = [(int(r.selection_id), 0.0)'),
+    ("D510 book: runner REMOVED tenuti", "pnl_mercato.py",
+     '\n              if str(getattr(r, "status", "") or "").upper() != "REMOVED"]',
+     ']'),
+    ("D511 JSON: esposizione sempre esatta", "pnl_mercato.py",
+     '    elif c.esposizione_esatta:\n        tipo_esposizione = "esatta"',
+     '    elif True:\n        tipo_esposizione = "esatta"'),
+    ("D512 libro: coppie del book ridotte a int", "libro_conto.py",
+     '                info.runner = tuple((int(r[0]), float(r[1] or 0.0))',
+     '                info.runner = tuple(int(r[0])'),
+    ("D513 per autore per linea su tutti gli ordini", "pnl_mercato.py",
+     '        per_linea_autore[autore] = {ln: round(pnl_se_vince_linea(suoi, ln, quota=quota), 2)',
+     '        per_linea_autore[autore] = {ln: round(pnl_se_vince_linea(buoni, ln, quota=quota), 2)'),
+    ("D514 esatto: linee vuote", "pnl_mercato.py",
+     '                            se_vince_per_linea={(s, 0.0): v for s, v in se_vince.items()},',
+     '                            se_vince_per_linea={},'),
+    ("D515 asiatico senza motivo", "pnl_mercato.py",
+     '        motivi.append("asiatico_push_non_modellato")',
+     '        pass'),
+    ("D516 handicap del solo book ignorato", "pnl_mercato.py",
+     '    a_linee = a_linee or any(abs(h) > 1e-9 for _s, h in coppie)',
+     '    a_linee = a_linee'),
+    ("D517 quota fissa ignorata nelle esposizioni", "pnl_mercato.py",
+     '        if quota is not None:\n            (mb if o.lato == "back" else ml).append((float(quota), float(o.abbinato)))\n            continue\n',
+     ''),
+    ("D518 quota dei mercati LINE sbagliata", "pnl_mercato.py",
+     'QUOTA_MERCATI_A_LINEA = 2.0',
+     'QUOTA_MERCATI_A_LINEA = 1.5'),
+    ("D519 linee multiple non dichiarate", "pnl_mercato.py",
+     '        motivi.append("linee_multiple")',
+     '        pass'),
+    ("D520 per_selezione: runner_ignoti non detto", "pnl_mercato.py",
+     '    if not runner_noti:\n        motivi.append("runner_ignoti")',
+     '    if False:\n        motivi.append("runner_ignoti")'),
+    # ---- revisione del 10/10: LINE senza prezzo medio (bf_2687396.txt r.1148)
+    ("D521 LINE: abbinato senza prezzo medio scartato", "pnl_mercato.py",
+     'prezzo_richiesto=_quota_fissa(tipo_scommessa) is None)',
+     'prezzo_richiesto=True)'),
+    ("D522 LINE: esposizioni scartano senza prezzo", "pnl_mercato.py",
+     '_abbinati_validi(list(ordini), prezzo_richiesto=quota is None)',
+     '_abbinati_validi(list(ordini))'),
+    ("D523 prezzo non richiesto ignorato", "pnl_mercato.py",
+     '        if not prezzo_richiesto:\n            buoni.append(o)\n            continue\n',
+     ''),
 ]
 
 

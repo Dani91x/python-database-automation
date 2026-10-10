@@ -61,6 +61,7 @@ from Betfair.stream.trading.minimi_it import (
 
 __all__ = [
     "POLITICHE", "Politica", "Taglia", "VerdettoRunner", "VerdettoPorta", "verdetto_porta", "verdetto_desktop",
+    "verdetto_desktop_tennis", "PREFISSO_STAKE_TENNIS",
     "importo_piazzabile", "verdetto_runner", "porta_al_minimo", "size_legale_tennis",
     "diretta_ok_tennis", "spezza_esatta_tennis", "spezza_uscita_scalper",
     "taglia_scalper", "soglia_safe", "taglia",
@@ -233,6 +234,24 @@ def verdetto_desktop(lato: str, importo: float) -> Optional[str]:
         return (f"{_euro(size)}: la punta va a multipli di 0,50, usa {_euro(sotto)} o "
                 f"{_euro(sopra)}.")
     return None
+
+
+#: il prefisso del rifiuto del worker tennis di oggi (``tennis_live_order_worker._do_place``,
+#: ``raise ValueError(f"stake non valido: {verdict.reason}")``): il percorso del ladder
+#: TENNIS del desktop (canale locale -> ``_do_place``), che NON porta l'apertura al minimo
+PREFISSO_STAKE_TENNIS = "stake non valido: "
+
+
+def verdetto_desktop_tennis(lato: str, importo: float) -> Optional[str]:
+    """Il desktop nel TENNIS (correzione di parita' del 10/10 sulla decisione 3):
+    sotto il minimo .it RIFIUTO col testo di oggi del worker tennis (``min_stake_rules``
+    .it, qui ``verdetto_runner``, parita' provata); sopra, la decisione 3 dell'utente
+    (punta non multipla di 0,50 RIFIUTATA col testo del terminale, ``verdetto_desktop``;
+    oggi il worker tennis la TRONCA con ``punta_050``). None = passa intera. Pura."""
+    v = verdetto_runner(str(lato).lower(), importo)
+    if not v.valid:
+        return f"{PREFISSO_STAKE_TENNIS}{v.reason}"
+    return verdetto_desktop(lato, importo)
 
 
 # ---------------------------------------------------------------------------

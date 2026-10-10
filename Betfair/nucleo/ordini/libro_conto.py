@@ -209,7 +209,7 @@ class _Voce:
 
 @dataclass
 class _InfoMercato:
-    runner: Optional[Tuple[int, ...]] = None
+    runner: Optional[Tuple[pnl_mercato.VoceRunner, ...]] = None
     tipo_scommessa: Optional[str] = None
     vincitori: Optional[int] = None
     tipo_mercato: Optional[str] = None
@@ -681,17 +681,22 @@ class LibroConto:
         return n
 
     # ------------------------------------------------------------ il mercato
-    def imposta_mercato(self, market_id: str, *, runner: Optional[Iterable[int]] = None,
+    def imposta_mercato(self, market_id: str, *,
+                        runner: Optional[Iterable[pnl_mercato.VoceRunner]] = None,
                         tipo_scommessa: Optional[str] = None, vincitori: Optional[int] = None,
                         chiuso: Optional[bool] = None,
                         tipo_mercato: Optional[str] = None) -> None:
         """Dal book (``marketDefinition``): elenco dei runner, ``bettingType``,
         ``numberOfWinners``, ``marketType``, stato chiuso. Solo i valori dati
-        cambiano."""
+        cambiano. I runner sono int (selection_id) o coppie (selection_id,
+        handicap), come le da' ``pnl_mercato.parametri_dal_book`` (decisione 5,
+        10/10: gli asiatici hanno la stessa selezione con piu' handicap)."""
         with self._lock:
             info = self._mercati.setdefault(str(market_id), _InfoMercato())
             if runner is not None:
-                info.runner = tuple(int(r) for r in runner)
+                info.runner = tuple((int(r[0]), float(r[1] or 0.0))
+                                    if isinstance(r, (tuple, list)) else int(r)
+                                    for r in runner)
             if tipo_scommessa is not None:
                 info.tipo_scommessa = str(tipo_scommessa)
             if vincitori is not None:
@@ -786,7 +791,7 @@ class LibroConto:
                                 if m == modo and ids))
 
     def calcolo_posizione(self, market_id: str, modo: Modo, *,
-                          runner: Optional[Iterable[int]] = None,
+                          runner: Optional[Iterable[pnl_mercato.VoceRunner]] = None,
                           tipo_scommessa: Optional[str] = None,
                           vincitori: Optional[int] = None) -> pnl_mercato.CalcoloPosizione:
         """La posizione con cio' che dichiara (estensione W1-C2): runner, tipo e
@@ -820,7 +825,7 @@ class LibroConto:
         return calcolo
 
     def posizione(self, market_id: str, modo: Modo,
-                  runner: Optional[Iterable[int]] = None) -> PosizioneMercato:
+                  runner: Optional[Iterable[pnl_mercato.VoceRunner]] = None) -> PosizioneMercato:
         """P&L di mercato "se vince" su TUTTI gli ordini abbinati del mercato di
         UN modo (contratto ``LibroOrdiniConto``; i dettagli in
         ``calcolo_posizione``)."""

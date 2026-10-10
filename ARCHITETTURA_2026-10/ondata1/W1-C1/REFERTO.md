@@ -215,7 +215,8 @@ Inoltre flumine NON conta un place senza risposta (eccezione/timeout) che Betfai
 10a. **Punta non multipla di 0,50**: il terminale del desktop (`order_exec.py:285-297`) la RIFIUTA indicando i due importi
    validi; il motore, il REST di Omega e la porta la TRONCANO (7,27 -> 7,00 + residuo dichiarato). `minimi.verdetto_desktop`
    e' la politica RIFIUTA (parita' con `order_exec` provata); la porta usa la politica del motore. Quale vale per l'app
-   (desktop sulla porta) lo decide l'utente.
+   (desktop sulla porta) lo decide l'utente. **DECISA il 10/10 (decisione 3 dell'utente): per l'attore `desktop` la porta RIFIUTA
+   (`verdetto_desktop`), i bot troncano come oggi. Vedi par. 13.**
 10b. **`cor` (customerOrderRef vero) negli eventi**: il motore lo manda nel primo evento e `MemoriaComandi` lo conserva per chi
    legge l'esito tardi; `EventoOrdine` non ha il campo. Oggi la porta lo scrive SOLO nel diario (riga `ordine` dell'esecutore).
    Proposta: `EventoOrdine.cor: Optional[str]` (estensione additiva del contratto, decide il coordinatore).
@@ -380,3 +381,94 @@ C2 / della ripresa. Casi vicini, dichiarati:
 81/81** (`falsifica_c1.json` committato: M01-M54, le 11 V, le 16 S); sha256 dei file corretti: `porta.py`
 `38d6e00f175ff8da219542ff8e4b8c7855d921f9d28e551313f4ec7e3869fd99`, `test_c1_porta.py` `bc56da6d67d8516070892ebd453f3b0fdf0dd8c9a97c079390c6a4fcb2e5911c`, `test_c1_revisione.py` `c20e71855906ade0fcf3f6392700c50292767214db1f29d995e5a3ff5739b000`; suite intera (una corsa)
 **11.715 passed, 0 failed, 87 skipped, 6 xfailed (353 s)**.
+
+## 13. Decisione 3 dell'utente (10/10): la puntata dal desktop non multipla di 0,50 e' RIFIUTATA (agente D-C, ramo `decisioni/d-c`)
+
+Risposta dell'utente (`ondata1/DECISIONI_PER_L_UTENTE.md`, «Risposte dell'utente», voce 3, VINCOLANTE): «Si': puntata
+dal desktop non multipla di 0,50 rifiutata». Chiude la divergenza 10a (par. 9): per l'attore `desktop` vale la politica
+RIFIUTA del terminale di oggi, per i bot la politica del motore (troncano), invariata.
+
+**Codice** (commit `b4726e47`): `porta.py:102` `ATTORE_DESKTOP = "desktop"` (lo stesso nome di
+`motore_ordini.ATTORI_COMANDO`, provato da un test); `PortaLocale._minimi` `porta.py:684-691`: per l'attore desktop,
+DOPO la regola tennis delle aperture al minimo (invariata) e PRIMA di `verdetto_porta`, `minimi.verdetto_desktop(lato,
+importo)`; se da' un testo la richiesta e' RIFIUTATA con quel testo (rifiuto REGISTRATO come ogni rifiuto dei minimi:
+seq, stato `rifiutato`, riga `rifiuto` nel diario, dedup del ref); se da' None si prosegue come prima (una punta multipla
+di 0,50 o una banca al centesimo passano INTERE: nessun `punta_050`). `verdetto_desktop` (`minimi.py:221`) e' quello gia'
+provato identico a `order_exec.place_order` (`test_c1_minimi.py::test_politica_rifiuta_del_desktop_parita_con_order_exec`,
+2 lati x 803 importi). Docstring del modulo (punto 5) aggiornato. Contratti invariati.
+
+**Test** (`test_c1_desktop_rifiuta.py`, 8 test x 2 archivi = 16; l'arbitro e' `order_exec.place_order` VERO fermato prima
+del DB, come in `test_c1_minimi.py`; Betfair finto con le risposte VERE di betfairlightweight, diario VERO, archivio finto
+e VERO):
+- desktop **2,30** punta: RIFIUTATO, motivo `2,30: la punta va a multipli di 0,50, usa 2,00 o 2,50.` = testo del
+  terminale; 0 chiamate all'esecutore e a Betfair; stato `rifiutato`, riga `rifiuto` nel diario col motivo, lo stesso ref
+  ripetuto da' lo stesso rifiuto (stesso seq), 0 invii;
+- desktop **2,50**: ACCETTATO, l'esecutore e Betfair ricevono 2,50, nessun `punta_050`;
+- bot (`safe`) **2,30**: come oggi, accettato e troncato a 2,00 con `punta_050` (chiesto 2,30, piazzato 2,00, residuo 0,30);
+- desktop banca 2,30 accettata al centesimo; punta e banca 0,70 rifiutate col testo del terminale
+  (`stake €0.70 sotto il minimo Betfair .it: ...`);
+- griglia di parita' (punta e banca, 86 importi 0,01-6,00 piu' 7,27 / 12,345 / 99,995 / 2,30): accettato SE E SOLO SE
+  il terminale accetta, motivo identico, importo eseguito = importo chiesto (mai troncato); gli stessi importi da un bot
+  mai rifiutati per la punta 0,50;
+- desktop TENNIS: vedi «Correzione di parita' del 10/10» sotto (il test che documentava 0,70 -> 1,00 e' stato corretto).
+
+**Falsificazione**: `falsifica_c1.py` + D301 (politica tolta: la porta tronca), D302 (politica anche ai bot), D303 (motivo
+diverso dal terminale), D304 (attore con un altro nome), D305 (verdetto sull'importo gia' troncato): 5/5 rosse; M46 (la
+politica in `minimi.py` che tronca) ora la prende anche il test nuovo. Giro completo sul commit `b4726e47` (copia
+estratta con `git archive`): **86/86 rosse, ripristini sha256 86/86** (`falsifica_c1.json` committato; sha256 nel json =
+file committati: `porta.py` 752fe6bd090a9b43a564c99d2bdd6be90c7c330c52c71cfb6c6cb5b2066c4b75). Il test tennis del
+desktop (sotto) e' stato aggiunto dopo il giro: aggiunge solo asserzioni, nessuna mutazione puo' tornare verde.
+Test C1: **230 verdi** (prima 214; i test della porta girano due volte, archivio finto e vero). Suite intera (una corsa
+completa alla fine, insieme alla decisione 5 di W1-C2): **12.964 verdi, 0 rossi, 101 saltati, 6 xfailed** (719 s).
+
+~~**Da sapere**: nel TENNIS un'apertura dal desktop sotto il minimo e' prima PORTATA al minimo e poi giudicata~~ ->
+SBAGLIATO, corretto sotto: la revisione indipendente ha trovato che oggi NON e' cosi'.
+
+### 13.1 Correzione di parita' del 10/10 (revisione indipendente: «PASSA» con UNA correzione)
+
+**Cosa ha verificato il revisore (e io ho riletto nel codice)**:
+- il «terminale che rifiuta» di oggi e' SOLO il percorso `order_exec.place_order` (`order_exec.py:273-290`);
+- il ladder CALCIO del desktop via canale locale oggi TRONCA con `punta_050` (`live_order_worker.py:1497-1502`);
+- il ladder TENNIS del desktop oggi passa dal canale locale (`frontend/src/lib/localTransport.ts:433` `localOrderApi`,
+  `frontend/src/components/tennis/TennisLadderColumn.tsx:99`) a `tennis_live_order_worker._do_place`
+  (`tennis_live_order_worker.py:645`): `min_stake_rules` e, sotto il minimo, `ValueError(f"stake non valido:
+  {verdict.reason}")` (`:684`): 0,70 e' RIFIUTATO; sopra il minimo la punta e' TRONCATA con `punta_050` (`:689`, `:726`).
+  La regola «apertura tennis portata al minimo» oggi vive SOLO per i comandi dei bot (`motore_ordini.py:1152-1166`,
+  `esecutore_tennis.py:178` `_apertura_al_minimo`).
+
+Quindi, con la decisione 3, **il ladder desktop (calcio via canale locale e tennis) passa da TRONCARE a RIFIUTARE la
+punta non multipla di 0,50: e' la DECISIONE DELL'UTENTE, non una parita'**. Il resto e' parita' col percorso di oggi.
+
+**Correzione** (commit sotto):
+- `porta.py:677`: la regola tennis dell'apertura al minimo vale SOLO per i bot (`r.attore != ATTORE_DESKTOP`), come oggi;
+- `porta.py:695`: per il desktop nel tennis `minimi.verdetto_desktop_tennis` (`minimi.py:245`): sotto il minimo .it
+  RIFIUTO col testo di oggi del worker tennis (`PREFISSO_STAKE_TENNIS = "stake non valido: "` `minimi.py:242` + la
+  `reason` di `min_stake_rules`, qui `verdetto_runner`, parita' gia' provata); sopra il minimo la decisione 3 (punta
+  non multipla RIFIUTATA col testo del terminale, `verdetto_desktop`). Il worker non ha una funzione col testo da
+  importare (e' una riga dentro `_do_place`): il prefisso e' una costante, e un test controlla che il sorgente del
+  worker contenga ancora quella riga.
+- Il calcio del desktop resta col testo del terminale `order_exec` (sotto il minimo `stake €... sotto il minimo
+  Betfair .it: ...`). Il testo che il ladder calcio via canale locale (`live_order_worker`) mostra oggi sotto il
+  minimo NON l'ho confrontato: all'aggancio va scelto quale testo mostrare (l'esito, rifiuto, e' lo stesso).
+
+**Test** (`test_c1_desktop_rifiuta.py`; arbitro = `tennis_live_order_worker._do_place` VERO, fermato alla guardia del
+mercato con `_resolve_market`/`_capture_strategy` sostituiti):
+- desktop tennis **0,70** (punta e banca) RIFIUTATO col testo identico al worker (`stake non valido:
+  SOTTO_MINIMO_NON_PIAZZABILE: ...`), 0 invii;
+- desktop tennis **2,30** RIFIUTATO (decisione 3; il worker oggi lo accetta troncato, asserito nel test);
+- desktop tennis **2,50** ACCETTATO intero, nessun `portata_al_minimo`, nessun `punta_050`;
+- bot tennis (`safe`) **0,70** portato a 1,00 come oggi (`portata_al_minimo`);
+- griglia (punta e banca, 90 importi): dove il worker rifiuta, stesso testo; dove passa intero, la porta passa intero;
+  l'unica differenza e' la punta che il worker tronca e la porta rifiuta (contata, solo sulla punta);
+- il sorgente del worker contiene ancora `raise ValueError(f"stake non valido: {verdict.reason}")`.
+Corretto il test `test_desktop_tennis_apertura_portata_al_minimo_poi_giudicata` (documentava il comportamento
+sbagliato): sostituito dai test sopra.
+
+**Falsificazione**: D306 (desktop tennis portato al minimo come i bot), D307 (desktop tennis col verdetto del calcio),
+D308 (testo del worker diverso), D309 (punta tennis troncata: decisione 3 tolta), D310 (apertura al minimo tolta anche
+ai bot), piu' D301-D305 e M46 rilanciate sul codice corretto (D305 con la stringa adeguata alla riga nuova):
+**11/11 rosse, ripristini 11/11** (`falsifica_c1_correzione.txt`). `falsifica_c1.json` resta quello del giro completo su
+`b4726e47` (86/86; i suoi sha256 di `porta.py` e `minimi.py` sono quelli di allora; ora `porta.py`
+e289610406cf7ebc154db3b4470e5f36ba5080ffb03c344eac7ea45b75fc98b7, `minimi.py`
+5b57bd15af942b0ab2691ab1112b1ba598ad5d4218a74c279aed6b48a1ba4639). Test C1: **240 verdi**; cartella `ordini`:
+**521 verdi**. Suite intera (una corsa, alla fine della correzione): **12.975 verdi, 0 rossi, 101 saltati, 6 xfailed** (740 s).
