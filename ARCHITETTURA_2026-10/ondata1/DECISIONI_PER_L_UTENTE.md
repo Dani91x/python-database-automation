@@ -43,3 +43,15 @@ Riferimenti: referti in `ARCHITETTURA_2026-10/ondata1/W1-*/REFERTO.md` (par. 9 "
 | 11 | **Si'**: i due script batch restano come oggi | Nessun cambio |
 | 12 | **Massima velocita'** del ladder | Cadenza di serie 20 ms (W1-A2 la supporta); in ombra si misura la CPU vera del processo |
 | 13 | **Un solo flusso ordini** per tutta l'app | All'aggancio lo stream ordini del conto (W1-A2) SOSTITUISCE quelli che flumine apre in ogni processo; mai aggiunto |
+
+## Nuove domande dal piano di aggancio (10/10/2026) - IN ATTESA dell'utente
+
+Dettaglio in `ARCHITETTURA_2026-10/ondata2/PIANO_AGGANCIO.md`.
+
+| # | Domanda | Raccomandazione del coordinatore |
+|---|---|---|
+| D-1 | Un processo nuovo `betfair-nucleo` (nessun bot dentro) che tiene l'unica sessione, l'unico stream ordini e il gestore dei flussi; gli altri processi ricevono da lui. Alternativa: tutto dentro il runner calcio (si ricicla ogni 18 h e mischierebbe il tennis col calcio) | **Si'** al processo nuovo: e' come i competitor (un solo motore di dati) e l'unico modo di stare nelle 10 connessioni con le sessioni scalper (oggi 18 nel caso peggiore) |
+| D-2 | Il client nuovo NON ritenta gli errori 57014 (statement timeout del DB) e gli OSError nudi che oggi i runner ritentano | **Ritentarli come oggi** sulle sole letture; mai sulle scritture con soldi |
+| D-3 | Tetto delle transazioni per conto (Betfair: 5.000/ora): valore e se le CHIUSURE sono sempre ammesse anche a tetto raggiunto | **Tetto Betfair, chiusure sempre ammesse** (uscire da una posizione non deve mai essere bloccato) |
+| D-4 | Se le 10 connessioni non bastano, chi ha la precedenza | **Ordini > ladder aperto dall'utente > bot in-play > scanner** |
+| D-5 | Dal ladder si possono dare comandi (annulla/sposta) anche sugli ordini dei bot? | **Si', con conferma esplicita** (come i competitor: tutto il conto e' controllabile), mai a un clic |
