@@ -196,6 +196,49 @@ def test_pg_trigger_versione_solo_quando_cambia_il_dossier(dati) -> None:
     assert versione(900) is not None
 
 
+def test_pg_upsert_identico_consuma_la_sequenza_ma_non_la_versione(dati) -> None:
+    """Revisione D-G: con INSERT ... ON CONFLICT DO UPDATE (l'upsert dei workflow) il trigger BEFORE INSERT
+    scatta prima del conflitto e consuma una nextval anche per una riscrittura identica; la versione sulla
+    RIGA resta quella di prima (il ramo UPDATE la riporta indietro). Con un UPDATE identico nessun consumo."""
+    def ultimo() -> int:
+        return int(sql("SELECT last_value FROM public.nucleo_versione_dossier_seq;"))
+
+    v0, s0 = versione(101), ultimo()
+    scrivi_previsione(dict(FIXTURE[101]))                                       # upsert identico
+    assert versione(101) == v0 and ultimo() == s0 + 1
+    sql("UPDATE public.fixture_predictions SET tactical_engine_json = tactical_engine_json WHERE fixture_id = 101;")
+    assert versione(101) == v0 and ultimo() == s0 + 1                           # UPDATE identico: nessun consumo
+    scrivi_previsione({"fixture_id": 101, "tactical_engine_json": {"lambda_home": 2.1, "lambda_away": 0.9}})
+    assert versione(101) == s0 + 3 and ultimo() == s0 + 3                      # INSERT (buco) + UPDATE (versione)
+
+
+def test_pg_lock_timeout_ferma_la_migrazione_invece_di_attendere(dati) -> None:
+    """Revisione D-G: con un lock tenuto su fixture_predictions la migrazione si ferma in ~5 s con 55P03
+    (``SET lock_timeout``), non resta in coda bloccando gli scrittori; liberato il lock, rilanciata, passa."""
+    import time as _t
+    assert ARGS is not None
+    tiene = subprocess.Popen(["psql", *ARGS, "-X", "-q", "-v", "ON_ERROR_STOP=1", "-c",
+                              "BEGIN; LOCK TABLE public.fixture_predictions IN ACCESS SHARE MODE; "
+                              "SELECT pg_sleep(9); COMMIT;"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        fine = _t.monotonic() + 10
+        while _t.monotonic() < fine and sql("SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation "
+                                            "WHERE c.relname = 'fixture_predictions' AND l.granted "
+                                            "AND l.pid <> pg_backend_pid();") == "0":
+            _t.sleep(0.05)
+        inizio = _t.monotonic()
+        r = subprocess.run(["psql", *ARGS, "-X", "-q", "-v", "ON_ERROR_STOP=1", "-f", str(MIGRAZIONE)],
+                           capture_output=True, text=True, timeout=60)
+        durata = _t.monotonic() - inizio
+        assert r.returncode != 0 and "lock timeout" in r.stderr, r.stderr
+        assert 4.5 <= durata < 8.0, durata
+    finally:
+        tiene.wait(20)
+    r = subprocess.run(["psql", *ARGS, "-X", "-q", "-v", "ON_ERROR_STOP=1", "-f", str(MIGRAZIONE)],
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+
+
 def test_pg_rpc_ponte_nell_ordine_di_mike_db(dati) -> None:
     eventi = ["ev1", "ev2", "ev3", "ev5", "ev6", "ev10", "ev11", "ev11"]
     risposta = rpc(eventi, omega=False)

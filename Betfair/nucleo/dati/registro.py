@@ -71,7 +71,7 @@ RPC_SOLA_LETTURA_DICHIARATE: Mapping[str, str] = {
     # decisione 10 dell'utente (10/10): la sentinella leggera dei dati calcolati dal cloud. Definizione letta:
     # plpgsql STABLE, solo SELECT (tre letture della sentinella di Omega, ponte e versione del dossier per
     # evento), nessun DML, tetto 500 eventi; chiamata da cache_cloud.SentinellaCloud ogni 5 s
-    "nucleo_sentinella_cloud": "migrations/nucleo_sentinella_cloud_2026-10-10.sql:101, STABLE, solo SELECT "
+    "nucleo_sentinella_cloud": "migrations/nucleo_sentinella_cloud_2026-10-10.sql:114, STABLE, solo SELECT "
                                "(impronte per giro della Sorveglianza, cache_cloud.py)",
 }
 

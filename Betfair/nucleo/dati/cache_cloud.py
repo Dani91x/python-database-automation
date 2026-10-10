@@ -95,6 +95,11 @@ RIPROVA_RPC_S = 600.0
 BLOCCO_RPC = 500
 #: codici di "funzione assente": PostgREST (schema cache) e PostgreSQL (undefined_function)
 CODICI_RPC_ASSENTE = frozenset({"PGRST202", "42883"})
+#: attese dopo giri falliti DI FILA (15, 30, poi 60 s fissi); al primo giro riuscito si torna alla cadenza
+BACKOFF_ERRORI_S: Tuple[float, ...] = (15.0, 30.0, 60.0)
+#: anche con la versione del trigger una voce del dossier si rilegge comunque dopo tanti secondi dalla
+#: LETTURA (riserva contro uno scrittore che aggira il trigger: replica, DISABLE TRIGGER, ALTER TYPE)
+SCADENZA_MASSIMA_S = 3600.0
 
 
 def _lega(league_id: Any) -> Optional[int]:
@@ -491,7 +496,8 @@ class DossierPrematch:
     il dato vecchio."""
 
     def __init__(self, cloud: Cloud, *, replica: Optional[ReplicaEmpirica] = None, ripiego: Any = None,
-                 orologio: Callable[[], float] = time.time, scadenza_s: float = SCADENZA_DOSSIER_S) -> None:
+                 orologio: Callable[[], float] = time.time, scadenza_s: float = SCADENZA_DOSSIER_S,
+                 scadenza_massima_s: float = SCADENZA_MASSIMA_S) -> None:
         self._cloud = cloud
         self._replica = replica
         self._ripiego = ripiego
@@ -502,7 +508,10 @@ class DossierPrematch:
         self._fixture: Dict[int, Tuple[float, Mapping[str, Any]]] = {}
         self._conti: Dict[str, int] = {"colpi": 0, "mancati": 0, "ripieghi": 0, "letture_rete": 0, "errori": 0,
                                        "cambi": 0, "rinnovi": 0, "scartate": 0, "riletture_fallite": 0}
-        # decisione 10: eventi sorvegliati, ultima impronta vista, generazioni, cambiati da consegnare
+        # decisione 10: eventi sorvegliati, ultima impronta vista, generazioni, cambiati da consegnare,
+        # istante della LETTURA di ogni voce (("e", evento) / ("f", fixture)): il rinnovo sposta solo la validita'
+        self._massima = max(float(scadenza_massima_s), self._scadenza)
+        self._lette: Dict[Tuple[str, Any], float] = {}
         self._seguiti: set = set()
         self._impronte: Dict[str, str] = {}
         self._gen: Dict[Tuple[str, Any], int] = {}
@@ -512,20 +521,26 @@ class DossierPrematch:
     def precarica(self, event_ids: Iterable[str]) -> int:
         """Ponte evento->fixture (``live_follow`` poi ``omega_events``) e righe di
         ``fixture_predictions`` per gli eventi dati, a blocchi. Ritorna gli eventi con fixture.
-        Gli eventi diventano SEGUITI dalla sorveglianza."""
+        Gli eventi diventano SEGUITI dalla sorveglianza. In memoria va SOLO il dossier positivo: il ponte
+        di un evento entra solo se la sua fixture ha la riga con i gol attesi (un dossier cieco va sempre
+        al ripiego, cioe' alla lettura di oggi, mai a un ponte tenuto in memoria)."""
         eventi = sorted({str(e) for e in event_ids})
         with self._lock:
             self._seguiti.update(eventi)
             gen_eventi = {ev: self._gen.get(("e", ev), 0) for ev in eventi}
         ponte = self._leggi_ponte(eventi)
         adesso = self._orologio()
+        self._precarica_fixture(sorted(set(ponte.values())))
         with self._lock:
             for ev, fid in ponte.items():
                 if self._gen.get(("e", ev), 0) != gen_eventi[ev]:
                     self._conti["scartate"] += 1       # invalidato mentre si leggeva: dato forse vecchio
                     continue
+                riga = self._fixture.get(fid)
+                if riga is None or adesso - riga[0] >= self._scadenza:
+                    continue                           # dossier cieco: nessun ponte in memoria
                 self._ponte[ev] = (adesso, fid)
-        self._precarica_fixture(sorted(set(ponte.values())))
+                self._lette[("e", ev)] = adesso
         self.pota()
         return len(ponte)
 
@@ -543,12 +558,34 @@ class DossierPrematch:
         """L'orologio del dossier (quello delle scadenze), per chi sorveglia."""
         return self._orologio()
 
-    def prendi_cambiati(self) -> Tuple[str, ...]:
-        """Gli eventi il cui dossier e' cambiato nel cloud dall'ultima chiamata (e sono gia' riletti):
-        li consuma. All'aggancio Mike li riprova SUBITO se il loro dossier e' ancora cieco."""
+    def prendi_cambiati(self, dossier_dei_bot: Optional[Mapping[str, Mapping[str, Any]]] = None, *,
+                        anche_pieni: bool = False) -> Tuple[str, ...]:
+        """Gli eventi il cui dossier e' cambiato nel cloud dall'ultima chiamata (e sono gia' riletti): li
+        consuma. DI SERIE solo i CIECHI: ``dossier_dei_bot`` (i ``tracked`` di Mike, evento -> voce con
+        ``"dossier"``) e' obbligatorio e si restituiscono solo gli eventi che vi compaiono col dossier
+        ancora senza gol attesi (``dossier_cieco``). Un dossier PIENO non si ricostruisce a partita
+        armata (decisione D10-b dell'utente): per averli tutti serve ``anche_pieni=True``, esplicito."""
+        if dossier_dei_bot is None and not anche_pieni:
+            raise ValueError("prendi_cambiati: servono i dossier del bot (solo i ciechi) o anche_pieni=True")
         with self._lock:
-            fuori, self._cambiati = tuple(sorted(self._cambiati)), set()
-        return fuori
+            tutti, self._cambiati = tuple(sorted(self._cambiati)), set()
+        if anche_pieni:
+            return tutti
+        assert dossier_dei_bot is not None
+        return tuple(ev for ev in tutti if ev in dossier_dei_bot and dossier_cieco(dossier_dei_bot[ev]))
+
+    def annulla_rinnovi(self) -> int:
+        """Dopo un giro fallito: ogni voce torna alla scadenza calcolata dalla sua LETTURA, non
+        dall'ultima conferma (mai piu' tardi della lettura di oggi se la sorveglianza tace)."""
+        tornate = 0
+        with self._lock:
+            for prefisso, memoria in (("e", self._ponte), ("f", self._fixture)):
+                for chiave, (t, valore) in list(memoria.items()):
+                    letta = self._lette.get((prefisso, chiave), t)
+                    if letta < t:
+                        memoria[chiave] = (letta, valore)
+                        tornate += 1
+        return tornate
 
     def applica_impronte(self, impronte: Mapping[str, str], *, rinnova: bool, letto_alle: float) -> Tuple[str, ...]:
         """Un giro della sorveglianza: ``impronte`` = evento -> impronta del cloud letta a partire da
@@ -563,13 +600,15 @@ class DossierPrematch:
                 del self._impronte[ev]
             nuove = {str(ev): str(imp) for ev, imp in impronte.items() if str(ev) in seguiti}
             cambiati = sorted(ev for ev, imp in nuove.items() if self._impronte.get(ev) != imp)
+            da_rileggere: List[str] = []
             if rinnova:
-                for ev in nuove.keys() - set(cambiati):
-                    self._rinnova(ev, letto_alle)
+                da_rileggere = sorted(ev for ev in nuove.keys() - set(cambiati) if self._rinnova(ev, letto_alle))
             for ev in cambiati:
                 self._invalida(ev, _fixture_di_impronta(nuove[ev]))
             self._pota_generazioni(seguiti)
             errori_prima = self._conti["errori"]
+        if da_rileggere:
+            self.precarica(da_rileggere)                # tetto di SCADENZA_MASSIMA_S: si rilegge comunque
         if not cambiati:
             return ()
         self.precarica(cambiati)
@@ -593,6 +632,8 @@ class DossierPrematch:
                 for chiave in [k for k, (t, _) in memoria.items() if adesso - t >= self._scadenza]:
                     del memoria[chiave]
                     tolte += 1
+            for chiave in [k for k in self._lette if k[1] not in (self._ponte if k[0] == "e" else self._fixture)]:
+                del self._lette[chiave]
         return tolte
 
     # --------------------------------------------- firme di mike.db (ciclo)
@@ -629,17 +670,24 @@ class DossierPrematch:
                     "seguiti": len(self._seguiti)}
 
     # --------------------------------------------- interni
-    def _rinnova(self, ev: str, letto_alle: float) -> None:
-        """(sotto lock) La voce dell'evento e della sua fixture valgono da ``letto_alle``, mai indietro."""
+    def _rinnova(self, ev: str, letto_alle: float) -> bool:
+        """(sotto lock) La voce dell'evento e della sua fixture valgono da ``letto_alle``, mai indietro e
+        mai oltre ``SCADENZA_MASSIMA_S`` dalla LETTURA. True = tetto raggiunto: la voce va riletta."""
         voce = self._ponte.get(ev)
         if voce is None:
-            return
-        if voce[0] < letto_alle:
-            self._ponte[ev] = (letto_alle, voce[1])
-            self._conti["rinnovi"] += 1
-        riga = self._fixture.get(voce[1])
-        if riga is not None and riga[0] < letto_alle:
-            self._fixture[voce[1]] = (letto_alle, riga[1])
+            return False
+        tetto = False
+        for prefisso, memoria, chiave in (("e", self._ponte, ev), ("f", self._fixture, voce[1])):
+            attuale = memoria.get(chiave)
+            if attuale is None:
+                continue
+            limite = self._lette.get((prefisso, chiave), attuale[0]) + self._massima - self._scadenza
+            tetto = tetto or letto_alle > limite
+            nuova = min(letto_alle, limite)
+            if nuova > attuale[0]:
+                memoria[chiave] = (nuova, attuale[1])
+                self._conti["rinnovi"] += int(prefisso == "e")
+        return tetto
 
     def _invalida(self, ev: str, fixture_nuova: Optional[int]) -> None:
         """(sotto lock) Toglie le voci dell'evento, della fixture che aveva e di quella nuova, e ne
@@ -648,6 +696,7 @@ class DossierPrematch:
         fixture = {f for f in (voce[1] if voce else None, fixture_nuova) if f is not None}
         for chiave in [("e", ev)] + [("f", f) for f in fixture]:
             self._gen[chiave] = self._gen.get(chiave, 0) + 1
+            self._lette.pop(chiave, None)
         for f in fixture:
             self._fixture.pop(f, None)
 
@@ -735,6 +784,17 @@ class DossierPrematch:
                         self._conti["scartate"] += 1   # invalidata mentre si leggeva
                         continue
                     self._fixture[int(fid)] = (adesso, r)     # solo la riga CON i gol attesi
+                    self._lette[("f", int(fid))] = adesso
+
+
+def dossier_cieco(voce: Mapping[str, Any]) -> bool:
+    """Lo stesso criterio di ``mike/service.dossier_da_ritentare`` (provato nei test): il dossier della
+    voce di un bot e' PIENO se ha ``lambda_home`` E ``lambda_away``; altrimenti (assente, non dict, senza
+    gol attesi) e' cieco."""
+    d = voce.get("dossier") if isinstance(voce, Mapping) else None
+    if not isinstance(d, Mapping):
+        return True
+    return not (d.get("lambda_home") and d.get("lambda_away"))
 
 
 def _intero(valore: Any) -> Optional[int]:
@@ -933,8 +993,11 @@ class Sorveglianza:
     rilegge come oggi; uguale al precedente = niente; un errore si consegna al piu' ogni
     ``INTERVALLO_SORVEGLIANZA_S`` (cosi' "3 errori di fila" restano ~15 minuti come oggi e un
     singhiozzo del cloud non provoca una rilettura forzata di tutte le leghe). Dossier:
-    ``DossierPrematch.applica_impronte`` (rilegge SOLO gli eventi cambiati). ``al_cambio`` (opzionale)
-    riceve i cambiati; chi preferisce chiede ``DossierPrematch.prendi_cambiati``."""
+    ``DossierPrematch.applica_impronte`` (rilegge SOLO gli eventi cambiati); un giro fallito riporta le
+    voci alla scadenza della loro lettura (``annulla_rinnovi``). Dopo giri falliti di fila l'attesa sale
+    a 15, 30, poi 60 s (``BACKOFF_ERRORI_S``) e torna alla cadenza al primo giro riuscito: il ripiego
+    verso il dato resta quello di oggi. ``al_cambio`` (opzionale) riceve TUTTI i cambiati, anche i
+    dossier pieni: per Mike si usa ``DossierPrematch.prendi_cambiati(tracked)``, che da' solo i ciechi."""
 
     def __init__(self, sentinella: SentinellaCloud, *, replica: Optional[ReplicaEmpirica] = None,
                  dossier: Optional[DossierPrematch] = None, intervallo_s: float = INTERVALLO_RAPIDO_S,
@@ -954,6 +1017,7 @@ class Sorveglianza:
         self._ultima_omega: Any = _LEGGI          # nessun valore ancora consegnato
         self._ultimo_errore_omega = -math.inf
         self._modo = "rpc"
+        self._errori_di_fila = 0
         self._ferma = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._conti: Dict[str, int] = {"giri": 0, "errori": 0, "notifiche_omega": 0, "cambiati": 0}
@@ -968,9 +1032,12 @@ class Sorveglianza:
         if self._dossier is not None and ist.impronte is not None:
             cambiati = self._dossier.applica_impronte(ist.impronte, rinnova=ist.modo == "rpc",
                                                       letto_alle=letto_alle)
+        if self._dossier is not None and ist.impronte is None:
+            self._dossier.annulla_rinnovi()
         errore = ((self._dossier is not None and ist.impronte is None)
                   or (self._replica is not None and ist.omega is None))
         with self._lock:
+            self._errori_di_fila = self._errori_di_fila + 1 if errore else 0
             self._modo = ist.modo
             self._conti["giri"] += 1
             self._conti["errori"] += int(errore)
@@ -985,7 +1052,10 @@ class Sorveglianza:
 
     def attesa(self) -> float:
         with self._lock:
-            return self._intervallo if self._modo == "rpc" else self._intervallo_letture
+            base = self._intervallo if self._modo == "rpc" else self._intervallo_letture
+            if self._errori_di_fila == 0:
+                return base
+            return max(base, BACKOFF_ERRORI_S[min(self._errori_di_fila, len(BACKOFF_ERRORI_S)) - 1])
 
     def avvia(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -1007,7 +1077,7 @@ class Sorveglianza:
 
     def statistiche(self) -> Mapping[str, Any]:
         with self._lock:
-            return {**self._conti, "modo": self._modo}
+            return {**self._conti, "modo": self._modo, "errori_di_fila": self._errori_di_fila}
 
     # --------------------------------------------- interni
     def _consegna_omega(self, valore: Optional[str]) -> bool:

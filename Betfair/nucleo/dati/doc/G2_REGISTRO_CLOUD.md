@@ -34,6 +34,11 @@ referto par. 12; migrazione `migrations/nucleo_sentinella_cloud_2026-10-10.sql`,
   riprovata ogni 10 minuti. Con la versione del trigger una voce del dossier confermata a ogni giro resta fresca
   (rinnovo); senza, scade a 300 s come prima. La lettura diretta di riserva (`ripiego` = `mike.db`) e il ritento di
   Mike ogni 300 s restano accesi: mai piu' lento di oggi.
+  Dopo la revisione del 10/10: in memoria SOLO i dossier positivi (anche il ponte); un giro fallito riporta ogni voce
+  alla scadenza della sua LETTURA (`annulla_rinnovi`); dopo giri falliti di fila attese 15, 30, 60 s (backoff) e
+  ritorno a 5 s al primo riuscito; anche con la RPC una voce si rilegge comunque 55 minuti dopo la lettura e non
+  vive oltre `SCADENZA_MASSIMA_S` = 3600 s (riserva contro chi aggira il trigger); `prendi_cambiati(tracked)` da'
+  di serie SOLO i dossier ciechi (D10-b: un dossier pieno non si ricostruisce a partita armata).
 
 ## 2. Entrate
 
@@ -51,8 +56,13 @@ referto par. 12; migrazione `migrations/nucleo_sentinella_cloud_2026-10-10.sql`,
 - `ReplicaEmpirica.ht_ft_transitions/minute_transitions/ht_ft_rows` e `DossierPrematch.fixture_id_for_event/
   fixture_lambdas/fixture_analysis/ht_ft_rows`: STESSE firme e STESSI ritorni delle funzioni di oggi
   (`omega_db`, `mike.db`), compresi "[] = vuota, None = errore, mai in cache".
-- `Sorveglianza.giro() -> EsitoGiro(modo, omega_notificata, cambiati, errore)`; `DossierPrematch.prendi_cambiati()`:
-  gli eventi il cui dossier e' cambiato nel cloud, gia' riletti (Mike all'aggancio li riprova subito se ciechi).
+- `Sorveglianza.giro() -> EsitoGiro(modo, omega_notificata, cambiati, errore)`;
+  `DossierPrematch.prendi_cambiati(tracked)`: gli eventi il cui dossier e' cambiato nel cloud, gia' riletti, SOLO
+  quelli che in `tracked` hanno il dossier ancora cieco (`anche_pieni=True` per averli tutti, esplicito).
+- **Rischio dichiarato**: uno scrittore che cambia le 5 colonne del dossier SENZA far scattare il trigger
+  (`session_replication_role = replica`, `DISABLE TRIGGER`, `ALTER COLUMN TYPE`) non cambia la versione: con la RPC
+  la voce resterebbe "confermata" a ogni giro. Riserva: `SCADENZA_MASSIMA_S` (rilettura dopo 55 minuti, scadenza dura
+  a 60 dalla lettura; oggi il massimo e' 300 s). Senza la RPC vale la scadenza di 300 s.
 
 ## 4. Dipendenze ammesse
 
@@ -72,7 +82,7 @@ importa gli strumenti dell'inventario (`s03_db.py`, `g_copertura_tabelle.py`) se
 | G-010 | lambda pre-match dalla riga di `fixture_predictions` | `test_g2_cache_cloud.py::test_lambdas_da_riga_uguale_a_get_fixture_prematch_lambdas` |
 | G-024, G-033, D-018 | ponte evento->fixture, lambda, analisi; `build_prematch` identico; la fixture tardiva accende il modello | `test_dossier_uguale_a_mike_db_per_ogni_evento`, `test_dossier_la_fixture_che_arriva_dopo_accende_il_modello`, `test_dossier_errore_su_live_follow_*`, `test_dossier_errori_mai_in_memoria_e_scadenza` |
 | G-026, G-034, G-035, D-019 | RPC HT->FT e per minuto; cache di Omega (6 h) e di Mike (mai) intatte sopra la replica | `test_sorgente_uguale_a_omega_db_*`, `test_replica_*`, `test_bot_identici_*`, `test_rilettura_*`, `test_ricostruzione_della_sola_tabella_per_minuto`, `test_gara_*`, `test_chiave_mancante_*` |
-| decisione 10 (G-033, G-034, G-035) | dossier cambiato o comparso nel cloud entro 5 s (15 s senza migrazione), MAI dopo il ritento di 300 s di oggi (Mike vero, orologio finto, 15 istanti x 3 scenari x 2 modi + sorveglianza guasta); Omega vista in 5 s; una chiamata per giro; gare e errori | `test_g2_sorveglianza.py` (45), `test_g2_pg_sentinella.py` (7, PostgreSQL usa-e-getta: trigger, RPC, permessi, impronta identica alle letture REST, finto = vero, giro completo) |
+| decisione 10 (G-033, G-034, G-035) | dossier cambiato o comparso nel cloud entro 5 s (15 s senza migrazione), MAI dopo il ritento di 300 s di oggi (Mike vero, orologio finto, 15 istanti x 4 scenari x 2 modi + sorveglianza guasta, anche DOPO i rinnovi); Omega vista in 5 s; una chiamata per giro; backoff; dossier pieni mai restituiti; scadenza massima; gare con thread veri | `test_g2_sorveglianza.py` (76), `test_g2_pg_sentinella.py` (9, PostgreSQL usa-e-getta: trigger, RPC, permessi, impronta identica alle letture REST, finto = vero, giro completo) |
 | (R23, G par. 4.3) | registro tabella per tabella + test di copertura (codice Python e TUTTI i .ts/.js, workflow, migrazioni, Storage) + golden | `test_g2_registro.py` (38 test) |
 
 Restano al codice di oggi: G-003 (rinnovo preventivo della catena), G-007 (client parallelo del tennis), G-008,
@@ -95,10 +105,11 @@ e il suo test di parita'.
 ## 8. Come si prova da solo
 
 `python -m pytest Betfair/nucleo/dati/tests/test_g2_registro.py Betfair/nucleo/dati/tests/test_g2_cloud.py Betfair/nucleo/dati/tests/test_g2_cache_cloud.py Betfair/nucleo/dati/tests/test_g2_sorveglianza.py Betfair/nucleo/dati/tests/test_g2_pg_sentinella.py -q -p no:cacheprovider`
-(189 test, ~40 s; il registro scansiona tutti i file tracciati; i 7 del PostgreSQL vero solo con
+(222 test, ~60 s; il registro scansiona tutti i file tracciati; i 7 del PostgreSQL vero solo con
 `G2_PG_PSQL="-h <socket> -p <porta> -U postgres"` su un PostgreSQL usa-e-getta, script in referto par. 12). Nessuna rete:
 client supabase VERO su `httpx.MockTransport`. Mutazioni: `python ARCHITETTURA_2026-10/ondata1/W1-G2/mutazioni_w1g2.py $(pwd)`
-(85: 41 + 15 del revisore + 29 della decisione 10, di cui 7 sulla migrazione solo con `G2_PG_PSQL`; tutte rosse;
+(103: 41 + 15 del revisore + 37 della decisione 10 + 10 del revisore D-G, di cui 10 sulla migrazione solo con
+`G2_PG_PSQL`; tutte rosse;
 `MUTAZIONI_FILTRO=D10` per le sole nuove).
 
 ## 9. Misure
@@ -109,6 +120,7 @@ client supabase VERO su `httpx.MockTransport`. Mutazioni: `python ARCHITETTURA_2
 - Prefetch per lega: 28 RPC (1 HT->FT + 18 bucket FT + 9 bucket HT), fuori dal ciclo; sentinella: 3 letture di una riga.
 - Decisione 10 (contate al trasporto, `test_carico_dichiarato_richieste_al_minuto`): con la RPC **12 richieste al minuto**
   per processo (replica + dossier, fino a 500 eventi); senza la migrazione 24/min fino a 50 eventi, 36/min con 60.
+  Con 500 eventi senza migrazione: 132/min. RPC in errore: 12 richieste in 10 minuti (backoff) invece di 120.
   Latenza dal ricalcolo del cloud alla memoria pronta: <= 5 s + 1 RPC + la rilettura del solo evento (2-3 letture);
   con le letture di U-60 (p50 111 / p90 148 / p99 493 ms) ~5,5 s al p90, media ~3 s; oggi 0-300 s (media 150 s).
   Costo della RPC sul PostgreSQL 16 usa-e-getta: 0,86 ms a chiamata con 60 eventi; trigger +25 us a riga riscritta

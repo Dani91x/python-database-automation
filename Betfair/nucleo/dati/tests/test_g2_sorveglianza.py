@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -248,7 +249,7 @@ def test_positivo_cambiato_nel_cloud_arriva_al_giro_dopo(nuvola):
     d, _s, sorv = _impianto(adesso)
     d.precarica(["ev1", "ev2"])
     assert sorv.giro().cambiati == ("ev1", "ev2")                           # primo giro: impronte registrate
-    d.prendi_cambiati()
+    d.prendi_cambiati(anche_pieni=True)
     assert dossier.build_prematch("ev1", d) == dossier.build_prematch("ev1", mike_db)
     nuvola.scrivi_previsione({**FIXTURE[101], "tactical_engine_json": {"lambda_home": 2.2, "lambda_away": 0.4}})
     adesso[0] += 1.0
@@ -263,7 +264,7 @@ def test_positivo_cambiato_nel_cloud_arriva_al_giro_dopo(nuvola):
     nuovo = dossier.build_prematch("ev1", d)
     assert nuovo == dossier.build_prematch("ev1", mike_db) and nuovo["lambda_home"] == 2.2
     assert d.statistiche()["ripieghi"] == prima                             # servito dalla memoria
-    assert d.prendi_cambiati() == ("ev1",) and d.prendi_cambiati() == ()
+    assert d.prendi_cambiati(anche_pieni=True) == ("ev1",) and d.prendi_cambiati(anche_pieni=True) == ()
 
 
 def test_riscrittura_identica_non_e_un_cambio(nuvola):
@@ -284,13 +285,13 @@ def test_negativo_compare_appena_il_cloud_lo_scrive(nuvola):
     d, _s, sorv = _impianto(adesso)
     d.precarica(["ev_nuovo"])
     sorv.giro()
-    d.prendi_cambiati()
+    d.prendi_cambiati(anche_pieni=True)
     assert dossier.build_prematch("ev_nuovo", d)["lambda_home"] is None
     nuvola.scrivi_previsione({**FIXTURE[101], "fixture_id": 301})
     nuvola.ponte("live_follow", "ev_nuovo", 301)
     adesso[0] += K.INTERVALLO_RAPIDO_S
     assert sorv.giro().cambiati == ("ev_nuovo",)
-    assert d.prendi_cambiati() == ("ev_nuovo",)
+    assert d.prendi_cambiati(anche_pieni=True) == ("ev_nuovo",)
     prima = d.statistiche()["ripieghi"]
     nuovo = dossier.build_prematch("ev_nuovo", d)
     assert nuovo == dossier.build_prematch("ev_nuovo", mike_db) and nuovo["lambda_home"] == TACTICAL_OK["lambda_home"]
@@ -395,18 +396,18 @@ def test_rilettura_fallita_non_registra_e_riprova(nuvola):
     d, _s, sorv = _impianto(adesso)
     d.precarica(["ev1"])
     sorv.giro()
-    d.prendi_cambiati()
+    d.prendi_cambiati(anche_pieni=True)
     nuvola.scrivi_previsione({**FIXTURE[101], "tactical_engine_json": {"lambda_home": 1.9, "lambda_away": 1.1}})
     nuvola.errori[("GET", "/fixture_predictions")] = lambda _r: httpx.Response(503, json={
         "code": "PGRST002", "details": None, "hint": None, "message": "schema cache"})
     adesso[0] += K.INTERVALLO_RAPIDO_S
     assert sorv.giro().cambiati == ()
-    assert d.statistiche()["riletture_fallite"] == 1 and d.prendi_cambiati() == ()
+    assert d.statistiche()["riletture_fallite"] == 1 and d.prendi_cambiati(anche_pieni=True) == ()
     del nuvola.errori[("GET", "/fixture_predictions")]
     # intanto la voce e' tolta: il dossier va alla lettura di oggi, che e' gia' quella nuova
     assert dossier.build_prematch("ev1", d) == dossier.build_prematch("ev1", mike_db)
     adesso[0] += K.INTERVALLO_RAPIDO_S
-    assert sorv.giro().cambiati == ("ev1",) and d.prendi_cambiati() == ("ev1",)
+    assert sorv.giro().cambiati == ("ev1",) and d.prendi_cambiati(anche_pieni=True) == ("ev1",)
 
 
 def test_eventi_non_piu_seguiti_si_dimenticano(nuvola):
@@ -459,24 +460,28 @@ def _scrivi_scenario(nuvola: CloudSentinella, scenario: str, *, tocca_updated_at
     elif scenario == "lambda":                    # la riga c'e' senza gol attesi, il ricalcolo li aggiunge
         nuvola.scrivi_previsione({**FIXTURE[104], "fixture_id": 206, "tactical_engine_json": TACTICAL_OK},
                                  tocca_updated_at=tocca_updated_at)
+    elif scenario == "ripunta":                   # ponte su una fixture cieca, poi abbinato a una piena
+        nuvola.ponte("live_follow", "evS", 101)
 
 
 def _prepara_scenario(nuvola: CloudSentinella, scenario: str) -> None:
-    nuvola.tabelle["live_follow"] = [r for r in nuvola.tabelle["live_follow"] if r["event_id"] != "evS"]
+    for tabella in ("live_follow", "omega_events"):
+        nuvola.tabelle[tabella] = [r for r in nuvola.tabelle[tabella] if r["event_id"] != "evS"]
     nuvola.togli_previsione(205)
     nuvola.togli_previsione(206)
     if scenario == "previsione":
         nuvola.ponte("live_follow", "evS", 205)
-    elif scenario == "lambda":
+    elif scenario in ("lambda", "ripunta"):
         nuvola.ponte("omega_events", "evS", 206)
         nuvola.scrivi_previsione({**FIXTURE[104], "fixture_id": 206})
 
 
-def _simula(nuvola: CloudSentinella, w: int, scenario: str, *, nuovo: bool, guasta: bool = False,
+def _simula(nuvola: CloudSentinella, w: int, scenario: str, *, nuovo: bool, guasto_da: Optional[int] = None,
             tocca_updated_at: bool = True, orizzonte: int = 1300) -> int:
     """Secondo in cui Mike ha i gol attesi dell'evento ``evS``. Oggi: ``_retry_dossier`` con ``mike.db``.
     Domani (aggancio proposto): lo STESSO ``_retry_dossier`` sul ``DossierPrematch``, piu' due righe: gli
-    eventi di ``prendi_cambiati`` col dossier ancora cieco si riprovano SUBITO (``retry_ts`` azzerato)."""
+    eventi di ``prendi_cambiati(tracked)`` (solo i ciechi) si riprovano SUBITO (``retry_ts`` azzerato).
+    ``guasto_da``: da quel secondo la RPC della sentinella risponde 57014 (guasto DOPO i rinnovi)."""
     _prepara_scenario(nuvola, scenario)
     adesso = [T0]
     sorv = d = None
@@ -493,24 +498,28 @@ def _simula(nuvola: CloudSentinella, w: int, scenario: str, *, nuovo: bool, guas
     for t in range(orizzonte):
         adesso[0] = T0 + t
         nuvola.ora = adesso[0]
+        if t == guasto_da:
+            nuvola.errore_rpc = lambda _r: httpx.Response(500, json=CORPO_57014)
         if t == w:
             _scrivi_scenario(nuvola, scenario, tocca_updated_at=tocca_updated_at)
         if sorv is not None and d is not None and t >= prossimo:
             sorv.giro()
             prossimo = t + sorv.attesa()
-            for ev in d.prendi_cambiati():
+            for ev in d.prendi_cambiati(tracked):
                 if ev in tracked and mike_service.dossier_da_ritentare(tracked[ev], adesso[0], ogni=0.0):
                     tracked[ev]["dossier"]["retry_ts"] = 0.0
         mike_service._retry_dossier(db, tracked, adesso[0])
         if tracked["evS"]["dossier"].get("lambda_home"):
+            nuvola.errore_rpc = None
             assert tracked["evS"]["dossier"] == dossier.build_prematch("evS", mike_db) | {
                 "retry_ts": tracked["evS"]["dossier"]["retry_ts"]}
             return t
+    nuvola.errore_rpc = None
     return orizzonte
 
 
 @pytest.mark.parametrize("modo", ["rpc", "letture"])
-@pytest.mark.parametrize("scenario", ["ponte", "previsione", "lambda"])
+@pytest.mark.parametrize("scenario", ["ponte", "previsione", "lambda", "ripunta"])
 def test_mai_piu_lento_di_oggi_e_latenza_dichiarata(nuvola, modo, scenario):
     assert mike_service._DOSSIER_RETRY_SEC == 300.0
     limite = K.INTERVALLO_RAPIDO_S if modo == "rpc" else K.INTERVALLO_LETTURE_S
@@ -539,6 +548,22 @@ def test_mai_piu_lento_di_oggi_anche_quando_la_sorveglianza_non_vede(nuvola, gua
             nuvola.con_rpc = False
             domani = _simula(nuvola, w, "lambda", nuovo=True, tocca_updated_at=False)
         assert domani <= oggi, (guasto, w, domani, oggi)
+
+
+@pytest.mark.parametrize("scenario", ["ripunta", "lambda", "ponte"])
+@pytest.mark.parametrize("guasto_da", [1, 101, 250, 10_000])
+def test_guasto_dopo_i_rinnovi_mai_piu_tardi_di_oggi(nuvola, scenario, guasto_da):
+    """Revisione D-G (10/10): la sorveglianza RINNOVA le voci a ogni giro, poi la RPC va in errore. Prima
+    della correzione il ponte di un dossier cieco restava in memoria fino a 300 s dall'ULTIMA conferma
+    (con guasto a 101 s e ripunta a 150 s: oggi 300, domani 600). Ora: solo i positivi in memoria e,
+    dopo un giro fallito, ogni voce torna alla scadenza della sua lettura. Griglia del revisore."""
+    for w in (150, 7, 299, 301, 450):
+        nuvola.con_rpc = True
+        oggi = _simula(nuvola, w, scenario, nuovo=False)
+        domani = _simula(nuvola, w, scenario, nuovo=True, guasto_da=guasto_da)
+        assert domani <= oggi, (scenario, guasto_da, w, domani, oggi)
+        if guasto_da > w + K.INTERVALLO_RAPIDO_S:
+            assert domani - w <= K.INTERVALLO_RAPIDO_S, (scenario, guasto_da, w, domani)
 
 
 # ---------------------------------------------------------------------------
@@ -649,7 +674,8 @@ def test_thread_della_sorveglianza_avvia_e_ferma(nuvola):
     assert r.ht_ft_transitions(39) == omega_db.ht_ft_transitions(39)
 
 
-@pytest.mark.parametrize("modo,eventi,attese", [("rpc", 60, 12), ("letture", 50, 4 * 6), ("letture", 60, 4 * 9)])
+@pytest.mark.parametrize("modo,eventi,attese", [("rpc", 60, 12), ("rpc", 500, 12), ("letture", 50, 4 * 6),
+                                                ("letture", 60, 4 * 9), ("letture", 500, 4 * 33)])
 def test_carico_dichiarato_richieste_al_minuto(nuvola, modo, eventi, attese):
     """Un minuto di sorveglianza (replica + dossier, nessun cambio): richieste contate al trasporto."""
     nuvola.con_rpc = modo == "rpc"
@@ -671,3 +697,303 @@ def test_carico_dichiarato_richieste_al_minuto(nuvola, modo, eventi, attese):
         sorv.giro()
         adesso[0] += sorv.attesa()
     assert nuvola.conta() - n == attese, nuvola.conta_rotte(n)
+
+
+# ---------------------------------------------------------------------------
+# 6. Revisione indipendente del 10/10 (D-G): rinnovi, backoff, dossier pieni, tetto, thread veri
+# ---------------------------------------------------------------------------
+def test_giro_fallito_riporta_le_voci_alla_scadenza_della_lettura(nuvola):
+    adesso = [T0]
+    d, _s, sorv = _impianto(adesso)
+    d.precarica(["ev1"])
+    sorv.giro()
+    letta = d._lette[("e", "ev1")]
+    for _ in range(50):                                                      # 250 s di conferme
+        adesso[0] += 5
+        sorv.giro()
+    assert d._ponte["ev1"][0] == adesso[0] and adesso[0] - letta == 250
+    nuvola.errore_rpc = lambda _r: httpx.Response(500, json=CORPO_57014)
+    adesso[0] += 5
+    assert sorv.giro().errore is True
+    assert d._ponte["ev1"][0] == letta and d._fixture[101][0] == d._lette[("f", 101)]
+    adesso[0] = letta + K.SCADENZA_DOSSIER_S                                  # 300 s dalla LETTURA: scaduta
+    prima = d.statistiche()["ripieghi"]
+    nuvola.errore_rpc = None
+    assert d.fixture_id_for_event("ev1") == 101 and d.statistiche()["ripieghi"] == prima + 1
+
+
+@pytest.mark.parametrize("precarica_al", [1, 100, 250])
+def test_dossier_cieco_mai_in_memoria_anche_senza_sorveglianza(nuvola, precarica_al):
+    """Revisione D-G, punto 1: solo i POSITIVI in memoria. Mike prende in carico evS a 0 s (cieco: ponte su
+    206 senza gol attesi), il bot precarica a ``precarica_al``, il cloud ripunta evS su 101 a 150 s, nessuna
+    sorveglianza. Il ritento di Mike a 300 s deve trovare il ponte NUOVO, come oggi (mai un ponte cieco
+    tenuto in memoria fino a 300 s dalla precarica)."""
+    _prepara_scenario(nuvola, "ripunta")
+    adesso = [T0]
+    d = K.DossierPrematch(_cliente(), ripiego=mike_db, orologio=lambda: adesso[0])
+    db = _DbConLog(d)
+    tracked = {"evS": {"state": "WATCH", "dossier": dossier.build_prematch("evS", db)}}
+    risolto = None
+    for t in range(0, 700):
+        adesso[0] = T0 + t
+        if t == precarica_al:
+            d.precarica(["evS"])
+            assert ("evS" in d._ponte) == (t > 150)                           # cieco: niente in memoria
+        if t == 150:
+            nuvola.ponte("live_follow", "evS", 101)
+        mike_service._retry_dossier(db, tracked, adesso[0])
+        if tracked["evS"]["dossier"].get("lambda_home"):
+            risolto = t
+            break
+    assert risolto == 300
+
+
+def test_dossier_cieco_e_il_criterio_di_mike():
+    voci = [{}, {"dossier": None}, {"dossier": "x"}, {"dossier": {}}, {"dossier": {"lambda_home": 1.2}},
+            {"dossier": {"lambda_home": 1.2, "lambda_away": None}}, {"dossier": {"lambda_home": 0, "lambda_away": 1}},
+            {"dossier": {"lambda_home": 1.2, "lambda_away": 0.8}},
+            {"dossier": {"lambda_home": 1.2, "lambda_away": 0.8, "retry_ts": 5}}]
+    for voce in voci:
+        ev = {"state": "WATCH", **voce}
+        assert K.dossier_cieco(ev) == mike_service.dossier_da_ritentare(ev, T0, ogni=0.0), voce
+
+
+def test_prendi_cambiati_di_serie_solo_i_ciechi(nuvola):
+    """D10-b nel componente: un dossier PIENO non torna fra i cambiati se non lo si chiede esplicitamente."""
+    adesso = [T0]
+    d, _s, sorv = _impianto(adesso)
+    tracked = {"ev1": {"state": "WATCH", "dossier": dossier.build_prematch("ev1", mike_db)},
+               "ev5": {"state": "WATCH", "dossier": dossier.build_prematch("ev5", mike_db)}}
+    assert not K.dossier_cieco(tracked["ev1"]) and K.dossier_cieco(tracked["ev5"])
+    d.segui(tracked)
+    sorv.giro()
+    with pytest.raises(ValueError):
+        d.prendi_cambiati()
+    assert d.prendi_cambiati(tracked) == ("ev5",)
+    nuvola.scrivi_previsione({**FIXTURE[101], "tactical_engine_json": {"lambda_home": 2.5, "lambda_away": 0.5}})
+    nuvola.scrivi_previsione({**FIXTURE[101], "fixture_id": 105})
+    adesso[0] += 5
+    assert sorv.giro().cambiati == ("ev1", "ev5")
+    assert d.prendi_cambiati(tracked) == ("ev5",)                            # ev1 e' pieno: mai restituito
+    nuvola.scrivi_previsione({**FIXTURE[101], "tactical_engine_json": {"lambda_home": 2.6, "lambda_away": 0.5}})
+    adesso[0] += 5
+    sorv.giro()
+    assert d.prendi_cambiati(anche_pieni=True) == ("ev1",)                   # solo se chiesto esplicitamente
+
+
+def _giro_mike(d: K.DossierPrematch, sorv: K.Sorveglianza, tracked: Dict[str, Any], adesso: List[float],
+               db: Any) -> int:
+    sorv.giro()
+    for ev in d.prendi_cambiati(tracked):
+        if mike_service.dossier_da_ritentare(tracked[ev], adesso[0], ogni=0.0):
+            tracked[ev]["dossier"]["retry_ts"] = 0.0
+    return mike_service._retry_dossier(db, tracked, adesso[0])
+
+
+def test_dossier_pieno_mai_ricostruito_a_partita_armata(nuvola):
+    """Test del revisore: il cloud ricalcola il dossier di una partita gia' armata col dossier pieno; il
+    nucleo lo sa (memoria nuova) ma il dossier di Mike resta byte per byte quello della presa in carico."""
+    adesso = [T0]
+    d, _s, sorv = _impianto(adesso)
+    db = _DbConLog(d)
+    tracked = {"ev1": {"state": "WATCH", "dossier": dossier.build_prematch("ev1", mike_db)}}
+    assert tracked["ev1"]["dossier"]["lambda_home"] == TACTICAL_OK["lambda_home"]
+    foto = json.dumps(tracked["ev1"]["dossier"], sort_keys=True)
+    d.segui(tracked)
+    for i in range(6):
+        adesso[0] += 5
+        if i in (1, 3):
+            nuvola.scrivi_previsione({**FIXTURE[101], "tactical_engine_json": {"lambda_home": 2.0 + i, "lambda_away": 0.5}})
+        _giro_mike(d, sorv, tracked, adesso, db)
+        assert json.dumps(tracked["ev1"]["dossier"], sort_keys=True) == foto, i
+    assert dossier.build_prematch("ev1", d)["lambda_home"] == 5.0
+    adesso[0] += 400
+    _giro_mike(d, sorv, tracked, adesso, db)
+    assert json.dumps(tracked["ev1"]["dossier"], sort_keys=True) == foto
+
+
+@pytest.mark.parametrize("modo", ["rpc", "letture"])
+def test_errori_di_fila_backoff_15_30_60_e_ritorno_a_5(nuvola, modo):
+    """RPC (o letture) in errore per 10 minuti: attese 15, 30, 60, 60, ... invece di 5 s; al primo giro
+    riuscito si torna alla cadenza. Richieste contate al trasporto."""
+    nuvola.con_rpc = modo == "rpc"
+    adesso = [T0]
+    d, _s, sorv = _impianto(adesso)
+    d.precarica(["ev1", "ev2"])
+    sorv.giro()
+    base = sorv.attesa()
+    assert base == (K.INTERVALLO_RAPIDO_S if modo == "rpc" else K.INTERVALLO_LETTURE_S)
+    rotta = "/rpc/nucleo_sentinella_cloud" if modo == "rpc" else "/live_follow"
+    if modo == "rpc":
+        nuvola.errore_rpc = lambda _r: httpx.Response(500, json=CORPO_57014)
+    else:
+        nuvola.errori[("GET", "/live_follow")] = lambda _r: httpx.Response(500, json=CORPO_57014)
+    n = nuvola.conta()
+    attese, fine = [], adesso[0] + 600
+    while adesso[0] < fine:
+        assert sorv.giro().errore is True
+        attese.append(sorv.attesa())
+        adesso[0] += attese[-1]
+    assert attese[:4] == [15.0, 30.0, 60.0, 60.0] and set(attese[3:]) == {60.0}
+    giri = len(attese)
+    assert giri == 12 and nuvola.conta_rotte(n)[rotta] == giri              # oggi senza backoff: 120 (rpc)
+    nuvola.errore_rpc = None
+    nuvola.errori.pop(("GET", "/live_follow"), None)
+    assert sorv.giro().errore is False and sorv.attesa() == base
+
+
+def test_scadenza_massima_anche_con_la_rpc(nuvola):
+    """Uno scrittore che AGGIRA il trigger (replica, DISABLE TRIGGER, ALTER TYPE) cambia il dossier senza
+    versione nuova: la RPC non lo vede. La voce rinnovata non vive oltre SCADENZA_MASSIMA_S dalla lettura:
+    allora si rilegge comunque e il dossier torna uguale a mike.db."""
+    adesso = [T0]
+    d, _s, sorv = _impianto(adesso)
+    d.precarica(["ev1"])
+    sorv.giro()
+    riga = next(r for r in nuvola.tabelle["fixture_predictions"] if r["fixture_id"] == 101)
+    riga["tactical_engine_json"] = {"lambda_home": 2.9, "lambda_away": 0.2}    # nessuna versione nuova
+    n = nuvola.conta()
+    giri = 0
+    rilettura = T0 + 3300.0              # 55 minuti (scritti letterali): si rilegge PRIMA della scadenza dura di 60
+    while adesso[0] + 5 <= rilettura:
+        adesso[0] += 5
+        sorv.giro()
+        giri += 1
+    assert nuvola.conta() - n == giri                                        # solo la RPC: nessuna rilettura
+    assert dossier.build_prematch("ev1", d)["lambda_home"] == TACTICAL_OK["lambda_home"]   # vecchio (controllo)
+    while adesso[0] < rilettura + 10:
+        adesso[0] += 5
+        sorv.giro()
+    prima = d.statistiche()["ripieghi"]
+    assert dossier.build_prematch("ev1", d) == dossier.build_prematch("ev1", mike_db)
+    assert dossier.build_prematch("ev1", d)["lambda_home"] == 2.9 and d.statistiche()["ripieghi"] == prima
+
+
+class _CloudSospeso:
+    """Il Cloud vero, ma la lettura di ``tabella`` fatta dal thread "lettore" si FERMA dopo aver ricevuto la
+    risposta (vecchia) finche' non e' liberata: un'altra lettura e' davvero in volo in un altro thread."""
+
+    def __init__(self, vero: ClienteCloud, tabella: str) -> None:
+        self.vero, self.tabella = vero, tabella
+        self.arrivata, self.libera = threading.Event(), threading.Event()
+        self.attivo = True
+
+    def leggi(self, nome: str, filtri: Any, *, cache_s: float = 0.0) -> Any:
+        righe = self.vero.leggi(nome, filtri, cache_s=cache_s)
+        if nome == self.tabella and self.attivo and threading.current_thread().name == "lettore":
+            self.attivo = False
+            self.arrivata.set()
+            assert self.libera.wait(10)
+        return righe
+
+    def rpc(self, nome: str, args: Any, *, cache_s: float = 0.0) -> Any:
+        return self.vero.rpc(nome, args, cache_s=cache_s)
+
+
+@pytest.mark.parametrize("tabella", ["fixture_predictions", "live_follow"])
+def test_thread_veri_lettura_in_volo_scartata(nuvola, tabella):
+    adesso = [T0]
+    d, _s, sorv = _impianto(adesso)
+    d.precarica(["ev1"])
+    sorv.giro()
+    sospeso = _CloudSospeso(_cliente(), tabella)
+    d._cloud = sospeso                                                       # type: ignore[assignment]
+    lettore = threading.Thread(target=lambda: d.precarica(["ev1"]), name="lettore")
+    lettore.start()
+    try:
+        assert sospeso.arrivata.wait(10)
+        if tabella == "fixture_predictions":
+            nuvola.scrivi_previsione({**FIXTURE[101], "tactical_engine_json": {"lambda_home": 3.3, "lambda_away": 0.3}})
+        else:
+            nuvola.ponte("live_follow", "ev1", 102)
+        adesso[0] += 5
+        assert sorv.giro().cambiati == ("ev1",)
+    finally:
+        sospeso.libera.set()
+        lettore.join(10)
+    assert not lettore.is_alive()
+    assert dossier.build_prematch("ev1", d) == dossier.build_prematch("ev1", mike_db)
+
+
+def test_thread_veri_scrittori_lettori_e_sorveglianza_convergono(nuvola):
+    """Scrittori nel cloud, due precarica e la sorveglianza in thread veri per 2 s: a cloud fermo, dopo tre
+    giri, ogni dossier e' identico a mike.db."""
+    adesso = [T0]
+    blocco = threading.Lock()
+    d, _s, sorv = _impianto(adesso)
+    nuvola.ponte("live_follow", "evA", 101)
+    nuvola.ponte("live_follow", "evB", 102)
+    nuvola.scrivi_previsione({**FIXTURE[102], "tactical_engine_json": {"lambda_home": 1.0, "lambda_away": 1.0}})
+    d.segui(["evA", "evB"])
+    ferma = threading.Event()
+    errori: List[BaseException] = []
+
+    def scrittore() -> None:
+        i = 0
+        while not ferma.is_set():
+            i += 1
+            with blocco:
+                nuvola.scrivi_previsione({**FIXTURE[101], "tactical_engine_json": {"lambda_home": 1 + i / 1000,
+                                                                                  "lambda_away": 1.0}})
+                if i % 3 == 0:
+                    nuvola.ponte("live_follow", "evB", 102 if i % 2 else 101)
+            time.sleep(0.001)
+
+    def ripeti(f: Callable[[], Any]) -> Callable[[], None]:
+        def corpo() -> None:
+            while not ferma.is_set():
+                try:
+                    f()
+                except Exception as ex:  # noqa: BLE001 - raccolto e controllato sotto
+                    errori.append(ex)
+        return corpo
+
+    def giro() -> None:
+        sorv.giro()
+        adesso[0] += 1
+
+    fili = [threading.Thread(target=x) for x in (scrittore, ripeti(lambda: d.precarica(["evA", "evB"])),
+                                                 ripeti(lambda: d.precarica(["evA", "evB"])), ripeti(giro))]
+    for f in fili:
+        f.start()
+    time.sleep(2.0)
+    ferma.set()
+    for f in fili:
+        f.join(10)
+    assert not errori, errori[:2]
+    for _ in range(3):
+        adesso[0] += 5
+        sorv.giro()
+    for ev in ("evA", "evB"):
+        assert dossier.build_prematch(ev, d) == dossier.build_prematch(ev, mike_db), ev
+
+
+@pytest.mark.parametrize("modo", ["rpc", "letture"])
+def test_parita_su_una_passeggiata_casuale_del_cloud(nuvola, modo):
+    """Test del revisore: 60 passi casuali (seme fisso) di scritture nel cloud; a ogni giro il dossier di
+    ogni evento e' identico a quello di mike.db."""
+    import random
+    nuvola.con_rpc = modo == "rpc"
+    rnd = random.Random(7)
+    adesso = [T0]
+    d, _s, sorv = _impianto(adesso)
+    eventi = [f"ev{i}" for i in range(1, 12)] + ["ev_nuovo"]
+    d.segui(eventi)
+    sorv.giro()
+    for passo in range(60):
+        adesso[0] += sorv.attesa()
+        azione = rnd.choice(["prev", "prev_stessa", "ponte", "togli", "niente"])
+        fid = rnd.choice([101, 102, 103, 104, 106, 301])
+        if azione == "prev":
+            nuvola.scrivi_previsione({**FIXTURE.get(fid, FIXTURE[101]), "fixture_id": fid,
+                                      "tactical_engine_json": rnd.choice([None, {"lambda_home": rnd.random() + .1,
+                                                                                 "lambda_away": rnd.random() + .1}])})
+        elif azione == "prev_stessa" and fid in FIXTURE:
+            nuvola.scrivi_previsione(dict(FIXTURE[fid]))
+        elif azione == "ponte":
+            nuvola.ponte(rnd.choice(["live_follow", "omega_events"]), rnd.choice(eventi), rnd.choice([101, 102, 301, None]))
+        elif azione == "togli":
+            nuvola.togli_previsione(fid)
+        sorv.giro()
+        for ev in eventi:
+            assert dossier.build_prematch(ev, d) == dossier.build_prematch(ev, mike_db), (passo, azione, ev)

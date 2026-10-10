@@ -1,5 +1,13 @@
 -- nucleo_sentinella_cloud_2026-10-10.sql
 --
+-- QUANDO APPLICARLA: FUORI dalla finestra 04:00-04:20 UTC (pg_cron omega_transitions_nightly di
+-- Omega) e FUORI dalla catena notturna (dalle 00:12 UTC in poi, finche' l'ultimo anello non ha
+-- finito). ADD COLUMN e DROP/CREATE TRIGGER prendono un lock ACCESS EXCLUSIVE su
+-- fixture_predictions; CREATE INDEX (senza CONCURRENTLY) aspetta chi scrive omega_ht_ft_transitions.
+-- Per questo la prima istruzione e' SET lock_timeout = '5s': se un lock non arriva in 5 s la
+-- migrazione si ferma con "canceling statement due to lock timeout" (55P03) invece di mettere in
+-- coda gli scrittori. Se scade, RILANCIARE piu' tardi: e' idempotente.
+--
 -- Decisione 10 dell'utente (10/10/2026): "Tutta l'app in tempo reale per Betfair; il cloud
 -- solo come backup; il resto sul DB locale". I dati che il cloud CALCOLA e l'app legge (il
 -- dossier pre-partita di Mike in fixture_predictions e il ponte evento->fixture; le tabelle
@@ -33,8 +41,11 @@
 --
 -- Costo per il cloud: 12 chiamate al minuto per processo che la usa, ciascuna con 3 letture
 -- di una riga per indice + 3 letture per chiave primaria per evento seguito (tipico 10-60
--- eventi); risposta ~60 byte per evento. Una nextval per riga di fixture_predictions il cui
--- dossier cambia davvero (le riscritture identiche non la consumano).
+-- eventi); risposta ~60 byte per evento. Trigger: una nextval per riga di fixture_predictions il
+-- cui dossier cambia (UPDATE); con l'upsert dei workflow (INSERT ... ON CONFLICT DO UPDATE) il
+-- trigger BEFORE INSERT scatta PRIMA del conflitto e consuma una nextval anche per una riscrittura
+-- identica: la sequenza fa dei buchi (innocui, BIGINT), ma la VERSIONE SULLA RIGA resta giusta
+-- (il ramo UPDATE la riporta a quella vecchia se il dossier non e' cambiato).
 --
 -- Senza questa migrazione l'app NON cambia comportamento: SentinellaCloud vede PGRST202
 -- (funzione assente) e ripiega sulle letture REST di oggi (piu' richieste, cadenza 15 s),
@@ -42,7 +53,9 @@
 --
 -- IDEMPOTENTE (si puo' rilanciare). La applica l'utente (SQL Editor, ruolo postgres).
 -- Provata su PostgreSQL 16 usa-e-getta: Betfair/nucleo/dati/tests/test_g2_pg_sentinella.py
--- (variabile G1_PG_PSQL). Ritorno indietro in fondo al file.
+-- (variabile G2_PG_PSQL). Ritorno indietro in fondo al file.
+
+SET lock_timeout = '5s';   -- se scade (55P03): rilanciare piu' tardi, fuori dalle finestre notturne
 
 -- ============================================================================
 -- 1. sequenza delle versioni del dossier

@@ -194,15 +194,15 @@ M += [
     ("D10-18 precarica non segue gli eventi", "cache_cloud.py",
      [("            self._seguiti.update(eventi)\n", "            pass\n")], TS),
     ("D10-19 prendi_cambiati non consuma", "cache_cloud.py",
-     [("            fuori, self._cambiati = tuple(sorted(self._cambiati)), set()",
-       "            fuori = tuple(sorted(self._cambiati))")], TS),
+     [("            tutti, self._cambiati = tuple(sorted(self._cambiati)), set()",
+       "            tutti = tuple(sorted(self._cambiati))")], TS),
     ("D10-20 letture REST senza updated_at nell'impronta", "cache_cloud.py",
      [("        return {ev: json.dumps([fid, fid in versioni, versioni.get(fid), grezzi",
        "        return {ev: json.dumps([fid, fid in versioni, None, grezzi")], TS),
     ("D10-21 blocco della RPC oltre il tetto di 500", "cache_cloud.py",
      [("BLOCCO_RPC = 500", "BLOCCO_RPC = 501")], TS),
     ("D10-22 registro: RPC della sentinella non dichiarata", "registro.py",
-     [('    "nucleo_sentinella_cloud": "migrations/nucleo_sentinella_cloud_2026-10-10.sql:101, STABLE, solo SELECT "\n'
+     [('    "nucleo_sentinella_cloud": "migrations/nucleo_sentinella_cloud_2026-10-10.sql:114, STABLE, solo SELECT "\n'
        '                               "(impronte per giro della Sorveglianza, cache_cloud.py)",\n', "")], TR),
     # migrazione: solo con G2_PG_PSQL (PostgreSQL usa-e-getta), altrimenti SALTATE e non contate
     ("D10-P1 trigger: versione nuova a ogni scrittura", MIG,
@@ -228,6 +228,54 @@ M += [
      [("    IF cardinality(v_eventi) > 500 THEN", "    IF cardinality(v_eventi) > 5000 THEN")], TP),
     ("D10-P7 trigger non scatta quando si forza nucleo_versione", MIG,
      [("                               away_team_id, nucleo_versione\n", "                               away_team_id\n")], TP),
+    # --- revisione indipendente del 10/10 (correzioni 1-6)
+    ("D10-23 ponte di un dossier cieco tenuto in memoria", "cache_cloud.py",
+     [("                if riga is None or adesso - riga[0] >= self._scadenza:\n"
+       "                    continue                           # dossier cieco: nessun ponte in memoria",
+       "                if False:\n                    continue")], TS),
+    ("D10-24 giro fallito senza annulla_rinnovi", "cache_cloud.py",
+     [("            self._dossier.annulla_rinnovi()", "            pass")], TS),
+    ("D10-25 annulla_rinnovi non riporta alla lettura", "cache_cloud.py",
+     [("                    if letta < t:", "                    if False:")], TS),
+    ("D10-26 nessun backoff dopo gli errori", "cache_cloud.py",
+     [("            if self._errori_di_fila == 0:\n                return base", "            if True:\n                return base")], TS),
+    ("D10-27 backoff mai azzerato dal giro riuscito", "cache_cloud.py",
+     [("self._errori_di_fila = self._errori_di_fila + 1 if errore else 0",
+       "self._errori_di_fila = self._errori_di_fila + 1 if errore else self._errori_di_fila")], TS),
+    ("D10-28 nessuna scadenza massima con la RPC", "cache_cloud.py",
+     [("SCADENZA_MASSIMA_S = 3600.0", "SCADENZA_MASSIMA_S = 1e12")], TS),
+    ("D10-29 tetto raggiunto senza rilettura", "cache_cloud.py",
+     [("            tetto = tetto or letto_alle > limite", "            tetto = False")], TS),
+    ("D10-P8 migrazione senza lock_timeout", MIG,
+     [("SET lock_timeout = '5s';   -- se scade", "-- tolto;   -- se scade")], TP),
+]
+
+# Le 10 mutazioni del revisore (scratchpad/rev_dg/mut_rev.py), adattate al codice corretto dove il testo e' cambiato
+M += [
+    ("REV-DG R1 trigger: versione anche senza cambi", MIG,
+     [("    ELSIF (to_jsonb(NEW.tactical_engine_json), to_jsonb(NEW.db_json_analisi),",
+       "    ELSIF TRUE OR (to_jsonb(NEW.tactical_engine_json), to_jsonb(NEW.db_json_analisi),")], TP),
+    ("REV-DG R2a generazione fixture ignorata", "cache_cloud.py",
+     [('                    if self._gen.get(("f", int(fid)), 0) != gen_fixture[int(fid)]:', "                    if False:")], TS),
+    ("REV-DG R2b generazione evento (ponte) ignorata", "cache_cloud.py",
+     [('                if self._gen.get(("e", ev), 0) != gen_eventi[ev]:', "                if False:")], TS),
+    ("REV-DG R2c _invalida non alza le generazioni", "cache_cloud.py",
+     [("            self._gen[chiave] = self._gen.get(chiave, 0) + 1\n", "            pass\n")], TS),
+    ("REV-DG R3 ripiego REST spento", "cache_cloud.py",
+     [("        return self._leggi_rest(omega, eventi_ord)", '        return Istantanea(None, None, "letture")')], TS),
+    ("REV-DG R4a tetto 500 tolto dalla RPC", MIG,
+     [("    IF cardinality(v_eventi) > 500 THEN", "    IF cardinality(v_eventi) > 100000000 THEN")], TP),
+    ("REV-DG R4b tetto 500 tolto dal client (BLOCCO_RPC)", "cache_cloud.py",
+     [("BLOCCO_RPC = 500", "BLOCCO_RPC = 100000")], TS),
+    ("REV-DG R5 prendi_cambiati restituisce anche i dossier pieni", "cache_cloud.py",
+     [("        return tuple(ev for ev in tutti if ev in dossier_dei_bot and dossier_cieco(dossier_dei_bot[ev]))",
+       "        return tuple(ev for ev in tutti if ev in dossier_dei_bot)")], TS),
+    ("REV-DG R6 rinnovo anche in modo letture", "cache_cloud.py",
+     [('rinnova=ist.modo == "rpc"', "rinnova=True")], TS),
+    ("REV-DG R7 errore della RPC trattato come assente (cambio modo)", "cache_cloud.py",
+     [('                self._conta("errori")\n                logger.warning("[cache_cloud] nucleo_sentinella_cloud KO: %s", '
+       'str(ex)[:160])\n                return Istantanea(None, None, "rpc")',
+       "                self._segna_assente()\n                return None")], TS),
 ]
 
 
