@@ -46,16 +46,21 @@ Contratti fissi e brief comune: `559a96df` (`Betfair/nucleo/*/contratto.py`, `on
 
 | ID | Comparto | Ramo | Stato |
 |---|---|---|---|
-| W1-A1 | sessione unica e REST (T5) | `architettura/w1-a1` | in costruzione |
-| W1-A2 | stream ordini del CONTO, ladder a ogni cambio, profili, gestore stream (T6, T19, T11 parte A) | `architettura/w1-a2` | in costruzione |
-| W1-C1 | porta ordini: adattatore, minimi .it unici, controlli, seq/da_seq, porta (T10) | `architettura/w1-c1` | in costruzione |
-| W1-C2 | libro ordini del conto con autore, P&L di mercato, riconciliazione in ombra (T11) | `architettura/w1-c2` | in costruzione |
-| W1-G1 | archivio locale invisibile, postino, riconcilia, migrazione uid/ombra (T8, T14 base) | `architettura/w1-g1` | in costruzione |
-| W1-G2 | registro delle tabelle, client cloud unico, cache degli algoritmi (T2, T7) | `architettura/w1-g2` | in costruzione |
-| W1-B | stato della partita (T9) | `architettura/w1-b` | in costruzione |
+| W1-A1 | sessione unica e REST (T5) | `architettura/w1-a1` | INTEGRATO (`a2ed610d`): 2 revisioni indipendenti, 222 test, 117/117 mutazioni rosse |
+| W1-A2 | stream ordini del CONTO, ladder a ogni cambio, profili, gestore stream (T6, T19, T11 parte A) | `architettura/w1-a2` | INTEGRATO (`3b75458f` + guardia K1 `a9f0a57d`): 3 revisioni, 173 test + 31 di parita' sulle registrazioni, 114/114 mutazioni |
+| W1-C1 | porta ordini: adattatore, minimi .it unici, controlli, seq/da_seq, porta (T10) | `architettura/w1-c1` | INTEGRATO (`609fe25b`): 2 revisioni + verifiche del coordinatore; test anche sull'archivio VERO (`cdfd1785`), latenza p95 0,96 ms |
+| W1-C2 | libro ordini del conto con autore, P&L di mercato, riconciliazione in ombra (T11) | `architettura/w1-c2` | INTEGRATO (`5d44a094`): 2 revisioni + 3 verifiche, 265 test, 175/175 mutazioni; P&L pari a frontend, flumine e greenup |
+| W1-G1 | archivio locale invisibile, postino, riconcilia, migrazione uid/ombra (T8, T14 base) | `architettura/w1-g1` | INTEGRATO (`d88fc9d1`): 3 revisioni + 4 giri di correzioni, 136 test con PG, 118/118 mutazioni, SIGKILL 0 righe perse |
+| W1-G2 | registro delle tabelle, client cloud unico, cache degli algoritmi (T2, T7) | `architettura/w1-g2` | INTEGRATO (`bde40c04`, registro aggiornato per G1 in `891cc357`/`2d04658f`): 2 revisioni, 56/56 mutazioni |
+| W1-B | stato della partita (T9) | `architettura/w1-b` | INTEGRATO (`f410c9f6`): 3 revisioni, 224 test, 72/72 mutazioni |
 
 Dopo ogni consegna: verifica del coordinatore (diff, test, mutazioni proprie) + revisore indipendente (Sonnet), poi il ramo entra
 nel ramo dell'architettura. Ondata 2 (aggancio, ombra, replay sul PC) solo dopo la tappa 0 chiusa.
+
+**ONDATA 1 CHIUSA (10/10)**: i sette comparti sono integrati nel ramo dell'architettura (cima `097bf5b7`), suite intera
+12.933 verdi / 0 rossi; integrazione W1-G1 + W1-C1 in `ondata1/INTEGRAZIONE.md`. Nessun file di produzione toccato, nulla su master.
+Decisioni per l'utente (13 voci, con raccomandazione): `ondata1/DECISIONI_PER_L_UTENTE.md`. Prossimo: ondata 2 (aggancio dietro
+`ARCH_<COMP>`, ombra, replay sul PC) dopo la tappa 0 chiusa (misura di 24 h di T0A) e le risposte dell'utente.
 
 ## Obiettivo (parole dell'utente, 09/10)
 
