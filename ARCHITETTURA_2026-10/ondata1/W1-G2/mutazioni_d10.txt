@@ -1,0 +1,104 @@
+ROSSO | M1 cloud: ritenta qualunque errore (anche 4xx) | 1 failed in 1.19s | ripristino sha256 uguale a7553402bf37
+ROSSO | M2 cloud: ritenta il 57014 | 1 failed, 3 passed in 1.17s | ripristino sha256 uguale a7553402bf37
+ROSSO | M3 cloud: ritenta l'insert | 1 failed, 27 passed in 1.38s | ripristino sha256 uguale a7553402bf37
+ROSSO | M4 cloud: ritenta le RPC che scrivono | 1 failed, 40 passed in 1.19s | ripristino sha256 uguale a7553402bf37
+ROSSO | M4b cloud: ignora il registro delle RPC scriventi | 1 failed, 40 passed in 1.38s | ripristino sha256 uguale a7553402bf37
+ROSSO | M5 cloud: cache senza scadenza | 1 failed, 41 passed in 1.46s | ripristino sha256 uguale a7553402bf37
+ROSSO | M6 registro: tolta la riga di mike_activity | 1 failed in 0.61s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M7 registro: tolto il sito dinamico di season_aggregates | 1 failed, 3 passed in 9.44s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M8 registro: RPC refresh_analytics_bets_range senza book_odds_cache | 1 failed, 2 passed in 0.50s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M9 registro: dipende_da di live_now vuoto | 1 failed, 8 passed in 10.21s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M10 cache: replica mai riletta dopo la sentinella | 1 failed, 14 passed in 2.08s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M11 cache: errore del prefetch messo in cache come [] | 1 failed, 19 passed in 2.15s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M12 cache: lambda > 0 diventa >= 0 | 1 failed, 25 passed in 2.29s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M13 cache: ponte con omega_events prima di live_follow | 1 failed, 34 passed in 2.50s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M14 cache: la replica restituisce la sua memoria senza copia | 1 failed, 12 passed in 1.67s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M15 cache: bucket FT fino a 80 | 1 failed in 1.09s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M16 cache: dossier in memoria anche dopo un errore | 1 failed, 37 passed in 2.44s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M17 D-2: negativi del dossier in memoria | 1 failed, 34 passed in 2.37s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M18 D-2: scadenza del dossier 3600 s | 1 failed, 36 passed in 2.61s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M18b D-2: scadenza del dossier 36000 s (mutazione del revisore) | 1 failed, 36 passed in 2.69s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M19 D-3: upsert senza on_conflict ritentato | 1 failed, 29 passed in 1.37s | ripristino sha256 uguale a7553402bf37
+ROSSO | M19b D-3: upsert ritentato su qualunque on_conflict | 1 failed, 31 passed in 1.38s | ripristino sha256 uguale a7553402bf37
+ROSSO | M20 D-4: chiave mancante mai richiesta di nuovo | 1 failed, 19 passed in 2.03s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M21 D-5: sentinella solo su omega_ht_ft_transitions | 1 failed, 15 passed in 2.03s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M22 D-6: rilettura che sostituisce (perde le leghe preparate nel frattempo) | 1 failed, 16 passed in 1.78s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M23 D-6: scrittura di una generazione vecchia accettata | 1 failed, 17 passed in 1.72s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M24 D-7: cache non invalidata dopo scrivi | 1 failed, 36 passed in 1.18s | ripristino sha256 uguale a7553402bf37
+ROSSO | M25 D-7: filtri di patch/delete solo eq/in | 1 failed, 36 passed in 1.30s | ripristino sha256 uguale a7553402bf37
+ROSSO | M26 D-1: refresh_analytics_riepilogo dichiarata di sola lettura (mutazione del revisore) | 1 failed, 3 passed in 9.01s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M27 D-1: tolta lanci_action (scritta dal pg_cron) | 1 failed in 0.57s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M28 D-1: tolto un sito Storage | 1 failed, 3 passed in 12.37s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M29 D-10 (K): rev_colonna di live_ladder tolto | 1 failed, 35 passed in 11.34s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M30 D-10 (L): ritardo di live_markets 5 s invece di 2 s | 1 failed, 36 passed in 11.64s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M31 D-10: chiave di live_markets ridotta a event_id | 1 failed, 7 passed in 10.53s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M32 D-10: leads marcata con schema nel repo | 1 failed, 34 passed in 11.59s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M33 R2-1: Storage della Edge Function non dichiarato | 1 failed, 3 passed in 9.79s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | M34 R2-3: il dossier non pota le voci scadute | 1 failed, 46 passed in 3.04s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M35 R2-4: sentinella illeggibile per sempre cieca | 1 failed, 45 passed in 3.01s | ripristino sha256 uguale a45a22f4216f
+ROSSO | M36 R2-5: RPC in cache non svuotate dopo scrivi | 1 failed, 37 passed in 1.36s | ripristino sha256 uguale a7553402bf37
+ROSSO | M37 R2-5: lettura in volo rimette in cache il vecchio | 1 failed, 38 passed in 1.25s | ripristino sha256 uguale a7553402bf37
+ROSSO | M38 R2-5: la cache non pota mai le scadute | 1 failed, 39 passed in 1.20s | ripristino sha256 uguale a7553402bf37
+ROSSO | REV A1 D-2: _fresca non scade mai | 1 failed, 38 passed in 3.33s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV A2 D-2: ponte/fixture negativi (tupla sempre non None) | 1 failed, 34 passed in 2.61s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV A3 D-2: scadenza ignorata | 1 failed, 38 passed in 2.71s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV B1 D-4: ritardo riprefetch infinito | 1 failed, 39 passed in 2.65s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV B2 D-4: ritardo 0 | 1 failed, 20 passed in 2.06s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV B3 D-4: richiedi_incomplete non riaccoda | 1 failed, 20 passed in 2.13s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV B4 D-4: ritardo 3600 s | 1 failed, 39 passed in 2.71s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV C1 D-5: sentinella senza omega_transitions_state | 1 failed, 15 passed in 1.92s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV C2 D-5: sentinella senza omega_ht_ft_transitions | 1 failed, 40 passed in 2.72s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV C3 D-5: sentinella senza omega_build_jobs | 1 failed, 41 passed in 2.68s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV C4 D-5: sentinella ignora published_at | 1 failed, 42 passed in 2.92s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV D1 D-6: _servi memorizza con la generazione corrente | 1 failed, 17 passed in 1.97s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV D2 D-6: prefetch_lega memorizza con la generazione corrente | 1 failed, 43 passed in 2.93s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV D3 D-6: rilettura non toglie le voci vecchie | 1 failed, 44 passed in 3.32s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV D4 D-6: scarto solo se gen < corrente-1 | 1 failed, 17 passed in 1.92s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-1 sorveglianza ogni 300 s invece di 5 s | 1 failed, 56 passed in 7.95s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-2 ripiego REST ogni 300 s invece di 15 s | 1 failed, 58 passed in 9.69s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-3 impronte mai confrontate (nessun cambio visto) | 1 failed, 11 passed in 1.39s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-4 evento cambiato senza togliere le voci vecchie | 1 failed, 14 passed in 1.36s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-5 lettura in volo della previsione rimette il vecchio | 1 failed, 19 passed in 2.16s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-6 lettura in volo del ponte rimette il vecchio | 1 failed, 20 passed in 1.52s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-7 rinnovo anche senza la versione del trigger (letture REST) | 1 failed, 18 passed in 1.88s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-8 nessun rinnovo con la RPC (rilettura ogni 300 s) | 1 failed, 18 passed in 1.74s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-9 impronta registrata anche se la rilettura fallisce | 1 failed, 21 passed in 1.76s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-10 RPC assente trattata come errore (nessun ripiego REST) | 1 failed, 5 passed in 1.25s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-11 RPC assente mai riprovata | 1 failed, 5 passed in 1.29s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-12 ogni errore della RPC fa passare alle letture | 1 failed, 6 passed in 1.30s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-13 impronta di Omega della RPC in forma diversa dalle letture | 1 failed in 1.27s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-14 errori di Omega consegnati a ogni giro (rilettura forzata dopo 15 s) | 1 failed, 54 passed in 11.47s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-15 valore di Omega uguale riconsegnato a ogni giro | 1 failed, 53 passed in 10.89s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-16 la replica ignora le notifiche (drena_coda) | 1 failed, 47 passed in 9.51s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-17 segui somma invece di sostituire | 1 failed, 22 passed in 1.88s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-18 precarica non segue gli eventi | 1 failed, 11 passed in 1.56s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-19 prendi_cambiati non consuma | 1 failed, 11 passed in 1.47s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-20 letture REST senza updated_at nell'impronta | 1 failed, 30 passed in 4.73s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-21 blocco della RPC oltre il tetto di 500 | 1 failed, 4 passed in 1.38s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-22 registro: RPC della sentinella non dichiarata | 1 failed, 3 passed in 10.67s | ripristino sha256 uguale 0eb794bd528a
+ROSSO | D10-P1 trigger: versione nuova a ogni scrittura | 1 failed, 1 passed in 3.77s | ripristino sha256 uguale 85c67390c6fe
+ROSSO | D10-P2 trigger: db_json_analisi non guardata | 1 failed, 1 passed in 4.26s | ripristino sha256 uguale 85c67390c6fe
+ROSSO | D10-P3 RPC: ponte con omega_events prima di live_follow | 1 failed, 4 passed in 17.57s | ripristino sha256 uguale 85c67390c6fe
+ROSSO | D10-P4 RPC: impronta di Omega con una colonna in piu' | 1 failed, 5 passed in 19.49s | ripristino sha256 uguale 85c67390c6fe
+ROSSO | D10-P5 RPC eseguibile da tutti | 1 failed in 2.48s | ripristino sha256 uguale 85c67390c6fe
+ROSSO | D10-P6 RPC senza tetto di 500 eventi | 1 failed in 2.59s | ripristino sha256 uguale 85c67390c6fe
+ROSSO | D10-P7 trigger non scatta quando si forza nucleo_versione | 1 failed, 1 passed in 4.12s | ripristino sha256 uguale 85c67390c6fe
+ROSSO | D10-23 ponte di un dossier cieco tenuto in memoria | 1 failed, 62 passed in 13.47s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-24 giro fallito senza annulla_rinnovi | 1 failed, 61 passed in 12.46s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-25 annulla_rinnovi non riporta alla lettura | 1 failed, 61 passed in 11.99s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-26 nessun backoff dopo gli errori | 1 failed, 68 passed in 14.12s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-27 backoff mai azzerato dal giro riuscito | 1 failed, 68 passed in 13.17s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-28 nessuna scadenza massima con la RPC | 1 failed, 70 passed in 13.09s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-29 tetto raggiunto senza rilettura | 1 failed, 70 passed in 11.91s | ripristino sha256 uguale a45a22f4216f
+ROSSO | D10-P8 migrazione senza lock_timeout | 1 failed, 3 passed in 16.66s | ripristino sha256 uguale 85c67390c6fe
+ROSSO | REV-DG R1 trigger: versione anche senza cambi | 1 failed, 1 passed in 3.67s | ripristino sha256 uguale 85c67390c6fe
+ROSSO | REV-DG R2a generazione fixture ignorata | 1 failed, 19 passed in 1.57s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV-DG R2b generazione evento (ponte) ignorata | 1 failed, 20 passed in 1.77s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV-DG R2c _invalida non alza le generazioni | 1 failed, 19 passed in 1.59s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV-DG R3 ripiego REST spento | 1 failed, 5 passed in 1.33s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV-DG R4a tetto 500 tolto dalla RPC | 1 failed in 2.43s | ripristino sha256 uguale 85c67390c6fe
+ROSSO | REV-DG R4b tetto 500 tolto dal client (BLOCCO_RPC) | 1 failed, 4 passed in 1.27s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV-DG R5 prendi_cambiati restituisce anche i dossier pieni | 1 failed, 66 passed in 11.51s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV-DG R6 rinnovo anche in modo letture | 1 failed, 18 passed in 1.53s | ripristino sha256 uguale a45a22f4216f
+ROSSO | REV-DG R7 errore della RPC trattato come assente (cambio modo) | 1 failed, 6 passed in 1.33s | ripristino sha256 uguale a45a22f4216f
+mutazioni rosse 103/103 (saltate senza PostgreSQL: 0)

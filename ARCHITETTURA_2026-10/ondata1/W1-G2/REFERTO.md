@@ -236,3 +236,217 @@ Comandi: `python -m pytest Betfair/nucleo/dati/tests/test_g2_registro.py Betfair
 Betfair/nucleo/dati/tests/test_g2_cache_cloud.py -q -p no:cacheprovider`;
 `python ARCHITETTURA_2026-10/ondata1/W1-G2/mutazioni_w1g2.py $(pwd)`. Versioni: supabase 2.28.0, postgrest 2.28.0,
 httpx 0.28.1, Python 3.13.
+
+## 12. Decisione 10 dell'utente (10/10/2026): i dati calcolati dal cloud appena cambiano (agente D-G)
+
+Ramo `decisioni/d-g` da `d073ddcb`; commit del codice `3911c0d6`. Parole dell'utente: "Tutta l'app in tempo reale per
+Betfair; il cloud solo come backup; il resto sul DB locale". Nessun dato Betfair passa dal cloud (gia' cosi' nel
+disegno). Cambia il modo in cui arrivano i dati che il cloud CALCOLA e l'app legge: il dossier pre-partita di Mike e
+le tabelle delle transizioni di Omega. Prima arrivavano fino a 300 s dopo. Ora arrivano entro 5 s dal ricalcolo.
+
+### 12.1 Come si leggono oggi e quando il cloud ricalcola (letto nel codice)
+
+| Dato | Lettura di oggi (file:riga) | Chi lo ricalcola e quando |
+|---|---|---|
+| Ponte evento -> fixture | `mike/db.fixture_id_for_event` (`Betfair/mike/db.py:591`: `live_follow`, poi `omega_events`) | il runner e la watchlist (`live_follow`), il catalogo di Omega (`omega_events`), quando abbinano la partita |
+| Gol attesi, rho, mercati | `mike/db.fixture_lambdas` (:620 -> `stream/db.get_fixture_prematch_lambdas`), `fixture_analysis` (:636 -> `omega_db.fixture_analysis`); `mike/dossier.build_prematch` (`dossier.py:66`) | catena notturna di GitHub (orologio pg_cron alle 00:12 UTC, anello 3 `today_predictions_backfill.yml`, mediana 67 min, p90 170): upsert `on_conflict=fixture_id` (`Prediction/today_predictions_backfill.py:1898,2173,2187,2285,2344`); a mano `AGGIORNA_CAMPO_db_json_analisi.py:178`, `Ai Engine/ai_engine/predict_fixture.py:1087` |
+| Quando Mike rilegge il dossier | presa in carico (`mike/service.py:4486`); se cieco `_retry_dossier` (:4507, :6959) ogni `_DOSSIER_RETRY_SEC = 300` (:6938); se pieno MAI (`dossier_da_ritentare`, :6941: "gia' risolto: non si tocca") | - |
+| Tabelle HT->FT e per minuto | `omega_db.ht_ft_transitions`/`minute_transitions`; cache di Omega 6 h (`omega_service.py:107`), di Mike mai (`mike/dossier.py:136`) (U-53); replica di W1-G2: sentinella ogni 300 s | pg_cron `omega_transitions_nightly` alle 04:00 UTC (`omega_transitions_catchup_2026-09-25.sql:1011`), UNA transazione per giro (visibile al commit); pubblicazione e costruttori v3/v4 a mano |
+
+### 12.2 Opzioni valutate (con il costo)
+
+| Opzione | Latenza | Carico per il cloud | Esito |
+|---|---|---|---|
+| (a) sentinella leggera interrogata spesso | 5 s + una richiesta | 1 RPC ogni 5 s = 12/min per processo, letture solo per chiave primaria o per indice | **SCELTA**, insieme a (c) |
+| (b) Supabase Realtime (`postgres_changes`) | < 1 s | `fixture_predictions` andrebbe nella publication `supabase_realtime`. Ogni scrittura notturna (righe di ~20 KB di JSON, migliaia a notte) verrebbe decodificata dal server Realtime e confrontata con chi ascolta. Servirebbe comunque un controllo periodico: i messaggi persi durante una riconnessione non tornano | **SCARTATA**. supabase-py 2.28 e realtime 2.28 sono installati, ma il client sincrono usato in tutto il repo (`db_client`) non lo implementa: `SyncRealtimeClient.channel` solleva `NotImplementedError`. Esiste solo `AsyncRealtimeClient`, che vorrebbe un thread con asyncio. Nulla installato |
+| (c) colonna di versione | - | per FIXTURE: trigger di riga, una `nextval` per riga il cui dossier cambia davvero. Per LEGA: non serve, il dossier e' per fixture | **SCELTA per fixture**. Scartato il contatore unico per tabella aggiornato da un trigger di istruzione: blocco di riga condiviso fra scrittori concorrenti di `fixture_predictions`, con rischio di deadlock |
+| ripiego senza migrazione: letture REST di oggi | 15 s | 3 + 2 per 50 eventi + 1 per 50 fixture a giro: 24/min fino a 50 eventi, 36 con 60, **132 con 500** (par. 13) | attivo SOLO se la RPC manca (PGRST202/42883). La RPC si riprova ogni 10 min |
+
+### 12.3 Il meccanismo (file:riga)
+
+- **Migrazione nuova** `migrations/nucleo_sentinella_cloud_2026-10-10.sql`. Additiva e idempotente, applicata due volte
+  senza errori. **Da applicare dall'utente.** Contiene:
+  - la sequenza delle versioni;
+  - la colonna `fixture_predictions.nucleo_versione`. NULL sulle righe esistenti: nessun riempimento di massa;
+  - il trigger `trg_nucleo_versione_dossier` (:86): `BEFORE INSERT OR UPDATE OF` le 5 colonne del dossier (e
+    `nucleo_versione`, cosi' nessuno la puo' forzare). Versione nuova SOLO se cambia il dossier; il confronto e' in
+    jsonb, quindi vale per colonne json, jsonb o text, tutte provate;
+  - l'indice `omega_ht_ft_transitions(built_at)` (:95);
+  - la RPC `nucleo_sentinella_cloud(p_event_ids, p_omega)` (:101). E' STABLE, fa solo SELECT, accetta al massimo 500
+    eventi ed e' eseguibile solo da `service_role`. Restituisce le tre letture della sentinella di Omega e, per ogni
+    evento, `[evento, fixture (coalesce live_follow, omega_events: l'ordine di mike.db), riga presente, versione]`.
+  - Il ritorno indietro e' in fondo al file.
+- **Registro**: `nucleo_sentinella_cloud` e' in `RPC_SOLA_LETTURA_DICHIARATE` (`registro.py:76`), con la definizione
+  letta. La nota sulla colonna e' nella voce `fixture_predictions`. Il test di copertura resta verde; la mutazione
+  D10-22 lo fa diventare rosso.
+- **`cache_cloud.SentinellaCloud`** (`cache_cloud.py:772`): UNA RPC per giro (:815). L'impronta di Omega ha la stessa
+  forma della sentinella di oggi (`_dati_sentinella`, :898). Senza la funzione ripiega sulle letture REST (:863).
+  Ogni altro errore produce un giro "senza conclusioni" e non cambia mai il modo.
+- **`cache_cloud.Sorveglianza`** (:929), un giro ogni 5 s (15 s senza la RPC):
+  - **Omega**: il valore va al thread della replica (`ReplicaEmpirica.notifica_sentinella`, :297, con
+    `sentinella_esterna=True`). La replica rilegge come oggi, nel suo thread. Un valore uguale non si riconsegna. Un
+    errore si consegna al piu' ogni 300 s (:1013): "3 errori di fila" resta ~15 min come oggi.
+  - **Dossier**: `DossierPrematch.applica_impronte` (:553) lavora sugli eventi seguiti (`segui` :532, piu' quelli di
+    `precarica`). Se l'impronta e' cambiata toglie le voci, rilegge SOLO quell'evento e lo mette fra i cambiati
+    (`prendi_cambiati`, :546).
+  - Generazioni per evento e per fixture: una lettura in volo non rimette il vecchio.
+  - **Rinnovo** solo nel modo `rpc`, dove la versione e' garantita dal trigger: una voce confermata a ogni giro resta
+    fresca oltre i 300 s con una sola richiesta per giro. Nel modo `letture` (`updated_at` non garantito) la voce scade
+    a 300 s come prima.
+- **Riserve sempre accese** (punto 4 del brief): la lettura diretta di Mike (`ripiego=mike.db`), la scadenza di 300 s
+  del dossier, il ritento di Mike ogni 300 s. Se la sorveglianza tace, tutto funziona come oggi.
+
+### 12.4 Numeri dichiarati (misurati)
+
+| Misura | Valore | Strumento |
+|---|---|---|
+| Richieste al minuto con la RPC (replica + dossier, 60 eventi) | **12** (1 per giro, qualunque numero di eventi fino a 500) | `test_carico_dichiarato_richieste_al_minuto[rpc-60-12]`, contate al trasporto |
+| Richieste al minuto senza migrazione | **24** fino a 50 eventi, **36** con 60, **132** con 500 (correzione del par. 13: il "24-36" vale solo fino a 60 eventi) | stesso test, `letture` |
+| Richieste in un giro con un evento cambiato | 1 RPC + 1 `live_follow` + 1 `fixture_predictions` (SOLO quell'evento) | `test_positivo_cambiato_nel_cloud_arriva_al_giro_dopo` |
+| Latenza dal ricalcolo alla memoria pronta e all'evento fra i cambiati | **<= 5 s** di cadenza + 1 RPC + 2-3 letture dell'evento. Con le letture misurate in U-60 (p50 111 / p90 148 / p99 493 ms): ~5,5 s al p90, ~7 s al p99, media ~3 s. Senza migrazione <= 15 s. Oggi 0-300 s (media 150 s) | `test_mai_piu_lento_di_oggi_e_latenza_dichiarata` (orologio finto, passo di 1 s) |
+| Latenza della ricostruzione di Omega | **vista entro 5 s** (oggi entro 300 s). La rilettura completa resta 28 RPC per lega, in sequenza, come prima | `test_omega_ricostruzione_vista_in_5_s_non_in_300` |
+| Costo della RPC (PostgreSQL 16 usa-e-getta, 200.000 previsioni da ~22 KB, 60.000 eventi, 288.240 righe HT->FT) | 0,86 ms a chiamata con 60 eventi e Omega; 12,6 ms con 500 eventi a cache fredda | `ondata1/W1-G2/misura_d10_pg.sql`, `misure_d10.txt` |
+| `built_at` piu' recente | 0,05 ms con l'indice contro 32 ms senza (scansione parallela). Ne beneficia anche la sentinella REST di oggi | idem |
+| Trigger | UPDATE: +25 us per riga riscritta (5.000 UPDATE identici: 161 contro 38 ms, nessuna nextval); 5.000 cambi = 5.000 versioni. **Correzione (par. 13)**: con l'UPSERT dei workflow ogni riga consuma una nextval anche se identica (il BEFORE INSERT scatta prima del conflitto); la versione SULLA RIGA resta giusta | idem, `misura_d10_upsert.sql` |
+
+### 12.5 Parita': mai piu' lento di oggi (orologio finto, Mike VERO)
+
+`test_g2_sorveglianza.py::test_mai_piu_lento_di_oggi_e_latenza_dichiarata` confronta due cicli di Mike.
+- **Oggi**: il ciclo di Mike con `mike/service._retry_dossier` e `dossier_da_ritentare` veri su `mike.db`.
+- **Domani**: lo STESSO ciclo su `DossierPrematch`, con l'aggancio proposto (12.7).
+- **Scenari** (3): il ponte compare; la previsione compare; i gol attesi arrivano con un ricalcolo.
+- **Modi** (2): `rpc`, `letture`.
+- **Istanti di scrittura** (15): 0, 1, 4, 5, 6, 149, 299, 300, 301, 450, 599, 600, 601, 899, 900 s.
+
+Esito:
+- oggi = `ceil(w/300)*300` esatto;
+- domani <= oggi in ogni caso;
+- domani - w <= 5 s (rpc) o 15 s (letture);
+- il dossier ottenuto e' identico a `build_prematch(ev, mike.db)`.
+
+`test_mai_piu_lento_di_oggi_anche_quando_la_sorveglianza_non_vede` copre due casi: la RPC in errore per sempre, e le
+letture REST con uno scrittore che non tocca `updated_at`. In entrambi domani <= oggi: resta il ritento di 300 s.
+
+Altri casi provati:
+- positivo cambiato (prima del giro vecchio, dopo il giro nuovo, servito dalla memoria);
+- riscrittura identica, che non e' un cambio;
+- negativo che compare;
+- previsione tolta, ponte spostato, gol attesi tolti, `omega_events` cambiato;
+- rinnovo (rpc) contro scadenza a 300 s (letture);
+- gare: lettura in volo di `fixture_predictions` e di `live_follow`;
+- rilettura fallita: nulla registrato, ripiego, ritento al giro dopo;
+- eventi non piu' seguiti;
+- `al_cambio` che si rompe;
+- RPC: oltre 500 eventi, RPC assente, poi presente dopo 10 min, 57014, 503, rete, forma sbagliata;
+- Omega: valore uguale non riconsegnato, errori al ritmo di oggi, ricostruzione vista dopo gli errori;
+- i due thread avviati e fermati.
+
+Sul PostgreSQL vero (`test_g2_pg_sentinella.py`, solo con `G2_PG_PSQL`):
+- permessi (`anon`/`authenticated`: permission denied) e tetto di 500 eventi (22023);
+- il trigger in 10 passi, compresa una riga nata prima della migrazione;
+- il ponte nell'ordine di `mike.db`;
+- **l'impronta di Omega della RPC e' la STESSA stringa di quella delle letture REST** (`json_agg` come PostgREST), in
+  UTC e in Europe/Rome;
+- il finto dei test risponde come il vero sulla stessa sequenza di scritture;
+- un giro completo `Sorveglianza` -> `DossierPrematch` -> `build_prematch`, con il client supabase VERO su
+  MockTransport -> psql.
+
+### 12.6 Test e falsificazioni
+
+- Test: `test_g2_sorveglianza.py` 45 e `test_g2_pg_sentinella.py` 7. Totale G2: **189**
+  (registro 45, cloud 45, cache 47, sorveglianza 45, PostgreSQL 7).
+- `python -m pytest Betfair/nucleo/dati -q -p no:cacheprovider`: **304 verdi**, 21 saltati (i 14 PostgreSQL di G1 e
+  i 7 miei senza le variabili). Con `G2_PG_PSQL` i miei 7 sono verdi.
+- Mutazioni nuove: 29, nel `mutazioni_w1g2.py` con prefisso `D10-`.
+  - 22 sul codice (cadenze, confronto delle impronte, invalidazione, generazioni ponte/fixture, rinnovo nei due versi,
+    registrazione dopo una rilettura fallita, RPC assente e riprova, errori, forma dell'impronta di Omega, errori di
+    Omega a ogni giro, riconsegna, notifiche ignorate, `segui`, `precarica`, `prendi_cambiati`, `updated_at`, blocco
+    di 500, registro);
+  - 7 sulla migrazione (versione a ogni scrittura, `db_json_analisi` ignorata, ponte invertito, impronta di Omega
+    diversa, RPC a tutti, senza tetto, trigger aggirabile).
+- Giro D10 isolato: **29/29 rosse**.
+- Giro COMPLETO (85 = 56 + 29, con PostgreSQL): **85/85 rosse** (uscita completa in `ondata1/W1-G2/mutazioni_d10.txt`). Ogni file e' stato ripristinato con sha256 identico.
+- Suite intera (una volta, alla fine): **12.978 verdi, 0 rossi, 108 saltati, 6 xfailed** in 798 s su `3911c0d6` (ramo prima: 12.933; +45 = `test_g2_sorveglianza.py`; +7 saltati = `test_g2_pg_sentinella.py` senza `G2_PG_PSQL`).
+- PostgreSQL 16 usa-e-getta: porta 54341, dati in `/var/tmp/pg_dg` (il server gira come `postgres`, che non entra
+  nella scratchpad di root), ruoli finti di Supabase. Avviato e poi fermato e cancellato con gli script della
+  scratchpad `d-g/pg_avvia.sh`/`pg_ferma.sh`.
+
+### 12.7 Aggancio proposto per l'ondata 2 (nessun file di produzione toccato)
+
+- **Mike** (`ARCH_PREFETCH_MIKE`): nel giro di `mike/service.py`, prima di `_retry_dossier(db, tracked, now_ts)`
+  (:4507), tre righe:
+  - `_DOSSIER.segui(tracked)`;
+  - `for eid in _DOSSIER.prendi_cambiati(tracked): ev = tracked[eid]` (solo i ciechi, di serie: par. 13);
+  - `if ev and dossier_da_ritentare(ev, now_ts, ogni=0.0): ev["dossier"]["retry_ts"] = 0.0`.
+
+  Al resto (`_retry_dossier`, `build_prematch`, il ritento di 300 s) non si tocca nulla. `db` passa al
+  `DossierPrematch` (`ripiego=mike.db`). La `Sorveglianza(dossier=...)` si avvia e si ferma nel `main`.
+- **Omega** (`ARCH_PREFETCH_OMEGA`): `ReplicaEmpirica(..., sentinella_esterna=True)` piu'
+  `Sorveglianza(replica=...)` nel ciclo di vita del servizio. Nello stesso processo dell'app: UNA sorveglianza per
+  replica e dossier.
+- **Uguale o meglio**: in ombra si confrontano i dossier e le righe (identici) e l'istante del primo dossier pieno (mai
+  dopo). La migrazione la applica l'utente PRIMA dell'ombra; senza, si misura il modo `letture`.
+
+### 12.8 Per l'utente: divergenze, rischi, cio' che non ho potuto verificare
+
+- **D10-a (decisione dell'utente)**: le cache DEI BOT restano come oggi (U-53): Omega 6 h, Mike mai per l'HT->FT. La
+  replica e' fresca entro 5 s, ma i bot usano le tabelle nuove solo quando scade la LORO cache. Usarle entro 5 s
+  vorrebbe dire svuotare le cache dei bot alla notifica, cioe' cambiare il comportamento dei bot. Non l'ho fatto: va
+  deciso.
+- **D10-b (decisione dell'utente)**: oggi un dossier PIENO non si rilegge mai durante la partita. Il nucleo ora sa
+  entro 5 s che il cloud lo ha ricalcolato. Dopo la revisione (par. 13) e' il COMPONENTE a proteggerlo:
+  `prendi_cambiati(tracked)` restituisce di serie solo i dossier ciechi, come il ritento di oggi. Ricostruire un dossier pieno a partita armata cambierebbe la strategia: va deciso.
+- **Carico per processo**: 12 richieste al minuto per processo che sorveglia. Con Mike e Omega in due processi sono
+  24/min; con l'app a processo unico 12/min.
+- Al primo giro ogni evento seguito si rilegge una volta (ha un'impronta mai vista) e finisce fra i cambiati. Per Mike
+  e' innocuo: riprova solo i ciechi.
+- La rilettura di Omega dopo la ricostruzione resta quella di oggi: 28 RPC per lega, in sequenza; durante la
+  rilettura si servono le righe vecchie. Si puo' migliorare con letture in parallelo o rileggendo solo le leghe
+  cambiate (`omega_transitions_league_counts.updated_at`): proposta, non fatto.
+- **Non verificato**:
+  - Supabase vero (PostgREST, RLS, tipi reali di `fixture_predictions`, il cui CREATE TABLE non e' nel repo; provati
+    json, jsonb e text);
+  - volumi e tempi veri (PostgreSQL 16 nel container, macchina condivisa);
+  - le Edge Functions (nessuna scrive `fixture_predictions` o le tabelle di Omega nel repo: verificato con grep);
+  - Realtime, non usato.
+
+## 13. Correzioni dopo la revisione indipendente (10/10, su `3911c0d6` + `1a922498`: "DA CORREGGERE")
+
+Commit nuovo sul ramo `decisioni/d-g`, senza riscrivere la storia. Promossi dal revisore e non toccati:
+idempotenza, ritorno indietro, permessi, RPC, generazioni, parita' del dossier. Nessuna strategia toccata.
+
+| # | Rilievo del revisore | Correzione (file) | Prova |
+|---|---|---|---|
+| 1 MEDIO | "Mai piu' tardi di oggi" falso con la sorveglianza guasta DOPO un rinnovo. Il ponte di un dossier CIECO restava in memoria e la RPC lo rinnovava a ogni giro; quando la RPC andava in errore valeva fino a 300 s dall'ULTIMA conferma. Con guasto a 101 s e ripunta a 150 s: oggi 300 s, domani 600 s | `cache_cloud.py`, `DossierPrematch.precarica`: il ponte entra in memoria SOLO se la sua fixture ha la riga con i gol attesi, come diceva gia' la docstring. `_lette` registra l'istante della LETTURA di ogni voce. `annulla_rinnovi`, chiamata dalla `Sorveglianza` a ogni giro fallito, riporta ogni voce alla scadenza calcolata dalla lettura | `test_guasto_dopo_i_rinnovi_mai_piu_tardi_di_oggi`: griglia del revisore (guasto a 1, 101, 250, 10.000 s), 5 istanti di scrittura, 3 scenari compreso quello del revisore ("ripunta"); domani <= oggi ovunque. Il test di parita' principale ha ora 4 scenari con "ripunta". `test_giro_fallito_riporta_le_voci_alla_scadenza_della_lettura`. `test_dossier_cieco_mai_in_memoria_anche_senza_sorveglianza`: senza sorveglianza, precarica a 1, 100 e 250 s, ripunta a 150 s; Mike risolve a 300 s come oggi. Mutazioni D10-23, D10-24, D10-25 |
+| 2 BASSO | Migrazione: lock ACCESS EXCLUSIVE su `fixture_predictions` e CREATE INDEX che aspetta gli scrittori | Intestazione: applicare FUORI da 04:00-04:20 UTC (pg_cron di Omega) e dalla catena notturna (dalle 00:12 UTC). Prima istruzione `SET lock_timeout = '5s'`: se scade, rilanciare | `test_pg_lock_timeout_ferma_la_migrazione_invece_di_attendere`: con un lock tenuto da un'altra sessione la migrazione si ferma in ~5 s con "lock timeout"; liberato il lock, passa. Applicata due volte a ogni giro (idempotente). Mutazione D10-P8 |
+| 3 BASSO | "Le riscritture identiche non consumano la sequenza" e' falso per l'upsert | Frase corretta nell'intestazione della migrazione e nel par. 12.4. Con INSERT ... ON CONFLICT il BEFORE INSERT consuma una nextval anche per una riga identica (buchi nella sequenza, innocui). La versione SULLA RIGA resta giusta | `test_pg_upsert_identico_consuma_la_sequenza_ma_non_la_versione`. Misura dell'upsert reale: `misura_d10_upsert.sql`, coda di `misure_d10.txt`. Su 3.000 righe con JSON di 2 KB: +9.000 nextval per giro (3.000 per gli identici, 6.000 per i cambiati); costo del trigger dentro il rumore (80-85 ms contro 73-100 ms) |
+| 4 | RPC in errore: la sorveglianza riprova ogni 5 s, sempre | `Sorveglianza.attesa`: dopo giri falliti DI FILA attende 15, 30, poi 60 s (`BACKOFF_ERRORI_S`). Torna alla cadenza al primo giro riuscito. Il ripiego verso il dato resta quello di oggi | `test_errori_di_fila_backoff_15_30_60_e_ritorno_a_5` (rpc e letture), con orologio finto: in 10 minuti di 57014 **12 richieste** invece di 120; attese 15, 30, 60, 60...; poi di nuovo 5 s. Mutazioni D10-26, D10-27 |
+| 5 | La protezione dei dossier pieni (D10-b) stava solo nell'aggancio proposto | `prendi_cambiati(tracked)` restituisce DI SERIE solo gli eventi col dossier ancora cieco. Il criterio e' `dossier_cieco`, provato uguale a `mike/service.dossier_da_ritentare`. Senza `tracked` solleva ValueError; `anche_pieni=True` serve per averli tutti, esplicito | `test_prendi_cambiati_di_serie_solo_i_ciechi`, `test_dossier_pieno_mai_ricostruito_a_partita_armata` (del revisore), `test_dossier_cieco_e_il_criterio_di_mike`. Mutazione REV-DG R5, ora ROSSA (era verde) |
+| 6 | Uno scrittore che aggira il trigger: con la RPC la voce non scade mai | `SCADENZA_MASSIMA_S` = 3600 s: il rinnovo non va oltre 3600 - 300 s dalla LETTURA. Raggiunto il tetto, la voce si rilegge comunque (55 minuti dopo la lettura) e scade al piu' a 60 minuti | `test_scadenza_massima_anche_con_la_rpc`: riga cambiata senza versione; fino a 3.300 s solo la RPC (dato vecchio, controllo); poi rilettura e dossier uguale a mike.db dalla memoria. Mutazioni D10-28, D10-29 |
+| 7 | Carico senza migrazione con molti eventi | Scritto nel par. 12.2, nel par. 12.4 e nel doc G2 | `test_carico_dichiarato_richieste_al_minuto`, nuovi casi: con la RPC e 500 eventi **12/min**; senza migrazione e 500 eventi **132/min** (4 giri x 33: 3 + 10 + 10 + 10). Uguale alla misura del revisore |
+
+**Rischio dichiarato (punto 6)**: chi cambia le 5 colonne del dossier SENZA far scattare il trigger
+(`session_replication_role = replica`, `ALTER TABLE ... DISABLE TRIGGER`, `ALTER COLUMN TYPE`) non cambia la versione.
+- Con la RPC il dato vecchio puo' restare in memoria fino a ~55 minuti (rilettura) e mai oltre 60 (scadenza dura).
+  Oggi il massimo e' 300 s.
+- Senza la RPC vale sempre la scadenza di 300 s.
+- Mike non e' toccato da questo rischio per i dossier gia' presi in carico: un dossier pieno non si rilegge mai, ne'
+  oggi ne' domani. Il rischio riguarda solo gli eventi precaricati e non ancora presi in carico.
+
+**Test del revisore incorporati con nomi miei** (`test_g2_sorveglianza.py`, par. 6 del file):
+- guasto dopo i rinnovi (griglia 1, 101, 250, 10.000);
+- dossier pieno mai ricostruito;
+- lettura in volo con thread veri (`test_thread_veri_lettura_in_volo_scartata`, su `fixture_predictions` e su
+  `live_follow`);
+- scrittori, lettori e sorveglianza in thread veri che convergono;
+- passeggiata casuale del cloud con parita' a ogni giro, nei due modi.
+
+**Numeri dopo le correzioni**:
+- Test G2: **222** (registro 45, cloud 45, cache 47, sorveglianza 76, PostgreSQL 9).
+- `python -m pytest Betfair/nucleo/dati -q -p no:cacheprovider`: **344 verdi**, 14 saltati (i PostgreSQL di G1) con `G2_PG_PSQL`.
+- Mutazioni (`mutazioni_w1g2.py`, giro completo con `G2_PG_PSQL`): **103/103 rosse**, ogni file ripristinato con sha256 identico (uscita in `ondata1/W1-G2/mutazioni_d10.txt`). Al primo giro D10-23 era VERDE: la griglia del guasto non la vedeva, perche' `annulla_rinnovi` copriva il caso. L'ha chiusa `test_dossier_cieco_mai_in_memoria_anche_senza_sorveglianza`, poi rilanciata ROSSA. D10-28 mandava in ciclo il test (tetto a 1e12): il test ora usa i 3.300 s scritti per esteso. Sono 103:
+  - le 85 di prima;
+  - 8 nuove (D10-23..D10-29, D10-P8);
+  - le 10 del revisore (`REV-DG R1..R7`), adattate al codice corretto dove il testo era cambiato (R5).
+- Suite intera (una volta, alla fine): **13.009 verdi, 0 rossi, 110 saltati, 6 xfailed** in 756 s (+31 test nuovi rispetto a 12.978; +2 saltati: i due PostgreSQL nuovi senza `G2_PG_PSQL`).
+- PostgreSQL usa-e-getta con dati piccoli (al massimo 3.000 righe), fermato e cancellato alla fine.

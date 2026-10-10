@@ -567,8 +567,10 @@ def test_dossier_uguale_a_mike_db_per_ogni_evento(cloud):
     assert dossier.build_prematch("ev2", d)["p_under35_fonte"] == "raw"
     assert n_vecchio >= 2 * len(EVENTI)                                   # oggi: >= 2 letture a evento
     assert d.statistiche()["letture_rete"] == 3                           # domani: 3 letture per tutti
-    # i negativi (evento senza fixture, fixture senza previsione o senza lambda) NON sono in memoria
-    assert set(d._ponte) == {ev for ev in EVENTI if mike_db.fixture_id_for_event(ev) is not None}
+    # i negativi (evento senza fixture, fixture senza previsione o senza lambda) NON sono in memoria: nemmeno
+    # il ponte di un evento il cui dossier e' cieco (revisione D-G del 10/10: solo i positivi)
+    pieni = {ev for ev in EVENTI if dossier.build_prematch(ev, mike_db)["lambda_home"] is not None}
+    assert set(d._ponte) == pieni and {"ev4", "ev5", "ev7"}.isdisjoint(pieni)
     assert all(K.lambdas_da_riga(r)[0] is not None for _, r in d._fixture.values())
     assert 104 not in d._fixture and 105 not in d._fixture
 
