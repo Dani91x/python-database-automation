@@ -176,11 +176,19 @@ class CalcoloPosizione:
         return self.qualita == QUALITA_ESATTO and self.esposizione_massima is not None
 
 
-def _abbinati_validi(ordini: Sequence[OrdineConto]) -> Tuple[List[OrdineConto], List[str]]:
+def _abbinati_validi(ordini: Sequence[OrdineConto], *,
+                     prezzo_richiesto: bool = True) -> Tuple[List[OrdineConto], List[str]]:
+    """Gli abbinati che entrano nel P&L. ``prezzo_richiesto=False`` (mercati ``LINE``):
+    la quota e' 2,0 per regolamento e ``averagePriceMatched`` non e' garantito
+    (documentazione Betfair, ``bf_2687396.txt`` r.1148): un abbinato senza prezzo medio
+    o con la linea <= 1,0 NON si scarta (revisione del 10/10)."""
     buoni: List[OrdineConto] = []
     scartati: List[str] = []
     for o in ordini:
         if not o.abbinato or o.abbinato <= 0:
+            continue
+        if not prezzo_richiesto:
+            buoni.append(o)
             continue
         if o.prezzo_medio is None or not o.prezzo_medio > 1.0:
             scartati.append(o.bet_id)
@@ -200,7 +208,7 @@ def esposizioni_per_selezione(ordini: Iterable[OrdineConto], *,
 
     per_sel: Dict[Tuple[int, float], Tuple[List[Tuple[float, float]],
                                            List[Tuple[float, float]]]] = {}
-    buoni, _ = _abbinati_validi(list(ordini))
+    buoni, _ = _abbinati_validi(list(ordini), prezzo_richiesto=quota is None)
     for o in buoni:
         mb, ml = per_sel.setdefault((int(o.selection_id), float(o.handicap)), ([], []))
         if quota is not None:
@@ -332,7 +340,8 @@ def calcola(market_id: str, modo: Modo, ordini: Iterable[OrdineConto], *,
       stima prudente linea per linea."""
     tutti = list(ordini)
     _controlla(market_id, modo, tutti)
-    buoni, scartati = _abbinati_validi(tutti)
+    # LINE: quota 2,0 per regolamento, il prezzo medio non serve (e puo' mancare)
+    buoni, scartati = _abbinati_validi(tutti, prezzo_richiesto=_quota_fissa(tipo_scommessa) is None)
     a_linee = any(abs(float(o.handicap)) > 1e-9 for o in tutti)
     nudi, coppie = _linee_runner(runner)
     a_linee = a_linee or any(abs(h) > 1e-9 for _s, h in coppie)

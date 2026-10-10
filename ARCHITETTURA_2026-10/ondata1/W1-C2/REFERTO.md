@@ -558,3 +558,26 @@ tipo cambiati (dichiarato nel docstring del test). `abbinato_back/lay` e prezzi 
 selection_id (su un asiatico sommano le linee di una squadra): il ladder per riga li prende dagli ordini; se servono per
 linea, estensione da aggiungere all'aggancio. D11 (elenco chiuso dei `marketType` a vincitore unico) pesa meno: un
 mercato fuori elenco senza `numberOfWinners` ora mostra il numero con `per_selezione` invece di niente.
+
+### 13.1 Revisione indipendente del 10/10: «PASSA», e un limite LINE corrigibile (corretto)
+
+Il revisore ha verificato: 8 casi a mano coincidenti, la parita' sui mercati a vincitore unico dal vecchio codice letto
+da git, l'oracolo LINE dal regolamento (il nuovo non sottostima mai), 13/13 mutazioni sue rosse.
+
+**Limite trovato**: `_abbinati_validi` scartava gli abbinati con prezzo medio None o <= 1,0. Sui `LINE` il prezzo e' la
+LINEA e `averagePriceMatched` «is not meaningful for activity on Line markets and is not guaranteed to be returned»
+(`AUDIT_2026-10-02/_fonti_betfair/bf_2687396.txt` r.1148): un `LINE` con linea 0,5 o 1,0, o senza prezzo medio, finiva
+FUORI dal P&L con esposizione 0. **Corretto** (piccolo): `_abbinati_validi(..., prezzo_richiesto=False)` per i `LINE`
+(la quota e' 2,0 per regolamento, il prezzo medio non serve) in `calcola` e in `esposizioni_per_selezione(quota=...)`;
+sugli altri mercati invariato (un abbinato senza prezzo medio resta scartato e dichiarato: mai un prezzo inventato).
+`riconciliazione.py` invariato (chiama senza `quota`). Parita' prima/dopo rilanciata: stessi numeri (A 6.540/0 diversi,
+B 2.800/0 diversi).
+
+**Test**: `test_c2_tutti_i_mercati.py::test_mercato_line_senza_prezzo_medio_o_linea_bassa_non_si_scarta` (`CurrentOrder`
+VERI: vendita 10 a linea 0,5 senza `averagePriceMatched`, acquisto 4 a linea 1,0; «se vince» 6,0, esposizione -14,0,
+nessuno scartato; gli stessi ordini su un ODDS restano scartati).
+**Mutazioni**: D521 (LINE: abbinato senza prezzo scartato in `calcola`), D522 (idem nelle esposizioni), D523 (il ramo
+«prezzo non richiesto» tolto): **26/26 rosse, 0 guasti** (giro sulle nuove, su tutte le D5xx e su M30/M112/M113),
+uscita in `mutazioni_esito_correzione.txt`; sha256 dopo ogni ripristino = `pnl_mercato.py`
+9ce202e97c951f4f9b93f695f8bf750a82af2bfa4c0879527ea86868b37b35a2. Test W1-C2: **281 verdi**; cartella `ordini`:
+**521 verdi**. Suite intera (una corsa, alla fine della correzione): **12.975 verdi, 0 rossi, 101 saltati, 6 xfailed** (740 s).

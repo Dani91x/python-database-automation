@@ -326,6 +326,28 @@ def test_mercato_line_quota_due_e_stima_ordine_per_ordine():
     assert linea_per_linea == -6.0 > min(esiti)            # il perche' della stima per ordine
 
 
+def test_mercato_line_senza_prezzo_medio_o_linea_bassa_non_si_scarta():
+    """Revisione del 10/10: sui LINE ``averagePriceMatched`` "is not meaningful ... and
+    is not guaranteed" (documentazione Betfair, bf_2687396.txt r.1148) e la linea puo'
+    valere 0,5 o 1,0: la quota e' 2,0 per regolamento, quindi l'abbinato ENTRA nel
+    P&L (prima: scartato, esposizione 0)."""
+    mc = _variante("LINE", "TEAM_TOTAL_GOALS", 1, [(9001, None)],
+                   lineMinUnit=0.5, lineMaxUnit=10.5, lineInterval=0.5,
+                   priceLadderDefinition={"type": "LINE_RANGE"})
+    mid = str(mc["id"])
+    lib = _libro(mc, [ordine_json("1", "BACK", 10.0, 0.5, sel=9001, market=mid, avp=0.0),
+                      ordine_json("2", "LAY", 4.0, 1.0, sel=9001, market=mid)])
+    calc = lib.calcolo_posizione(mid, "live")
+    ordini = [o for o in lib.ordini(mid, "live") if o.abbinato > 0]
+    assert [o.prezzo_medio for o in ordini] == [None, 1.0]         # come arrivano dal conto
+    assert calc.scartati == ()
+    assert calc.posizione.se_vince == {9001: 6.0}                  # +10 vendita, -4 acquisto
+    assert calc.esposizione_massima == -14.0                       # ordine per ordine
+    # lo stesso abbinato su un mercato ODDS resta scartato (mai un prezzo inventato)
+    odds = P.calcola(mid, "live", ordini, runner=[9001], tipo_scommessa="ODDS", vincitori=1)
+    assert odds.scartati == ("1", "2") and odds.posizione.se_vince == {9001: 0.0}
+
+
 # ------------------------------------------------------------------ vincitore unico: invariato
 def _singoli() -> List[Tuple[str, str]]:
     out = []

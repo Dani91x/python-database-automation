@@ -1,0 +1,13 @@
+ROSSO  M46 politica desktop: punta troncata invece che rifiutata  [Betfair/nucleo/ordini/tests/test_c1_desktop_rifiuta.py::test_desktop_2_30_rifiutato_col_motiv]  ripristino ok
+ROSSO  D301 desktop: politica rifiuta tolta (la porta tronca)  [Betfair/nucleo/ordini/tests/test_c1_desktop_rifiuta.py::test_desktop_2_30_rifiutato_col_motiv]  ripristino ok
+ROSSO  D302 politica rifiuta applicata anche ai bot  [Betfair/nucleo/ordini/tests/test_c1_desktop_rifiuta.py::test_bot_2_30_tronca_come_oggi[finto]]  ripristino ok
+ROSSO  D303 desktop: motivo diverso dal terminale  [Betfair/nucleo/ordini/tests/test_c1_desktop_rifiuta.py::test_desktop_2_30_rifiutato_col_motiv]  ripristino ok
+ROSSO  D304 attore desktop con un altro nome  [Betfair/nucleo/ordini/tests/test_c1_desktop_rifiuta.py::test_l_attore_desktop_e_quello_del_mo]  ripristino ok
+ROSSO  D305 desktop: verdetto sull'importo gia' troncato  [Betfair/nucleo/ordini/tests/test_c1_desktop_rifiuta.py::test_desktop_2_30_rifiutato_col_motiv]  ripristino ok
+ROSSO  D306 desktop tennis portato al minimo come i bot  [Betfair/nucleo/ordini/tests/test_c1_desktop_rifiuta.py::test_desktop_tennis_sotto_minimo_rifi]  ripristino ok
+ROSSO  D307 desktop tennis col verdetto del terminale calcio  [Betfair/nucleo/ordini/tests/test_c1_desktop_rifiuta.py::test_desktop_tennis_sotto_minimo_rifi]  ripristino ok
+ROSSO  D308 tennis: testo del worker diverso  [Betfair/nucleo/ordini/tests/test_c1_desktop_rifiuta.py::test_desktop_tennis_sotto_minimo_rifi]  ripristino ok
+ROSSO  D309 desktop tennis: punta troncata (decisione 3 tolta)  [Betfair/nucleo/ordini/tests/test_c1_desktop_rifiuta.py::test_desktop_tennis_2_30_rifiutato_e_]  ripristino ok
+ROSSO  D310 apertura al minimo tolta anche ai bot  [Betfair/nucleo/ordini/tests/test_c1_desktop_rifiuta.py::test_bot_tennis_apertura_portata_al_m]  ripristino ok
+
+11/11 mutazioni rosse; ripristini ok: 11/11

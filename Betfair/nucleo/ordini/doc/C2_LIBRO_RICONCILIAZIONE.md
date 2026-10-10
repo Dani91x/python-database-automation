@@ -54,7 +54,8 @@ confronta conto, specchio, blotter e diario e scrive le divergenze, senza toccar
   (`PosizioneMercato.se_vince`, chiave selection_id) entrano le selezioni con UNA linea (`linee_multiple` se una
   selezione ha piu' handicap: mai una somma di linee diverse). Mercati `LINE`: il prezzo e' la linea, quota 2,0 come il
   blotter di flumine (`linea_a_quota_2`), stima ORDINE PER ORDINE (`stima_per_ordine`: due ordini a linee diverse possono
-  perdere entrambi). Asiatici: push e mezze vincite non modellati nel «se vince» (`asiatico_push_non_modellato`). I runner
+  perdere entrambi); sui `LINE` un abbinato senza prezzo medio o con linea <= 1,0 NON si scarta
+  (`averagePriceMatched` non garantito sui LINE, revisione del 10/10). Asiatici: push e mezze vincite non modellati nel «se vince» (`asiatico_push_non_modellato`). I runner
   del book si danno come coppie (selection_id, handicap) (`parametri_dal_book`, senza i `REMOVED`); un int nudo vale
   (selezione, 0,0) solo se quella selezione non ha gia' una linea. Per la UI: `calcolo_per_json` (qualita', tipo
   dell'esposizione, motivi, linee).

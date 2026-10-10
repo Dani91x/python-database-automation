@@ -17,6 +17,7 @@ revisore della seconda revisione; M94-M115: correzioni della seconda revisione;
 M116-M154: terza verifica (replaceOrders: il nuovo eredita dal sostituito);
 D501-D520: decisione 5 dell'utente del 10/10 ("se vince" su ogni mercato, qualita',
 linee, LINE a quota 2,0), con M22/M87/M91/R05 adeguate al codice nuovo.
+D521-D523: revisione del 10/10 (LINE: abbinato senza prezzo medio o con linea <= 1,0 nel P&L).
 ASCII-only.
 """
 import hashlib
@@ -622,6 +623,16 @@ MUT = [
     ("D520 per_selezione: runner_ignoti non detto", "pnl_mercato.py",
      '    if not runner_noti:\n        motivi.append("runner_ignoti")',
      '    if False:\n        motivi.append("runner_ignoti")'),
+    # ---- revisione del 10/10: LINE senza prezzo medio (bf_2687396.txt r.1148)
+    ("D521 LINE: abbinato senza prezzo medio scartato", "pnl_mercato.py",
+     'prezzo_richiesto=_quota_fissa(tipo_scommessa) is None)',
+     'prezzo_richiesto=True)'),
+    ("D522 LINE: esposizioni scartano senza prezzo", "pnl_mercato.py",
+     '_abbinati_validi(list(ordini), prezzo_richiesto=quota is None)',
+     '_abbinati_validi(list(ordini))'),
+    ("D523 prezzo non richiesto ignorato", "pnl_mercato.py",
+     '        if not prezzo_richiesto:\n            buoni.append(o)\n            continue\n',
+     ''),
 ]
 
 

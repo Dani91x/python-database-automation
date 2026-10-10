@@ -410,8 +410,7 @@ e VERO):
 - griglia di parita' (punta e banca, 86 importi 0,01-6,00 piu' 7,27 / 12,345 / 99,995 / 2,30): accettato SE E SOLO SE
   il terminale accetta, motivo identico, importo eseguito = importo chiesto (mai troncato); gli stessi importi da un bot
   mai rifiutati per la punta 0,50;
-- desktop TENNIS: apertura 0,70 portata a 1,00 e accettata (regola di prima, vedi sotto), punta 2,30 rifiutata col
-  testo del terminale.
+- desktop TENNIS: vedi «Correzione di parita' del 10/10» sotto (il test che documentava 0,70 -> 1,00 e' stato corretto).
 
 **Falsificazione**: `falsifica_c1.py` + D301 (politica tolta: la porta tronca), D302 (politica anche ai bot), D303 (motivo
 diverso dal terminale), D304 (attore con un altro nome), D305 (verdetto sull'importo gia' troncato): 5/5 rosse; M46 (la
@@ -422,10 +421,54 @@ desktop (sotto) e' stato aggiunto dopo il giro: aggiunge solo asserzioni, nessun
 Test C1: **230 verdi** (prima 214; i test della porta girano due volte, archivio finto e vero). Suite intera (una corsa
 completa alla fine, insieme alla decisione 5 di W1-C2): **12.964 verdi, 0 rossi, 101 saltati, 6 xfailed** (719 s).
 
-**Da sapere (non e' una scelta mia, e' cio' che la porta faceva gia')**: nel TENNIS un'apertura dal desktop sotto il
-minimo e' prima PORTATA al minimo (regola del 28/09 della porta per tutte le aperture tennis, `porta.py:675-682`) e poi
-giudicata: 0,70 diventa 1,00 e passa; 2,30 resta 2,30 e si rifiuta. La decisione 3 riguarda la punta non multipla di
-0,50, quindi non l'ho toccata; se l'utente vuole che dal desktop anche l'apertura tennis sotto il minimo sia rifiutata
-(come il terminale calcio), e' una riga in `_minimi` da decidere all'aggancio. Non verificato: il percorso del desktop
-TENNIS di oggi (terminale tennis dell'app) non ha un `order_exec` equivalente nel repo che io abbia confrontato; la
-parita' e' col terminale calcio `order_exec.place_order`.
+~~**Da sapere**: nel TENNIS un'apertura dal desktop sotto il minimo e' prima PORTATA al minimo e poi giudicata~~ ->
+SBAGLIATO, corretto sotto: la revisione indipendente ha trovato che oggi NON e' cosi'.
+
+### 13.1 Correzione di parita' del 10/10 (revisione indipendente: «PASSA» con UNA correzione)
+
+**Cosa ha verificato il revisore (e io ho riletto nel codice)**:
+- il «terminale che rifiuta» di oggi e' SOLO il percorso `order_exec.place_order` (`order_exec.py:273-290`);
+- il ladder CALCIO del desktop via canale locale oggi TRONCA con `punta_050` (`live_order_worker.py:1497-1502`);
+- il ladder TENNIS del desktop oggi passa dal canale locale (`frontend/src/lib/localTransport.ts:433` `localOrderApi`,
+  `frontend/src/components/tennis/TennisLadderColumn.tsx:99`) a `tennis_live_order_worker._do_place`
+  (`tennis_live_order_worker.py:645`): `min_stake_rules` e, sotto il minimo, `ValueError(f"stake non valido:
+  {verdict.reason}")` (`:684`): 0,70 e' RIFIUTATO; sopra il minimo la punta e' TRONCATA con `punta_050` (`:689`, `:726`).
+  La regola «apertura tennis portata al minimo» oggi vive SOLO per i comandi dei bot (`motore_ordini.py:1152-1166`,
+  `esecutore_tennis.py:178` `_apertura_al_minimo`).
+
+Quindi, con la decisione 3, **il ladder desktop (calcio via canale locale e tennis) passa da TRONCARE a RIFIUTARE la
+punta non multipla di 0,50: e' la DECISIONE DELL'UTENTE, non una parita'**. Il resto e' parita' col percorso di oggi.
+
+**Correzione** (commit sotto):
+- `porta.py:677`: la regola tennis dell'apertura al minimo vale SOLO per i bot (`r.attore != ATTORE_DESKTOP`), come oggi;
+- `porta.py:695`: per il desktop nel tennis `minimi.verdetto_desktop_tennis` (`minimi.py:245`): sotto il minimo .it
+  RIFIUTO col testo di oggi del worker tennis (`PREFISSO_STAKE_TENNIS = "stake non valido: "` `minimi.py:242` + la
+  `reason` di `min_stake_rules`, qui `verdetto_runner`, parita' gia' provata); sopra il minimo la decisione 3 (punta
+  non multipla RIFIUTATA col testo del terminale, `verdetto_desktop`). Il worker non ha una funzione col testo da
+  importare (e' una riga dentro `_do_place`): il prefisso e' una costante, e un test controlla che il sorgente del
+  worker contenga ancora quella riga.
+- Il calcio del desktop resta col testo del terminale `order_exec` (sotto il minimo `stake €... sotto il minimo
+  Betfair .it: ...`). Il testo che il ladder calcio via canale locale (`live_order_worker`) mostra oggi sotto il
+  minimo NON l'ho confrontato: all'aggancio va scelto quale testo mostrare (l'esito, rifiuto, e' lo stesso).
+
+**Test** (`test_c1_desktop_rifiuta.py`; arbitro = `tennis_live_order_worker._do_place` VERO, fermato alla guardia del
+mercato con `_resolve_market`/`_capture_strategy` sostituiti):
+- desktop tennis **0,70** (punta e banca) RIFIUTATO col testo identico al worker (`stake non valido:
+  SOTTO_MINIMO_NON_PIAZZABILE: ...`), 0 invii;
+- desktop tennis **2,30** RIFIUTATO (decisione 3; il worker oggi lo accetta troncato, asserito nel test);
+- desktop tennis **2,50** ACCETTATO intero, nessun `portata_al_minimo`, nessun `punta_050`;
+- bot tennis (`safe`) **0,70** portato a 1,00 come oggi (`portata_al_minimo`);
+- griglia (punta e banca, 90 importi): dove il worker rifiuta, stesso testo; dove passa intero, la porta passa intero;
+  l'unica differenza e' la punta che il worker tronca e la porta rifiuta (contata, solo sulla punta);
+- il sorgente del worker contiene ancora `raise ValueError(f"stake non valido: {verdict.reason}")`.
+Corretto il test `test_desktop_tennis_apertura_portata_al_minimo_poi_giudicata` (documentava il comportamento
+sbagliato): sostituito dai test sopra.
+
+**Falsificazione**: D306 (desktop tennis portato al minimo come i bot), D307 (desktop tennis col verdetto del calcio),
+D308 (testo del worker diverso), D309 (punta tennis troncata: decisione 3 tolta), D310 (apertura al minimo tolta anche
+ai bot), piu' D301-D305 e M46 rilanciate sul codice corretto (D305 con la stringa adeguata alla riga nuova):
+**11/11 rosse, ripristini 11/11** (`falsifica_c1_correzione.txt`). `falsifica_c1.json` resta quello del giro completo su
+`b4726e47` (86/86; i suoi sha256 di `porta.py` e `minimi.py` sono quelli di allora; ora `porta.py`
+e289610406cf7ebc154db3b4470e5f36ba5080ffb03c344eac7ea45b75fc98b7, `minimi.py`
+5b57bd15af942b0ab2691ab1112b1ba598ad5d4218a74c279aed6b48a1ba4639). Test C1: **240 verdi**; cartella `ordini`:
+**521 verdi**. Suite intera (una corsa, alla fine della correzione): **12.975 verdi, 0 rossi, 101 saltati, 6 xfailed** (740 s).

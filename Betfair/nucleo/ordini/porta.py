@@ -34,8 +34,10 @@ docstring) e nello stesso ordine:
      place-and-trim NON passa dalla porta (il contratto non sa marcarlo). L'attore
      ``desktop`` (decisione 3 dell'utente, 10/10) ha la politica "rifiuta" del terminale
      di oggi (``minimi.verdetto_desktop``): una punta non multipla di 0,50 o sotto il
-     minimo e' RIFIUTATA col testo di ``order_exec.place_order``, mai troncata; i bot
-     restano invariati;
+     minimo e' RIFIUTATA col testo di ``order_exec.place_order``, mai troncata; nel TENNIS
+     il desktop NON e' portato al minimo (come il worker tennis di oggi): sotto il minimo
+     rifiuto col testo del worker (``minimi.verdetto_desktop_tennis``); i bot restano
+     invariati (il tennis porta al minimo le loro aperture);
   6. tetto delle transazioni/ora UNO per conto e PER MODO (paper e live mai sommati: il
      contatore del live e, se dato, uno del paper);
   7. ``seq`` per attore (UN contatore per ack ed eventi), assegnato e messo in memoria
@@ -672,8 +674,11 @@ class PortaLocale:
         lato = str(riga["side"]).lower()
         extra: Dict[str, Any] = {}
         da_eseguire = r
-        if r.sport == "tennis" and not r.riduce_esposizione:
-            # 28/09 (decisione dell'utente): apertura tennis sotto il minimo -> AL minimo
+        if r.sport == "tennis" and not r.riduce_esposizione and r.attore != ATTORE_DESKTOP:
+            # 28/09 (decisione dell'utente): apertura tennis sotto il minimo -> AL minimo.
+            # SOLO per i bot, come oggi (``motore_ordini.py:1152-1166``, comandi dei bot):
+            # il ladder tennis del desktop passa da ``tennis_live_order_worker._do_place``,
+            # che NON porta al minimo (correzione di parita' del 10/10)
             chiesto = float(riga["size"])
             portata = float(MN.porta_al_minimo(lato, chiesto))
             if portata > chiesto + _EPS:
@@ -686,7 +691,9 @@ class PortaLocale:
             # "rifiuta" del terminale di oggi (``order_exec.place_order``): sotto il
             # minimo o punta non multipla di 0,50 -> RIFIUTO col testo di oggi, l'importo
             # dell'utente non si tronca mai. I bot restano come il motore (troncano).
-            motivo = MN.verdetto_desktop(lato, importo)
+            # Nel TENNIS sotto il minimo vale il testo di oggi del worker tennis.
+            motivo = (MN.verdetto_desktop_tennis(lato, importo) if r.sport == "tennis"
+                      else MN.verdetto_desktop(lato, importo))
             if motivo is not None:
                 return False, r, extra, motivo
         # place-and-trim MAI dalla porta: ``RichiestaOrdine`` non ha un campo che lo dica

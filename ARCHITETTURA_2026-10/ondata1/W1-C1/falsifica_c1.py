@@ -7,6 +7,8 @@ correzioni dopo la seconda; M53-M54 (e M33 riformulata) = terza; V* e S* = mutaz
 ``rev_w1c1/mut.py``, seconda ``rev_w1c1_2/mie_mutazioni.py``) riportate sul codice corretto.
 D301-D305 = decisione 3 dell'utente del 10/10 (desktop: punta non multipla di 0,50 rifiutata
 col motivo del terminale, bot invariati).
+D306-D310 = correzione di parita' del 10/10 (desktop tennis: niente apertura al minimo, testo
+del worker tennis; punta 2,30 rifiutata per la decisione 3).
 """
 from __future__ import annotations
 
@@ -269,8 +271,22 @@ MUTAZIONI = [
     ("D304", "attore desktop con un altro nome", P,
      "ATTORE_DESKTOP = \"desktop\"", "ATTORE_DESKTOP = \"app\""),
     ("D305", "desktop: verdetto sull'importo gia' troncato", P,
-     "            motivo = MN.verdetto_desktop(lato, importo)",
-     "            motivo = MN.verdetto_desktop(lato, float(int(importo * 2)) / 2)"),
+     "                      else MN.verdetto_desktop(lato, importo))",
+     "                      else MN.verdetto_desktop(lato, float(int(importo * 2)) / 2))"),
+    # ------------------------- correzione di parita' del 10/10 (desktop tennis, revisione)
+    ("D306", "desktop tennis portato al minimo come i bot", P,
+     "        if r.sport == \"tennis\" and not r.riduce_esposizione and r.attore != ATTORE_DESKTOP:",
+     "        if r.sport == \"tennis\" and not r.riduce_esposizione:"),
+    ("D307", "desktop tennis col verdetto del terminale calcio", P,
+     "            motivo = (MN.verdetto_desktop_tennis(lato, importo) if r.sport == \"tennis\"",
+     "            motivo = (MN.verdetto_desktop(lato, importo) if r.sport == \"tennis\""),
+    ("D308", "tennis: testo del worker diverso", MI,
+     "PREFISSO_STAKE_TENNIS = \"stake non valido: \"", "PREFISSO_STAKE_TENNIS = \"stake non valido - \""),
+    ("D309", "desktop tennis: punta troncata (decisione 3 tolta)", MI,
+     "    return verdetto_desktop(lato, importo)", "    return None"),
+    ("D310", "apertura al minimo tolta anche ai bot", P,
+     "        if r.sport == \"tennis\" and not r.riduce_esposizione and r.attore != ATTORE_DESKTOP:",
+     "        if r.sport == \"tennis\" and r.attore == \"nessuno\":"),
 ]
 
 
