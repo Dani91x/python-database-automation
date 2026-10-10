@@ -5,6 +5,8 @@ Uso: ``python falsifica_c1.py <radice del worktree> [ID ...]`` (senza ID: tutte)
 M01-M27 = consegna del 09/10; M28-M47 = correzioni dopo la prima revisione; M48-M52 =
 correzioni dopo la seconda; M53-M54 (e M33 riformulata) = terza; V* e S* = mutazioni del revisore indipendente (prima revisione
 ``rev_w1c1/mut.py``, seconda ``rev_w1c1_2/mie_mutazioni.py``) riportate sul codice corretto.
+D301-D305 = decisione 3 dell'utente del 10/10 (desktop: punta non multipla di 0,50 rifiutata
+col motivo del terminale, bot invariati).
 """
 from __future__ import annotations
 
@@ -256,6 +258,19 @@ MUTAZIONI = [
     ("V60", "stato: abbinato e residuo scambiati", P,
      "            abbinato=float(ev.abbinato), residuo=float(ev.residuo),",
      "            abbinato=float(ev.residuo), residuo=float(ev.abbinato),"),
+    # ------------------------------------------- decisione 3 dell'utente (10/10)
+    ("D301", "desktop: politica rifiuta tolta (la porta tronca)", P,
+     "        if r.attore == ATTORE_DESKTOP:\n", "        if False:\n"),
+    ("D302", "politica rifiuta applicata anche ai bot", P,
+     "        if r.attore == ATTORE_DESKTOP:\n", "        if True:\n"),
+    ("D303", "desktop: motivo diverso dal terminale", P,
+     "                return False, r, extra, motivo\n",
+     "                return False, r, extra, f\"{M.M_SOTTO_MINIMO}: {motivo}\"\n"),
+    ("D304", "attore desktop con un altro nome", P,
+     "ATTORE_DESKTOP = \"desktop\"", "ATTORE_DESKTOP = \"app\""),
+    ("D305", "desktop: verdetto sull'importo gia' troncato", P,
+     "            motivo = MN.verdetto_desktop(lato, importo)",
+     "            motivo = MN.verdetto_desktop(lato, float(int(importo * 2)) / 2)"),
 ]
 
 
