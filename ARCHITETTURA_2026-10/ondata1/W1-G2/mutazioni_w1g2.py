@@ -1,9 +1,12 @@
 """Mutazioni di W1-G2: rompe il codice, lancia i test, ripristina e controlla lo sha256.
 
 Uso: python ARCHITETTURA_2026-10/ondata1/W1-G2/mutazioni_w1g2.py <radice del repo>
+(con G2_PG_PSQL="-h ... -p ... -U postgres" anche le mutazioni della migrazione, sul PostgreSQL usa-e-getta;
+con MUTAZIONI_FILTRO=<prefisso> solo le mutazioni il cui nome inizia cosi')
 Ogni mutazione e' una lista di sostituzioni (vecchio -> nuovo) che devono comparire UNA volta.
 """
 import hashlib
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -142,14 +145,107 @@ M_REVISORE = [
 ]
 M += [(nome, "cache_cloud.py", sostituzioni, TK) for nome, sostituzioni in M_REVISORE]
 
+# --- decisione 10 dell'utente (10/10, agente D-G): dati calcolati dal cloud appena cambiano
+TS = T + "test_g2_sorveglianza.py"
+TP = T + "test_g2_pg_sentinella.py"            # solo con G2_PG_PSQL (PostgreSQL usa-e-getta)
+MIG = "../../../migrations/nucleo_sentinella_cloud_2026-10-10.sql"
+M += [
+    ("D10-1 sorveglianza ogni 300 s invece di 5 s", "cache_cloud.py",
+     [("INTERVALLO_RAPIDO_S = 5.0", "INTERVALLO_RAPIDO_S = 300.0")], TS),
+    ("D10-2 ripiego REST ogni 300 s invece di 15 s", "cache_cloud.py",
+     [("INTERVALLO_LETTURE_S = 15.0", "INTERVALLO_LETTURE_S = 300.0")], TS),
+    ("D10-3 impronte mai confrontate (nessun cambio visto)", "cache_cloud.py",
+     [("            cambiati = sorted(ev for ev, imp in nuove.items() if self._impronte.get(ev) != imp)",
+       "            cambiati = []")], TS),
+    ("D10-4 evento cambiato senza togliere le voci vecchie", "cache_cloud.py",
+     [("                self._invalida(ev, _fixture_di_impronta(nuove[ev]))", "                pass")], TS),
+    ("D10-5 lettura in volo della previsione rimette il vecchio", "cache_cloud.py",
+     [('                    if self._gen.get(("f", int(fid)), 0) != gen_fixture[int(fid)]:',
+       "                    if False:")], TS),
+    ("D10-6 lettura in volo del ponte rimette il vecchio", "cache_cloud.py",
+     [('                if self._gen.get(("e", ev), 0) != gen_eventi[ev]:', "                if False:")], TS),
+    ("D10-7 rinnovo anche senza la versione del trigger (letture REST)", "cache_cloud.py",
+     [('rinnova=ist.modo == "rpc",', "rinnova=True,")], TS),
+    ("D10-8 nessun rinnovo con la RPC (rilettura ogni 300 s)", "cache_cloud.py",
+     [("            if rinnova:\n", "            if False:\n")], TS),
+    ("D10-9 impronta registrata anche se la rilettura fallisce", "cache_cloud.py",
+     [('            if self._conti["errori"] != errori_prima:', "            if False:")], TS),
+    ("D10-10 RPC assente trattata come errore (nessun ripiego REST)", "cache_cloud.py",
+     [('                if str(getattr(ex, "code", "") or "") in CODICI_RPC_ASSENTE:', "                if False:")], TS),
+    ("D10-11 RPC assente mai riprovata", "cache_cloud.py",
+     [("            return self._rpc_assente_da is None or self._orologio() - self._rpc_assente_da >= self._riprova",
+       "            return self._rpc_assente_da is None")], TS),
+    ("D10-12 ogni errore della RPC fa passare alle letture", "cache_cloud.py",
+     [('                self._conta("errori")\n                logger.warning("[cache_cloud] nucleo_sentinella_cloud KO: %s", str(ex)[:160])',
+       "                self._segna_assente()\n                return None")], TS),
+    ("D10-13 impronta di Omega della RPC in forma diversa dalle letture", "cache_cloud.py",
+     [('        omega = "|".join(json.dumps(x[:1], sort_keys=True, default=str) for x in parti)',
+       '        omega = "|".join(json.dumps(x[:1], default=str) for x in parti)')], TS),
+    ("D10-14 errori di Omega consegnati a ogni giro (rilettura forzata dopo 15 s)", "cache_cloud.py",
+     [("                if adesso - self._ultimo_errore_omega < INTERVALLO_SORVEGLIANZA_S:", "                if False:")], TS),
+    ("D10-15 valore di Omega uguale riconsegnato a ogni giro", "cache_cloud.py",
+     [("            elif valore == self._ultima_omega:\n                return False",
+       "            elif False:\n                return False")], TS),
+    ("D10-16 la replica ignora le notifiche (drena_coda)", "cache_cloud.py",
+     [("                self.controlla_ricostruzione(sentinella=lega.valore)\n                continue",
+       "                continue")], TS),
+    ("D10-17 segui somma invece di sostituire", "cache_cloud.py",
+     [("            self._seguiti = {str(e) for e in event_ids}", "            self._seguiti.update(str(e) for e in event_ids)")], TS),
+    ("D10-18 precarica non segue gli eventi", "cache_cloud.py",
+     [("            self._seguiti.update(eventi)\n", "            pass\n")], TS),
+    ("D10-19 prendi_cambiati non consuma", "cache_cloud.py",
+     [("            fuori, self._cambiati = tuple(sorted(self._cambiati)), set()",
+       "            fuori = tuple(sorted(self._cambiati))")], TS),
+    ("D10-20 letture REST senza updated_at nell'impronta", "cache_cloud.py",
+     [("        return {ev: json.dumps([fid, fid in versioni, versioni.get(fid), grezzi",
+       "        return {ev: json.dumps([fid, fid in versioni, None, grezzi")], TS),
+    ("D10-21 blocco della RPC oltre il tetto di 500", "cache_cloud.py",
+     [("BLOCCO_RPC = 500", "BLOCCO_RPC = 501")], TS),
+    ("D10-22 registro: RPC della sentinella non dichiarata", "registro.py",
+     [('    "nucleo_sentinella_cloud": "migrations/nucleo_sentinella_cloud_2026-10-10.sql:101, STABLE, solo SELECT "\n'
+       '                               "(impronte per giro della Sorveglianza, cache_cloud.py)",\n', "")], TR),
+    # migrazione: solo con G2_PG_PSQL (PostgreSQL usa-e-getta), altrimenti SALTATE e non contate
+    ("D10-P1 trigger: versione nuova a ogni scrittura", MIG,
+     [("        NEW.nucleo_versione := OLD.nucleo_versione;",
+       "        NEW.nucleo_versione := nextval('public.nucleo_versione_dossier_seq');")], TP),
+    ("D10-P2 trigger: db_json_analisi non guardata", MIG,
+     [("    ELSIF (to_jsonb(NEW.tactical_engine_json), to_jsonb(NEW.db_json_analisi),",
+       "    ELSIF (to_jsonb(NEW.tactical_engine_json), NULL::jsonb,"),
+      ("          (to_jsonb(OLD.tactical_engine_json), to_jsonb(OLD.db_json_analisi),",
+       "          (to_jsonb(OLD.tactical_engine_json), NULL::jsonb,")], TP),
+    ("D10-P3 RPC: ponte con omega_events prima di live_follow", MIG,
+     [("                   coalesce((SELECT l.fixture_id FROM public.live_follow l WHERE l.event_id = u.e),\n"
+       "                            (SELECT o.fixture_id FROM public.omega_events o WHERE o.event_id = u.e)) AS fid",
+       "                   coalesce((SELECT o.fixture_id FROM public.omega_events o WHERE o.event_id = u.e),\n"
+       "                            (SELECT l.fixture_id FROM public.live_follow l WHERE l.event_id = u.e)) AS fid")], TP),
+    ("D10-P4 RPC: impronta di Omega con una colonna in piu'", MIG,
+     [("            coalesce((SELECT jsonb_agg(jsonb_build_object('built_at', t.built_at))",
+       "            coalesce((SELECT jsonb_agg(jsonb_build_object('built_at', t.built_at, 'x', 1))")], TP),
+    ("D10-P5 RPC eseguibile da tutti", MIG,
+     [("REVOKE ALL ON FUNCTION public.nucleo_sentinella_cloud(text[], boolean) FROM public, anon, authenticated;",
+       "GRANT EXECUTE ON FUNCTION public.nucleo_sentinella_cloud(text[], boolean) TO public;")], TP),
+    ("D10-P6 RPC senza tetto di 500 eventi", MIG,
+     [("    IF cardinality(v_eventi) > 500 THEN", "    IF cardinality(v_eventi) > 5000 THEN")], TP),
+    ("D10-P7 trigger non scatta quando si forza nucleo_versione", MIG,
+     [("                               away_team_id, nucleo_versione\n", "                               away_team_id\n")], TP),
+]
+
 
 def sha(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
-rossi = 0
+PG = bool((os.environ.get("G2_PG_PSQL") or "").strip())
+FILTRO = (os.environ.get("MUTAZIONI_FILTRO") or "").strip()   # es. "D10": solo le mutazioni che iniziano cosi'
+if FILTRO:
+    M = [m for m in M if m[0].startswith(FILTRO)]
+rossi = saltate = 0
 for nome, f, sostituzioni, test in M:
     p = D / f
+    if test == TP and not PG:
+        saltate += 1
+        print(f"SALTATA | {nome} | G2_PG_PSQL assente (PostgreSQL usa-e-getta)")
+        continue
     originale = p.read_bytes()
     h0 = sha(p)
     testo = originale.decode()
@@ -168,4 +264,4 @@ for nome, f, sostituzioni, test in M:
     rossi += rosso
     print(f"{'ROSSO' if rosso else 'VERDE!!'} | {nome} | {riga[0] if riga else '?'} | "
           f"ripristino sha256 {'uguale' if ok else 'DIVERSO'} {h0[:12]}")
-print(f"mutazioni rosse {rossi}/{len(M)}")
+print(f"mutazioni rosse {rossi}/{len(M) - saltate} (saltate senza PostgreSQL: {saltate})")

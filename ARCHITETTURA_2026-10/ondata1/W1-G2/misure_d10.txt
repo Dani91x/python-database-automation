@@ -1,0 +1,48 @@
+# Misure della decisione 10 (agente D-G, 10/10/2026) - PostgreSQL 16 usa-e-getta nel container, MAI il DB vero
+# Comando: psql -h /var/tmp/pg_dg -p 54341 -U postgres -X -q -f ARCHITETTURA_2026-10/ondata1/W1-G2/misura_d10_pg.sql
+# (schema di test_g2_pg_sentinella.py + migrazione applicata; 200.000 previsioni con JSON di ~22 KB, 60.000 eventi,
+#  288.240 righe HT->FT). Macchina condivisa da piu' agenti: tempi indicativi, non quelli di Supabase.
+
+ righe_ht_ft 
+-------------
+      288240
+(1 row)
+
+Time: 0.272 ms
+  sum  
+-------
+ 42080
+(1 row)
+
+Time: 17.144 ms
+Time: 0.164 ms
+                                                                    QUERY PLAN                                                                    
+--------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=0.045..0.046 rows=1 loops=1)
+   Buffers: shared hit=3
+   ->  Index Only Scan Backward using idx_omega_ht_ft_transitions_built_at on omega_ht_ft_transitions h (actual time=0.045..0.045 rows=1 loops=1)
+         Heap Fetches: 1
+         Buffers: shared hit=3
+ Planning Time: 0.056 ms
+ Execution Time: 0.052 ms
+(7 rows)
+
+Time: 0.612 ms
+Time: 161.284 ms
+Time: 0.928 ms
+Time: 37.592 ms
+Time: 0.763 ms
+Time: 230.468 ms
+ con_versione 
+--------------
+         5000
+(1 row)
+
+
+# Senza l'indice su built_at (DROP INDEX in una transazione annullata):
+#   Parallel Seq Scan on omega_ht_ft_transitions ... Execution Time: 32.462 ms
+# RPC con 500 eventi + Omega (prima chiamata, cache fredda): Time: 12.624 ms
+#
+# Lettura: RPC con 60 eventi + Omega = 17,144 ms / 20 chiamate = 0,86 ms a chiamata; built_at massimo 0,05 ms con
+# l'indice contro 32 ms senza; trigger: 5.000 riscritture identiche 161 ms con il trigger contro 38 ms senza
+# (+25 us a riga, nessuna versione consumata); 5.000 riscritture con il dossier cambiato 230 ms (5.000 versioni).

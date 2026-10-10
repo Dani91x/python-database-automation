@@ -68,6 +68,11 @@ RPC_SOLA_LETTURA_DICHIARATE: Mapping[str, str] = {
                         "(coppie [chiave, versione] per la riconciliazione notturna, riconcilia.py:142)",
     "postino_confronta_ombra": "migrations/architettura_uid_ombra_2026-10-09.sql:491, STABLE, solo SELECT "
                                "(conteggi per giorno vera contro ombra, criterio di T8, riconcilia.py:160)",
+    # decisione 10 dell'utente (10/10): la sentinella leggera dei dati calcolati dal cloud. Definizione letta:
+    # plpgsql STABLE, solo SELECT (tre letture della sentinella di Omega, ponte e versione del dossier per
+    # evento), nessun DML, tetto 500 eventi; chiamata da cache_cloud.SentinellaCloud ogni 5 s
+    "nucleo_sentinella_cloud": "migrations/nucleo_sentinella_cloud_2026-10-10.sql:101, STABLE, solo SELECT "
+                               "(impronte per giro della Sorveglianza, cache_cloud.py)",
 }
 
 #: nomi che il controllo DML delle migrazioni trova dopo INSERT/UPDATE/DELETE/TRUNCATE e che NON
@@ -766,7 +771,9 @@ _VOCI: Tuple[VoceRegistro, ...] = (
     _v("match_team_stats", "T17", "ARC", "cloud", "BATCH", NON_APPLICABILE, (), domani=D_INVARIATO,
        verifica=V_CLOUD),
     _v("fixture_predictions", "T17", "STA", "cloud", "BATCH", NON_APPLICABILE, ("fixture_id",),
-       domani=D_INVARIATO + "; letta dagli algoritmi da dati/cache_cloud.py", verifica=V_CLOUD),
+       domani=D_INVARIATO + "; letta dagli algoritmi da dati/cache_cloud.py", verifica=V_CLOUD,
+       note="colonna nucleo_versione scritta SOLO dal trigger trg_nucleo_versione_dossier "
+            "(nucleo_sentinella_cloud_2026-10-10.sql, decisione 10): nessuno scrittore nuovo nel codice"),
     _v("standings", "T17", "STA", "cloud", "BATCH", NON_APPLICABILE, (), domani=D_INVARIATO, verifica=V_CLOUD),
     _v("injuries", "T17", "STA", "cloud", "BATCH", NON_APPLICABILE, (), domani=D_INVARIATO, verifica=V_CLOUD),
     _v("top_scorers", "T17", "STA", "cloud", "BATCH", NON_APPLICABILE, (), domani=D_INVARIATO, verifica=V_CLOUD),
