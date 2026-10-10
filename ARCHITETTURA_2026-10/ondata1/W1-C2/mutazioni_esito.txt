@@ -1,176 +1,205 @@
-ROSSO  M01 G1 ref manuale torna desktop senza evidenza  [1 failed, 3 passed in 1.85s]  sha256 uguale 469a20c30c2c
-ROSSO  M02 ref storico condiviso ignorato  [1 failed, 33 passed in 1.92s]  sha256 uguale 469a20c30c2c
-ROSSO  M03 Safe tennis REST letto come Safe  [1 failed, 32 passed in 1.84s]  sha256 uguale 469a20c30c2c
-ROSSO  M04 scalper senza event_id numerico  [1 failed, 109 passed in 6.84s]  sha256 uguale 469a20c30c2c
-ROSSO  M05 precedenza degli indizi rovesciata  [1 failed, 106 passed in 6.75s]  sha256 uguale 469a20c30c2c
-ROSSO  M06 riga utente di Mike letta come Mike  [1 failed, 106 passed in 6.84s]  sha256 uguale 469a20c30c2c
-ROSSO  M07 sito letto come sconosciuto  [1 failed, 2 passed in 1.88s]  sha256 uguale 469a20c30c2c
-ROSSO  M08 prefisso del risk sbagliato  [1 failed, 100 passed in 2.44s]  sha256 uguale 469a20c30c2c
-ROSSO  M09 ref confrontato con le maiuscole  [1 failed, 40 passed in 1.90s]  sha256 uguale 469a20c30c2c
-ROSSO  M10 classi tennis tagliate a 14  [1 failed, 40 passed in 2.24s]  sha256 uguale 469a20c30c2c
-ROSSO  M11 ref manuale con customerOrderRef di un bot  [1 failed, 109 passed in 7.00s]  sha256 uguale 469a20c30c2c
-ROSSO  M12 messaggio vecchio sovrascrive  [1 failed, 118 passed in 6.86s]  sha256 uguale 74a081169de7
-ROSSO  M13 paper e live sulla stessa chiave  [1 failed, 116 passed in 6.90s]  sha256 uguale 74a081169de7
-ROSSO  M14 modo sempre live  [1 failed, 116 passed in 6.91s]  sha256 uguale 74a081169de7
-ROSSO  M15 tetto dimentica ordini vivi  [1 failed, 122 passed in 6.65s]  sha256 uguale 74a081169de7
-ROSSO  M16 consumatore rotto propaga  [1 failed, 119 passed in 6.78s]  sha256 uguale 74a081169de7
-ROSSO  M17 lucchetto del libro tolto  [1 failed, 124 passed in 7.13s]  sha256 uguale 74a081169de7
-ROSSO  M18 indizi ignorati dal libro  [1 failed, 102 passed in 6.56s]  sha256 uguale 74a081169de7
-ROSSO  M19 prezzo medio 0 al posto di assente  [1 failed, 112 passed in 6.23s]  sha256 uguale 74a081169de7
-ROSSO  M20 lato rovesciato  [1 failed in 1.49s]  sha256 uguale 74a081169de7
-ROSSO  M21 comandi su ordini non dell'utente  [1 failed, 102 passed in 7.52s]  sha256 uguale 74a081169de7
-ROSSO  M22 formula del lay sbagliata  [1 failed, 116 passed in 7.32s]  sha256 uguale c765f4385699
-ROSSO  M23 paper e live sommati nel P&L  [1 failed, 152 passed in 9.40s]  sha256 uguale c765f4385699
-ROSSO  M24 commissione applicata  [1 failed, 116 passed in 7.10s]  sha256 uguale c765f4385699
-ROSSO  M25 prezzo medio non pesato  [1 failed, 150 passed in 11.17s]  sha256 uguale c765f4385699
-ROSSO  M26 G2 esito fittizio 'vince un altro'  [1 failed, 158 passed in 9.79s]  sha256 uguale c765f4385699
-ROSSO  M27 handicap ignorato  [1 failed, 154 passed in 11.33s]  sha256 uguale c765f4385699
-ROSSO  M28 esposizione sul prezzo chiesto  [1 failed, 141 passed in 9.92s]  sha256 uguale c765f4385699
-ROSSO  M29 lockedPnlAt sbagliato  [1 failed, 149 passed in 9.80s]  sha256 uguale c765f4385699
-ROSSO  M30 prezzo medio <= 1 accettato  [1 failed, 153 passed in 11.08s]  sha256 uguale c765f4385699
-ROSSO  M31 esposizione massima positiva  [1 failed, 151 passed in 10.77s]  sha256 uguale c765f4385699
-ROSSO  M32 tolleranza R1 tolta  [1 failed, 174 passed in 10.21s]  sha256 uguale c65da0decef5
-ROSSO  M33 stato diverso ignorato  [1 failed, 249 passed in 12.42s]  sha256 uguale c65da0decef5
-ROSSO  M34 bot con tabella non saltato  [1 failed, 248 passed in 14.51s]  sha256 uguale c65da0decef5
-ROSSO  M35 righe account contate mancanti  [1 failed, 252 passed in 15.34s]  sha256 uguale c65da0decef5
-ROSSO  M36 avviso al primo giro  [1 failed, 252 passed in 14.25s]  sha256 uguale c65da0decef5
-ROSSO  M37 contatore dei mancanti mai azzerato  [1 failed, 253 passed in 15.02s]  sha256 uguale c65da0decef5
-ROSSO  M38 righe ripresa del diario ignorate  [1 failed, 254 passed in 15.66s]  sha256 uguale c65da0decef5
-ROSSO  M39 R2 ritrovato mai  [1 failed, 254 passed in 14.71s]  sha256 uguale c65da0decef5
-ROSSO  M40 specchio di tutti i modi  [1 failed, 252 passed in 14.94s]  sha256 uguale c65da0decef5
-ROSSO  M41 app scambiata per il sito  [1 failed, 257 passed in 15.34s]  sha256 uguale c65da0decef5
-ROSSO  M42 fase parziale come abbinato  [1 failed, 255 passed in 16.13s]  sha256 uguale c65da0decef5
-ROSSO  M43 blotter diverso ignorato  [1 failed, 261 passed in 15.00s]  sha256 uguale c65da0decef5
-ROSSO  M44 G1 evidenza positiva ignorata  [1 failed, 101 passed in 6.49s]  sha256 uguale 469a20c30c2c
-ROSSO  M45 M5 classi scalper standalone tolte  [1 failed, 44 passed in 1.89s]  sha256 uguale 469a20c30c2c
-ROSSO  M46 G1 riga di coda dell'app non e' utente  [1 failed, 101 passed in 6.38s]  sha256 uguale 469a20c30c2c
-ROSSO  M47 M1 guardia delle regressioni tolta  [1 failed, 167 passed in 9.06s]  sha256 uguale 74a081169de7
-ROSSO  M48 M1 sizeVoided non ammesso  [1 failed, 168 passed in 10.41s]  sha256 uguale 74a081169de7
-ROSSO  M49 G3 seme mai fatto  [1 failed, 162 passed in 9.21s]  sha256 uguale 74a081169de7
-ROSSO  M50 G3 riconnessione con ripresa rifa' il seme  [1 failed, 163 passed in 10.28s]  sha256 uguale 74a081169de7
-ROSSO  M51 G3 motivo seme_non_fatto tolto  [1 failed, 162 passed in 10.65s]  sha256 uguale 74a081169de7
-ROSSO  M52 G3 mb/ml ignorati  [1 failed, 165 passed in 9.87s]  sha256 uguale 74a081169de7
-ROSSO  M53 M2 chiusi non prima degli aperti  [1 failed, 171 passed in 9.93s]  sha256 uguale 74a081169de7
-ROSSO  M54 M2 aperti dimenticati senza riassunto  [1 failed, 170 passed in 10.33s]  sha256 uguale 74a081169de7
-ROSSO  M55 M3 indizi duplicati  [1 failed, 172 passed in 10.18s]  sha256 uguale 74a081169de7
-ROSSO  M56 M3 potatura non chiamata  [1 failed, 172 passed in 9.74s]  sha256 uguale 74a081169de7
-ROSSO  M57 M3 indizi non tolti con l'ordine  [1 failed, 172 passed in 10.07s]  sha256 uguale 74a081169de7
-ROSSO  M58 consegna ai consumatori non serializzata  [1 failed, 173 passed in 10.36s]  sha256 uguale 74a081169de7
-ROSSO  M59 M4 tipo ignoto accettato  [1 failed, 160 passed in 10.55s]  sha256 uguale c765f4385699
-ROSSO  M60 M4 piu' vincitori accettati  [1 failed, 160 passed in 9.96s]  sha256 uguale c765f4385699
-ROSSO  M61 tolleranza R1 0,5  [1 failed, 174 passed in 10.63s]  sha256 uguale c65da0decef5
-ROSSO  M62 G3 ombra senza seme confronta lo specchio  [1 failed, 166 passed in 9.68s]  sha256 uguale c65da0decef5
-ROSSO  M63 G3 R2 non trovato senza seme  [1 failed, 166 passed in 10.67s]  sha256 uguale c65da0decef5
-ROSSO  M64 M1 abbinato che cala fra stati uguali  [1 failed, 177 passed in 11.55s]  sha256 uguale 74a081169de7
-ROSSO  M65 M1 completo che torna eseguibile  [1 failed, 179 passed in 11.46s]  sha256 uguale 74a081169de7
-ROSSO  M66 G1 riga di coda del risk  [1 failed, 101 passed in 6.36s]  sha256 uguale 469a20c30c2c
-ROSSO  M67 G1 ack del desktop non e' utente  [1 failed, 101 passed in 5.91s]  sha256 uguale 469a20c30c2c
-ROSSO  M68 G1 indizio utente letto come bot  [1 failed, 101 passed in 6.45s]  sha256 uguale 469a20c30c2c
-ROSSO  M69 G1 specchio bot:tennis toglie il provvisorio  [1 failed, 180 passed in 11.29s]  sha256 uguale 469a20c30c2c
-ROSSO  M70 G1 riga utente di Mike non conferma  [1 failed, 181 passed in 10.69s]  sha256 uguale 469a20c30c2c
-ROSSO  M71 G1 motivo di bot della coda ignorato  [1 failed, 101 passed in 6.12s]  sha256 uguale 469a20c30c2c
-ROSSO  M72 G3 seme KO creduto fatto  [1 failed, 164 passed in 9.30s]  sha256 uguale 74a081169de7
-ROSSO  M73 G3 un ordine illeggibile ferma il seme  [1 failed, 184 passed in 10.97s]  sha256 uguale 74a081169de7
-ROSSO  M74 G3 riconnessione senza ripresa tiene il seme  [1 failed, 163 passed in 9.94s]  sha256 uguale 74a081169de7
-ROSSO  M75 G3 il live nasce col seme fatto  [1 failed, 162 passed in 9.15s]  sha256 uguale 74a081169de7
-ROSSO  M76 G3 mancanza mai tolta  [1 failed, 165 passed in 9.81s]  sha256 uguale 74a081169de7
-ROSSO  M77 G3 motivo abbinato_mancante tolto  [1 failed, 165 passed in 9.60s]  sha256 uguale 74a081169de7
-ROSSO  M78 G3 ombra senza la divergenza seme_non_fatto  [1 failed, 166 passed in 9.65s]  sha256 uguale c65da0decef5
-ROSSO  M79 M2 avviso dei mercati aperti tolto  [1 failed, 170 passed in 10.14s]  sha256 uguale 74a081169de7
-ROSSO  M80 M2 riassunto anche senza abbinato  [1 failed, 187 passed in 11.43s]  sha256 uguale 74a081169de7
-ROSSO  M81 M2 riassunti fuori dal P&L  [1 failed, 170 passed in 9.92s]  sha256 uguale 74a081169de7
-ROSSO  M82 M2 motivo ordini_riassunti tolto  [1 failed, 170 passed in 10.69s]  sha256 uguale 74a081169de7
-ROSSO  M83 dimentica_mercato tiene i riassunti  [1 failed, 188 passed in 10.84s]  sha256 uguale 74a081169de7
-ROSSO  M84 dimentica_mercato tiene le mancanze  [1 failed, 188 passed in 10.42s]  sha256 uguale 74a081169de7
-ROSSO  M85 dimentica_mercato tiene runner e tipo  [1 failed, 188 passed in 10.47s]  sha256 uguale 74a081169de7
-ROSSO  M86 M3 potatura degli indizi orfani vuota  [1 failed, 172 passed in 9.99s]  sha256 uguale 74a081169de7
-ROSSO  M87 G2 imposta_mercato ignora i runner  [1 failed, 162 passed in 8.97s]  sha256 uguale 74a081169de7
-ROSSO  M88 M4 imposta_mercato ignora il tipo  [1 failed, 116 passed in 6.16s]  sha256 uguale 74a081169de7
-ROSSO  M89 M4 imposta_mercato ignora i vincitori  [1 failed, 116 passed in 6.73s]  sha256 uguale 74a081169de7
-ROSSO  M90 M2 imposta_mercato ignora il chiuso  [1 failed, 171 passed in 9.97s]  sha256 uguale 74a081169de7
-ROSSO  M91 G2 motivo runner_ignoti tolto  [1 failed, 151 passed in 8.99s]  sha256 uguale c765f4385699
-ROSSO  M92 G2 zero al posto di NaN  [1 failed, 151 passed in 9.36s]  sha256 uguale c765f4385699
-ROSSO  M93 M4 tipo non ODDS accettato  [1 failed, 160 passed in 9.02s]  sha256 uguale c765f4385699
-ROSSO  R01 G1 AUTORI_UTENTE include sconosciuto  [1 failed, 102 passed in 5.81s]  sha256 uguale 469a20c30c2c
-ROSSO  R02 G1 indizio rischio letto come desktop  [1 failed, 101 passed in 5.85s]  sha256 uguale 469a20c30c2c
-ROSSO  R03 G1 ack_desktop non e' evidenza utente  [1 failed, 101 passed in 6.09s]  sha256 uguale 469a20c30c2c
-ROSSO  R04 G1 tabella non vince su evidenza utente  [1 failed, 211 passed in 10.90s]  sha256 uguale 469a20c30c2c
-ROSSO  R05 G2 runner non entrano nelle selezioni  [1 failed, 129 passed in 9.78s]  sha256 uguale c765f4385699
-ROSSO  R06 G2 esposizione senza lo zero  [1 failed, 151 passed in 9.96s]  sha256 uguale c765f4385699
-ROSSO  R07 G3 seme KO lascia il seme fatto  [1 failed, 164 passed in 10.03s]  sha256 uguale 74a081169de7
-ROSSO  R08 G3 riconnessione senza ripresa non annulla il seme  [1 failed, 163 passed in 10.31s]  sha256 uguale 74a081169de7
-ROSSO  R09 G3 verifica lay confrontata con mb  [1 failed, 165 passed in 9.50s]  sha256 uguale 74a081169de7
-ROSSO  R10 G3 ombra completo sempre  [1 failed, 166 passed in 9.88s]  sha256 uguale c65da0decef5
-ROSSO  R11 M2 tetto toglie prima i piu' recenti  [1 failed, 122 passed in 6.73s]  sha256 uguale 74a081169de7
-ROSSO  R12 M2 tetto toglie prima i mercati aperti  [1 failed, 170 passed in 9.81s]  sha256 uguale 74a081169de7
-ROSSO  R13 M2 riassunto perde l'autore  [1 failed, 170 passed in 9.89s]  sha256 uguale 74a081169de7
-ROSSO  R14 M2 riassunto perde il prezzo  [1 failed, 199 passed in 10.99s]  sha256 uguale 74a081169de7
-ROSSO  R15 M4 piu' vincitori accettati  [1 failed, 160 passed in 9.12s]  sha256 uguale c765f4385699
-ROSSO  R16 M4 handicap 0,5 accettato  [1 failed, 154 passed in 9.28s]  sha256 uguale c765f4385699
-ROSSO  R17 M4 tipo ignoto accettato  [1 failed, 160 passed in 9.40s]  sha256 uguale c765f4385699
-ROSSO  R18 M4 asiatico single line accettato  [1 failed, 203 passed in 10.97s]  sha256 uguale c765f4385699
-ROSSO  R19 G1 specchio conferma l'utente  [1 failed, 180 passed in 9.87s]  sha256 uguale 469a20c30c2c
-ROSSO  R20 G1 evidenza utente vince sul bot  [1 failed, 101 passed in 6.06s]  sha256 uguale 469a20c30c2c
-ROSSO  R21 M3 indizi duplicati  [1 failed, 172 passed in 9.02s]  sha256 uguale 74a081169de7
-ROSSO  M94 G1 qualunque azione e' prova  [1 failed, 193 passed in 10.50s]  sha256 uguale 469a20c30c2c
-ROSSO  M95 G1 cancel e replace come piazzamenti  [1 failed, 193 passed in 10.10s]  sha256 uguale 469a20c30c2c
-ROSSO  M96 G1 riga di un altro bet_id accettata  [1 failed, 191 passed in 10.09s]  sha256 uguale 469a20c30c2c
-ROSSO  M97 G1 bet_id solo dalla colonna  [1 failed, 191 passed in 10.72s]  sha256 uguale 469a20c30c2c
-ROSSO  M98 G1 ft: genitore con un altro id accettato  [1 failed, 196 passed in 10.52s]  sha256 uguale 469a20c30c2c
-ROSSO  M99 G1 ft trattato come comando dell'utente  [1 failed, 196 passed in 10.79s]  sha256 uguale 469a20c30c2c
-ROSSO  M100 G1 tennis: azione ignorata  [1 failed, 197 passed in 11.37s]  sha256 uguale 469a20c30c2c
-ROSSO  M101 G1 tennis: payload non letto  [1 failed, 197 passed in 10.54s]  sha256 uguale 469a20c30c2c
-ROSSO  M102 G1 result come stringa non letto  [1 failed, 198 passed in 10.71s]  sha256 uguale 469a20c30c2c
-ROSSO  M103 M2 storno tolto (doppio conteggio)  [1 failed, 200 passed in 10.32s]  sha256 uguale 74a081169de7
-ROSSO  M104 M2 rientro vecchio accettato  [1 failed, 202 passed in 10.80s]  sha256 uguale 74a081169de7
-ROSSO  M105 M2 rientro in regressione accettato  [1 failed, 202 passed in 11.24s]  sha256 uguale 74a081169de7
-ROSSO  M106 M2 indizi del riassunto persi  [1 failed, 201 passed in 11.62s]  sha256 uguale 74a081169de7
-ROSSO  M107 M2 attore del riassunto perso  [1 failed, 209 passed in 11.25s]  sha256 uguale 74a081169de7
-ROSSO  M108 M2 bet_id riassunti non ricordati  [1 failed, 200 passed in 10.20s]  sha256 uguale 74a081169de7
-ROSSO  M109 M2 dimentica_mercato tiene i bet_id riassunti  [1 failed, 210 passed in 10.66s]  sha256 uguale 74a081169de7
-ROSSO  M110 vincitori_ignoti tolto  [1 failed, 207 passed in 10.93s]  sha256 uguale c765f4385699
-ROSSO  M111 over/under non a vincitore unico  [1 failed, 207 passed in 10.75s]  sha256 uguale c765f4385699
-ROSSO  M112 libro non passa il marketType  [1 failed, 207 passed in 10.84s]  sha256 uguale 74a081169de7
-ROSSO  M113 imposta_mercato ignora il marketType  [1 failed, 207 passed in 11.97s]  sha256 uguale 74a081169de7
-ROSSO  M114 JSON: NaN resta NaN  [1 failed, 208 passed in 10.34s]  sha256 uguale c765f4385699
-ROSSO  M115 JSON: chiavi numeriche  [1 failed, 208 passed in 11.43s]  sha256 uguale c765f4385699
-ROSSO  M116 il nuovo non eredita  [1 failed, 214 passed in 11.65s]  sha256 uguale 74a081169de7
-ROSSO  M117 provvisorieta' non ereditata  [1 failed, 221 passed in 12.22s]  sha256 uguale 469a20c30c2c
-ROSSO  M118 indizi sulla radice non ricompongono i successori  [1 failed, 221 passed in 12.07s]  sha256 uguale 74a081169de7
-ROSSO  M119 arrivo del sostituito non ricompone i successori  [1 failed, 216 passed in 11.32s]  sha256 uguale 74a081169de7
-ROSSO  M120 successori non in catena  [1 failed, 224 passed in 12.76s]  sha256 uguale 74a081169de7
-ROSSO  M121 legame dallo stream spento  [1 failed, 228 passed in 12.37s]  sha256 uguale 74a081169de7
-ROSSO  M122 stream: sostituito anche se vivo  [1 failed, 229 passed in 11.61s]  sha256 uguale 74a081169de7
-ROSSO  M123 stream: verso ignorato  [1 failed, 229 passed in 13.79s]  sha256 uguale 74a081169de7
-ROSSO  M124 stream: lato ignorato  [1 failed, 231 passed in 11.93s]  sha256 uguale 74a081169de7
-ROSSO  M125 stream: ref ignorato  [1 failed, 201 passed in 10.44s]  sha256 uguale 74a081169de7
-ROSSO  M126 stream: selezione ignorata  [1 failed, 233 passed in 12.20s]  sha256 uguale 74a081169de7
-ROSSO  M127 stream: completo tardivo non lega  [1 failed, 229 passed in 12.49s]  sha256 uguale 74a081169de7
-ROSSO  M128 stream: nuovo arrivato non lega  [1 failed, 228 passed in 12.30s]  sha256 uguale 74a081169de7
-ROSSO  M129 stream: bet_id non numerico  [1 failed, 235 passed in 12.67s]  sha256 uguale 74a081169de7
-ROSSO  M130 stream: legame contato due volte  [1 failed, 229 passed in 12.27s]  sha256 uguale 74a081169de7
-ROSSO  M131 riassunto senza attribuzione  [1 failed, 237 passed in 11.76s]  sha256 uguale 74a081169de7
-ROSSO  M132 riassunto non cercato  [1 failed, 237 passed in 11.40s]  sha256 uguale 74a081169de7
-ROSSO  M133 dimentica: voci non slegate  [1 failed, 238 passed in 13.04s]  sha256 uguale 74a081169de7
-ROSSO  M134 dimentica: riassunti non slegati  [1 failed, 239 passed in 13.37s]  sha256 uguale 74a081169de7
-ROSSO  M135 slega: successori restano  [1 failed, 240 passed in 12.43s]  sha256 uguale 74a081169de7
-ROSSO  M136 slega: il proprio legame resta  [1 failed, 238 passed in 12.53s]  sha256 uguale 74a081169de7
-ROSSO  M137 eredita: prova propria di un bot ignorata  [1 failed, 219 passed in 13.44s]  sha256 uguale 469a20c30c2c
-ROSSO  M138 eredita: conflitto non scritto  [1 failed, 220 passed in 11.82s]  sha256 uguale 469a20c30c2c
-ROSSO  M139 eredita: dichiarato ignorato  [1 failed, 220 passed in 12.13s]  sha256 uguale 469a20c30c2c
-ROSSO  M140 origine: qualunque riga di coda  [1 failed, 213 passed in 12.09s]  sha256 uguale 469a20c30c2c
-ROSSO  M141 origine: canale locale ignorato  [1 failed, 213 passed in 11.61s]  sha256 uguale 469a20c30c2c
-ROSSO  M142 origine: request_id ignorato  [1 failed, 242 passed in 12.62s]  sha256 uguale 469a20c30c2c
-ROSSO  M143 origine: prefisso del ref ignorato  [1 failed, 212 passed in 12.51s]  sha256 uguale 469a20c30c2c
-ROSSO  M144 tennis: ref non confrontato  [1 failed, 227 passed in 12.71s]  sha256 uguale 469a20c30c2c
-ROSSO  M145 tennis: azione non controllata  [1 failed, 243 passed in 11.69s]  sha256 uguale 469a20c30c2c
-ROSSO  M146 tennis: stesso bet_id  [1 failed, 227 passed in 12.40s]  sha256 uguale 469a20c30c2c
-ROSSO  M147 riavvio: indizi del sostituito ignorati  [1 failed, 216 passed in 12.61s]  sha256 uguale 74a081169de7
-ROSSO  M148 riavvio: catena non risalita  [1 failed, 225 passed in 12.95s]  sha256 uguale 74a081169de7
-ROSSO  M149 catena: ciclo senza guardia  [1 failed, 226 passed in 13.34s]  sha256 uguale 74a081169de7
-ROSSO  M150 successori: ciclo senza guardia  [1 failed, 226 passed in 13.76s]  sha256 uguale 74a081169de7
-ROSSO  M151 legame: idempotenza tolta  [1 failed, 214 passed in 10.92s]  sha256 uguale 74a081169de7
-ROSSO  M152 legame: modo non controllato  [1 failed, 217 passed in 12.56s]  sha256 uguale 74a081169de7
-ROSSO  M153 legame: un ordine sostituisce se stesso  [1 failed, 217 passed in 13.20s]  sha256 uguale 74a081169de7
-ROSSO  M154 legame: successore non registrato  [1 failed, 214 passed in 12.24s]  sha256 uguale 74a081169de7
-TOTALE rosse 175/175 (guasti 0)
+# Giro completo 10/10 (decisione 5, agente D-C): 195 mutazioni sul commit 154e02c1 (copie estratte con git archive).
+# Prima meta' (M01-R05, 98) in una copia, seconda meta' (R06-D520, 97) in un'altra, in parallelo.
+# Esito del giro: 193/195 rosse; M112 e M113 sopravvissute (il marketType del libro decideva solo se il se vince
+# era vuoto: con la decisione 5 il numero c'e' comunque). Test rafforzato (test_c2_revisione2.py::
+# test_vincitori_ignoti_e_tipi_a_vincitore_unico_per_definizione: qualita' esatto dopo imposta_mercato(tipo_mercato=...))
+# e le due rilanciate sul worktree finale: ROSSE (righe in coda). TOTALE FINALE rosse 195/195 (guasti 0).
+ROSSO  M01 G1 ref manuale torna desktop senza evidenza  [1 failed, 217 passed in 12.32s]  sha256 uguale 469a20c30c2c
+ROSSO  M02 ref storico condiviso ignorato  [1 failed, 247 passed in 12.82s]  sha256 uguale 469a20c30c2c
+ROSSO  M03 Safe tennis REST letto come Safe  [1 failed, 246 passed in 12.35s]  sha256 uguale 469a20c30c2c
+ROSSO  M04 scalper senza event_id numerico  [1 failed, 323 passed in 16.51s]  sha256 uguale 469a20c30c2c
+ROSSO  M05 precedenza degli indizi rovesciata  [1 failed, 320 passed in 16.49s]  sha256 uguale 469a20c30c2c
+ROSSO  M06 riga utente di Mike letta come Mike  [1 failed, 320 passed in 16.20s]  sha256 uguale 469a20c30c2c
+ROSSO  M07 sito letto come sconosciuto  [1 failed, 216 passed in 14.76s]  sha256 uguale 469a20c30c2c
+ROSSO  M08 prefisso del risk sbagliato  [1 failed, 314 passed in 12.91s]  sha256 uguale 469a20c30c2c
+ROSSO  M09 ref confrontato con le maiuscole  [1 failed, 254 passed in 13.52s]  sha256 uguale 469a20c30c2c
+ROSSO  M10 classi tennis tagliate a 14  [1 failed, 254 passed in 12.16s]  sha256 uguale 469a20c30c2c
+ROSSO  M11 ref manuale con customerOrderRef di un bot  [1 failed, 323 passed in 16.56s]  sha256 uguale 469a20c30c2c
+ROSSO  M12 messaggio vecchio sovrascrive  [1 failed, 332 passed in 22.96s]  sha256 uguale 2c0f67e294ad
+ROSSO  M13 paper e live sulla stessa chiave  [1 failed, 330 passed in 17.32s]  sha256 uguale 2c0f67e294ad
+ROSSO  M14 modo sempre live  [1 failed, 330 passed in 17.57s]  sha256 uguale 2c0f67e294ad
+ROSSO  M15 tetto dimentica ordini vivi  [1 failed, 336 passed in 17.04s]  sha256 uguale 2c0f67e294ad
+ROSSO  M16 consumatore rotto propaga  [1 failed, 333 passed in 16.53s]  sha256 uguale 2c0f67e294ad
+ROSSO  M17 lucchetto del libro tolto  [1 failed, 338 passed in 17.44s]  sha256 uguale 2c0f67e294ad
+ROSSO  M18 indizi ignorati dal libro  [1 failed, 316 passed in 16.13s]  sha256 uguale 2c0f67e294ad
+ROSSO  M19 prezzo medio 0 al posto di assente  [1 failed, 326 passed in 22.42s]  sha256 uguale 2c0f67e294ad
+ROSSO  M20 lato rovesciato  [1 failed, 214 passed in 20.56s]  sha256 uguale 2c0f67e294ad
+ROSSO  M21 comandi su ordini non dell'utente  [1 failed, 316 passed in 19.66s]  sha256 uguale 2c0f67e294ad
+ROSSO  M22 formula del lay sbagliata  [1 failed, 330 passed in 20.72s]  sha256 uguale f4b62260205f
+ROSSO  M23 paper e live sommati nel P&L  [1 failed, 366 passed in 24.15s]  sha256 uguale f4b62260205f
+ROSSO  M24 commissione applicata  [1 failed, 330 passed in 23.28s]  sha256 uguale f4b62260205f
+ROSSO  M25 prezzo medio non pesato  [1 failed, 364 passed in 20.95s]  sha256 uguale f4b62260205f
+ROSSO  M26 G2 esito fittizio 'vince un altro'  [1 failed, 372 passed in 23.64s]  sha256 uguale f4b62260205f
+ROSSO  M27 handicap ignorato  [1 failed, 368 passed in 26.37s]  sha256 uguale f4b62260205f
+ROSSO  M28 esposizione sul prezzo chiesto  [1 failed, 355 passed in 23.66s]  sha256 uguale f4b62260205f
+ROSSO  M29 lockedPnlAt sbagliato  [1 failed, 363 passed in 25.99s]  sha256 uguale f4b62260205f
+ROSSO  M30 prezzo medio <= 1 accettato  [1 failed, 367 passed in 28.04s]  sha256 uguale f4b62260205f
+ROSSO  M31 esposizione massima positiva  [1 failed, 365 passed in 24.57s]  sha256 uguale f4b62260205f
+ROSSO  M32 tolleranza R1 tolta  [1 failed, 388 passed in 25.45s]  sha256 uguale c65da0decef5
+ROSSO  M33 stato diverso ignorato  [1 failed, 463 passed in 25.92s]  sha256 uguale c65da0decef5
+ROSSO  M34 bot con tabella non saltato  [1 failed, 462 passed in 29.64s]  sha256 uguale c65da0decef5
+ROSSO  M35 righe account contate mancanti  [1 failed, 466 passed in 25.81s]  sha256 uguale c65da0decef5
+ROSSO  M36 avviso al primo giro  [1 failed, 466 passed in 27.17s]  sha256 uguale c65da0decef5
+ROSSO  M37 contatore dei mancanti mai azzerato  [1 failed, 467 passed in 28.32s]  sha256 uguale c65da0decef5
+ROSSO  M38 righe ripresa del diario ignorate  [1 failed, 468 passed in 26.69s]  sha256 uguale c65da0decef5
+ROSSO  M39 R2 ritrovato mai  [1 failed, 468 passed in 25.52s]  sha256 uguale c65da0decef5
+ROSSO  M40 specchio di tutti i modi  [1 failed, 466 passed in 31.09s]  sha256 uguale c65da0decef5
+ROSSO  M41 app scambiata per il sito  [1 failed, 471 passed in 32.99s]  sha256 uguale c65da0decef5
+ROSSO  M42 fase parziale come abbinato  [1 failed, 469 passed in 31.45s]  sha256 uguale c65da0decef5
+ROSSO  M43 blotter diverso ignorato  [1 failed, 475 passed in 28.17s]  sha256 uguale c65da0decef5
+ROSSO  M44 G1 evidenza positiva ignorata  [1 failed, 315 passed in 20.96s]  sha256 uguale 469a20c30c2c
+ROSSO  M45 M5 classi scalper standalone tolte  [1 failed, 258 passed in 18.17s]  sha256 uguale 469a20c30c2c
+ROSSO  M46 G1 riga di coda dell'app non e' utente  [1 failed, 315 passed in 16.18s]  sha256 uguale 469a20c30c2c
+ROSSO  M47 M1 guardia delle regressioni tolta  [1 failed, 381 passed in 20.36s]  sha256 uguale 2c0f67e294ad
+ROSSO  M48 M1 sizeVoided non ammesso  [1 failed, 382 passed in 20.44s]  sha256 uguale 2c0f67e294ad
+ROSSO  M49 G3 seme mai fatto  [1 failed, 376 passed in 21.11s]  sha256 uguale 2c0f67e294ad
+ROSSO  M50 G3 riconnessione con ripresa rifa' il seme  [1 failed, 377 passed in 21.62s]  sha256 uguale 2c0f67e294ad
+ROSSO  M51 G3 motivo seme_non_fatto tolto  [1 failed, 376 passed in 20.94s]  sha256 uguale 2c0f67e294ad
+ROSSO  M52 G3 mb/ml ignorati  [1 failed, 379 passed in 20.05s]  sha256 uguale 2c0f67e294ad
+ROSSO  M53 M2 chiusi non prima degli aperti  [1 failed, 385 passed in 20.55s]  sha256 uguale 2c0f67e294ad
+ROSSO  M54 M2 aperti dimenticati senza riassunto  [1 failed, 384 passed in 20.88s]  sha256 uguale 2c0f67e294ad
+ROSSO  M55 M3 indizi duplicati  [1 failed, 386 passed in 20.23s]  sha256 uguale 2c0f67e294ad
+ROSSO  M56 M3 potatura non chiamata  [1 failed, 386 passed in 20.88s]  sha256 uguale 2c0f67e294ad
+ROSSO  M57 M3 indizi non tolti con l'ordine  [1 failed, 386 passed in 21.41s]  sha256 uguale 2c0f67e294ad
+ROSSO  M58 consegna ai consumatori non serializzata  [1 failed, 387 passed in 22.51s]  sha256 uguale 2c0f67e294ad
+ROSSO  M59 M4 tipo ignoto accettato  [1 failed, 374 passed in 21.36s]  sha256 uguale f4b62260205f
+ROSSO  M60 M4 piu' vincitori accettati  [1 failed, 374 passed in 19.90s]  sha256 uguale f4b62260205f
+ROSSO  M61 tolleranza R1 0,5  [1 failed, 388 passed in 21.06s]  sha256 uguale c65da0decef5
+ROSSO  M62 G3 ombra senza seme confronta lo specchio  [1 failed, 380 passed in 20.86s]  sha256 uguale c65da0decef5
+ROSSO  M63 G3 R2 non trovato senza seme  [1 failed, 380 passed in 20.46s]  sha256 uguale c65da0decef5
+ROSSO  M64 M1 abbinato che cala fra stati uguali  [1 failed, 391 passed in 19.71s]  sha256 uguale 2c0f67e294ad
+ROSSO  M65 M1 completo che torna eseguibile  [1 failed, 393 passed in 19.86s]  sha256 uguale 2c0f67e294ad
+ROSSO  M66 G1 riga di coda del risk  [1 failed, 315 passed in 18.07s]  sha256 uguale 469a20c30c2c
+ROSSO  M67 G1 ack del desktop non e' utente  [1 failed, 315 passed in 16.95s]  sha256 uguale 469a20c30c2c
+ROSSO  M68 G1 indizio utente letto come bot  [1 failed, 315 passed in 18.10s]  sha256 uguale 469a20c30c2c
+ROSSO  M69 G1 specchio bot:tennis toglie il provvisorio  [1 failed, 394 passed in 23.02s]  sha256 uguale 469a20c30c2c
+ROSSO  M70 G1 riga utente di Mike non conferma  [1 failed, 395 passed in 20.00s]  sha256 uguale 469a20c30c2c
+ROSSO  M71 G1 motivo di bot della coda ignorato  [1 failed, 315 passed in 16.93s]  sha256 uguale 469a20c30c2c
+ROSSO  M72 G3 seme KO creduto fatto  [1 failed, 378 passed in 19.78s]  sha256 uguale 2c0f67e294ad
+ROSSO  M73 G3 un ordine illeggibile ferma il seme  [1 failed, 398 passed in 20.47s]  sha256 uguale 2c0f67e294ad
+ROSSO  M74 G3 riconnessione senza ripresa tiene il seme  [1 failed, 377 passed in 21.24s]  sha256 uguale 2c0f67e294ad
+ROSSO  M75 G3 il live nasce col seme fatto  [1 failed, 376 passed in 20.27s]  sha256 uguale 2c0f67e294ad
+ROSSO  M76 G3 mancanza mai tolta  [1 failed, 379 passed in 21.45s]  sha256 uguale 2c0f67e294ad
+ROSSO  M77 G3 motivo abbinato_mancante tolto  [1 failed, 379 passed in 23.63s]  sha256 uguale 2c0f67e294ad
+ROSSO  M78 G3 ombra senza la divergenza seme_non_fatto  [1 failed, 380 passed in 23.86s]  sha256 uguale c65da0decef5
+ROSSO  M79 M2 avviso dei mercati aperti tolto  [1 failed, 384 passed in 23.16s]  sha256 uguale 2c0f67e294ad
+ROSSO  M80 M2 riassunto anche senza abbinato  [1 failed, 401 passed in 28.79s]  sha256 uguale 2c0f67e294ad
+ROSSO  M81 M2 riassunti fuori dal P&L  [1 failed, 384 passed in 28.43s]  sha256 uguale 2c0f67e294ad
+ROSSO  M82 M2 motivo ordini_riassunti tolto  [1 failed, 384 passed in 30.96s]  sha256 uguale 2c0f67e294ad
+ROSSO  M83 dimentica_mercato tiene i riassunti  [1 failed, 402 passed in 30.23s]  sha256 uguale 2c0f67e294ad
+ROSSO  M84 dimentica_mercato tiene le mancanze  [1 failed, 402 passed in 26.87s]  sha256 uguale 2c0f67e294ad
+ROSSO  M85 dimentica_mercato tiene runner e tipo  [1 failed, 402 passed in 30.38s]  sha256 uguale 2c0f67e294ad
+ROSSO  M86 M3 potatura degli indizi orfani vuota  [1 failed, 386 passed in 29.28s]  sha256 uguale 2c0f67e294ad
+ROSSO  M87 G2 imposta_mercato ignora i runner  [1 failed, 376 passed in 28.71s]  sha256 uguale 2c0f67e294ad
+ROSSO  M88 M4 imposta_mercato ignora il tipo  [1 failed, 403 passed in 35.46s]  sha256 uguale 2c0f67e294ad
+ROSSO  M89 M4 imposta_mercato ignora i vincitori  [1 failed, 403 passed in 24.60s]  sha256 uguale 2c0f67e294ad
+ROSSO  M90 M2 imposta_mercato ignora il chiuso  [1 failed, 385 passed in 29.08s]  sha256 uguale 2c0f67e294ad
+ROSSO  M91 G2 motivo runner_ignoti tolto  [1 failed, 365 passed in 25.29s]  sha256 uguale f4b62260205f
+ROSSO  M92 G2 zero al posto di NaN  [1 failed, 365 passed in 28.19s]  sha256 uguale f4b62260205f
+ROSSO  M93 M4 tipo non ODDS accettato  [1 failed, 374 passed in 24.95s]  sha256 uguale f4b62260205f
+ROSSO  R01 G1 AUTORI_UTENTE include sconosciuto  [1 failed, 316 passed in 23.86s]  sha256 uguale 469a20c30c2c
+ROSSO  R02 G1 indizio rischio letto come desktop  [1 failed, 315 passed in 26.50s]  sha256 uguale 469a20c30c2c
+ROSSO  R03 G1 ack_desktop non e' evidenza utente  [1 failed, 315 passed in 28.83s]  sha256 uguale 469a20c30c2c
+ROSSO  R04 G1 tabella non vince su evidenza utente  [1 failed, 425 passed in 27.49s]  sha256 uguale 469a20c30c2c
+ROSSO  R05 G2 runner non entrano nelle selezioni  [1 failed, 343 passed in 27.48s]  sha256 uguale f4b62260205f
+ROSSO  R06 G2 esposizione senza lo zero  [1 failed, 365 passed in 29.61s]  sha256 uguale f4b62260205f
+ROSSO  R07 G3 seme KO lascia il seme fatto  [1 failed, 378 passed in 28.23s]  sha256 uguale 2c0f67e294ad
+ROSSO  R08 G3 riconnessione senza ripresa non annulla il seme  [1 failed, 377 passed in 23.78s]  sha256 uguale 2c0f67e294ad
+ROSSO  R09 G3 verifica lay confrontata con mb  [1 failed, 379 passed in 24.66s]  sha256 uguale 2c0f67e294ad
+ROSSO  R10 G3 ombra completo sempre  [1 failed, 380 passed in 25.05s]  sha256 uguale c65da0decef5
+ROSSO  R11 M2 tetto toglie prima i piu' recenti  [1 failed, 336 passed in 19.44s]  sha256 uguale 2c0f67e294ad
+ROSSO  R12 M2 tetto toglie prima i mercati aperti  [1 failed, 384 passed in 24.46s]  sha256 uguale 2c0f67e294ad
+ROSSO  R13 M2 riassunto perde l'autore  [1 failed, 384 passed in 24.56s]  sha256 uguale 2c0f67e294ad
+ROSSO  R14 M2 riassunto perde il prezzo  [1 failed, 413 passed in 24.77s]  sha256 uguale 2c0f67e294ad
+ROSSO  R15 M4 piu' vincitori accettati  [1 failed, 374 passed in 23.02s]  sha256 uguale f4b62260205f
+ROSSO  R16 M4 handicap 0,5 accettato  [1 failed, 368 passed in 24.66s]  sha256 uguale f4b62260205f
+ROSSO  R17 M4 tipo ignoto accettato  [1 failed, 374 passed in 24.36s]  sha256 uguale f4b62260205f
+ROSSO  R18 M4 asiatico single line accettato  [1 failed, 417 passed in 27.53s]  sha256 uguale f4b62260205f
+ROSSO  R19 G1 specchio conferma l'utente  [1 failed, 394 passed in 25.10s]  sha256 uguale 469a20c30c2c
+ROSSO  R20 G1 evidenza utente vince sul bot  [1 failed, 315 passed in 19.57s]  sha256 uguale 469a20c30c2c
+ROSSO  R21 M3 indizi duplicati  [1 failed, 386 passed in 23.73s]  sha256 uguale 2c0f67e294ad
+ROSSO  M94 G1 qualunque azione e' prova  [1 failed, 407 passed in 24.53s]  sha256 uguale 469a20c30c2c
+ROSSO  M95 G1 cancel e replace come piazzamenti  [1 failed, 407 passed in 22.84s]  sha256 uguale 469a20c30c2c
+ROSSO  M96 G1 riga di un altro bet_id accettata  [1 failed, 405 passed in 22.95s]  sha256 uguale 469a20c30c2c
+ROSSO  M97 G1 bet_id solo dalla colonna  [1 failed, 405 passed in 23.24s]  sha256 uguale 469a20c30c2c
+ROSSO  M98 G1 ft: genitore con un altro id accettato  [1 failed, 410 passed in 22.65s]  sha256 uguale 469a20c30c2c
+ROSSO  M99 G1 ft trattato come comando dell'utente  [1 failed, 410 passed in 25.63s]  sha256 uguale 469a20c30c2c
+ROSSO  M100 G1 tennis: azione ignorata  [1 failed, 411 passed in 32.76s]  sha256 uguale 469a20c30c2c
+ROSSO  M101 G1 tennis: payload non letto  [1 failed, 411 passed in 30.53s]  sha256 uguale 469a20c30c2c
+ROSSO  M102 G1 result come stringa non letto  [1 failed, 412 passed in 25.64s]  sha256 uguale 469a20c30c2c
+ROSSO  M103 M2 storno tolto (doppio conteggio)  [1 failed, 414 passed in 28.84s]  sha256 uguale 2c0f67e294ad
+ROSSO  M104 M2 rientro vecchio accettato  [1 failed, 416 passed in 25.42s]  sha256 uguale 2c0f67e294ad
+ROSSO  M105 M2 rientro in regressione accettato  [1 failed, 416 passed in 22.21s]  sha256 uguale 2c0f67e294ad
+ROSSO  M106 M2 indizi del riassunto persi  [1 failed, 415 passed in 21.09s]  sha256 uguale 2c0f67e294ad
+ROSSO  M107 M2 attore del riassunto perso  [1 failed, 423 passed in 21.48s]  sha256 uguale 2c0f67e294ad
+ROSSO  M108 M2 bet_id riassunti non ricordati  [1 failed, 414 passed in 22.76s]  sha256 uguale 2c0f67e294ad
+ROSSO  M109 M2 dimentica_mercato tiene i bet_id riassunti  [1 failed, 424 passed in 21.95s]  sha256 uguale 2c0f67e294ad
+ROSSO  M110 vincitori_ignoti tolto  [1 failed, 421 passed in 21.93s]  sha256 uguale f4b62260205f
+ROSSO  M111 over/under non a vincitore unico  [1 failed, 421 passed in 23.38s]  sha256 uguale f4b62260205f
+VERDE!  M112 libro non passa il marketType  [494 passed in 28.20s]  sha256 uguale 2c0f67e294ad
+VERDE!  M113 imposta_mercato ignora il marketType  [494 passed in 27.54s]  sha256 uguale 2c0f67e294ad
+ROSSO  M114 JSON: NaN resta NaN  [1 failed, 422 passed in 24.56s]  sha256 uguale f4b62260205f
+ROSSO  M115 JSON: chiavi numeriche  [1 failed, 422 passed in 25.22s]  sha256 uguale f4b62260205f
+ROSSO  M116 il nuovo non eredita  [1 failed, 428 passed in 22.78s]  sha256 uguale 2c0f67e294ad
+ROSSO  M117 provvisorieta' non ereditata  [1 failed, 435 passed in 22.27s]  sha256 uguale 469a20c30c2c
+ROSSO  M118 indizi sulla radice non ricompongono i successori  [1 failed, 435 passed in 21.38s]  sha256 uguale 2c0f67e294ad
+ROSSO  M119 arrivo del sostituito non ricompone i successori  [1 failed, 430 passed in 21.41s]  sha256 uguale 2c0f67e294ad
+ROSSO  M120 successori non in catena  [1 failed, 438 passed in 22.60s]  sha256 uguale 2c0f67e294ad
+ROSSO  M121 legame dallo stream spento  [1 failed, 442 passed in 21.34s]  sha256 uguale 2c0f67e294ad
+ROSSO  M122 stream: sostituito anche se vivo  [1 failed, 443 passed in 23.07s]  sha256 uguale 2c0f67e294ad
+ROSSO  M123 stream: verso ignorato  [1 failed, 443 passed in 23.09s]  sha256 uguale 2c0f67e294ad
+ROSSO  M124 stream: lato ignorato  [1 failed, 445 passed in 24.74s]  sha256 uguale 2c0f67e294ad
+ROSSO  M125 stream: ref ignorato  [1 failed, 415 passed in 22.23s]  sha256 uguale 2c0f67e294ad
+ROSSO  M126 stream: selezione ignorata  [1 failed, 447 passed in 20.67s]  sha256 uguale 2c0f67e294ad
+ROSSO  M127 stream: completo tardivo non lega  [1 failed, 443 passed in 23.05s]  sha256 uguale 2c0f67e294ad
+ROSSO  M128 stream: nuovo arrivato non lega  [1 failed, 442 passed in 24.03s]  sha256 uguale 2c0f67e294ad
+ROSSO  M129 stream: bet_id non numerico  [1 failed, 449 passed in 23.76s]  sha256 uguale 2c0f67e294ad
+ROSSO  M130 stream: legame contato due volte  [1 failed, 443 passed in 21.98s]  sha256 uguale 2c0f67e294ad
+ROSSO  M131 riassunto senza attribuzione  [1 failed, 451 passed in 24.52s]  sha256 uguale 2c0f67e294ad
+ROSSO  M132 riassunto non cercato  [1 failed, 451 passed in 24.33s]  sha256 uguale 2c0f67e294ad
+ROSSO  M133 dimentica: voci non slegate  [1 failed, 452 passed in 25.03s]  sha256 uguale 2c0f67e294ad
+ROSSO  M134 dimentica: riassunti non slegati  [1 failed, 453 passed in 25.44s]  sha256 uguale 2c0f67e294ad
+ROSSO  M135 slega: successori restano  [1 failed, 454 passed in 39.96s]  sha256 uguale 2c0f67e294ad
+ROSSO  M136 slega: il proprio legame resta  [1 failed, 452 passed in 32.20s]  sha256 uguale 2c0f67e294ad
+ROSSO  M137 eredita: prova propria di un bot ignorata  [1 failed, 433 passed in 28.16s]  sha256 uguale 469a20c30c2c
+ROSSO  M138 eredita: conflitto non scritto  [1 failed, 434 passed in 31.30s]  sha256 uguale 469a20c30c2c
+ROSSO  M139 eredita: dichiarato ignorato  [1 failed, 434 passed in 33.57s]  sha256 uguale 469a20c30c2c
+ROSSO  M140 origine: qualunque riga di coda  [1 failed, 427 passed in 27.35s]  sha256 uguale 469a20c30c2c
+ROSSO  M141 origine: canale locale ignorato  [1 failed, 427 passed in 27.72s]  sha256 uguale 469a20c30c2c
+ROSSO  M142 origine: request_id ignorato  [1 failed, 456 passed in 31.81s]  sha256 uguale 469a20c30c2c
+ROSSO  M143 origine: prefisso del ref ignorato  [1 failed, 426 passed in 31.56s]  sha256 uguale 469a20c30c2c
+ROSSO  M144 tennis: ref non confrontato  [1 failed, 441 passed in 34.43s]  sha256 uguale 469a20c30c2c
+ROSSO  M145 tennis: azione non controllata  [1 failed, 457 passed in 27.76s]  sha256 uguale 469a20c30c2c
+ROSSO  M146 tennis: stesso bet_id  [1 failed, 441 passed in 28.20s]  sha256 uguale 469a20c30c2c
+ROSSO  M147 riavvio: indizi del sostituito ignorati  [1 failed, 430 passed in 26.98s]  sha256 uguale 2c0f67e294ad
+ROSSO  M148 riavvio: catena non risalita  [1 failed, 439 passed in 29.49s]  sha256 uguale 2c0f67e294ad
+ROSSO  M149 catena: ciclo senza guardia  [1 failed, 440 passed in 37.24s]  sha256 uguale 2c0f67e294ad
+ROSSO  M150 successori: ciclo senza guardia  [1 failed, 440 passed in 33.12s]  sha256 uguale 2c0f67e294ad
+ROSSO  M151 legame: idempotenza tolta  [1 failed, 428 passed in 31.55s]  sha256 uguale 2c0f67e294ad
+ROSSO  M152 legame: modo non controllato  [1 failed, 431 passed in 34.19s]  sha256 uguale 2c0f67e294ad
+ROSSO  M153 legame: un ordine sostituisce se stesso  [1 failed, 431 passed in 28.86s]  sha256 uguale 2c0f67e294ad
+ROSSO  M154 legame: successore non registrato  [1 failed, 428 passed in 27.40s]  sha256 uguale 2c0f67e294ad
+ROSSO  D501 per_selezione: se vince di nuovo vuoto  [1 failed, 368 passed in 21.97s]  sha256 uguale f4b62260205f
+ROSSO  D502 qualita sempre esatto  [1 failed, 368 passed in 23.20s]  sha256 uguale f4b62260205f
+ROSSO  D503 LINE: la linea usata come quota  [1 failed, 403 passed in 24.31s]  sha256 uguale f4b62260205f
+ROSSO  D504 linea: handicap ignorato nel suo  [1 failed, 482 passed in 28.27s]  sha256 uguale f4b62260205f
+ROSSO  D505 linee multiple nel contratto  [1 failed, 482 passed in 34.19s]  sha256 uguale f4b62260205f
+ROSSO  D506 esposizione per_selezione spacciata per esatta  [1 failed, 482 passed in 26.76s]  sha256 uguale f4b62260205f
+ROSSO  D507 LINE: stima linea per linea  [1 failed, 486 passed in 27.25s]  sha256 uguale f4b62260205f
+ROSSO  D508 runner nudi inventano la linea 0,0  [1 failed, 485 passed in 28.90s]  sha256 uguale f4b62260205f
+ROSSO  D509 book: handicap perso  [1 failed, 482 passed in 26.32s]  sha256 uguale f4b62260205f
+ROSSO  D510 book: runner REMOVED tenuti  [1 failed, 489 passed in 51.63s]  sha256 uguale f4b62260205f
+ROSSO  D511 JSON: esposizione sempre esatta  [1 failed, 479 passed in 50.88s]  sha256 uguale f4b62260205f
+ROSSO  D512 libro: coppie del book ridotte a int  [1 failed, 482 passed in 52.17s]  sha256 uguale 2c0f67e294ad
+ROSSO  D513 per autore per linea su tutti gli ordini  [1 failed, 482 passed in 44.78s]  sha256 uguale f4b62260205f
+ROSSO  D514 esatto: linee vuote  [1 failed, 488 passed in 27.09s]  sha256 uguale f4b62260205f
+ROSSO  D515 asiatico senza motivo  [1 failed, 374 passed in 21.68s]  sha256 uguale f4b62260205f
+ROSSO  D516 handicap del solo book ignorato  [1 failed, 492 passed in 31.36s]  sha256 uguale f4b62260205f
+ROSSO  D517 quota fissa ignorata nelle esposizioni  [1 failed, 486 passed in 29.29s]  sha256 uguale f4b62260205f
+ROSSO  D518 quota dei mercati LINE sbagliata  [1 failed, 403 passed in 24.56s]  sha256 uguale f4b62260205f
+ROSSO  D519 linee multiple non dichiarate  [1 failed, 482 passed in 32.51s]  sha256 uguale f4b62260205f
+ROSSO  D520 per_selezione: runner_ignoti non detto  [1 failed, 493 passed in 28.37s]  sha256 uguale f4b62260205f
+# rilancio sul codice finale dopo il test rafforzato:
+ROSSO  M112 libro non passa il marketType  [1 failed, 437 passed in 32.55s]  sha256 uguale 2c0f67e294ad
+ROSSO  M113 imposta_mercato ignora il marketType  [1 failed, 437 passed in 33.16s]  sha256 uguale 2c0f67e294ad
+TOTALE rosse 195/195 (guasti 0)

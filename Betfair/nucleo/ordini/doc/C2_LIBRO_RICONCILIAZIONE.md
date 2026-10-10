@@ -14,7 +14,7 @@ confronta conto, specchio, blotter e diario e scrive le divergenze, senza toccar
 |---|---|
 | `attribuzione.py` | `OrdineDalConto` -> `Autore` (`attribuisci_riferimenti`, `attribuisci`, `attribuisci_dichiarato`), `Indizio` (DB/specchio/coda come dati), `regole_di_oggi()` (costanti importate dal codice di oggi) |
 | `libro_conto.py` | `LibroConto` (implementa `LibroOrdiniConto`), `SorgenteOrdiniProva`/`OrdineInProva` (paper), conversioni `ordine_da_riga_conto`/`ordine_da_corrente`, `fase_dell_ordine`, `comandi_ammessi` (proposta) |
-| `pnl_mercato.py` | `calcola`/`posizione_mercato` -> `PosizioneMercato`; `esposizioni_per_selezione` (flumine), `pnl_se_vince` (formula del ladder), `pnl_bloccato` (`lockedPnlAt`) |
+| `pnl_mercato.py` | `calcola`/`posizione_mercato` -> `PosizioneMercato`; `esposizioni_per_selezione` (flumine), `pnl_se_vince` (formula del ladder) e `pnl_se_vince_linea` (la stessa per selezione + handicap), `pnl_bloccato` (`lockedPnlAt`); decisione 5 del 10/10: `CalcoloPosizione.qualita`, `se_vince_per_linea`, `parametri_dal_book` (`MarketDefinition` vera), `calcolo_per_json` |
 | `riconciliazione.py` | `RiconciliatoreOmbra.giro` -> `RefertoOmbra` (divergenze, `StatoOrdine`, `PosizioneConto`, comandi in volo); `in_volo_dal_diario` |
 
 ## 2. Entrate
@@ -41,6 +41,23 @@ confronta conto, specchio, blotter e diario e scrive le divergenze, senza toccar
   ordini non abbinati NON entrano nell'esposizione, la UI lo dice). Per la UI: `pnl_mercato.posizione_per_json` (`NaN` ->
   `null`). Senza `numberOfWinners` il modello vale solo per i `marketType` a vincitore unico per definizione
   (`vincitori_ignoti`). Una riga di coda prova l'autore SOLO se ha piazzato quell'ordine (mai cancel/replace).
+- **Decisione 5 dell'utente (10/10), «tutti i mercati», come Bet Angel e Geeks Toy**: il «se vince» PER SELEZIONE (o
+  per LINEA, selezione + handicap) si calcola su OGNI mercato con la stessa formula: P&L degli abbinati se vince quella
+  selezione e perdono tutte le altre. `CalcoloPosizione.qualita`:
+  - `esatto`: mercato a vincitore unico (`bettingType` ODDS, un vincitore o `marketType` a vincitore unico per
+    definizione, nessun handicap): il calcolo di prima, riga per riga; esposizione massima ESATTA (runner noti);
+  - `per_selezione`: piu' vincitori (piazzati, doppia chance), handicap e linee (asiatici, `LINE`), tipo o vincitori
+    ignoti: il numero vale per la selezione/linea e NON e' un esito unico del mercato; l'esposizione resta la STIMA
+    PRUDENTE di prima (linea per linea `min(0, se vince, se perde)`, limite valido anche con push e mezze vincite),
+    dichiarata (`stima_prudente`; nel JSON `esposizione_tipo`).
+  `se_vince_per_linea` ((selection_id, handicap) -> EUR, anche per autore) c'e' su ogni mercato; nel contratto
+  (`PosizioneMercato.se_vince`, chiave selection_id) entrano le selezioni con UNA linea (`linee_multiple` se una
+  selezione ha piu' handicap: mai una somma di linee diverse). Mercati `LINE`: il prezzo e' la linea, quota 2,0 come il
+  blotter di flumine (`linea_a_quota_2`), stima ORDINE PER ORDINE (`stima_per_ordine`: due ordini a linee diverse possono
+  perdere entrambi). Asiatici: push e mezze vincite non modellati nel «se vince» (`asiatico_push_non_modellato`). I runner
+  del book si danno come coppie (selection_id, handicap) (`parametri_dal_book`, senza i `REMOVED`); un int nudo vale
+  (selezione, 0,0) solo se quella selezione non ha gia' una linea. Per la UI: `calcolo_per_json` (qualita', tipo
+  dell'esposizione, motivi, linee).
 - **replaceOrders**: l'ordine NUOVO eredita autore e provvisorieta' del SOSTITUITO (`attribuzione.eredita`), anche in
   catena; restano solo le prove PROPRIE del nuovo che dicono un bot (riga di tabella o di coda col suo bet_id) e
   l'attore dichiarato in prova. Legame: `LibroConto.lega_sostituzione(vecchio, nuovo, modo)` dalle fonti vere
@@ -77,6 +94,7 @@ parita' che restano.
 | F-040, F-059 | green-up / `lockedPnlAt` sulla posizione | `test_c2_pnl_mercato.py::test_green_up_e_lockedpnl_sulla_stessa_posizione` |
 | J-078 (dati) | ordini e P&L del ladder di Trading | `test_c2_libro_conto.py`, `test_c2_pnl_mercato.py::test_se_vince_identico_alla_formula_del_ladder` |
 | G-012 (in parte) | «ci sono soldi su questo evento?» dalla posizione del libro | `test_c2_pnl_mercato.py::test_esposizione_massima_con_e_senza_elenco_dei_runner` |
+| J-078 (decisione 5, 10/10) | «se vince» su ogni mercato con la qualita' (`esatto`/`per_selezione`) | `test_c2_tutti_i_mercati.py` (doppia chance e TEAM_A_1 registrati, 109 mercati a vincitore unico registrati identici a prima, piazzati, asiatici con oracolo del regolamento, LINE, book vero, JSON); parita' prima/dopo `ARCHITETTURA_2026-10/ondata1/W1-C2/parita_decisione5.py` |
 
 Restano al vecchio codice: C-052, C-054, D-046, D-054, F-009 (commissione), tutte le scritture (specchio, alert).
 
@@ -94,7 +112,7 @@ Cambiare la regola di attribuzione = cambiare `attribuzione.py` e la tabella `DI
 
 ## 8. Come si prova da solo
 
-`python -m pytest Betfair/nucleo/ordini/tests/test_c2_*.py -q -p no:cacheprovider` (232 test dopo la seconda revisione del 09/10, ~15-30 s; mutazioni: `python ARCHITETTURA_2026-10/ondata1/W1-C2/mutazioni.py .`). Nessuna rete,
+`python -m pytest Betfair/nucleo/ordini/tests/test_c2_*.py -q -p no:cacheprovider` (232 test dopo la seconda revisione del 09/10, 280 dopo la decisione 5 del 10/10, ~15-30 s; mutazioni: `python ARCHITETTURA_2026-10/ondata1/W1-C2/mutazioni.py .`; parita' prima/dopo la decisione 5: `python ARCHITETTURA_2026-10/ondata1/W1-C2/parita_decisione5.py`). Nessuna rete,
 nessun DB (il client supabase e' vero su `httpx.MockTransport`), nessun file fuori da `tmp_path`.
 
 ## 9. Misure (macchina condivisa, carico ~8, Python 3.13)

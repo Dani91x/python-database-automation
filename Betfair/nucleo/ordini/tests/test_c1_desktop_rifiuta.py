@@ -110,3 +110,19 @@ def test_desktop_parita_col_terminale_su_una_griglia(tmp_path: Any, lato: str) -
                                creato_ms=amb.orologio.ms))
         assert "multipli di 0,50" not in str(b.motivo or "")
     assert (rifiuti_050 > 30) == (lato == "back")
+
+
+def test_desktop_tennis_apertura_portata_al_minimo_poi_giudicata(tmp_path: Any) -> None:
+    """Gia' cosi' prima della decisione 3 (regola tennis del 28/09 della porta): l'apertura
+    tennis sotto il minimo e' PORTATA al minimo e poi giudicata; la punta 2,30 dal desktop
+    resta rifiutata anche nel tennis. Documenta il comportamento (referto W1-C1 par. 13)."""
+    amb = _Ambiente(tmp_path)
+    a = amb.porta.invia(_r(ref="desktop-t1", attore="desktop", sport="tennis", lato="back",
+                           importo=0.70, prezzo=2.0, creato_ms=amb.orologio.ms))
+    assert a.accettato and amb.esecutore.ricevute[-1].importo == 1.0
+    ev = list(amb.porta.eventi("desktop", a.seq))[0]
+    assert ev.portata_al_minimo == {"chiesto": 0.7, "piazzato": 1.0}
+    b = amb.porta.invia(_r(ref="desktop-t2", attore="desktop", sport="tennis", lato="back",
+                           importo=2.30, prezzo=2.0, creato_ms=amb.orologio.ms))
+    assert not b.accettato and b.motivo == _terminale("back", 2.30)
+    assert len(amb.esecutore.ricevute) == 1

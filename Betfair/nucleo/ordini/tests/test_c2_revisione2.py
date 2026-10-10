@@ -264,6 +264,10 @@ def test_vincitori_ignoti_e_tipi_a_vincitore_unico_per_definizione():
     assert "vincitori_ignoti" in lib.calcolo_posizione(MKT, "live").motivi
     lib.imposta_mercato(MKT, tipo_mercato="MATCH_ODDS")
     assert lib.posizione(MKT, "live").se_vince == {HOME: 10.0, AWAY: -10.0}
+    # decisione 5 (10/10): il "se vince" c'e' anche prima; il marketType del libro
+    # decide la QUALITA' (esatto) e l'esposizione esatta
+    c = lib.calcolo_posizione(MKT, "live")
+    assert c.qualita == P.QUALITA_ESATTO and c.esposizione_esatta
 
 
 # ------------------------------------------------------------------ 5. JSON
