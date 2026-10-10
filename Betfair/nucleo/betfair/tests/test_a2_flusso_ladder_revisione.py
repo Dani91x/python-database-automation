@@ -98,8 +98,11 @@ def test_meta_assente_non_fa_girare_a_vuoto_il_thread():
     lad.avvia()
     try:
         lad.consumatore(lb.immagine())
+        # prima si aspetta il primo tentativo (sotto carico il thread puo' partire tardi),
+        # poi una finestra fissa: il tetto e' la proprieta' (~ogni 0,2 s a raddoppiare, non migliaia)
+        assert attendi(lambda: lad.conti["senza_meta"] >= 1)
         time.sleep(0.6)
-        assert 1 <= lad.conti["senza_meta"] <= 10            # ~ogni 0,2 s, non migliaia
+        assert 1 <= lad.conti["senza_meta"] <= 10
     finally:
         lad.ferma()
 
@@ -269,7 +272,9 @@ def test_consegna_non_si_blocca_se_una_connessione_tiene_il_suo_lock():
     c._lock.acquire()
     t = threading.Thread(target=lambda: g.imposta_mercati(["1.1", "1.2"]), daemon=True)
     t.start()
-    time.sleep(0.3)
+    # il piano e' fatto (sotto il lock del gestore, gia' lasciato): il thread e' alla
+    # risottoscrizione, fermo sul lock della connessione (niente sleep a tempo fisso)
+    assert attendi(lambda: c.piano == {"1.1", "1.2"}, secondi=5.0)
     g._inoltra([book])
     try:
         assert attendi(lambda: len(visti) == 1, secondi=2.0)
@@ -312,7 +317,9 @@ def test_rete_lenta_di_una_connessione_non_blocca_il_gestore():
     c._invio.acquire()
     t = threading.Thread(target=lambda: g.imposta_mercati(["1.1", "1.2"]), daemon=True)
     t.start()
-    time.sleep(0.3)
+    # ``mercati`` cambia sotto il lock della connessione subito prima di ``_invio``: da qui
+    # il thread e' in "rete" (fermo su ``_invio``), niente sleep a tempo fisso
+    assert attendi(lambda: c.mercati == {"1.1", "1.2"}, secondi=5.0)
     fatto = threading.Event()
 
     def manutenzione() -> None:

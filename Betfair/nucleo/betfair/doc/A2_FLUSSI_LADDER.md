@@ -229,7 +229,10 @@ ogni consumatore riceve i 300 mercati; il confronto col modello di oggi (un gest
 richieste diverse (unione, filtro per consumatore, `imposta_mercati` che non toglie gli altri, rilascio che toglie solo i
 mercati di nessuno, tutti rilasciano = 0 connessioni); capacita' piena (i fuori sono del consumatore che non entra);
 3 thread che cambiano richiesta insieme (l'ultimo piano = l'unione finale); 3 consumatori degli ordini = 1 connessione e 1
-`orderSubscription`. Mutazioni G1-G9 e O1 in `ondata1/W1-A2/falsifica.py`: 10/10 rosse.
+`orderSubscription`. Mutazioni G1-G9 e O1 in `ondata1/W1-A2/falsifica.py`: 10/10 rosse. Dopo la revisione indipendente:
+`tests/test_a2_gestore_unico_revisione.py` (6: risottoscrizione di un piano vecchio arrivata dopo quella nuova, fuori che
+entrano quando un altro rilascia, capacita' piena su 9 connessioni, consumatori calcio/tennis separati, stress 5 thread x 50
+cambi); mutazioni R6_generazione e R5_filtro_unione rosse (referto W1-A2 par. 14).
 
 **Connessioni di oggi per processo** (caso peggiore, LIVE; le 10 per app key sono del CONTO, condivise da tutti i processi):
 

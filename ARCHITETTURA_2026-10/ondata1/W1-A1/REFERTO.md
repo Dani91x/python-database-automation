@@ -294,7 +294,8 @@ Fonte: `ondata1/DECISIONI_PER_L_UTENTE.md`, sezione «Risposte dell'utente (10/1
   dell'attesa e la sessione resta segnata da rifare (a fine attesa il custode fa il LOGIN, non il keepAlive). Nessun campo
   privato del custode toccato; `auth.py` non toccato. Il lucchetto serve a non intrecciare il controllo del backoff con un
   login che fallisce in quel momento (altrimenti l'attesa appena nata potrebbe essere scavalcata): e' una finestra di
-  microsecondi, non provocabile in modo deterministico da un test, quindi non c'e' una mutazione che la tolga (dichiarato).
+  microsecondi, non provocabile in modo deterministico da un test (dichiarato). [Dopo la revisione, par. 10.3: l'effetto
+  OSSERVABILE del lucchetto, cioe' che `segnala_errore` aspetta il keepAlive in volo, ora ha un test e una mutazione, D2f.]
 - Test nuovi: `Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py` (5): 5 thread che segnalano durante l'attesa
   dopo un login rifiutato -> 0 login prima della fine (giri a +0, +5, +14,9 s), 1 a fine attesa, nessun altro dopo; errore
   nel backoff nato da un keepAlive caduto -> a fine attesa LOGIN e non keepAlive (presa in carico); errore non di sessione
@@ -332,4 +333,35 @@ runner calcio e tennis con i due relogin diretti del tennis, scalper, il job ten
 da sostituire all'ondata 2. Il par. 8.5 (proposta) diventa la decisione; la scelta del processo che tiene il custode resta al
 coordinatore all'aggancio.
 
+### 10.3 Dopo la revisione indipendente di `2d38504f` (PASSA sul codice; due lavori di TEST)
+
+Commit nuovo sopra `2d38504f` (nessuna riscrittura, nessun push). Codice di produzione del nucleo NON cambiato: solo test,
+mutazioni e documenti.
+
+- **Test instabile corretto** `test_a1_correzioni.py::test_chiudi_aspetta_il_keepalive_in_volo_prima_del_logout`: misurava la
+  morte del thread (`assert not t.is_alive()`), non la proprieta'; al thread restano `_notifica()` e lo smontaggio dopo il
+  lucchetto. Ora: `assert finto.in_volo["keepAlive"] == 0` (correzione del revisore). Prova di ripetizione SOTTO CARICO (4
+  processi da 25 ripetizioni in parallelo + un giro dei test TLS del comparto): **vecchia asserzione 2 rossi su 100, nuova 0
+  su 100**; X06 (`chiudi` senza `_lock_custode`) ancora **rossa** su questo test.
+- **Stesso schema cercato nel comparto** (`is_alive` senza `join`, sleep fissi prima di un'asserzione su un altro thread):
+  corretti 3 test in `test_a2_flusso_ladder_revisione.py` (vedi referto W1-A2 par. 14). Lasciati, con la causa: le
+  asserzioni `is_alive` dopo `join(...)` o dopo `ferma()` (che fa `join`) sono gia' deterministiche;
+  `test_a1_rest_revisore.py::test_misura_keepalive_regolare_sotto_carico` (3 s di orologio vero, 8-11 keepAlive) e' una
+  MISURA del ritmo del custode sotto carico, non riducibile a una condizione senza cambiarne il senso: verde in tutti i giri
+  del revisore e miei, resta un rischio dichiarato.
+- **Prove del revisore riscritte nel repo** (`tests/test_a1_decisione2_revisione.py`, 5): 5 thread in corsa che segnalano e
+  fanno girare il custode mentre l'orologio avanza a passi di 1 s (3 giri; attese su condizioni, mai sleep fissi: la
+  versione del revisore aspettava 0,3 s prima di fermare i thread e poteva perdere il relogin sotto carico); stato interno
+  identico al custode di oggi fuori dal backoff; `segnala_errore` aspetta il keepAlive in volo (misurati 0,50 s con
+  keepAlive lento 0,5 s; il revisore 0,40 s): la proprieta' e' "al ritorno nessun keepAlive in volo".
+- **R7 del revisore** (`segnala_errore` senza `_lock_custode`): la gara che il lucchetto chiude resta non provocabile in modo
+  deterministico (dichiarato), ma il suo effetto osservabile si': nuova mutazione **D2f** = R7, **rossa** sul test sopra.
+  Nota d'uso nel doc A1 par. 6-bis: il thread dello stream che chiama `segnala_errore` puo' aspettare un keepAlive o un login
+  in volo.
+- **Mutazioni rilanciate sul posto** (senza copia del repo, per il disco; file ripristinati con sha256 identico) sui test
+  A1 di sessione, correzioni e decisione 2: X06, D2a-D2f, S16, S27 = **9 su 9 rosse** (`falsificazione_revisione_d2.json`).
+- Prove: cartella `Betfair/nucleo/betfair` lanciata **5 volte di fila: 5 su 5 verdi, 426 test ciascuna** (415 + 11 nuovi).
+
 **Prove finali (D-A)**: test del comparto A `python -m pytest Betfair/nucleo/betfair -q -p no:cacheprovider` = **415 verdi** (395 di prima + 20 nuovi: 5 decisione 2, 8 gestore unico, 7 cadenza); suite intera UNA volta, `python -m pytest Betfair/ -q -p no:cacheprovider` = **12.953 verdi, 0 rossi, 101 saltati, 6 xfail** in 833 s (integrazione dell'ondata 1: 12.933 + i 20 nuovi).
+
+**Prove dopo la revisione (D-A)**: comparto A 5 volte di fila = 5 su 5 verdi (426 test); suite intera UNA volta, `python -m pytest Betfair/ -q -p no:cacheprovider` = **12.964 verdi, 0 rossi, 101 saltati, 6 xfail** in 692 s (12.953 + gli 11 test nuovi).

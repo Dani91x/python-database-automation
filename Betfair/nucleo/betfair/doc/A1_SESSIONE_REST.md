@@ -96,7 +96,13 @@ Restano al codice di oggi: A-017/A-018 (prodotto «Aggiorna quote» e la sua cod
   (ritorna True, la sessione e' segnata da rifare: a fine attesa il custode fa il LOGIN, non il keepAlive) ma il giro resta
   alla fine dell'attesa: il relogin parte allora, mai prima. Un errore NON di sessione non e' preso in carico (False). La
   chiamata prende il lucchetto del custode (controllo del backoff e presa in carico non si intrecciano con un login che
-  fallisce in quel momento): chi chiama puo' aspettare un keepAlive o un login gia' in volo. Prova:
+  fallisce in quel momento): chi chiama puo' aspettare un keepAlive o un login gia' in volo. **Per il thread dello
+  stream (nota della revisione di 2d38504f)**: `segnala_errore` NON e' istantanea; con un keepAlive lento 0,5 s in volo il
+  revisore ha misurato 0,40 s di attesa (qui 0,50 s), e un login in volo puo' durare quanto il timeout HTTP del client. Chi
+  la chiama dal thread che legge il socket deve saperlo: o la chiama fuori dalla lettura (ad esempio nel ciclo di
+  riconnessione, dove l'attesa non ferma la consegna di altri book), o accetta quel ritardo. Prova (sulla proprieta', non
+  sul tempo): `test_a1_decisione2_revisione::test_segnala_errore_aspetta_il_keepalive_in_volo` (al ritorno nessun keepAlive
+  in volo; rossa con la mutazione D2f = R7 del revisore, `segnala_errore` senza lucchetto). Prova:
   `test_a1_decisione2_backoff::test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo` (5 thread che
   segnalano durante l'attesa: 0 login prima della fine, 1 dopo). Divergenza VOLUTA dal custode di oggi, che scavalca
   l'attesa (`auth.CustodeSessione.segnala_errore`, usata da `safe_strategy/service.py:755,2975,3000,3088`): all'aggancio

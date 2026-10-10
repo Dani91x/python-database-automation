@@ -212,6 +212,11 @@ M = [
      "                return bool(custode.segnala_errore(exc))", "D2: nel backoff il giro torna ad ADESSO"),
     ("D2e", B + "sessione.py", "            return bool(custode.segnala_errore(exc))\n",
      "            return bool(custode.segnala_errore(exc, adesso=math.inf))\n", "D2: fuori dal backoff il giro NON e' piu' anticipato"),
+    # (revisione di 2d38504f: R7 del revisore, ora falsificata dalla proprieta' "nessun keepAlive in volo al ritorno")
+    ("D2f", B + "sessione.py",
+     "        with self._lock_custode:\n            custode = self._custode\n            if custode is None:\n                return False\n            if self.in_backoff():",
+     "        if True:\n            custode = self._custode\n            if custode is None:\n                return False\n            if self.in_backoff():",
+     "D2/R7: segnala_errore senza il lucchetto del custode (non aspetta il keepAlive in volo)"),
     # ---------------- il finto (le sue prove devono saper diventare rosse)
     ("F01", T + "test_a1_finto_betfair.py", '"Content-Encoding": "gzip",', '"Content-Encoding": "identity",', "finto senza gzip dichiarato"),
     ("F02", T + "test_a1_finto_betfair.py", "            if peso_finto(params.get(\"priceProjection\")) * len(ids) > 200:", "            if False:",

@@ -1,0 +1,139 @@
+[
+ {
+  "id": "X06",
+  "descr": "MEDIA-3: chiudi senza lucchetto del custode",
+  "rosso": true,
+  "rossi": [
+   "Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_chiudi_aspetta_il_keepalive_in_volo_prima_del_logout"
+  ],
+  "esito": "1 failed, 52 passed in 2.52s",
+  "sha_prima": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "sha_dopo": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "ripristino_ok": true
+ },
+ {
+  "id": "D2a",
+  "descr": "D2: scavalcamento del backoff rimesso (come auth.py di oggi)",
+  "rosso": true,
+  "rossi": [
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_segnalazione_nel_backoff_dopo_un_keepalive_caduto_porta_al_login_non_al_keepalive",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[0]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[1]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[2]"
+  ],
+  "esito": "5 failed, 48 passed in 3.46s",
+  "sha_prima": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "sha_dopo": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "ripristino_ok": true
+ },
+ {
+  "id": "D2b",
+  "descr": "D2: errore nel backoff accettato ma NON preso in carico",
+  "rosso": true,
+  "rossi": [
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_errore_non_di_sessione_nel_backoff_non_e_preso_in_carico",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_segnalazione_nel_backoff_dopo_un_keepalive_caduto_porta_al_login_non_al_keepalive"
+  ],
+  "esito": "2 failed, 51 passed in 3.43s",
+  "sha_prima": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "sha_dopo": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "ripristino_ok": true
+ },
+ {
+  "id": "D2c",
+  "descr": "D2: errore nel backoff rifiutato (perso)",
+  "rosso": true,
+  "rossi": [
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_segnalazione_nel_backoff_dopo_un_keepalive_caduto_porta_al_login_non_al_keepalive",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[0]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[1]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[2]"
+  ],
+  "esito": "5 failed, 48 passed in 3.43s",
+  "sha_prima": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "sha_dopo": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "ripristino_ok": true
+ },
+ {
+  "id": "D2d",
+  "descr": "D2: nel backoff il giro torna ad ADESSO",
+  "rosso": true,
+  "rossi": [
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_segnalazione_nel_backoff_dopo_un_keepalive_caduto_porta_al_login_non_al_keepalive",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[0]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[1]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[2]"
+  ],
+  "esito": "5 failed, 48 passed in 3.48s",
+  "sha_prima": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "sha_dopo": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "ripristino_ok": true
+ },
+ {
+  "id": "D2e",
+  "descr": "D2: fuori dal backoff il giro NON e' piu' anticipato",
+  "rosso": true,
+  "rossi": [
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_fuori_dal_backoff_segnala_anticipa_ad_adesso_come_oggi",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[0]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[1]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[2]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_fuori_dal_backoff_stato_interno_identico_al_custode_di_oggi",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_segnala_errore_aspetta_il_keepalive_in_volo",
+   "Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_parita_custode_di_oggi_stesso_copione"
+  ],
+  "esito": "8 failed, 45 passed in 3.44s",
+  "sha_prima": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "sha_dopo": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "ripristino_ok": true
+ },
+ {
+  "id": "D2f",
+  "descr": "D2/R7: segnala_errore senza il lucchetto del custode (non aspetta il keepAlive in volo)",
+  "rosso": true,
+  "rossi": [
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_segnala_errore_aspetta_il_keepalive_in_volo"
+  ],
+  "esito": "1 failed, 52 passed in 3.44s",
+  "sha_prima": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "sha_dopo": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "ripristino_ok": true
+ },
+ {
+  "id": "S16",
+  "descr": "segnala accetta tutto",
+  "rosso": true,
+  "rossi": [
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_cinque_thread_segnalano_durante_il_backoff_zero_login_prima_uno_dopo",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_backoff.py::test_fuori_dal_backoff_segnala_anticipa_ad_adesso_come_oggi",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[0]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[1]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_cinque_thread_in_corsa_mentre_l_orologio_avanza[2]",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_fuori_dal_backoff_stato_interno_identico_al_custode_di_oggi",
+   "Betfair/nucleo/betfair/tests/test_a1_decisione2_revisione.py::test_segnala_errore_aspetta_il_keepalive_in_volo",
+   "Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_parita_custode_di_oggi_stesso_copione",
+   "Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_rifai_login_ignora_errori_non_di_sessione"
+  ],
+  "esito": "9 failed, 44 passed in 3.48s",
+  "sha_prima": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "sha_dopo": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "ripristino_ok": true
+ },
+ {
+  "id": "S27",
+  "descr": "ALTA-2: backoff scavalcato",
+  "rosso": true,
+  "rossi": [
+   "Betfair/nucleo/betfair/tests/test_a1_correzioni.py::test_rifai_login_rifiutato_durante_il_backoff_poi_permesso",
+   "Betfair/nucleo/betfair/tests/test_a1_sessione.py::test_freno_tetto_dei_login_riusciti_al_minuto"
+  ],
+  "esito": "2 failed, 51 passed in 3.74s",
+  "sha_prima": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "sha_dopo": "54e3e25b82cfc57fbbe03d1cfb896a54f0d0e243c15c61bf250132037948b4d9",
+  "ripristino_ok": true
+ }
+]
