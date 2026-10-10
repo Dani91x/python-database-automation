@@ -77,6 +77,21 @@ decisione -> risposta di placeOrders). Primo lavoro dell'ondata 2: la MATRICE DI
 persistenza in-play, posizione in coda, monitor dell'API con pausa del trading, practice) cosa abbiamo oggi (file:riga), cosa manca,
 in quale tappa entra. Una tappa e' chiusa solo se la sua voce e' "uguale o meglio" del competitor migliore, provato.
 
+**10/10 (sera) - DECISIONI DELL'UTENTE APPLICATE NEL NUCLEO** (ognuna: agente, verifica del coordinatore con mutazione propria,
+revisione indipendente; suite intera finale 13.082 verdi / 0 rossi, cima `b5d2257c`):
+- D-A (`2f7a272e`): decisione 2 (anche `segnala_errore` rispetta l'attesa del login), 12 (ladder a 20 ms fissato da test),
+  8/13 (gestore unico dei flussi: richieste per consumatore, unione sottoscritta, 3 consumatori su 300 mercati = 2 connessioni);
+  un test instabile di W1-A1 reso deterministico (2/100 -> 0/100).
+- D-C (`610d82b2`): decisione 5 ("se vince" su ogni mercato, campo `qualita` esatto/per_selezione; vincitore unico identico
+  a prima su 6.540 casi; LINE corretti), decisione 3 (desktop: punta non multipla di 0,50 rifiutata; tennis sotto il minimo
+  rifiutato come oggi, i bot tennis portati al minimo come oggi). NOTA per l'utente: il ladder calcio di oggi TRONCA (non
+  rifiuta) le punte non multiple; con la decisione 3 passera' a rifiutare.
+- D-G (`b5d2257c`): decisione 10 (analisi pre-partita di Mike e tabelle di Omega dal cloud entro ~5 s invece di fino a 300 s,
+  mai piu' tardi di oggi, backoff sugli errori, scadenza massima 1 h). MIGRAZIONE NUOVA da applicare (utente):
+  `migrations/nucleo_sentinella_cloud_2026-10-10.sql`, fuori da 04:00-04:20 UTC e dalla catena notturna (00:12 UTC in poi).
+- Documenti: `ondata2/MATRICE_PARITA.md` (51 voci, 10 gap prioritari), `ondata2/PIANO_AGGANCIO.md` (ordine, processo
+  betfair-nucleo, connessioni 18 -> 10, stima 49-64 giorni). Domande nuove D-1..D-5 in `ondata1/DECISIONI_PER_L_UTENTE.md`.
+
 ## Obiettivo (parole dell'utente, 09/10)
 
 - Tutto cio' che e' Betfair vive nell'app desktop, «esattamente come i competitor»: nessun database nel percorso
