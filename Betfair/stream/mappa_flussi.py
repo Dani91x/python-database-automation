@@ -10,19 +10,25 @@ Comando riproducibile (dalla radice del repo, il giorno dopo la giornata):
 Legge, SOLO se ci sono (cio' che manca si DICE nel referto, mai si inventa):
 
   * ``--canale``: le registrazioni del registratore del canale locale
-    (``registratore_canale.py``): ``<canale>/<giorno>/canale_<porta>.jsonl.gz``;
+    (``registratore_canale.py``): ``<canale>/<giorno>/canale_<porta>[_<pid>[_n]].jsonl.gz``
+    (un file per processo; i processi si distinguono per porta, pid e avvio);
   * ``--raw``: le registrazioni raw dei prezzi (``raw_listener.py``):
     ``<raw>/<evento>/<evento>.raw.jsonl[.gz]`` (+ ``.recmeta.jsonl``); si tengono
     i messaggi con ``pt`` nel giorno (fuso Europe/Rome), si saltano i file non
     toccati quel giorno (mtime);
   * ``--salute``: le righe locali di "Salute" (``Betfair/monitor/scrittore.py``):
     ``<salute>/<giorno>/<servizio>.jsonl``;
-  * ``--ordini``: la cartella dei file di M-1 (stream ordini e REST). INTERFACCIA:
-    file ``*.jsonl`` o ``*.jsonl.gz`` in ``<ordini>/<giorno>/`` (o direttamente in
-    ``<ordini>/``), una riga JSON per evento con un istante in ms (prima chiave
-    presente fra ``epoca_ms``, ``ts_ms``, ``epoch_ms``, ``rx``, ``pt``; oppure ``ts``
-    ISO) e un genere (prima chiave fra ``k``, ``tipo``, ``kind``, ``op``, ``evento``).
-    Il riassunto e' generico: conteggi, cadenza, byte, buchi per file e genere.
+  * ``--ordini``: la cartella dei file di M-1 (``Betfair/monitor/
+    registratore_ordini.py``): ``<LIVE_STREAM_DATA_DIR>/_ordini/<AAAAMMGG UTC>/
+    ordini_<servizio>_<pid>[_n].jsonl.gz``. Si leggono le cartelle UTC che
+    coprono il giorno LOCALE (di solito due) con un glob ricorsivo
+    ``ordini_*.jsonl*`` e si tengono le righe con l'istante nel giorno. Righe di
+    M-1: ``k`` (``stream``, ``rest``, ``dec``, ``sub``, ``avvio``, ``chiusura``),
+    ``ep_us``/``mono_us`` in microsecondi; le ``rest`` anche ``risposta_ep_us``/
+    ``risposta_mono_us``, ``metodo``, ``attore``, ``errore``. Riassunto per file e
+    genere, durate delle REST per metodo e attore, e la latenza comando della UI
+    sul canale -> risposta della REST. Se nel processo c'e' il lettore di M-1
+    (``Betfair.monitor.analisi_ordini``) se ne allega anche il referto.
 
 Produce un referto Markdown (e a richiesta il JSON dei numeri) con: chi pubblica
 e chi riceve cosa, cadenza (p50/p95/p99 dei tempi fra messaggi), byte al
@@ -35,7 +41,6 @@ ASCII-only; commenti in italiano.
 from __future__ import annotations
 
 import argparse
-import gzip
 import json
 import os
 import re
@@ -43,6 +48,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from .gz_tollerante import problema as _gz_problema
+from .gz_tollerante import righe_file as _gz_righe
 
 RADICE = Path(__file__).resolve().parents[2]
 
@@ -63,7 +71,12 @@ SOGLIA_BUCO_RAW_S = 15.0
 FATTORE_BUCO_SALUTE = 2.0
 #: buco generico nei file di M-1
 SOGLIA_BUCO_ORDINI_S = 60.0
+#: un comando della UI si accoppia alla prima REST del desktop entro questa finestra
+FINESTRA_UI_REST_S = 5.0
 MAX_ELENCO = 15
+#: azione del comando della UI -> metodo REST di Betfair
+_AZIONE_REST = {"place": "placeOrders", "cancel": "cancelOrders", "replace": "replaceOrders",
+                "update": "updateOrders"}
 
 _CHIAVI_TEMPO = ("epoca_ms", "ts_ms", "epoch_ms", "rx", "pt")
 _CHIAVI_GENERE = ("k", "tipo", "kind", "op", "evento")
@@ -104,32 +117,37 @@ def ora(ms: Optional[float]) -> str:
     return datetime.fromtimestamp(ms / 1000.0, tz=FUSO).strftime("%H:%M:%S")
 
 
-def _apri_testo(p: Path) -> Any:
-    if p.name.endswith(".gz"):
-        return gzip.open(p, "rt", encoding="utf-8", errors="replace")
-    return open(p, "r", encoding="utf-8", errors="replace")
+def righe_testo(p: Path) -> Tuple[List[str], Optional[str]]:
+    """Le righe di un file di testo o gzip. Il gzip si legge in modo TOLLERANTE
+    (``gz_tollerante``): coda tronca, membri corrotti e membri accodati dopo un
+    flusso tronco non fermano la lettura, e il problema si dice."""
+    try:
+        if p.name.endswith(".gz"):
+            grezze, resoconto = _gz_righe(str(p))
+            return [g.decode("utf-8", "replace") for g in grezze], (_gz_problema(resoconto)
+                                                                     or None)
+        with open(p, "r", encoding="utf-8", errors="replace") as fh:
+            return [r for r in fh.read().splitlines() if r.strip()], None
+    except OSError as e:
+        return [], "file illeggibile: %s" % type(e).__name__
 
 
 def leggi_jsonl(p: Path) -> Tuple[List[Dict[str, Any]], Optional[str]]:
-    """Righe JSON di un file (anche gzip troncato: si legge fino al guasto e
+    """Righe JSON di un file (anche gzip rovinato: si legge tutto il leggibile e
     lo si dice)."""
     righe: List[Dict[str, Any]] = []
-    errore = None
-    try:
-        with _apri_testo(p) as fh:
-            for linea in fh:
-                linea = linea.strip()
-                if not linea:
-                    continue
-                try:
-                    o = json.loads(linea)
-                except ValueError:
-                    errore = "righe illeggibili (probabile troncamento)"
-                    continue
-                if isinstance(o, dict):
-                    righe.append(o)
-    except (EOFError, OSError) as e:
-        errore = "file troncato o illeggibile: %s" % type(e).__name__
+    testi, errore = righe_testo(p)
+    cattive = 0
+    for linea in testi:
+        try:
+            o = json.loads(linea)
+        except ValueError:
+            cattive += 1
+            continue
+        if isinstance(o, dict):
+            righe.append(o)
+    if cattive:
+        errore = (errore + "; " if errore else "") + "%d righe illeggibili" % cattive
     return righe, errore
 
 
@@ -165,7 +183,7 @@ def analizza_canale(cartella: Optional[Path], giorno: str) -> Dict[str, Any]:
     if not d.is_dir():
         out["mancante"] = "nessuna cartella %s (registratore spento quel giorno?)" % _rel(d)
         return out
-    files = sorted(d.glob("canale_*.jsonl.gz"))
+    files = sorted(d.glob("canale_*.jsonl.gz"))  # anche canale_<porta>_<pid>[_n]
     if not files:
         out["mancante"] = "nessun file canale_*.jsonl.gz in %s" % _rel(d)
         return out
@@ -173,25 +191,30 @@ def analizza_canale(cartella: Optional[Path], giorno: str) -> Dict[str, Any]:
     salti: Dict[Tuple[int, str], List[float]] = {}
     comandi: List[Dict[str, Any]] = []
     risposte: List[Dict[str, Any]] = []
-    processi: Dict[Tuple[int, Any], Dict[str, Any]] = {}
+    processi: Dict[Tuple[Any, Any, Any], Dict[str, Any]] = {}
     collegati: Dict[Tuple[Any, str, str], Dict[str, Any]] = {}
     for f in files:
         righe, errore = leggi_jsonl(f)
         out["file"].append({"nome": f.name, "righe": len(righe), "errore": errore,
                             "byte_gz": f.stat().st_size})
         for r in righe:
-            porta, pid = r.get("porta"), r.get("pid")
-            pr = processi.setdefault((porta, pid), {"porta": porta, "pid": pid,
-                                                    "sport": r.get("sport"), "seq": [],
-                                                    "mono": [], "epoca": [], "stato": None,
-                                                    "tetto": []})
+            porta, pid, av = r.get("porta"), r.get("pid"), r.get("av")
+            # la VITA di un processo: porta, pid e istante d'avvio (un pid
+            # riusato, un riavvio nello stesso giorno = un processo nuovo)
+            pr = processi.setdefault((porta, pid, av), {
+                "porta": porta, "pid": pid, "av": av, "sport": r.get("sport"), "seq": [],
+                "epoca": [], "stato": None, "tetto": [], "chiuso": False,
+                "file": set()})
+            pr["file"].add(f.name)
             if r.get("sport") and not pr["sport"]:
                 pr["sport"] = r.get("sport")
             k = r.get("k")
-            if k in ("stato", "tetto_raggiunto"):
+            if k in ("stato", "tetto_raggiunto", "chiusura"):
                 pr["stato"] = r.get("conti")
                 if k == "tetto_raggiunto":
                     pr["tetto"].append(r.get("epoca_ms"))
+                if k == "chiusura":
+                    pr["chiuso"] = True
                 continue
             if "seq" in r:
                 pr["seq"].append(int(r["seq"]))
@@ -207,7 +230,7 @@ def analizza_canale(cartella: Optional[Path], giorno: str) -> Dict[str, Any]:
                 t["n"] += 1
                 t["byte"] += int(r.get("byte") or 0)
                 t["con_payload"] += 1 if "msg" in r else 0
-                t["mono"].setdefault(pid, []).append(r["mono_ns"] / 1e6)
+                t["mono"].setdefault((pid, av), []).append(r["mono_ns"] / 1e6)
                 t["dest"].append(int(r.get("dest") or 0))
                 t["client"].append(int(r.get("client") or 0))
                 t["lettori"].append(int(r.get("lettori") or 0))
@@ -231,6 +254,12 @@ def analizza_canale(cartella: Optional[Path], giorno: str) -> Dict[str, Any]:
                                                                        key=lambda x: (x[0][0], str(x[0][1])))]
     out["processi"] = _riassumi_processi(processi)
     out["comandi"] = _accoppia_comandi(comandi, risposte)
+    # i comandi d'ordine della UI (per la latenza UI -> REST con i file di M-1)
+    out["_ordini_ui"] = sorted(
+        ({"epoca_ms": c.get("epoca_ms"), "porta": c.get("porta"),
+          "azione": _par(c).get("action"), "modo": _modo(c)}
+         for c in comandi if c.get("genere") == "desktop" and _msg(c).get("m") == "order"),
+        key=lambda x: (x["epoca_ms"] or 0))
     return out
 
 
@@ -276,9 +305,12 @@ def _riassumi_topic(topics: Dict[Tuple[int, str], Dict[str, Any]]) -> List[Dict[
     return res
 
 
-def _riassumi_processi(processi: Dict[Tuple[int, Any], Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _riassumi_processi(processi: Dict[Tuple[Any, Any, Any], Dict[str, Any]]
+                       ) -> List[Dict[str, Any]]:
     res = []
-    for (porta, pid), pr in sorted(processi.items(), key=lambda x: (x[0][0], str(x[0][1]))):
+    for (porta, pid, av), pr in sorted(processi.items(),
+                                       key=lambda x: (str(x[0][0]), str(x[0][1]),
+                                                      str(x[0][2]))):
         seq = sorted(set(pr["seq"]))
         # l'ultima riga ``stato`` dice quale numero avrebbe avuto il prossimo
         # record: i record scartati DOPO l'ultimo scritto si vedono cosi'
@@ -287,7 +319,8 @@ def _riassumi_processi(processi: Dict[Tuple[int, Any], Dict[str, Any]]) -> List[
         mancanti = ultimo - len(seq)
         ep = sorted(pr["epoca"])
         sil = buchi(ep, SOGLIA_SILENZIO_CANALE_S * 1000.0)
-        res.append({"porta": porta, "pid": pid, "sport": pr["sport"], "record": len(seq),
+        res.append({"porta": porta, "pid": pid, "av": av, "sport": pr["sport"],
+                    "chiuso": pr["chiuso"], "file": sorted(pr["file"]), "record": len(seq),
                     "seq_mancanti": mancanti, "conti": pr["stato"],
                     "tetto_raggiunto": pr["tetto"], "prima": ep[0] if ep else None,
                     "ultima": ep[-1] if ep else None,
@@ -296,55 +329,82 @@ def _riassumi_processi(processi: Dict[Tuple[int, Any], Dict[str, Any]]) -> List[
     return res
 
 
+def _msg(r: Dict[str, Any]) -> Dict[str, Any]:
+    m = r.get("msg")
+    return m if isinstance(m, dict) else {}
+
+
+def _par(r: Dict[str, Any]) -> Dict[str, Any]:
+    """I parametri del comando: ``p`` (desktop, ``/order``) o ``d`` (``/comando/``)."""
+    m = _msg(r)
+    p = m.get("d") if r.get("genere") == "comando" else m.get("p")
+    return p if isinstance(p, dict) else {}
+
+
+def _modo(r: Dict[str, Any]) -> str:
+    """paper / live del comando (``-`` se non lo dice): paper e live MAI sommati."""
+    v = _par(r).get("mode")
+    return str(v).lower() if v not in (None, "") else "-"
+
+
 def _metodo(r: Dict[str, Any]) -> str:
     m = r.get("msg")
     if not isinstance(m, dict):
         return "<illeggibile>"
+    p = _par(r)
     if r.get("genere") == "comando":
-        return "comando:%s" % (m.get("t") or "?")
-    return str(m.get("m") or "?")
+        az = p.get("azione")
+        return "comando:%s%s" % (m.get("t") or "?", (":%s" % az) if az else "")
+    az = p.get("action")
+    return "%s%s" % (m.get("m") or "?", (":%s" % az) if az else "")
 
 
 def _accoppia_comandi(comandi: List[Dict[str, Any]],
                       risposte: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Ogni comando ricevuto con la PRIMA risposta che lo riguarda: per id sullo
-    stesso client (``/order``, sveglia, board_mercato, rifiuti) o per ``ref``
-    nell'ack del motore (``/comando/``)."""
-    per_id: Dict[Tuple[Any, Any, Any, Any], List[Dict[str, Any]]] = {}
-    per_ref: Dict[Tuple[Any, Any, Any], List[Dict[str, Any]]] = {}
+    """Ogni comando ricevuto con la PRIMA risposta che lo riguarda arrivata DOPO
+    di lui e non gia' usata: per ``id`` sulla stessa CONNESSIONE (``/order``,
+    sveglia, board_mercato, rifiuti) o per ``ref`` nell'ack del motore
+    (``/comando/``). La connessione e' (porta, pid, avvio, numero del client):
+    i numeri dei client non si riusano."""
+    per_id: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
+    per_ref: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
     for t in sorted(risposte, key=lambda x: x.get("mono_ns", 0)):
-        m = t.get("msg") if isinstance(t.get("msg"), dict) else {}
+        m = _msg(t)
+        vita = (t.get("porta"), t.get("pid"), t.get("av"))
         if "id" in m:
-            per_id.setdefault((t.get("porta"), t.get("pid"), t.get("cliente"), m.get("id")),
-                              []).append(t)
+            per_id.setdefault(vita + (t.get("cliente"), m.get("id")), []).append(t)
         d = m.get("d") if isinstance(m.get("d"), dict) else {}
         if m.get("t") == "ack" and d.get("ref") is not None:
-            per_ref.setdefault((t.get("porta"), t.get("pid"), d.get("ref")), []).append(t)
-    righe: Dict[Tuple[Any, str, str], Dict[str, Any]] = {}
+            per_ref.setdefault(vita + (d.get("ref"),), []).append(t)
+    usate: set = set()
+    righe: Dict[Tuple[Any, str, str, str], Dict[str, Any]] = {}
     senza: List[Dict[str, Any]] = []
     motivi: Dict[str, int] = {}
     for c in sorted(comandi, key=lambda x: x.get("mono_ns", 0)):
-        m = c.get("msg") if isinstance(c.get("msg"), dict) else {}
+        m = _msg(c)
+        vita = (c.get("porta"), c.get("pid"), c.get("av"))
         cand: List[Dict[str, Any]] = []
         if c.get("genere") == "comando":
             d = m.get("d") if isinstance(m.get("d"), dict) else {}
-            cand = per_ref.get((c.get("porta"), c.get("pid"), d.get("ref")), [])
+            cand = per_ref.get(vita + (d.get("ref"),), [])
         elif "id" in m:
-            cand = per_id.get((c.get("porta"), c.get("pid"), c.get("cliente"), m.get("id")), [])
-        esito = next((t for t in cand if t.get("mono_ns", 0) >= c.get("mono_ns", 0)), None)
-        chiave = (c.get("porta"), str(c.get("genere")), _metodo(c))
+            cand = per_id.get(vita + (c.get("cliente"), m.get("id")), [])
+        esito = next((t for t in cand if id(t) not in usate
+                      and t.get("mono_ns", 0) >= c.get("mono_ns", 0)), None)
+        chiave = (c.get("porta"), str(c.get("genere")), _metodo(c), _modo(c))
         r = righe.setdefault(chiave, {"porta": chiave[0], "genere": chiave[1],
-                                      "metodo": chiave[2], "n": 0, "ok": 0, "rifiutati": 0,
-                                      "senza_esito": 0, "lat": []})
+                                      "metodo": chiave[2], "modo": chiave[3], "n": 0, "ok": 0,
+                                      "rifiutati": 0, "senza_esito": 0, "lat": []})
         r["n"] += 1
         if esito is None:
             r["senza_esito"] += 1
             if len(senza) < MAX_ELENCO:
                 senza.append({"porta": c.get("porta"), "quando": c.get("epoca_ms"),
-                              "metodo": chiave[2], "genere": chiave[1]})
+                              "metodo": chiave[2], "genere": chiave[1], "modo": chiave[3]})
             continue
+        usate.add(id(esito))
         r["lat"].append((esito["mono_ns"] - c["mono_ns"]) / 1e6)
-        em = esito.get("msg") if isinstance(esito.get("msg"), dict) else {}
+        em = _msg(esito)
         ed = em.get("d") if isinstance(em.get("d"), dict) else {}
         ok = bool(ed.get("accettato")) if em.get("t") == "ack" else bool(em.get("ok"))
         if ok:
@@ -354,7 +414,7 @@ def _accoppia_comandi(comandi: List[Dict[str, Any]],
             motivo = str(ed.get("motivo") if em.get("t") == "ack" else em.get("e"))[:120]
             motivi[motivo] = motivi.get(motivo, 0) + 1
     tab = []
-    for k in sorted(righe, key=lambda x: (x[0], x[1], x[2])):
+    for k in sorted(righe, key=lambda x: (str(x[0]), x[1], x[2], x[3])):
         r = righe[k]
         lat = r.pop("lat")
         r.update({"lat_p50": percentile(lat, 50), "lat_p95": percentile(lat, 95),
@@ -406,24 +466,23 @@ def _analizza_un_raw(f: Path, a: int, b: int) -> Dict[str, Any]:
     eta: List[float] = []
     byte = hb = 0
     errore = None
-    try:
-        with _apri_testo(f) as fh:
-            for linea in fh:
-                m = _RE_PT.search(linea)
-                if not m:
-                    continue
-                pt = int(m.group(1))
-                if not (a <= pt < b):
-                    continue
-                pts.append(float(pt))
-                byte += len(linea)
-                if _RE_HEARTBEAT.search(linea):
-                    hb += 1
-                mr = _RE_RX.search(linea)
-                if mr:
-                    eta.append(float(int(mr.group(1)) - pt))
-    except (EOFError, OSError) as e:
-        errore = "file troncato o illeggibile: %s" % type(e).__name__
+    testi, problema = righe_testo(f)
+    if problema:
+        errore = problema
+    for linea in testi:
+        m = _RE_PT.search(linea)
+        if not m:
+            continue
+        pt = int(m.group(1))
+        if not (a <= pt < b):
+            continue
+        pts.append(float(pt))
+        byte += len(linea) + 1
+        if _RE_HEARTBEAT.search(linea):
+            hb += 1
+        mr = _RE_RX.search(linea)
+        if mr:
+            eta.append(float(int(mr.group(1)) - pt))
     pts.sort()
     durata = (pts[-1] - pts[0]) / 1000.0 if len(pts) > 1 else 0.0
     bh = buchi(pts, SOGLIA_BUCO_RAW_S * 1000.0)
@@ -498,6 +557,11 @@ def analizza_salute(cartella: Optional[Path], giorno: str) -> Dict[str, Any]:
 # 4. file di M-1 (stream ordini e REST): interfaccia generica
 # ---------------------------------------------------------------------------
 def _tempo(r: Dict[str, Any]) -> Optional[float]:
+    """Istante in ms di una riga di M-1 (``ep_us`` in microsecondi) o, per altri
+    formati, la prima chiave in ms fra ``_CHIAVI_TEMPO`` o ``ts`` ISO."""
+    v = r.get("ep_us")
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+        return float(v) / 1000.0
     for k in _CHIAVI_TEMPO:
         v = r.get(k)
         if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 1e11:
@@ -513,21 +577,95 @@ def _genere_riga(r: Dict[str, Any]) -> str:
     return "?"
 
 
+def cartelle_utc(giorno: str) -> List[str]:
+    """Le cartelle ``AAAAMMGG`` (UTC) di M-1 che coprono il giorno LOCALE: di
+    solito due (in Italia il giorno locale comincia alle 22 o alle 23 UTC del
+    giorno prima)."""
+    a, b = limiti_giorno(giorno)
+    prima = datetime.fromtimestamp(a / 1000.0, tz=timezone.utc).date()
+    ultima = datetime.fromtimestamp((b - 1) / 1000.0, tz=timezone.utc).date()
+    out = []
+    g = prima
+    while g <= ultima:
+        out.append(g.strftime("%Y%m%d"))
+        g += timedelta(days=1)
+    return out
+
+
+def file_ordini(base: Path, giorno: str) -> List[Path]:
+    """I file di M-1 del giorno locale: glob RICORSIVO ``ordini_*.jsonl*`` sotto
+    ``base``, nelle cartelle UTC che coprono il giorno (o direttamente in
+    ``base`` se gli si passa gia' la cartella di un giorno)."""
+    utc = set(cartelle_utc(giorno))
+    out = []
+    for f in sorted(base.rglob("ordini_*.jsonl*")):
+        if not (f.name.endswith(".jsonl") or f.name.endswith(".jsonl.gz")):
+            continue
+        cartelle = {p.name for p in f.relative_to(base).parents}
+        if f.parent == base or cartelle & utc or base.name in utc:
+            out.append(f)
+    return out
+
+
+def lettore_m1() -> Any:
+    """Il lettore di M-1 (``Betfair.monitor.analisi_ordini``: ``leggi_file``
+    tollerante, ``analizza_giorni``, ``formatta``) se c'e' nel processo, o
+    ``None``. Import OPZIONALE: senza, la mappa usa il suo lettore e lo dice."""
+    try:
+        import importlib
+
+        m = importlib.import_module("Betfair.monitor.analisi_ordini")
+    except Exception:  # noqa: BLE001 - M-1 non (ancora) in questo ramo
+        return None
+    if not all(hasattr(m, n) for n in ("leggi_file", "analizza_giorni", "formatta")):
+        return None
+    return m
+
+
+def _leggi_ordini(f: Path, m1: Any) -> Tuple[List[Dict[str, Any]], Optional[str], bool]:
+    """(righe, problema, chiuso) di un file di M-1: col lettore di M-1 se c'e'
+    (``leggi_file`` -> righe e info con ``troncato``/``rotte``/``chiusura``),
+    altrimenti col lettore tollerante della mappa."""
+    if m1 is not None:
+        try:
+            righe, info = m1.leggi_file(str(f))
+            prob = []
+            if info.get("troncato"):
+                prob.append("coda tronca o membro corrotto")
+            if info.get("rotte"):
+                prob.append("%d righe illeggibili" % info["rotte"])
+            return righe, ("; ".join(prob) or None), info.get("chiusura") is not None
+        except Exception as e:  # noqa: BLE001 - lettore di M-1 cambiato: si ripiega
+            righe, errore = leggi_jsonl(f)
+            errore = "lettore di M-1 fallito (%s), letto dalla mappa%s" % (
+                type(e).__name__, ("; " + errore) if errore else "")
+            return righe, errore, any(r.get("k") == "chiusura" for r in righe)
+    righe, errore = leggi_jsonl(f)
+    return righe, errore, any(r.get("k") == "chiusura" for r in righe)
+
+
 def analizza_ordini(cartella: Optional[Path], giorno: str) -> Dict[str, Any]:
+    m1 = lettore_m1()
     out: Dict[str, Any] = {"fonte": "ordini (M-1)", "cartella": _rel(cartella), "file": [],
-                           "mancante": None}
+                           "rest": [], "mancante": None, "cartelle_utc": cartelle_utc(giorno),
+                           "_rest": [], "lettore": "M-1" if m1 is not None else
+                           "lettore M-1 assente: file letti dal lettore tollerante della mappa"}
     if cartella is None:
         out["mancante"] = "cartella non indicata (--ordini): i file di M-1 non sono letti"
         return out
     base = Path(cartella)
-    d = base / giorno if (base / giorno).is_dir() else base
-    files = sorted(list(d.glob("*.jsonl")) + list(d.glob("*.jsonl.gz"))) if d.is_dir() else []
+    if not base.is_dir():
+        out["mancante"] = "cartella %s assente" % _rel(base)
+        return out
+    files = file_ordini(base, giorno)
     if not files:
-        out["mancante"] = "nessun *.jsonl[.gz] in %s" % _rel(d)
+        out["mancante"] = "nessun ordini_*.jsonl[.gz] nelle cartelle UTC %s di %s" % (
+            ", ".join(cartelle_utc(giorno)), _rel(base))
         return out
     a, b = limiti_giorno(giorno)
+    rest: Dict[Tuple[str, str], Dict[str, Any]] = {}
     for f in files:
-        righe, errore = leggi_jsonl(f)
+        righe, errore, chiuso = _leggi_ordini(f, m1)
         generi: Dict[str, List[float]] = {}
         senza_tempo = 0
         for r in righe:
@@ -535,8 +673,25 @@ def analizza_ordini(cartella: Optional[Path], giorno: str) -> Dict[str, Any]:
             if t is None:
                 senza_tempo += 1
                 continue
-            if a <= t < b:
-                generi.setdefault(_genere_riga(r), []).append(t)
+            if not (a <= t < b):
+                continue
+            genere = _genere_riga(r)
+            if genere == "dec":
+                # decisioni: paper e live MAI sommati
+                genere = "dec:%s" % (str(r.get("mode") or "-").lower())
+            generi.setdefault(genere, []).append(t)
+            if r.get("k") == "rest":
+                metodo, attore = str(r.get("metodo") or "?"), str(r.get("attore") or "?")
+                v = rest.setdefault((metodo, attore), {"n": 0, "errori": 0, "durate": []})
+                v["n"] += 1
+                if r.get("errore") or r.get("eccezione"):
+                    v["errori"] += 1
+                rep_us = r.get("risposta_ep_us")
+                if isinstance(rep_us, (int, float)) and isinstance(r.get("ep_us"), (int, float)):
+                    v["durate"].append((rep_us - r["ep_us"]) / 1000.0)
+                    out["_rest"].append({"invio_ms": r["ep_us"] / 1000.0,
+                                         "risposta_ms": rep_us / 1000.0, "metodo": metodo,
+                                         "attore": attore})
         tab = []
         for g, ts in sorted(generi.items()):
             ts.sort()
@@ -544,9 +699,80 @@ def analizza_ordini(cartella: Optional[Path], giorno: str) -> Dict[str, Any]:
             tab.append({"genere": g, "n": len(ts), **{"cad_" + k: v for k, v in
                                                       cadenza_ms(ts).items()},
                         "prima": ts[0], "ultima": ts[-1], "n_buchi": len(bh)})
-        out["file"].append({"nome": f.name, "righe": len(righe), "errore": errore,
-                            "senza_tempo": senza_tempo, "generi": tab})
+        out["file"].append({"nome": str(f.relative_to(base)).replace(os.sep, "/"),
+                            "righe": len(righe), "errore": errore,
+                            "senza_tempo": senza_tempo, "chiuso": chiuso, "generi": tab})
+    for (metodo, attore), v in sorted(rest.items()):
+        d = v["durate"]
+        out["rest"].append({"metodo": metodo, "attore": attore, "n": v["n"],
+                            "errori": v["errori"], "p50": percentile(d, 50),
+                            "p95": percentile(d, 95), "p99": percentile(d, 99),
+                            "max": max(d) if d else None})
+    out["_rest"].sort(key=lambda x: x["invio_ms"])
     return out
+
+
+def ui_verso_rest(ordini_ui: List[Dict[str, Any]], rest: List[Dict[str, Any]]
+                  ) -> Dict[str, Any]:
+    """Latenza comando della UI (ricezione sul canale) -> risposta della REST di
+    Betfair (``risposta_ep_us`` di M-1). Accoppiamento per TEMPO: il comando
+    LIVE del desktop con la prima REST del desktop dello stesso metodo partita
+    dopo di lui entro ``FINESTRA_UI_REST_S``, mai usata due volte. I comandi
+    paper non vanno a Betfair: non si accoppiano."""
+    usate: set = set()
+    per: Dict[str, Dict[str, Any]] = {}
+    for c in ordini_ui:
+        if c.get("modo") != "live" or c.get("epoca_ms") is None:
+            continue
+        metodo = _AZIONE_REST.get(str(c.get("azione") or ""))
+        if metodo is None:
+            continue
+        v = per.setdefault(metodo, {"metodo": metodo, "comandi": 0, "accoppiati": 0,
+                                    "invio": [], "risposta": []})
+        v["comandi"] += 1
+        t0 = float(c["epoca_ms"])
+        for i, r in enumerate(rest):
+            if i in usate or r["metodo"] != metodo or not str(r["attore"]).startswith("desktop"):
+                continue
+            if r["invio_ms"] < t0:
+                continue
+            if r["invio_ms"] - t0 > FINESTRA_UI_REST_S * 1000.0:
+                break
+            usate.add(i)
+            v["accoppiati"] += 1
+            v["invio"].append(r["invio_ms"] - t0)
+            v["risposta"].append(r["risposta_ms"] - t0)
+            break
+    tab = []
+    for metodo in sorted(per):
+        v = per[metodo]
+        tab.append({"metodo": metodo, "comandi": v["comandi"], "accoppiati": v["accoppiati"],
+                    "invio_p50": percentile(v["invio"], 50),
+                    "risposta_p50": percentile(v["risposta"], 50),
+                    "risposta_p95": percentile(v["risposta"], 95),
+                    "risposta_max": max(v["risposta"]) if v["risposta"] else None})
+    return {"tabella": tab}
+
+
+def referto_m1(cartella: Optional[Path], giorno: str) -> Optional[str]:
+    """Il referto del lettore di M-1 (``analizza_giorni`` sulle cartelle UTC
+    del giorno INSIEME: gli ordini a cavallo della mezzanotte UTC restano
+    interi), se il modulo c'e'. ``None`` se non c'e'; il testo dell'errore se
+    c'e' ma fallisce (mai solleva). Attenzione: copre le cartelle UTC intere,
+    non solo il giorno locale."""
+    if cartella is None or not Path(cartella).is_dir():
+        return None
+    m1 = lettore_m1()
+    if m1 is None:
+        return None
+    giorni = [g for g in cartelle_utc(giorno) if (Path(cartella) / g).is_dir()]
+    if not giorni:
+        return None
+    try:
+        return "cartelle UTC %s (intere)\n%s" % (", ".join(giorni), m1.formatta(
+            m1.analizza_giorni(str(cartella), giorni)))
+    except Exception as e:  # noqa: BLE001
+        return "lettore di M-1 fallito: %s: %s" % (type(e).__name__, str(e)[:200])
 
 
 # ---------------------------------------------------------------------------
@@ -555,11 +781,13 @@ def analizza_ordini(cartella: Optional[Path], giorno: str) -> Dict[str, Any]:
 def genera(giorno: str, *, canale: Optional[Path] = None, raw: Optional[Path] = None,
            salute: Optional[Path] = None, ordini: Optional[Path] = None) -> Dict[str, Any]:
     datetime.strptime(giorno, "%Y-%m-%d")
-    return {"giorno": giorno, "fuso": NOME_FUSO,
-            "canale": analizza_canale(canale, giorno),
+    c = analizza_canale(canale, giorno)
+    o = analizza_ordini(ordini, giorno)
+    o["ui_rest"] = ui_verso_rest(c.pop("_ordini_ui", []), o.pop("_rest", []))
+    o["referto_m1"] = referto_m1(ordini, giorno)
+    return {"giorno": giorno, "fuso": NOME_FUSO, "canale": c,
             "raw": analizza_raw(raw, giorno),
-            "salute": analizza_salute(salute, giorno),
-            "ordini": analizza_ordini(ordini, giorno)}
+            "salute": analizza_salute(salute, giorno), "ordini": o}
 
 
 def markdown(dati: Dict[str, Any], comando: str = "") -> str:
@@ -657,12 +885,15 @@ def _md_canale(L: List[str], c: Dict[str, Any]) -> None:
     else:
         L.append("Latenza = dalla ricezione sul canale alla risposta (ms).")
         L.append("")
-        L.append("| porta | client | metodo | n | ok | rifiutati | senza esito | lat p50 | "
-                 "p95 | max |")
-        L.append("|---|---|---|---|---|---|---|---|---|---|")
+        L.append("Paper e live su righe SEPARATE (colonna modo), mai sommati.")
+        L.append("")
+        L.append("| porta | client | metodo | modo | n | ok | rifiutati | senza esito | "
+                 "lat p50 | p95 | max |")
+        L.append("|---|---|---|---|---|---|---|---|---|---|---|")
         for r in cm["tabella"]:
-            L.append("| %s | %s | %s | %d | %d | %d | %d | %s | %s | %s |" % (
-                r["porta"], r["genere"], r["metodo"], r["n"], r["ok"], r["rifiutati"],
+            L.append("| %s | %s | %s | %s | %d | %d | %d | %d | %s | %s | %s |" % (
+                r["porta"], r["genere"], r["metodo"], r["modo"], r["n"], r["ok"],
+                r["rifiutati"],
                 r["senza_esito"], _f(r["lat_p50"], 2), _f(r["lat_p95"], 2),
                 _f(r["lat_max"], 2)))
         if cm["motivi_rifiuto"]:
@@ -674,8 +905,8 @@ def _md_canale(L: List[str], c: Dict[str, Any]) -> None:
             L.append("")
             L.append("Comandi senza esito registrato (primi %d):" % MAX_ELENCO)
             for s in cm["senza_esito"]:
-                L.append("- %s porta %s %s (%s)" % (ora(s["quando"]), s["porta"], s["metodo"],
-                                                    s["genere"]))
+                L.append("- %s porta %s %s %s (%s)" % (ora(s["quando"]), s["porta"],
+                                                       s["metodo"], s["modo"], s["genere"]))
     L.append("")
 
 
@@ -727,6 +958,13 @@ def _md_ordini(L: List[str], o: Dict[str, Any]) -> None:
         L.append("Non disponibile: %s." % o["mancante"])
         L.append("")
         return
+    if o.get("lettore") != "M-1":
+        L.append("ordini: lettore M-1 assente (``Betfair.monitor.analisi_ordini`` non c'e' in "
+                 "questo ramo): niente referto di M-1, i file sono letti dalla mappa.")
+        L.append("")
+    L.append("Cartelle UTC lette per il giorno locale: %s (righe filtrate sul giorno "
+             "locale). Lettore: %s." % (", ".join(o["cartelle_utc"]), o.get("lettore")))
+    L.append("")
     L.append("| file | genere | n | cad p50 ms | p95 | p99 | max | buchi > %.0f s | dalle | alle |"
              % SOGLIA_BUCO_ORDINI_S)
     L.append("|---|---|---|---|---|---|---|---|---|---|")
@@ -740,6 +978,43 @@ def _md_ordini(L: List[str], o: Dict[str, Any]) -> None:
             L.append("| %s | (righe senza istante) | %d | | | | | | | |" % (
                 f["nome"], f["senza_tempo"]))
     L.append("")
+    L.append("### 4.1 REST con soldi: durata invio -> risposta (ms)")
+    L.append("")
+    if not o["rest"]:
+        L.append("Nessuna REST registrata nel giorno.")
+    else:
+        L.append("| metodo | attore | n | errori | p50 | p95 | p99 | max |")
+        L.append("|---|---|---|---|---|---|---|---|")
+        for r in o["rest"]:
+            L.append("| %s | %s | %d | %d | %s | %s | %s | %s |" % (
+                r["metodo"], r["attore"], r["n"], r["errori"], _f(r["p50"]), _f(r["p95"]),
+                _f(r["p99"]), _f(r["max"])))
+    L.append("")
+    L.append("### 4.2 Comando della UI sul canale -> REST di Betfair (ms)")
+    L.append("")
+    tab = (o.get("ui_rest") or {}).get("tabella") or []
+    if not tab:
+        L.append("Nessun comando LIVE della UI accoppiabile (servono canale e M-1 dello "
+                 "stesso giorno).")
+    else:
+        L.append("Accoppiamento per tempo: il comando LIVE del desktop con la prima REST del "
+                 "desktop dello stesso metodo entro %.0f s." % FINESTRA_UI_REST_S)
+        L.append("")
+        L.append("| metodo | comandi | accoppiati | invio p50 | risposta p50 | risposta p95 "
+                 "| risposta max |")
+        L.append("|---|---|---|---|---|---|---|")
+        for r in tab:
+            L.append("| %s | %d | %d | %s | %s | %s | %s |" % (
+                r["metodo"], r["comandi"], r["accoppiati"], _f(r["invio_p50"]),
+                _f(r["risposta_p50"]), _f(r["risposta_p95"]), _f(r["risposta_max"])))
+    L.append("")
+    if o.get("referto_m1"):
+        L.append("### 4.3 Referto del lettore di M-1")
+        L.append("")
+        L.append("```")
+        L.append(str(o["referto_m1"]))
+        L.append("```")
+        L.append("")
 
 
 def _md_buchi(L: List[str], dati: Dict[str, Any]) -> None:
@@ -751,7 +1026,7 @@ def _md_buchi(L: List[str], dati: Dict[str, Any]) -> None:
         for f in c["file"]:
             if f["errore"]:
                 righe.append("- canale `%s`: %s." % (f["nome"], f["errore"]))
-        porte: Dict[Any, int] = {}
+        porte: Dict[Any, int] = {}  # processi diversi per porta
         for p in c["processi"]:
             porte[p["porta"]] = porte.get(p["porta"], 0) + 1
             if p["seq_mancanti"]:
@@ -763,6 +1038,9 @@ def _md_buchi(L: List[str], dati: Dict[str, Any]) -> None:
                 if conti.get(k):
                     righe.append("- canale porta %s (pid %s): %s = %d." % (
                         p["porta"], p["pid"], k, conti[k]))
+            if not p.get("chiuso"):
+                righe.append("- canale porta %s (pid %s): nessuna riga di chiusura (processo "
+                             "morto, ucciso o ancora vivo alla lettura)." % (p["porta"], p["pid"]))
             for t in p["tetto_raggiunto"]:
                 righe.append("- canale porta %s: TETTO raggiunto alle %s, registrazione "
                              "sospesa per il resto del giorno." % (p["porta"], ora(t)))
@@ -798,6 +1076,11 @@ def _md_buchi(L: List[str], dati: Dict[str, Any]) -> None:
                 if g["n_buchi"]:
                     righe.append("- M-1 %s/%s: %d buchi > %.0f s." % (
                         f["nome"], g["genere"], g["n_buchi"], SOGLIA_BUCO_ORDINI_S))
+            if f["errore"]:
+                righe.append("- M-1 %s: %s." % (f["nome"], f["errore"]))
+            if not f["chiuso"]:
+                righe.append("- M-1 %s: nessuna riga di chiusura (processo morto o vivo)."
+                             % f["nome"])
     for k in ("canale", "raw", "salute", "ordini"):
         if dati[k]["mancante"]:
             righe.append("- fonte `%s` MANCANTE: %s." % (dati[k]["fonte"], dati[k]["mancante"]))

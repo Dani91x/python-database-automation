@@ -78,14 +78,36 @@ def _sempre_spento_dopo(monkeypatch):
     assert reg.ATTIVO is False
 
 
+def _file_di(cartella_giorno: Path, porta: int) -> List[Path]:
+    """I file di una porta in un giorno: ``canale_<porta>_<pid>[_n].jsonl.gz``."""
+    return sorted(cartella_giorno.glob("canale_%d_*.jsonl.gz" % porta))
+
+
 def _file_di_oggi(base: Path, porta: int) -> Path:
-    return base / reg.giorno_locale() / f"canale_{porta}.jsonl.gz"
+    """L'UNICO file di oggi della porta (un processo, un file)."""
+    f = _file_di(base / reg.giorno_locale(), porta)
+    assert len(f) == 1, f
+    assert f[0].name == "canale_%d_%d.jsonl.gz" % (porta, os.getpid())
+    return f[0]
 
 
 def _righe(percorso: Path) -> List[Dict[str, Any]]:
     righe, errore = reg.leggi_file(str(percorso))
     assert errore is None, errore
     return righe
+
+
+def _righe_porta(cartella_giorno: Path, porta: int) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for f in _file_di(cartella_giorno, porta):
+        out.extend(_righe(f))
+    return out
+
+
+def _ultimo_stato(righe: List[Dict[str, Any]]) -> Dict[str, Any]:
+    st = [r for r in righe if r["k"] in ("stato", "chiusura")]
+    assert st, "nessuna riga di stato o di chiusura"
+    return st[-1]
 
 
 # ---------------------------------------------------------------------------
@@ -165,8 +187,7 @@ def test_spento_nessun_aggancio_nessun_file_e_stessi_messaggi(tmp_path, monkeypa
         spento = _giro_vero()
     assert chiamate == [], "a registratore spento un aggancio e' stato chiamato: %s" % chiamate
     assert not (tmp_path / "spento").exists()
-    assert not (RADICE / "_logs" / "canale" / reg.giorno_locale()
-                / ("canale_%d.jsonl.gz" % spento["porta"])).exists()
+    assert not _file_di(RADICE / "_logs" / "canale" / reg.giorno_locale(), spento["porta"])
 
     assert reg.accendi(cartella=str(tmp_path / "acceso"), _consenti_in_test=True,
                        _senza_thread=True)
@@ -224,8 +245,11 @@ def test_acceso_file_corretto(registratore):
     mono = [r["mono_ns"] for r in righe if r["k"] == "pub"]
     assert mono == sorted(mono)
     assert all(r["porta"] == porta and r["sport"] == "calcio" for r in righe if "seq" in r)
-    stato = [r for r in righe if r["k"] == "stato"]
-    assert stato and stato[-1]["conti"]["mascherati"] >= 1 and stato[-1]["campione"] == 20
+    st = _ultimo_stato(righe)
+    assert st["k"] == "chiusura", "l'ultima riga deve essere la chiusura"
+    assert st["conti"]["mascherati"] >= 1 and st["campione"] == 20
+    # il payload e' il testo del canale VERBATIM (separatori di json.dumps compresi)
+    assert json.dumps({"t": "ladder", "d": _ladder("1.0", 0)}, default=str).encode() in grezzo
     assert ch.statistiche()["saltati_client"] == 0
 
 
@@ -390,7 +414,7 @@ def test_coda_piena_scarta_conta_e_non_blocca(tmp_path):
     reg.scrivi_ora()
     righe = _righe(_file_di_oggi(tmp_path, ch.port))
     assert [r["seq"] for r in righe if r["k"] == "pub"] == list(range(1, 11))
-    assert [r for r in righe if r["k"] == "stato"][-1]["conti"]["scartati_coda"] == 990
+    assert _ultimo_stato(righe)["conti"]["scartati_coda"] == 990
 
 
 class _FileRotto:
@@ -413,12 +437,12 @@ def test_errore_del_disco_mai_propagato(registratore, monkeypatch):
     ch = _canale_finto(0, 1)
     ch.publish("order", {"bet_id": "B1"})
 
-    def apri_rotto(_p: Path) -> Any:
+    def apri_rotto(_d: Path, _porta: int) -> Any:
         raise PermissionError(13, "Permission denied")
     c = reg.scrivi_ora(apri=apri_rotto)
     assert c["errori_disco"] >= 1 and c["scritti"] == 0
     ch.publish("order", {"bet_id": "B2"})
-    c = reg.scrivi_ora(apri=_FileRotto)
+    c = reg.scrivi_ora(apri=lambda d, porta: (_FileRotto(), d / "rotto.jsonl.gz"))
     assert c["errori_disco"] >= 2 and c["scritti"] == 0
 
     def esplode(*_a: Any, **_k: Any) -> None:
@@ -490,8 +514,9 @@ def test_rotazione_a_mezzanotte_e_sospensione_al_tetto(registratore, monkeypatch
     ch.publish("order", {"g": 2})
     s.giro()
     s._chiudi_tutti()
-    a = _righe(registratore / "2026-10-11" / ("canale_%d.jsonl.gz" % ch.port))
-    b = _righe(registratore / "2026-10-12" / ("canale_%d.jsonl.gz" % ch.port))
+    a = _righe_porta(registratore / "2026-10-11", ch.port)
+    b = _righe_porta(registratore / "2026-10-12", ch.port)
+    assert [r["k"] for r in a][-1] == "chiusura", "la rotazione chiude il giorno con la chiusura"
     assert [r["msg"]["d"]["g"] for r in a if r["k"] == "pub"] == [1]
     assert [r["msg"]["d"]["g"] for r in b if r["k"] == "pub"] == [2]
 
@@ -503,7 +528,9 @@ def test_rotazione_a_mezzanotte_e_sospensione_al_tetto(registratore, monkeypatch
     s2.giro()
     s2._chiudi_tutti()
     assert reg.conti()["scartati_tetto"] == 2
-    righe_b = _righe(registratore / "2026-10-12" / ("canale_%d.jsonl.gz" % ch.port))
+    righe_b = _righe_porta(registratore / "2026-10-12", ch.port)
+    assert len(_file_di(registratore / "2026-10-12", ch.port)) == 2, \
+        "il secondo scrittore deve creare un file NUOVO, mai accodare"
     assert [r["k"] for r in righe_b][-1] == "tetto_raggiunto"
     assert [r["msg"]["d"]["g"] for r in righe_b if r["k"] == "pub"] == [2]
 
@@ -661,3 +688,319 @@ def test_spento_identico_al_canale_senza_agganci(monkeypatch, capsys):
         print("\n[M3 spento] senza agganci %.2f us/msg, con agganci spenti %.2f us/msg "
               "(differenza %.2f us, tolleranza %.1f)" % (o, a, a - o, tolleranza))
     assert a - o < tolleranza
+
+
+# ---------------------------------------------------------------------------
+# 11/10, revisione indipendente: file per processo, uscita, fork, lettura
+# tollerante, payload verbatim, chiavi esatte, numeri dei client, confini
+# ---------------------------------------------------------------------------
+_PROGRAMMA_PROCESSO = r'''
+import os, sys, time
+from Betfair.stream import registratore_canale as r
+from Betfair.stream.local_channel import LocalChannel
+from websockets.sync.client import connect
+assert r.ATTIVO, "registratore spento nel processo figlio"
+r.FLUSH_OGNI_S = 0.1
+porta, n, modo = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+tok = "k" * 64
+ch = LocalChannel(porta, sport="calcio", token=tok)
+assert ch.start()
+ws = connect("ws://127.0.0.1:%d/?t=%s" % (porta, tok), open_timeout=5)
+ws.recv(timeout=5)
+fine = time.time() + 5
+while ch._n_clients < 1 and time.time() < fine:
+    time.sleep(0.01)
+for i in range(n):
+    ch.publish("order", {"i": i, "pid": os.getpid()})
+    time.sleep(0.05)
+if modo == "uccidi":
+    time.sleep(0.6)          # almeno un flush del gzip sul disco
+    print("PRONTO", flush=True)
+    time.sleep(120)
+ws.close()
+print("FINE", flush=True)
+'''
+
+
+def _ambiente_figlio(cartella: Path, **extra: str) -> Dict[str, str]:
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTEST_CURRENT_TEST",)}
+    env.update({reg.ENV: "1", reg.ENV_CARTELLA: str(cartella)})
+    env.update(extra)
+    return env
+
+
+def test_due_processi_veri_in_sequenza_e_uno_ucciso_poi_la_mappa(tmp_path):
+    """Il difetto del 11/10: dopo un riavvio nello stesso giorno il .gz era
+    illeggibile e la mappa andava in traceback. Ora: TRE processi Python VERI
+    sulla STESSA porta nello stesso giorno - due escono normalmente (atexit:
+    riga ``chiusura``, gzip chiuso), il terzo e' ucciso con kill -9 - tre file
+    distinti, nessun append; la mappa legge tutto, distingue i tre processi e
+    dice che il terzo non ha chiuso."""
+    from Betfair.stream import mappa_flussi as mf
+
+    porta = _porta_libera()
+    base = tmp_path / "canale"
+    for _ in range(2):
+        r = subprocess.run([sys.executable, "-c", _PROGRAMMA_PROCESSO, str(porta), "20", "esci"],
+                           cwd=str(RADICE), env=_ambiente_figlio(base), capture_output=True,
+                           text=True, timeout=60)
+        assert r.returncode == 0 and "FINE" in r.stdout, r.stderr[-2000:]
+        time.sleep(1.0)     # una pausa VERA fra i processi: la cadenza non deve vederla
+    p = subprocess.Popen([sys.executable, "-c", _PROGRAMMA_PROCESSO, str(porta), "20", "uccidi"],
+                         cwd=str(RADICE), env=_ambiente_figlio(base), stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, text=True)
+    try:
+        assert p.stdout is not None and p.stdout.readline().strip() == "PRONTO"
+    finally:
+        p.kill()            # SIGKILL su POSIX: nessun atexit, nessuna chiusura
+        p.wait(timeout=30)
+    giorno = reg.giorno_locale()
+    files = _file_di(base / giorno, porta)
+    assert len(files) == 3, files
+    integri = 0
+    for f in files:
+        righe, errore = reg.leggi_file(str(f))
+        assert len([x for x in righe if x["k"] == "pub"]) >= 1
+        if righe and righe[-1]["k"] == "chiusura":
+            integri += 1
+            assert errore is None, errore
+            assert len([x for x in righe if x["k"] == "pub"]) == 20, "righe perse all'uscita"
+    assert integri == 2
+    d = mf.genera(giorno, canale=base)
+    proc = d["canale"]["processi"]
+    assert len(proc) == 3, "tre processi (porta, pid, avvio) distinti"
+    assert sorted(x["chiuso"] for x in proc) == [False, True, True]
+    order = [t for t in d["canale"]["topic"] if t["topic"] == "order"][0]
+    assert order["n"] >= 41
+    # cadenza per processo: 50 ms fra un publish e l'altro, mai il salto fra processi
+    assert order["cad_p99"] is not None and order["cad_p99"] < 400.0, order["cad_p99"]
+    testo = mf.markdown(d)
+    assert "nessuna riga di chiusura" in testo
+
+
+def test_vecchio_difetto_membro_accodato_dopo_un_flusso_tronco(tmp_path):
+    """Il file rotto del 11/10 rifatto a mano: un membro gzip tronco (processo
+    ucciso) seguito da un membro intero (riavvio in append). ``gzip.open`` lo
+    rifiuta; il lettore tollerante tiene il leggibile del primo e TUTTO il
+    secondo, e la mappa non va in traceback."""
+    import zlib
+
+    from Betfair.stream import mappa_flussi as mf
+
+    def membro(righe: List[Dict[str, Any]]) -> bytes:
+        c = zlib.compressobj(6, zlib.DEFLATED, 31)
+        return c.compress("".join(json.dumps(x) + "\n" for x in righe).encode()) + c.flush()
+
+    giorno = reg.giorno_locale()
+    d = tmp_path / "canale" / giorno
+    d.mkdir(parents=True)
+    primo = [{"v": 2, "k": "pub", "seq": i, "mono_ns": i * 10 ** 6, "epoca_ms": 1, "porta": 1,
+              "pid": 1, "av": 1, "topic": "order", "byte": 10, "dest": 1, "saltati": 0,
+              "client": 1, "lettori": 0, "n_topic": i + 1, "pad": "x%d" % (i * 7919)}
+             for i in range(1, 2000)]
+    secondo = [dict(r, pid=2, av=2) for r in primo[:50]]
+    a = membro(primo)
+    rotto = a[: len(a) // 2]
+    f = d / "canale_1_1.jsonl.gz"
+    f.write_bytes(rotto + membro(secondo))
+    with pytest.raises(Exception):
+        with gzip.open(f, "rt") as fh:
+            fh.read()
+    righe, errore = reg.leggi_file(str(f))
+    assert errore and ("corrott" in errore or "tronc" in errore)
+    assert len([r for r in righe if r.get("pid") == 2]) == 50, "il membro intero va letto tutto"
+    assert len([r for r in righe if r.get("pid") == 1]) > 10, "il leggibile del tronco si tiene"
+    dati = mf.genera(giorno, canale=tmp_path / "canale")
+    assert len(dati["canale"]["processi"]) == 2
+    assert dati["canale"]["file"][0]["errore"]
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork solo su POSIX")
+def test_fork_il_figlio_non_scrive_mai_nel_file_del_padre(tmp_path):
+    """Un figlio di ``fork`` che esce normalmente chiuderebbe (scrivendoli) i
+    gzip ereditati nello STESSO file del padre: buffer duplicati e trailer in
+    mezzo. Con ``register_at_fork`` il figlio e' chiuso e i suoi file vanno su
+    devnull: il file del padre resta integro."""
+    programma = r'''
+import os, sys, time
+from Betfair.stream import registratore_canale as r
+r.FLUSH_OGNI_S = 3600   # nessun flush prima del fork: il buffer pendente e' il rischio
+class C:
+    port = 47999; sport = "calcio"; _clients = set(); _lettori = {}; _in_volo_ws = {}
+    _n_clients = 0; _n_lettori = 0; _comando_ws = {}
+for i in range(50):
+    r.pubblicato(C, "order", '{"t": "order", "d": {"i": %d}}' % i)
+fine = time.time() + 5
+while r.conti()["scritti"] < 50 and time.time() < fine:
+    time.sleep(0.01)
+pid = os.fork()
+if pid == 0:
+    # il figlio chiude TUTTI i gzip che ha in memoria, come farebbe la sua
+    # finalizzazione (che a Python non e' garantita in un ordine fisso: qui la
+    # si rende certa, cosi' il test non dipende dal caso)
+    import gc, gzip
+    for o in gc.get_objects():
+        if isinstance(o, gzip.GzipFile):
+            try:
+                o.close()
+            except Exception:
+                pass
+    os._exit(0)
+os.waitpid(pid, 0)
+for i in range(50, 100):
+    r.pubblicato(C, "order", '{"t": "order", "d": {"i": %d}}' % i)
+print("FINE", flush=True)
+'''
+    r = subprocess.run([sys.executable, "-W", "ignore", "-c", programma], cwd=str(RADICE),
+                       env=_ambiente_figlio(tmp_path), capture_output=True, text=True,
+                       timeout=60)
+    assert r.returncode == 0 and "FINE" in r.stdout, r.stderr[-2000:]
+    files = _file_di(tmp_path / reg.giorno_locale(), 47999)
+    assert len(files) == 1
+    righe, errore = reg.leggi_file(str(files[0]))
+    assert errore is None, "il figlio ha scritto nel file del padre: %s" % errore
+    assert [x["msg"]["d"]["i"] for x in righe if x["k"] == "pub"] == list(range(100))
+    assert righe[-1]["k"] == "chiusura"
+
+
+def test_giorno_locale_e_non_utc(tmp_path):
+    """La cartella del giorno e' la data LOCALE del PC: in un processo con il
+    fuso scelto apposta perche' la data locale e quella UTC siano diverse."""
+    if os.name == "nt":
+        pytest.skip("TZ dell'ambiente non vale su Windows")
+    ora_utc = time.gmtime()
+    fuso = "Etc/GMT-14" if ora_utc.tm_hour >= 12 else "Etc/GMT+12"
+    programma = r'''
+import time
+from Betfair.stream import registratore_canale as r
+class C:
+    port = 47998; sport = "calcio"; _clients = set(); _lettori = {}; _in_volo_ws = {}
+    _n_clients = 0; _n_lettori = 0; _comando_ws = {}
+r.pubblicato(C, "order", '{"t": "order", "d": {}}')
+r.spegni()
+print(time.strftime("%Y-%m-%d", time.localtime()), time.strftime("%Y-%m-%d", time.gmtime()))
+'''
+    r = subprocess.run([sys.executable, "-c", programma], cwd=str(RADICE),
+                       env=_ambiente_figlio(tmp_path, TZ=fuso), capture_output=True, text=True,
+                       timeout=60)
+    assert r.returncode == 0, r.stderr[-2000:]
+    locale, utc = r.stdout.split()
+    assert locale != utc, "fuso di prova sbagliato: le due date coincidono"
+    assert sorted(x.name for x in tmp_path.iterdir()) == [locale]
+
+
+def test_sotto_pytest_resta_spento_anche_con_l_interruttore(monkeypatch, tmp_path):
+    """REGISTRA_CANALE=1 sotto pytest: ``accendi`` senza il permesso dei test
+    rifiuta (la suite non deve mai scrivere registrazioni)."""
+    monkeypatch.setenv(reg.ENV, "1")
+    monkeypatch.setenv(reg.ENV_CARTELLA, str(tmp_path))
+    assert reg.accendi() is False
+    assert reg.ATTIVO is False
+    assert reg.accendi(_consenti_in_test=True, _senza_thread=True) is True
+
+
+def test_chiavi_sensibili_esatte_anche_nelle_liste():
+    """Mascherate: le chiavi ESATTE (maiuscole indifferenti) a qualunque
+    profondita', dentro le liste; ``t``/``tk`` solo con un testo lungo. NON
+    mascherate: sessione, sessioni, certified, incertezza_ms, ``t`` del
+    protocollo. Stesso esito sul testo (percorso normale) e su ``_ripulisci``."""
+    segreto = "S" * 40
+    esatte = ["key", "x-authentication", "token", "password", "authorization", "app_key",
+              "ssoid", "cookie", "Token", "X-Authentication", "t", "tk"]
+    for k in esatte:
+        for obj in ({k: segreto}, {"p": {"a": [{"b": 1}, {k: segreto}]}}, {"l": [[{k: segreto}]]}):
+            conta = [0]
+            testo = reg.maschera_testo(json.dumps(obj), conta)
+            assert segreto not in testo, (k, testo)
+            assert conta[0] == 1, (k, conta)
+            conta2 = [0]
+            assert segreto not in json.dumps(reg._ripulisci(obj, conta2)), k
+            assert conta2[0] == 1
+    lecite = {"t": "ladder", "tk": "corto", "sessione": "S1", "sessioni": [1, 2],
+              "certified": True, "incertezza_ms": 12.5, "keys": "x", "monkey": "y",
+              "token_scadenza": 5}
+    conta = [0]
+    testo = reg.maschera_testo(json.dumps(lecite), conta)
+    assert json.loads(testo) == lecite and conta[0] == 0, testo
+    assert reg._ripulisci(lecite, [0]) == lecite
+    # valore composto (oggetto o lista): ripiego sul json, tutto il valore via
+    conta = [0]
+    testo = reg.maschera_testo(json.dumps({"a": 1, "token": {"v": segreto}}), conta)
+    assert segreto not in testo and json.loads(testo) == {"a": 1, "token": "***"}
+
+
+def test_confine_dei_saltati_uguale_al_canale(registratore):
+    """Con esattamente ``_MAX_INVII_IN_VOLO`` invii in volo il client RICEVE
+    (il canale salta solo OLTRE il tetto): il registratore deve dire lo stesso."""
+    ch = _canale_finto(0, 2)
+    w = sorted(ch._clients, key=lambda x: x.nome)[0]
+    ch._in_volo_ws[w] = local_channel._MAX_INVII_IN_VOLO
+    ch._ricalcola_pronti()
+    ch.publish("order", {"x": 1})
+    assert ch.statistiche()["saltati_client"] == 0 and len(ch._loop.creati) == 2
+    ch._in_volo_ws[w] = local_channel._MAX_INVII_IN_VOLO + 1
+    ch._ricalcola_pronti()
+    ch.publish("order", {"x": 2})
+    assert ch.statistiche()["saltati_client"] == 1
+    reg.scrivi_ora()
+    pub = [r for r in _righe(_file_di_oggi(registratore, ch.port)) if r["k"] == "pub"]
+    assert [(r["dest"], r["saltati"]) for r in pub] == [(2, 0), (1, 1)]
+
+
+def test_numeri_dei_client_per_connessione_mai_riusati(registratore):
+    """Ogni connessione ha un numero suo, anche se Python riusa l'``id`` di un
+    socket chiuso; la composizione si riscrive a ogni ricollegamento."""
+    ch = _canale_finto(0, 1)
+    ch.publish("order", {"g": 1})
+    for giro in range(5):
+        ch._clients = set()                     # il vecchio socket muore
+        ch._clients = {_WsFinto("ricollegato%d" % giro)}
+        ch._n_clients = 1
+        ch._ricalcola_pronti()
+        ch.publish("order", {"g": giro + 2})
+    reg.scrivi_ora()
+    pub = [r for r in _righe(_file_di_oggi(registratore, ch.port)) if r["k"] == "pub"]
+    comp = [r["clienti"] for r in pub if "clienti" in r]
+    assert len(comp) == 6, "una composizione per ogni (ri)collegamento"
+    numeri = {c[0][0] for c in comp}
+    assert len(numeri) == 6, "numero di client riusato: %s" % comp
+
+
+def test_coda_limitata_anche_in_byte(tmp_path):
+    """Payload pieni grandi: oltre ``coda_max_byte`` si scarta e si conta,
+    anche se il numero di record e' basso."""
+    reg.azzera_per_test()
+    assert reg.accendi(cartella=str(tmp_path), _consenti_in_test=True, _senza_thread=True,
+                       coda_max=1000, coda_max_byte=50_000)
+    ch = _canale_finto(0, 1)
+    for i in range(20):
+        ch.publish("order", {"i": i, "pad": "x" * 10_000})
+    c = reg.conti()
+    assert c["in_coda"] == 4 and c["scartati_coda"] == 16, c
+    assert c["byte_in_coda"] <= 50_000
+    reg.scrivi_ora()
+    assert reg.conti()["byte_in_coda"] == 0
+
+
+def test_payload_pieni_scritti_senza_rileggerli(registratore, monkeypatch):
+    """Il thread di scrittura NON fa ``json.loads`` dei payload del canale (il
+    GIL del 11/10): conta le chiamate durante la scrittura di 200 publish pieni."""
+    ch = _canale_finto(0, 1)
+    for i in range(200):
+        ch.publish("conto", {"i": i, "ordini": [{"bet_id": "B%d" % i, "pad": "x" * 2000}]})
+
+    class _Spia:
+        chiamate = 0
+
+        def __getattr__(self, nome: str) -> Any:
+            return getattr(json, nome)
+
+        def loads(self, *a: Any, **k: Any) -> Any:
+            _Spia.chiamate += 1
+            return json.loads(*a, **k)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(reg, "json", _Spia())
+        reg.scrivi_ora()
+    assert _Spia.chiamate == 0, "payload riletti: %d json.loads" % _Spia.chiamate
+    pub = [r for r in _righe(_file_di_oggi(registratore, ch.port)) if r["k"] == "pub"]
+    assert len(pub) == 200 and pub[7]["msg"]["d"]["ordini"][0]["bet_id"] == "B7"

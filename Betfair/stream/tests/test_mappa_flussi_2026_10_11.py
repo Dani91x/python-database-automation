@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import gzip
 import json
+import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -83,17 +85,36 @@ def _giornata(base: Path, coda_max: int = 100000) -> Dict[str, Any]:
     for i in range(30):
         ch.publish("ladder", {"market_id": "1.%d" % (i % 3), "i": i})
     ch.publish("order", {"bet_id": "B1", "status": "EXECUTION_COMPLETE"})
-    ch._on_message(desk, json.dumps({"id": 7, "m": "order", "p": {"action": "place"}}))
+    ch._on_message(desk, json.dumps({"id": 7, "m": "order",
+                                     "p": {"action": "place", "mode": "live"}}))
     # STESSO id da un altro client, mai risposto: l'esito di desk non e' il suo
     ch._on_message(intruso, json.dumps({"id": 7, "m": "snapshot"}))
     req = ch.pop_requests()
     assert req[0].ws is desk
     ch.respond(req[0], True, {"ok": True, "bet_id": "B9"})
+    # paper e live dello stesso metodo: righe SEPARATE, mai sommate
+    ch._on_message(desk, json.dumps({"id": 11, "m": "order",
+                                     "p": {"action": "place", "mode": "paper"}}))
+    ch.respond(ch.pop_requests()[0], True, {"ok": True, "bet_id": "P1"})
+    ch._on_message(desk, json.dumps({"id": 12, "m": "order",
+                                     "p": {"action": "place", "mode": "LIVE"}}))
+    ch.respond(ch.pop_requests()[0], False, None, "INSUFFICIENT_FUNDS")
     ch._on_message(desk, json.dumps({"id": 8, "m": "boh"}))
     ch._on_message(intruso, json.dumps({"id": 9, "m": "order", "p": {}}))
     ch._on_message(desk, json.dumps({"id": 10, "m": "snapshot"}))      # mai risposto
-    ch._on_message(cmd, json.dumps({"t": "comando", "d": {"ref": "R1"}}))
-    ch._on_message(cmd, json.dumps({"t": "comando", "d": {"ref": "R2"}}))
+    # id RIUSATO dallo stesso client: la risposta al primo (arrivata PRIMA del
+    # secondo) non e' l'esito del secondo
+    ch._on_message(desk, json.dumps({"id": 20, "m": "boh"}))
+    ch._on_message(desk, json.dumps({"id": 20, "m": "snapshot"}))      # mai risposto
+    # stesso id su DUE connessioni, l'altra PRIMA: la risposta al desktop non e'
+    # l'esito del comando dell'intruso
+    ch._on_message(intruso, json.dumps({"id": 30, "m": "snapshot"}))   # mai risposto
+    ch._on_message(desk, json.dumps({"id": 30, "m": "boh"}))
+    ch.pop_requests()
+    ch._on_message(cmd, json.dumps({"t": "comando", "d": {"ref": "R1", "azione": "place",
+                                                          "mode": "live"}}))
+    ch._on_message(cmd, json.dumps({"t": "comando", "d": {"ref": "R2", "azione": "place",
+                                                          "mode": "paper"}}))
     ch.pop_comandi()
     ch.invia(cmd, {"t": "ack", "d": {"ref": "R1", "seq": 1, "accettato": True}})
     ch.invia_attore("omega", {"t": "ack", "d": {"ref": "R2", "seq": 2, "accettato": False,
@@ -117,17 +138,22 @@ def test_canale_numeri_esatti(tmp_path):
     assert lad["cad_p50"] is not None and lad["cad_p50"] >= 0
     order = [t for t in c["topic"] if t["topic"] == "order"][0]
     assert (order["n"], order["dest_max"], order["con_payload"]) == (1, 3, 1)
-    tab = {(r["genere"], r["metodo"]): r for r in c["comandi"]["tabella"]}
-    assert (tab[("desktop", "order")]["n"], tab[("desktop", "order")]["ok"],
-            tab[("desktop", "order")]["rifiutati"]) == (2, 1, 1)
-    assert tab[("desktop", "boh")]["rifiutati"] == 1
-    assert tab[("desktop", "snapshot")]["senza_esito"] == 2, \
-        "l'esito di un client e' stato attribuito al comando di un altro"
-    assert (tab[("comando", "comando:comando")]["ok"],
-            tab[("comando", "comando:comando")]["rifiutati"]) == (1, 1)
+    tab = {(r["genere"], r["metodo"], r["modo"]): r for r in c["comandi"]["tabella"]}
+    riga = tab[("desktop", "order:place", "live")]
+    assert (riga["n"], riga["ok"], riga["rifiutati"]) == (2, 1, 1), "live"
+    riga = tab[("desktop", "order:place", "paper")]
+    assert (riga["n"], riga["ok"], riga["rifiutati"]) == (1, 1, 0), "paper sommato al live?"
+    assert tab[("desktop", "order", "-")]["rifiutati"] == 1        # senza token
+    assert tab[("desktop", "boh", "-")]["rifiutati"] == 3
+    assert tab[("desktop", "snapshot", "-")]["senza_esito"] == 4, \
+        "l'esito di un altro client, o di un comando precedente, e' stato attribuito"
+    assert (tab[("comando", "comando:comando:place", "live")]["ok"],
+            tab[("comando", "comando:comando:place", "paper")]["rifiutati"]) == (1, 1)
+    assert not any(r["modo"] not in ("live", "paper", "-") for r in c["comandi"]["tabella"])
     motivi = dict(c["comandi"]["motivi_rifiuto"])
+    assert motivi["INSUFFICIENT_FUNDS"] == 1
     assert motivi["fondi_insufficienti"] == 1
-    assert motivi["metodo sconosciuto: boh"] == 1
+    assert motivi["metodo sconosciuto: boh"] == 3
     assert any("token di sessione" in m for m in motivi)
     p = c["processi"][0]
     assert p["seq_mancanti"] == 0 and p["conti"]["scartati_coda"] == 0
@@ -137,6 +163,7 @@ def test_canale_numeri_esatti(tmp_path):
     assert "| 47999 | calcio | ladder | 30 |" in testo
     assert "30 invii saltati in 30 giri su 30" in testo
     assert "fondi_insufficienti" in testo
+    assert "| 47999 | desktop | order:place | paper | 1 | 1 | 0 | 0 |" in testo
 
 
 def test_buchi_della_sequenza_e_file_troncato(tmp_path):
@@ -155,7 +182,7 @@ def test_buchi_della_sequenza_e_file_troncato(tmp_path):
     f.write_bytes(dati[:-12])
     d2 = mf.genera(giorno, canale=tmp_path / "canale")
     assert d2["canale"]["file"][0]["errore"]
-    assert "troncato" in mf.markdown(d2) or "illeggibil" in mf.markdown(d2)
+    assert "tronca" in mf.markdown(d2) or "illeggibil" in mf.markdown(d2)
 
 
 def test_fonti_mancanti_dichiarate(tmp_path):
@@ -190,7 +217,7 @@ def test_raw_vero_del_banco(tmp_path):
     assert vuoto["raw"]["mancante"] and "35760084" not in str(vuoto["raw"]["eventi"])
 
 
-def test_salute_e_ordini_m1(tmp_path):
+def test_salute(tmp_path):
     giorno = "2026-10-12"
     a, _ = mf.limiti_giorno(giorno)
     sal = tmp_path / "monitor" / giorno
@@ -203,23 +230,186 @@ def test_salute_e_ordini_m1(tmp_path):
                                      adesso_ms=a + 3600_000 + i * 30_000, avvio_ms=a,
                                      finestra_s=30.0, pid=1, host="pc"))
     (sal / "runner_calcio.jsonl").write_text("".join(json.dumps(r) + "\n" for r in righe))
-    ordd = tmp_path / "m1" / giorno
-    ordd.mkdir(parents=True)
-    with gzip.open(ordd / "stream_ordini.jsonl.gz", "wt") as fh:
-        for i in range(5):
-            fh.write(json.dumps({"epoca_ms": a + 1000 * i, "tipo": "ocm"}) + "\n")
-        fh.write(json.dumps({"epoca_ms": a + 500_000, "tipo": "ocm"}) + "\n")
-        fh.write(json.dumps({"tipo": "senza_tempo"}) + "\n")
-    d = mf.genera(giorno, salute=tmp_path / "monitor", ordini=tmp_path / "m1")
+    d = mf.genera(giorno, salute=tmp_path / "monitor")
     s = d["salute"]["servizi"][0]
     assert (s["righe"], s["n_buchi"], s["db"], s["rest"]) == (11, 1, 22, 11)
     assert s["rss_max"] == 320.0 and s["buco_max_s"] == 330.0
-    f = d["ordini"]["file"][0]
-    g = f["generi"][0]
-    assert (g["genere"], g["n"], g["n_buchi"], f["senza_tempo"]) == ("ocm", 6, 1, 1)
-    assert g["cad_p50"] == 1000.0
+    assert "| runner_calcio | 11 |" in mf.markdown(d)
+
+
+# ---------------------------------------------------------------------------
+# i file VERI di M-1 (registratore dello stream ordini e delle REST)
+# ---------------------------------------------------------------------------
+#: M-1 chiuso a questo commit del ramo ``mappa/m1-ordini`` (letto, mai toccato)
+COMMIT_M1 = "3bb418fe"
+
+
+def _modulo_da_git(percorso: str, nome: str) -> Any:
+    """Un modulo di M-1 com'e' al commit ``COMMIT_M1`` (``git show``, sola
+    lettura), compilato nel pacchetto ``Betfair.monitor``. ``None`` se git o il
+    commit non ci sono."""
+    import importlib.util
+    import subprocess
+
+    try:
+        r = subprocess.run(["git", "show", "%s:%s" % (COMMIT_M1, percorso)], cwd=str(RADICE),
+                           capture_output=True, text=True, timeout=30)
+    except Exception:  # noqa: BLE001
+        return None
+    if r.returncode != 0:
+        return None
+    spec = importlib.util.spec_from_loader(nome, loader=None)
+    mod = importlib.util.module_from_spec(spec)
+    mod.__package__ = "Betfair.monitor"
+    mod.__file__ = str(RADICE / percorso)
+    exec(compile(r.stdout, "<%s:%s>" % (COMMIT_M1, percorso), "exec"), mod.__dict__)  # noqa: S102
+    return mod
+
+
+def _modulo_m1(nome: str) -> Any:
+    """Il modulo VERO di M-1: dal pacchetto se c'e' (dopo l'unione su MASTER),
+    altrimenti dal commit ``COMMIT_M1``."""
+    import importlib
+
+    try:
+        return importlib.import_module("Betfair.monitor.%s" % nome)
+    except ImportError:
+        return _modulo_da_git("Betfair/monitor/%s.py" % nome, "_m1_%s_prova" % nome)
+
+
+def _iso_us(testo: str) -> int:
+    from datetime import datetime as _dt
+    return int(_dt.fromisoformat(testo).timestamp() * 1_000_000)
+
+
+class _OrdineFlumine:
+    """Le due chiavi che ``decisione`` di M-1 legge da un ordine flumine."""
+
+    def __init__(self, cor: str, oid: str) -> None:
+        self.customer_order_ref = cor
+        self.id = oid
+
+
+@pytest.mark.parametrize("lettore", ["m1", "assente"])
+def test_ordini_m1_scritti_dallo_scrittore_vero(tmp_path, monkeypatch, lettore):
+    """Il formato di M-1 scritto dal SUO Scrittore (commit ``COMMIT_M1``):
+    cartelle ``AAAAMMGG`` UTC, ``ep_us`` in microsecondi, ``risposta_ep_us``
+    nelle REST, ``dec`` con ``mode``. Il giorno LOCALE 2026-10-12 (Europe/Rome)
+    copre due cartelle UTC: si leggono entrambe e si tengono solo le righe
+    dentro il giorno (una REST delle 23:00 locali dell'11 sta nella cartella
+    20261011 ma NON e' del 12). Con il lettore di M-1 (``leggi_file``,
+    ``analizza_giorni``) e senza (la mappa lo dice e prosegue): stessi numeri."""
+    m1 = _modulo_m1("registratore_ordini")
+    if m1 is None:
+        pytest.skip("modulo di M-1 non disponibile (ne' nel pacchetto ne' al commit %s)"
+                    % COMMIT_M1)
+    if mf.NOME_FUSO != "Europe/Rome":
+        pytest.skip("tzdata assente: il giorno locale non e' quello di Roma")
+    if lettore == "m1":
+        ao = _modulo_m1("analisi_ordini")
+        if ao is None:
+            pytest.skip("lettore di M-1 non disponibile")
+        monkeypatch.setitem(sys.modules, "Betfair.monitor.analisi_ordini", ao)
+    else:
+        monkeypatch.setitem(sys.modules, "Betfair.monitor.analisi_ordini", None)
+    base = tmp_path / "_ordini"
+    orologio = {"ep_us": 0}
+    monkeypatch.setattr(m1, "adesso_us", lambda: (orologio["ep_us"], orologio["ep_us"]))
+    monkeypatch.setattr(m1, "giorno_utc", lambda ep_s=None: time.strftime(
+        "%Y%m%d", time.gmtime(orologio["ep_us"] / 1e6 if ep_s is None else ep_s)))
+    monkeypatch.setattr(m1, "attivo", lambda: True)
+    s = m1.Scrittore(cartella=str(base), servizio="runner_calcio", avvia_thread=False)
+    m1._azzera_per_test(s)
+    ok = {"result": {"status": "SUCCESS", "instructionReports": [{"errorCode": None}]}}
+
+    def rest(metodo: str, csr: str, invio_us: int, durata_ms: int) -> None:
+        m1.registra_rest(via="flumine", method="SportsAPING/v1.0/" + metodo,
+                         params={"marketId": "1.1", "customerStrategyRef": csr,
+                                 "instructions": [{"customerOrderRef": "r1"}]},
+                         invio=(invio_us, invio_us), risposta=(invio_us + durata_ms * 1000,
+                                                               invio_us + durata_ms * 1000),
+                         esito=ok)
+
+    try:
+        # 23:00 locali dell'11 (21:00 UTC): cartella 20261011, FUORI dal 12
+        orologio["ep_us"] = _iso_us("2026-10-11T21:00:00+00:00")
+        rest("placeOrders", "live", orologio["ep_us"], 999)
+        m1.decisione(_OrdineFlumine("r0", "o0"), {"chiave": "c0", "mode": "live"})
+        s.giro(forza_svuota=True)
+        # 00:30 locali del 12 (22:30 UTC dell'11): cartella 20261011, DENTRO
+        orologio["ep_us"] = _iso_us("2026-10-11T22:30:00+00:00")
+        for i in range(3):
+            orologio["ep_us"] += 10_000
+            s.metti_stream(1, json.dumps({"op": "ocm", "clk": "A%d" % i, "pt": 1}))
+        m1.decisione(_OrdineFlumine("r1", "o1"), {"chiave": "c1", "mode": "live"})
+        m1.decisione(_OrdineFlumine("r2", "o2"), {"chiave": "c2", "mode": "paper"})
+        rest("placeOrders", "live", orologio["ep_us"], 40)
+        s.giro(forza_svuota=True)
+        # 12:00 locali del 12 (10:00 UTC): cartella 20261012, DENTRO
+        orologio["ep_us"] = _iso_us("2026-10-12T10:00:00+00:00")
+        s.metti_stream(1, json.dumps({"op": "ocm", "clk": "B", "pt": 2}))
+        m1.decisione(_OrdineFlumine("r3", "o3"), {"chiave": "c3", "mode": "paper"})
+        rest("cancelOrders", "omega", orologio["ep_us"], 30)
+        s.giro(forza_svuota=True)
+    finally:
+        s.chiudi()
+        m1._azzera_per_test(None)
+    assert sorted(p.name for p in base.iterdir()) == ["20261011", "20261012"]
+
+    d = mf.genera("2026-10-12", ordini=base)
+    o = d["ordini"]
+    assert o["mancante"] is None and o["cartelle_utc"] == ["20261011", "20261012"]
+    assert len(o["file"]) == 2
+    rest_tab = {(r["metodo"], r["attore"]): r for r in o["rest"]}
+    assert set(rest_tab) == {("placeOrders", "desktop"), ("cancelOrders", "bot:omega")}
+    assert (rest_tab[("placeOrders", "desktop")]["n"],
+            rest_tab[("placeOrders", "desktop")]["p50"]) == (1, 40.0), \
+        "la REST delle 23:00 dell'11 e' stata contata nel 12, o la durata e' sbagliata"
+    assert rest_tab[("cancelOrders", "bot:omega")]["p50"] == 30.0
+    generi: Dict[str, int] = {}
+    for f in o["file"]:
+        for g in f["generi"]:
+            generi[g["genere"]] = generi.get(g["genere"], 0) + g["n"]
+    assert generi["stream"] == 4 and generi["rest"] == 2
+    assert (generi["dec:live"], generi["dec:paper"]) == (1, 2), "decisioni paper e live sommate"
+    assert all(f["chiuso"] for f in o["file"])
     testo = mf.markdown(d)
-    assert "| runner_calcio | 11 |" in testo and "M-1 stream_ordini.jsonl.gz/ocm" in testo
+    assert "| placeOrders | desktop | 1 | 0 | 40.0 |" in testo
+    assert "20261011, 20261012" in testo
+    if lettore == "m1":
+        assert o["lettore"] == "M-1"
+        assert o["referto_m1"] and "REGISTRO ORDINI" in o["referto_m1"]
+        assert "4.3 Referto del lettore di M-1" in testo
+    else:
+        assert o["referto_m1"] is None
+        assert "ordini: lettore M-1 assente" in testo
+
+
+def test_comando_della_ui_verso_la_rest():
+    """Latenza UI -> REST: il comando LIVE si accoppia alla prima REST del
+    desktop dello stesso metodo dopo di lui; il paper non va a Betfair."""
+    t = 1_000_000.0
+    ui = [{"epoca_ms": t, "azione": "place", "modo": "live"},
+          {"epoca_ms": t + 1, "azione": "place", "modo": "paper"},
+          {"epoca_ms": t + 100, "azione": "cancel", "modo": "live"}]
+    rest = [{"invio_ms": t - 50, "risposta_ms": t - 10, "metodo": "placeOrders",
+             "attore": "desktop"},
+            {"invio_ms": t + 5, "risposta_ms": t + 45, "metodo": "placeOrders",
+             "attore": "desktop"},
+            {"invio_ms": t + 110, "risposta_ms": t + 160, "metodo": "cancelOrders",
+             "attore": "bot:omega"}]
+    tab = {r["metodo"]: r for r in mf.ui_verso_rest(ui, rest)["tabella"]}
+    assert (tab["placeOrders"]["comandi"], tab["placeOrders"]["accoppiati"]) == (1, 1)
+    assert tab["placeOrders"]["risposta_p50"] == 45.0 and tab["placeOrders"]["invio_p50"] == 5.0
+    assert (tab["cancelOrders"]["comandi"], tab["cancelOrders"]["accoppiati"]) == (1, 0), \
+        "una REST di un bot non e' l'esito di un comando della UI"
+
+
+def test_cartelle_utc_del_giorno_locale():
+    if mf.NOME_FUSO != "Europe/Rome":
+        pytest.skip("tzdata assente")
+    assert mf.cartelle_utc("2026-10-12") == ["20261011", "20261012"]
+    assert mf.cartelle_utc("2026-07-01") == ["20260630", "20260701"]
 
 
 def test_referto_riproducibile_e_cli(tmp_path):
