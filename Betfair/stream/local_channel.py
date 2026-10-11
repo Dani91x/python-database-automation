@@ -429,6 +429,12 @@ class LocalChannel:
                         pass
                 self._send(ws, {"id": msg_id, "ok": cb is not None})
                 return
+            if method == _mon.METODO_PAGINA and _mon.ATTIVO:
+                # 11/10 (M-2 "Salute"): il riassunto delle misure della PAGINA (ladder
+                # a schermo). Sola misura: mai in coda, nessun token, nessun ordine.
+                # Monitor spento: si prosegue come prima ("metodo sconosciuto").
+                self._send(ws, _mon.misure_pagina(msg_id, msg.get("p")))
+                return
             if self.solo_lettura:
                 self._send(ws, {"id": msg_id, "ok": False,
                                 "e": "canale di sola lettura: nessun comando accettato"})
@@ -693,7 +699,10 @@ class LocalChannel:
                                self._in_volo, self.port)
             return
         try:
-            text = json.dumps({"t": topic, "d": payload}, default=str)
+            # 11/10 (M-2 "Salute"): a monitor acceso la BUSTA porta ``ts`` (istante
+            # della pubblicazione, per la latenza canale -> lettore); spento: identica
+            text = json.dumps(_mon.busta(topic, payload) if _mon.ATTIVO else {"t": topic, "d": payload},
+                              default=str)
         except Exception as ex:  # noqa: BLE001 - payload non serializzabile: dichiara nel log
             logger.warning("[local-ws] publish %s non serializzabile: %s", topic, str(ex)[:120])
             return

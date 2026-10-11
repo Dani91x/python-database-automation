@@ -7,19 +7,25 @@
    risposte requests dell'APIClient Betfair (hook della sessione), record di log che le librerie GIA' scrivono
    (`flumine.baseflumine`, `flumine.execution`, `betfairlightweight.streaming.listener`, `flumine.streams`,
    ERROR/CRITICAL alla radice), marche dei punti d'aggancio (`marca_ladder`, `marca_emesso`, `ricevuto_ms`,
-   `drenate`, `tratto("diario_fsync_ms")`).
+   `drenate`, `tratto("diario_fsync_ms")`). M-2 (11/10): righe `tempi_ordine` (handler su
+   `Betfair.stream.tempi_ordine`), `connection_id` di betfairlightweight, "Starting/Stopped <Stream>" di flumine,
+   `elapsed_seconds` del pacchetto in `execute_place`, busta del canale (`busta`, `ricevuto_canale`), riassunto
+   della pagina (richiesta `salute` sul canale gia' aperto, `misure_pagina`), `emesso_ms` del clic nell'`order`.
 3. **Uscite**: riga `monitor_metrics` (colonne della migrazione `migrations/monitor_metrics_2026-10-09.sql`,
    `metriche` jsonb v=1: `processo`, `contatori`, `tratti`, `valori`, ogni 10 minuti `sistema`); copia locale
    `_logs/monitor/<giorno>/<servizio>.jsonl`; referto `AUDIT_MONITOR/REFERTO_SALUTE_<giorno>.md|.json`; marche
-   additive `rx` (raw), `ts_pub_ms`/`pt` (ladder del canale), `emesso_ms` (params della coda), `ricevuto_ms`
-   (LocalRequest). Nessuno le legge per decidere.
+   additive `rx` (raw), `ts_pub_ms`/`pt`/`rx_ms` (ladder del canale, calcio e tennis), `ts` (busta dei push del
+   canale), `emesso_ms` (params della coda; `order` della pagina), `ricevuto_ms` (LocalRequest). Nessuno le
+   legge per decidere. Referto: sezione M1/M2 (`misure_m2`, p50/p95/p99 per sport, attore, strada e modo).
 4. **Dipendenze ammesse**: libreria standard, `psutil` facoltativo (requirements: 7.2.2; senza si degrada e lo si
    dichiara), `db_client` solo nello scrittore e nel referto (import pigro). MAI flumine, betfairlightweight o
    moduli dei bot all'import: importare `Betfair.monitor` non cambia niente nel processo.
 5. **Funzionalita' coperte**: C-053 (tempi d'ordine: `emesso_ms` per `decisione_ms`, lettura con
    `leggi_tempi_ordine` nel referto), G-045 (vitalita' dei raccoglitori: RPC `monitor_vitalita_raccoglitori`).
    Test: `tests/test_monitor_salute_2026_10_09.py`, `tests/test_monitor_agganci_2026_10_09.py`,
-   `tests/test_monitor_referto_2026_10_09.py`; frontend `src/lib/salute.test.ts`, `src/pages/Salute.test.tsx`.
+   `tests/test_monitor_referto_2026_10_09.py`, `tests/test_monitor_m2_misure_2026_10_11.py` (M-2); frontend
+   `src/lib/salute.test.ts`, `src/pages/Salute.test.tsx`, `src/lib/misuraSchermo.test.ts` (M-2). Mappa delle
+   misure M-2: `ARCHITETTURA_2026-10/mappa/M2_MISURE.md`.
 6. **Interruttore**: `MONITOR_SALUTE=0|1`, di serie 0. Acceso solo se =1 E il `main` del servizio chiama
    `sonde.avvia(...)` E nel processo non c'e' il banco (`Betfair.stream.backtest*`) E non gira pytest. Spento =
    nessun campo, nessuna scrittura, nessun thread, nessun handler. `MONITOR_SALUTE_SEC` = intervallo (30).

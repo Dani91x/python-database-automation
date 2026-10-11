@@ -23,6 +23,8 @@
 // ciascuno il proprio `LocalSport`.
 // ============================================================================
 import { isBotTennis, type Bot } from '@/lib/controlRoom';
+// 11/10 (M-2 "Salute"): arrivo del push 'ladder' per la misura a schermo (spenta di serie)
+import { misuraAccesa, notaArrivoLadder } from '@/lib/misuraSchermo';
 
 // Ogni canale ha il SUO processo e la SUA porta. Non è una duplicazione: i
 // canali dei runner (calcio, tennis) ACCETTANO COMANDI ORDINE, quelli dei bot
@@ -287,6 +289,7 @@ export class LocalChannel {
         if (topic === 'hello') {
             this.hello = (msg.d && typeof msg.d === 'object' ? msg.d : {}) as LocalHello;
         }
+        if (topic === 'ladder' && misuraAccesa()) notaArrivoLadder(this, msg.d);
         const set = this.topics.get(topic);
         if (!set) return;
         for (const cb of set) {

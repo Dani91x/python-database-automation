@@ -46,6 +46,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from Betfair.safe_strategy.exits import FEED_FRESH_S, parse_ts
 from Betfair.stream.canale_bot import VALORI_ACCESI, acceso
+from Betfair.monitor import sonde as _mon  # 11/10 (M-2 "Salute"): spento di serie
 
 logger = logging.getLogger("safe.bot.canale_scan")
 
@@ -439,6 +440,8 @@ class ClientScan:
             return False
         if not isinstance(msg, dict):
             return False
+        if _mon.ATTIVO:  # 11/10 (M-2): latenza canale -> bot (``ts`` della busta)
+            _mon.ricevuto_canale(msg)
         if msg.get("t") == TOPIC_SCANNER_STATO:
             # il battito dello scanner: si annota QUANDO e' arrivato (lo
             # scanner lo emette ogni ``_STATUS_PERIOD_SEC``) e basta. Non e' una

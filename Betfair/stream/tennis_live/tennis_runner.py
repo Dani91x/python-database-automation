@@ -84,6 +84,7 @@ from ..tennis_scalper.tennis_winprob import estimate_holds, p_match
 from ..runner_lifecycle import EXIT_PLANNED_RESTART
 from ..scores.betfair_inplay import BetfairInPlayProvider
 from ..scores.scan_feed import ScanFeedScoreProvider
+from ...monitor import sonde as _mon  # 11/10 (M-2 "Salute"): spento di serie
 from . import auto_mode as _AM
 from . import canale_bot_tennis as _CBT
 from . import chiusura_manuale as _cm
@@ -1505,7 +1506,9 @@ def ladder_worker(context: dict, flumine: Any, session: TennisLiveSession) -> No
                 "ladder": payload,
             }
             if al_canale:
-                _lc.publish("ladder", row)
+                # 11/10 (M-2): come il calcio, a monitor acceso il CANALE riceve una
+                # copia con ``ts_pub_ms``/``pt``/``rx_ms``; la riga del DB resta questa
+                _lc.publish("ladder", _mon.marca_ladder(row, book) if _mon.ATTIVO else row)
                 st.segna_canale(mid, sig)
             if not al_db:
                 continue

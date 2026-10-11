@@ -35,6 +35,8 @@ BORDI_MS: tuple = (0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0,
 #: impazzite, per esempio un percorso REST con un id dentro)
 MAX_CHIAVI = 200
 ALTRO = "_altro"
+#: M-2 (11/10): dove si contano le chiavi scartate per il tetto
+GRUPPO_SCARTATI = "registro_scartati"
 
 
 class Istogramma:
@@ -144,9 +146,32 @@ class Registro:
             h = self._tratti.get(nome)
             if h is None:
                 if len(self._tratti) >= MAX_CHIAVI:
+                    self._scartata("tratti")
                     return
                 h = self._tratti[nome] = Istogramma()
             h.aggiungi(ms)
+
+    def fondi(self, nome: str, n: int, somma: float, minimo: Optional[float],
+              massimo: Optional[float], secchi: List[int]) -> None:
+        """M-2 (11/10): somma secchio per secchio un riassunto GIA' VALIDATO
+        (stessi bordi) nell'istogramma ``nome`` della finestra. Lo usa la misura
+        della pagina (``sonde.misure_pagina``): la pagina misura nel suo processo
+        e manda il riassunto, il registro lo fonde come se l'avesse misurato qui."""
+        with self._lock:
+            h = self._tratti.get(nome)
+            if h is None:
+                if len(self._tratti) >= MAX_CHIAVI:
+                    self._scartata("tratti")
+                    return
+                h = self._tratti[nome] = Istogramma()
+            h.n += int(n)
+            h.somma += float(somma)
+            if minimo is not None and (h.minimo is None or minimo < h.minimo):
+                h.minimo = float(minimo)
+            if massimo is not None and (h.massimo is None or massimo > h.massimo):
+                h.massimo = float(massimo)
+            for i, c in enumerate(secchi):
+                h.secchi[i] += int(c)
 
     def valore(self, gruppo: str, chiave: str, v: Any) -> None:
         with self._lock:
@@ -154,8 +179,20 @@ class Registro:
             if g is None:
                 g = self._valori[gruppo] = {}
             if chiave not in g and len(g) >= MAX_CHIAVI:
+                self._scartata("valori." + gruppo[:40])
                 return
             g[chiave] = v
+
+    def _scartata(self, dove: str) -> None:
+        """M-2 (revisione 11/10): una chiave oltre ``MAX_CHIAVI`` non sparisce in
+        silenzio: si conta in ``contatori.registro_scartati.<dove>`` (sotto il
+        lucchetto gia' preso dal chiamante; il gruppo ha a sua volta il tetto)."""
+        g = self._contatori.get(GRUPPO_SCARTATI)
+        if g is None:
+            g = self._contatori[GRUPPO_SCARTATI] = {}
+        if dove not in g and len(g) >= MAX_CHIAVI:
+            dove = ALTRO
+        g[dove] = g.get(dove, 0) + 1
 
     # ---------------------------------------------------------------- lettura
     def fotografa_e_azzera(self) -> Dict[str, Any]:
