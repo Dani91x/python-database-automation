@@ -245,8 +245,10 @@ def aggrega_servizio(righe: List[Dict[str, Any]]) -> Dict[str, Any]:
         "log_errori_top": sorted(((k, int(v)) for k, v in (cont.get("log_errori") or {}).items()),
                                  key=lambda x: (-x[1], x[0]))[:10],
         "stream": {g: {k: int(v) for k, v in sorted((cont.get(g) or {}).items())}
-                   for g in ("stream_msg", "stream_status", "stream_status_log", "stream_avvii")
+                   for g in ("stream_msg", "stream_ocm", "stream_status", "stream_status_log",
+                             "stream_avvii", "stream_arresti", "stream_connessioni")
                    if cont.get(g)},
+        "stream_aperti": valori.get("stream_aperti") or {},
         "connessioni_disponibili": valori.get("connessioni_disponibili") or {},
         "connessioni_disponibili_log": valori.get("connessioni_disponibili_log") or {},
         "tratti": {k: somma_riassunti(v) for k, v in sorted(tratti.items())},
@@ -297,6 +299,121 @@ def stima_orologio(righe: List[Dict[str, Any]]) -> Optional[float]:
                 v = float(t["min"])
                 mn = v if mn is None else min(mn, v)
     return None if mn is None else round(mn, 1)
+
+
+# ---------------------------------------------------------------------------
+# M-2 (11/10/2026): misure della mappatura dei flussi (ARCHITETTURA_2026-10/mappa/M2_MISURE.md)
+# ---------------------------------------------------------------------------
+#: i tratti di M1 (messaggio Betfair -> ladder a schermo), nell'ordine del percorso
+TRATTI_M1 = ("feed_rx_pt_ms.", "ladder_pub_pt_ms", "ladder_rx_pub_ms", "pagina_canale_ms",
+             "pagina_dipinto_ms", "pagina_pub_dipinto_ms", "pagina_rx_dipinto_ms",
+             "pagina_pt_dipinto_ms")
+#: i tratti di M2 con chiave ``<prefisso>.<attore>.<strada>.<modo>``
+TRATTI_M2 = ("decisione_invio_ms", "invio_presa_ms", "presa_place_ms", "place_risposta_ms",
+             "decisione_risposta_ms")
+#: chi decide gli ordini piazzati DENTRO un processo (pacchetto di flumine)
+ATTORE_DEL_PROCESSO = {"scalper-sessioni": "scalper", "runner-tennis": "tennis-processo",
+                       "runner-calcio": "calcio-processo"}
+
+
+def _riga_tratto(base: Dict[str, Any], t: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(base)
+    out.update({k: t.get(k) for k in ("n", "min", "p50", "p95", "p99", "max")})
+    return out
+
+
+def misure_m2(righe: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """M1 per sport, M2 per sport/attore/strada/modo (paper e live MAI sommati,
+    calcio e tennis MAI mischiati), latenza del canale per servizio e topic,
+    messaggi mcm/ocm al secondo, stream aperti, peso REST. Pura."""
+    m1: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    m2: Dict[Tuple[str, str, str, str, str], List[Dict[str, Any]]] = {}
+    canale: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    peso_ist: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    peso_tot: Dict[Tuple[str, str], float] = {}
+    richieste: Dict[Tuple[str, str], float] = {}
+    oltre: Dict[Tuple[str, str], float] = {}
+    al_s: Dict[Tuple[str, str, str], List[float]] = {}
+    tot_msg: Dict[Tuple[str, str, str], float] = {}
+    aperti: Dict[str, Dict[str, Any]] = {}
+    conn: Dict[str, float] = {}
+    for r in sorted(righe, key=lambda x: (str(x.get("servizio")), str(x.get("ts")))):
+        sport = str(r.get("sport") or "?")
+        serv = gruppo_servizio(r.get("servizio"))
+        m = r.get("metriche") or {}
+        fin = float(_num(m.get("finestra_s")) or 0.0)
+        cont = m.get("contatori") or {}
+        for nome, t in (m.get("tratti") or {}).items():
+            if not isinstance(t, dict):
+                continue
+            if any(nome.startswith(x) for x in TRATTI_M1):
+                m1.setdefault((sport, nome), []).append(t)
+                continue
+            parti = nome.split(".")
+            if parti[0] in TRATTI_M2 and len(parti) == 4:
+                m2.setdefault((sport, parti[1], parti[2], parti[3], parti[0]), []).append(t)
+            elif parti[0] in ("clic_canale_ms", "clic_presa_ms") and len(parti) == 2:
+                m2.setdefault((sport, "desktop", "canale", parti[1], parti[0]), []).append(t)
+            elif nome == "pacchetto_risposta_ms":
+                att = ATTORE_DEL_PROCESSO.get(serv, serv)
+                m2.setdefault((sport, att, "processo", "live", nome), []).append(t)
+            elif parti[0] == "canale_ricezione_ms" and len(parti) == 2:
+                canale.setdefault((serv, parti[1]), []).append(t)
+            elif parti[0] == "rest_peso" and len(parti) == 2:
+                peso_ist.setdefault((serv, parti[1]), []).append(t)
+        for k, v in (cont.get("betfair_rest_peso") or {}).items():
+            peso_tot[(serv, k)] = peso_tot.get((serv, k), 0.0) + float(_num(v) or 0.0)
+        for k, v in (cont.get("betfair_rest") or {}).items():
+            richieste[(serv, k)] = richieste.get((serv, k), 0.0) + float(_num(v) or 0.0)
+        for k, v in (cont.get("betfair_rest_oltre_peso") or {}).items():
+            oltre[(serv, k)] = oltre.get((serv, k), 0.0) + float(_num(v) or 0.0)
+        for gruppo, tipo in (("stream_msg", "mcm"), ("stream_ocm", "ocm")):
+            for sorg, v in (cont.get(gruppo) or {}).items():
+                chiave = (serv, str(sorg), tipo)
+                tot_msg[chiave] = tot_msg.get(chiave, 0.0) + float(_num(v) or 0.0)
+                if fin > 0:
+                    al_s.setdefault(chiave, []).append(float(_num(v) or 0.0) / fin)
+        val = m.get("valori") or {}
+        if isinstance(val.get("stream_aperti"), dict):
+            aperti[serv] = dict(val["stream_aperti"])
+        c = (cont.get("stream_connessioni") or {}).get("aperte")
+        if c is not None:
+            conn[serv] = conn.get(serv, 0.0) + float(_num(c) or 0.0)
+    out_m1 = [_riga_tratto({"sport": s, "tratto": n}, somma_riassunti(v))
+              for (s, n), v in sorted(m1.items(), key=lambda kv: (kv[0][0], _ordine_m1(kv[0][1]),
+                                                                   kv[0][1]))]
+    out_m2 = [_riga_tratto({"sport": s, "attore": a, "strada": st, "modo": mo, "tratto": t},
+                           somma_riassunti(v))
+              for (s, a, st, mo, t), v in sorted(m2.items())]
+    out_canale = [_riga_tratto({"servizio": sv, "topic": tp}, somma_riassunti(v))
+                  for (sv, tp), v in sorted(canale.items())]
+    out_stream = []
+    for (sv, sorg, tipo), xs in sorted(al_s.items()):
+        out_stream.append({"servizio": sv, "sorgente": sorg, "tipo": tipo,
+                           "messaggi": int(tot_msg.get((sv, sorg, tipo), 0)),
+                           "al_s_p50": _p(xs, 0.5), "al_s_p95": _p(xs, 0.95),
+                           "al_s_max": round(max(xs), 2) if xs else None})
+    out_peso = []
+    for (sv, met) in sorted(set(peso_tot) | set(peso_ist)):
+        t = somma_riassunti(peso_ist.get((sv, met), []))
+        n_ric = richieste.get((sv, met), 0.0)
+        out_peso.append({"servizio": sv, "metodo": met, "richieste": int(n_ric),
+                         "punti": round(peso_tot.get((sv, met), 0.0), 2),
+                         "punti_medi": (round(peso_tot.get((sv, met), 0.0) / n_ric, 2)
+                                        if n_ric > 0 else None),
+                         "p95": t.get("p95"), "max": t.get("max"),
+                         "oltre_200": int(oltre.get((sv, met), 0))})
+    return {"m1": out_m1, "m2": out_m2, "canale": out_canale, "stream": out_stream,
+            "stream_aperti": dict(sorted(aperti.items())),
+            "connessioni_aperte": {k: int(v) for k, v in sorted(conn.items())},
+            "rest_peso": out_peso}
+
+
+def _ordine_m1(nome: str) -> int:
+    for i, pref in enumerate(TRATTI_M1):
+        if nome.startswith(pref):
+            return i
+    return len(TRATTI_M1)
 
 
 # ---------------------------------------------------------------------------
@@ -550,6 +667,7 @@ def costruisci(giorno: str, righe: List[Dict[str, Any]], *, fonte: str,
         "transazioni_per_ora": tx_ore,
         "orologio_limite_superiore_ms": orologio,
         "versioni_fuori_pin": sorted(set(versioni_fuori)),
+        "misure_m2": misure_m2(righe),
         **{k: v for k, v in sorted(extra.items())},
     }
 
@@ -567,6 +685,23 @@ _TRATTI_SPIEGATI = (
     ("db_ms", "PostgREST richiesta -> intestazioni di risposta"),
     ("rest_ms.", "REST Betfair per metodo (sessione dell'APIClient)"),
     ("monitor_giro_ms", "costo del giro dello scrittore (fuori dal ciclo caldo)"),
+    ("ladder_rx_pub_ms", "M1 b arrivo nel processo -> ladder pubblicato (orologio del PC)"),
+    ("pagina_canale_ms", "M1 c ladder pubblicato -> arrivo nella pagina (orologio del PC)"),
+    ("pagina_dipinto_ms", "M1 d arrivo nella pagina -> primo frame dopo il commit"),
+    ("pagina_rx_dipinto_ms", "M1 arrivo nel processo -> frame a schermo (orologio del PC)"),
+    ("pagina_pt_dipinto_ms", "M1 pt di Betfair -> frame a schermo (include lo scarto)"),
+    ("pagina_pub_dipinto_ms", "M1 ladder pubblicato -> frame a schermo"),
+    ("decisione_invio_ms.", "M2 decisione -> invio (attore.strada.modo)"),
+    ("invio_presa_ms.", "M2 invio -> presa del worker"),
+    ("presa_place_ms.", "M2 presa -> place_order (interno)"),
+    ("place_risposta_ms.", "M2 place_order -> risposta di placeOrders"),
+    ("decisione_risposta_ms.", "M2 decisione -> risposta di placeOrders (somma dei quattro)"),
+    ("clic_canale_ms.", "M2 clic della pagina -> arrivo sul canale"),
+    ("clic_presa_ms.", "M2 clic della pagina -> presa del worker"),
+    ("pacchetto_risposta_ms", "M2 pacchetto flumine creato -> risposta di placeOrders (live)"),
+    ("canale_ricezione_ms.", "canale locale: pubblicazione -> ricezione nel bot (per topic)"),
+    ("ordini_rx_pt_ms.", "stream ordini: pt -> ricezione (orologi diversi)"),
+    ("rest_peso.", "peso della richiesta REST in PUNTI Betfair (tetto 200), non ms"),
 )
 
 
@@ -644,6 +779,7 @@ def markdown(r: Dict[str, Any]) -> str:
         a(f"| {k} | {t['n']} | {_f(t['min'])} | {_f(t['p50'])} | {_f(t['p95'])} | {_f(t['p99'])} | "
           f"{_f(t['max'])} | {_spiega(k)} |")
     a("")
+    _markdown_m2(r.get("misure_m2") or {}, a)
     a("## Transazioni Betfair per ora (tutti i processi: il limite e' del conto)")
     a("")
     a(", ".join(f"{h} {n}" for h, n in r["transazioni_per_ora"].items()) or "nessuna esecuzione vera")
@@ -684,6 +820,48 @@ def markdown(r: Dict[str, Any]) -> str:
         a("```")
     a("")
     return "\n".join(L)
+
+
+def _markdown_m2(x: Dict[str, Any], a: Any) -> None:
+    """La sezione M-2 del referto (p50/p95/p99 al bordo del secchio)."""
+    a("## M1 - messaggio Betfair -> ladder a schermo, per sport")
+    a("")
+    if x.get("m1"):
+        a("| Sport | Tratto | n | min | p50 | p95 | p99 | max | Cosa misura |")
+        a("|---|---|---:|---:|---:|---:|---:|---:|---|")
+        for t in x["m1"]:
+            a(f"| {t['sport']} | {t['tratto']} | {t['n']} | {_f(t['min'])} | {_f(t['p50'])} | "
+              f"{_f(t['p95'])} | {_f(t['p99'])} | {_f(t['max'])} | {_spiega(t['tratto'])} |")
+    else:
+        a("- nessuna misura (monitor spento o nessun ladder aperto)")
+    a("")
+    a("## M2 - decisione -> risposta di placeOrders, per sport, attore, strada e modo (paper e live separati)")
+    a("")
+    if x.get("m2"):
+        a("| Sport | Attore | Strada | Modo | Tratto | n | min | p50 | p95 | p99 | max |")
+        a("|---|---|---|---|---|---:|---:|---:|---:|---:|---:|")
+        for t in x["m2"]:
+            a(f"| {t['sport']} | {t['attore']} | {t['strada']} | {t['modo']} | {t['tratto']} | {t['n']} | "
+              f"{_f(t['min'])} | {_f(t['p50'])} | {_f(t['p95'])} | {_f(t['p99'])} | {_f(t['max'])} |")
+    else:
+        a("- nessun ordine misurato")
+    a("")
+    a("## Canale locale, stream e REST (M-2)")
+    a("")
+    for t in x.get("canale") or []:
+        a(f"- canale {t['servizio']} topic {t['topic']}: n {t['n']}, p50 {_f(t['p50'])}, p95 {_f(t['p95'])}, "
+          f"p99 {_f(t['p99'])}, max {_f(t['max'])} ms (pubblicazione -> ricezione)")
+    for t in x.get("stream") or []:
+        a(f"- stream {t['servizio']} {t['sorgente']} {t['tipo']}: {t['messaggi']} messaggi, al secondo "
+          f"p50 {_f(t['al_s_p50'])}, p95 {_f(t['al_s_p95'])}, max {_f(t['al_s_max'])}")
+    for sv, d in (x.get("stream_aperti") or {}).items():
+        a(f"- stream aperti {sv} (ultimo valore): {json.dumps(d, sort_keys=True)}")
+    for sv, n in (x.get("connessioni_aperte") or {}).items():
+        a(f"- connessioni allo Stream API aperte nel giorno {sv}: {n}")
+    for t in x.get("rest_peso") or []:
+        a(f"- peso REST {t['servizio']} {t['metodo']}: {t['richieste']} richieste, {_f(t['punti'])} punti "
+          f"(medi {_f(t['punti_medi'])}, p95 {_f(t['p95'])}, max {_f(t['max'])}, oltre 200: {t['oltre_200']})")
+    a("")
 
 
 def scrivi(r: Dict[str, Any], uscita: Path) -> Tuple[Path, Path]:

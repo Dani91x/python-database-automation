@@ -37,6 +37,7 @@ import {
     Keyboard, ExternalLink, Timer, Target, Wand2, Repeat, Trash2,
 } from 'lucide-react';
 import { roundToTick, tickUp, tickDown } from '@/lib/matching';
+import { useMisuraDipinto } from '@/lib/misuraSchermo'; // 11/10 (M-2): misura a schermo, spenta di serie
 import {
     lockedPnlAt, piqAhead, windowAround, flashDir, stepStake, nextPreset,
 } from '@/lib/ladderMath';
@@ -1526,6 +1527,7 @@ export function LadderView({
     popout, multiSlot, signals = null, flussoRunner = true, botReplay,
 }: Props) {
     const [row, setRow] = useState<LiveLadderRow | null>(null);
+    useMisuraDipinto(marketId, row); // 11/10 (M-2 "Salute"): frame che dipinge il push del canale
     const [loading, setLoading] = useState(true);
     const [orders, setOrders] = useState<LiveOrderRow[]>([]);
     const [positions, setPositions] = useState<LivePositionRow[]>([]);

@@ -29,6 +29,7 @@ import {
     getLocalChannel,
     type LocalChannel, type LocalSport, type LocalStatus,
 } from '@/lib/localChannel';
+import { misuraAccesa } from '@/lib/misuraSchermo';
 
 // ---------------------------------------------------------------- store per-sport
 // Cache alimentate dai push del canale: ultimo ladder per market, specchi ordini/
@@ -435,6 +436,10 @@ export function localOrderApi(sport: LocalSport, dbApi: LadderOrderApi): LadderO
     const connected = () => store.channel.getStatus() === 'connected';
 
     const send = async (cmd: LiveOrderCommand): Promise<LiveOrderResult> => {
+        // 11/10 (M-2 "Salute"): istante del CLIC (la pagina decide di mandare il
+        // comando), preso PER PRIMO; viaggia col comando solo sul canale e solo a
+        // monitor acceso (campo additivo: il runner lo legge per la misura, mai per decidere)
+        const emessoMs = Date.now();
         // C1 (24/09): senza il token dell'app il canale rifiuterebbe il comando
         // (e chiuderebbe la connessione): l'ordine va sulla coda DB, PRIMA di
         // qualunque invio, come quando il canale e' giu'.
@@ -445,6 +450,7 @@ export function localOrderApi(sport: LocalSport, dbApi: LadderOrderApi): LadderO
         const res = await store.channel.request('order', {
             ...(cmd as unknown as Record<string, unknown>),
             client_ref: crypto.randomUUID(),
+            ...(misuraAccesa() ? { emesso_ms: emessoMs } : {}),
         });
         // esito APPLICATIVO presente → RITORNATO così com'è (anche ok:false), come il path DB.
         if (res.d != null) return res.d as LiveOrderResult;

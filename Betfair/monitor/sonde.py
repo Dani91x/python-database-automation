@@ -21,20 +21,32 @@ canale, ``emesso_ms`` nei ``params`` della coda, ``ricevuto_ms`` del canale):
 nessuno le legge per decidere. Le legge solo la misura (``tempi_ordine.py``
 legge ``emesso_ms`` per il tratto ``decisione_ms``, come previsto da F0).
 
+M-2 (11/10/2026, mappatura dei flussi, ``ARCHITETTURA_2026-10/mappa/M2_MISURE.md``):
+stesse regole, misure in piu'. ``rx_ms`` nel ladder del canale (arrivo nel processo
+del messaggio con quel ``pt``), ``ts`` nella BUSTA dei push del canale (``busta``) e
+la sua lettura nei bot (``ricevuto_canale``), il riassunto della pagina (richiesta
+``salute`` sul canale gia' aperto: ``misure_pagina``), il clic della pagina
+(``emesso_ms`` nell'``order``, letto da ``drenate``), le righe ``tempi_ordine`` per
+attore (handler di log), messaggi ``ocm``, stream aperti, connessioni allo Stream
+API, peso delle richieste REST, pacchetto -> risposta di placeOrders.
+
 Ogni funzione pubblica e' best-effort: NON solleva MAI verso il chiamante.
 ASCII-only; commenti in italiano.
 """
 from __future__ import annotations
 
+import json
 import logging
+import math
 import os
 import re
 import sys
 import threading
 import time
+from collections import OrderedDict
 from typing import Any, Dict, Optional
 
-from .registro import Registro
+from .registro import BORDI_MS, Registro
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +114,7 @@ def avvia(servizio: str, sport: Optional[str] = None, *, scrittore: bool = True,
             _STATO.update({"servizio": str(servizio)[:80], "sport": sport,
                            "avvio_ms": int(time.time() * 1000), "pid": os.getpid()})
             REGISTRO.azzera_tutto()
+            _azzera_stato_m2()
             _installa_gestori_log()
             ATTIVO = True
         if scrittore:
@@ -130,6 +143,7 @@ def ferma(attesa_s: float = 2.0) -> None:
         with _LOCK:
             ATTIVO = False
             _togli_gestori_log()
+            _azzera_stato_m2()
             _STATO.update({"scrittore": None, "servizio": None, "sport": None,
                            "avvio_ms": None, "pid": None})
     except Exception:  # noqa: BLE001
@@ -191,8 +205,39 @@ def drenate(richieste: Any) -> None:
             ric = getattr(r, "ricevuto_ms", 0) or 0
             if ric > 0:
                 REGISTRO.tratto("canale_coda_ms", adesso - float(ric))
+            _clic_del_desktop(r, float(ric), adesso)
     except Exception:  # noqa: BLE001
         pass
+
+
+def _clic_del_desktop(r: Any, ric: float, adesso: float) -> None:
+    """M-2 (11/10): un ``order`` della pagina che porta ``emesso_ms`` (istante in
+    cui la pagina ha deciso di mandare il comando, ``Date.now()`` del renderer:
+    stesso orologio di sistema del processo) da' il tratto M2 del CLIC:
+    ``clic_canale_ms`` (clic -> arrivo sul canale) e ``clic_presa_ms`` (clic ->
+    drenaggio del worker). Paper e live in chiavi separate, mai sommati."""
+    if str(getattr(r, "method", "")) != "order":
+        return
+    p = getattr(r, "params", None)
+    em = p.get("emesso_ms") if isinstance(p, dict) else None
+    if not _numero_positivo(em):
+        return
+    modo = _modo(p.get("mode"))
+    REGISTRO.conta("ordini_emessi", "desktop")
+    if ric > 0:
+        REGISTRO.tratto("clic_canale_ms." + modo, ric - float(em))
+    REGISTRO.tratto("clic_presa_ms." + modo, adesso - float(em))
+
+
+def _numero_positivo(v: Any) -> bool:
+    return (isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+            and v > 0)
+
+
+def _modo(v: Any) -> str:
+    """``paper`` | ``live`` | ``?``: la chiave che tiene separate le due modalita'."""
+    s = str(v or "").strip().lower()
+    return s if s in ("paper", "live") else "?"
 
 
 def marca_ladder(row: Dict[str, Any], book: Any) -> Dict[str, Any]:
@@ -203,13 +248,22 @@ def marca_ladder(row: Dict[str, Any], book: Any) -> Dict[str, Any]:
     if not ATTIVO:
         return row
     try:
-        ts = int(time.time() * 1000)
+        ora = time.time() * 1000.0
+        ts = int(ora)
         out = dict(row)
         out["ts_pub_ms"] = ts
         pt = book.get("pt") if isinstance(book, dict) else None
         if isinstance(pt, (int, float)) and not isinstance(pt, bool) and pt > 0:
             out["pt"] = int(pt)
             REGISTRO.tratto("ladder_pub_pt_ms", ts - float(pt))
+            # M-2 (11/10): ``rx_ms`` = arrivo nel processo del messaggio che ha
+            # prodotto questo book (stesso ``pt``): arrivo -> pubblicazione sullo
+            # STESSO orologio del PC (tratto b di M1), e la pagina misura
+            # ``rx -> pixel`` senza lo scarto con Betfair
+            rx = rx_di_pt(pt)
+            if rx is not None:
+                out["rx_ms"] = int(rx)
+                REGISTRO.tratto("ladder_rx_pub_ms", ora - rx)
         REGISTRO.conta("ladder", "pubblicati_canale")
         return out
     except Exception:  # noqa: BLE001
@@ -257,6 +311,15 @@ def osserva_stream(sorgente: str, raw_data: Any) -> None:
                 # il MINIMO di finestra di questo tratto e' il limite superiore
                 # dello scarto dell'orologio del PC (scarto + latenza minima)
                 REGISTRO.tratto("feed_rx_pt_ms." + sorgente, eta)
+                _ricorda_rx(int(m.group(1)), rx)     # M-2: per ``rx_ms`` del ladder
+            return
+        if '"ocm"' in testa:
+            # M-2 (11/10): messaggi dello stream ORDINI (chi aggancia il proprio
+            # listener ordini passa di qui; vedi M2_MISURE.md per chi lo fa)
+            REGISTRO.conta("stream_ocm", sorgente)
+            m = _RE_PT.search(testa)
+            if m:
+                REGISTRO.tratto("ordini_rx_pt_ms." + sorgente, rx - float(m.group(1)))
             return
         if _RE_OP_STATUS.search(testa):
             _osserva_status(sorgente, raw_data)
@@ -277,6 +340,235 @@ def _osserva_status(sorgente: str, raw_data: str) -> None:
     if isinstance(disp, int) and not isinstance(disp, bool):
         REGISTRO.valore("connessioni_disponibili", sorgente, disp)
         REGISTRO.valore("connessioni_lette_ms", sorgente, int(time.time() * 1000))
+
+
+# ---------------------------------------------------------------------------
+# M-2 (11/10/2026, mappatura dei flussi): misure in piu', stesso interruttore
+# ---------------------------------------------------------------------------
+#: ``pt`` -> istante d'arrivo (ms, orologio del PC) dei messaggi mcm visti da
+#: ``osserva_stream``: lo legge ``marca_ladder`` per ``rx_ms``. Tetto fisso (i
+#: ``pt`` piu' vecchi escono per primi): mai crescita senza limite.
+RX_PT_MAX = 4096
+_RX_PT: "OrderedDict[int, float]" = OrderedDict()
+_RX_LOCK = threading.Lock()
+#: flumine: stream (tipo -> id) partiti e non ancora fermati, per processo
+_STREAM_APERTI: Dict[str, set] = {}
+
+
+def _azzera_stato_m2() -> None:
+    with _RX_LOCK:
+        _RX_PT.clear()
+    _STREAM_APERTI.clear()
+
+
+def _ricorda_rx(pt: int, rx: float) -> None:
+    """Il PRIMO arrivo di un ``pt`` (due messaggi con lo stesso ``pt``: conta
+    il primo, l'istante in cui il dato e' entrato nel processo)."""
+    with _RX_LOCK:
+        if pt in _RX_PT:
+            return
+        _RX_PT[pt] = rx
+        while len(_RX_PT) > RX_PT_MAX:
+            _RX_PT.popitem(last=False)
+
+
+def rx_di_pt(pt: Any) -> Optional[float]:
+    """Arrivo nel processo del messaggio con questo ``pt`` (None se non visto)."""
+    try:
+        with _RX_LOCK:
+            return _RX_PT.get(int(pt))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def busta(topic: str, payload: Any) -> Dict[str, Any]:
+    """La busta di un push del canale locale con ``ts`` (ms, istante della
+    pubblicazione): campo ADDITIVO della busta, mai del payload. I lettori
+    (pagina e bot) ignorano le chiavi che non conoscono; chi misura ricava
+    ``ricezione - ts``. Conta anche i push per topic (messaggi/s per processo)."""
+    b: Dict[str, Any] = {"t": topic, "d": payload}
+    if ATTIVO:
+        try:
+            b["ts"] = int(time.time() * 1000)
+            REGISTRO.conta("canale_pub", str(topic)[:40])
+        except Exception:  # noqa: BLE001
+            pass
+    return b
+
+
+def ricevuto_canale(msg: Any) -> None:
+    """Un lettore (bot) ha ricevuto una busta del canale locale: latenza
+    ``pubblicazione -> ricezione`` per topic (stesso orologio del PC)."""
+    if not ATTIVO or not isinstance(msg, dict):
+        return
+    try:
+        topic = str(msg.get("t") or "?")[:40]
+        REGISTRO.conta("canale_ric", topic)
+        ts = msg.get("ts")
+        if _numero_positivo(ts):
+            REGISTRO.tratto("canale_ricezione_ms." + topic, time.time() * 1000.0 - float(ts))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# --- misure della PAGINA (M1 c-d) -------------------------------------------
+#: metodo del canale con cui la pagina manda il suo riassunto (sola misura: mai
+#: in coda comandi, nessun token, nessun parametro d'ordine)
+METODO_PAGINA = "salute"
+VERSIONE_PAGINA = 1
+TRATTI_PAGINA = frozenset({
+    "pagina_canale_ms",        # ts_pub_ms -> arrivo del push nella pagina
+    "pagina_dipinto_ms",       # arrivo nella pagina -> primo frame dopo il commit
+    "pagina_rx_dipinto_ms",    # rx_ms (arrivo nel processo) -> frame: M1 sul PC
+    "pagina_pt_dipinto_ms",    # pt di Betfair -> frame (orologi diversi)
+    "pagina_pub_dipinto_ms",   # ts_pub_ms -> frame
+})
+CONTATORI_PAGINA = frozenset({"push_ladder", "dipinti", "riassunti"})
+#: tetto di misure per riassunto (30 s di pagina con 20 ladder a 10 push/s = 6000)
+N_MAX_PAGINA = 100_000
+
+
+def _riassunto_valido(r: Any) -> tuple:
+    """(n, somma, min, max, secchi) di un riassunto della pagina, o ValueError."""
+    if not isinstance(r, dict):
+        raise ValueError("riassunto non e' un oggetto")
+    n = r.get("n")
+    secchi = r.get("secchi")
+    if not isinstance(n, int) or isinstance(n, bool) or not (0 <= n <= N_MAX_PAGINA):
+        raise ValueError("n fuori misura")
+    if not isinstance(secchi, list) or len(secchi) != len(BORDI_MS) + 1:
+        raise ValueError("secchi di lunghezza diversa dai bordi")
+    if any(not isinstance(c, int) or isinstance(c, bool) or c < 0 for c in secchi):
+        raise ValueError("secchio non intero")
+    if sum(secchi) != n:
+        raise ValueError("n diverso dalla somma dei secchi")
+    vals = []
+    for k in ("somma", "min", "max"):
+        v = r.get(k)
+        if v is None and (k != "somma" and n == 0):
+            vals.append(None)
+            continue
+        if not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v):
+            raise ValueError(k + " non numerico")
+        vals.append(float(v))
+    return n, vals[0], vals[1], vals[2], secchi
+
+
+def misure_pagina(msg_id: Any, p: Any) -> Dict[str, Any]:
+    """Il riassunto periodico della pagina (richiesta ``salute`` sul canale gia'
+    aperto): validato PER INTERO, poi fuso nel registro di questo processo (la
+    riga dice lo sport). Tutto o niente: un pezzo storto rifiuta il riassunto.
+    Ritorna la risposta per la pagina. MAI solleva."""
+    if not ATTIVO:
+        return {"id": msg_id, "ok": False, "e": "monitor spento in questo processo"}
+    try:
+        if not isinstance(p, dict) or p.get("v") != VERSIONE_PAGINA:
+            raise ValueError("versione del riassunto sconosciuta")
+        bordi = p.get("bordi")
+        if not isinstance(bordi, list) or [float(b) for b in bordi] != [float(b) for b in BORDI_MS]:
+            raise ValueError("bordi dei secchi diversi da registro.BORDI_MS")
+        tratti = p.get("tratti") or {}
+        contatori = p.get("contatori") or {}
+        if not isinstance(tratti, dict) or not isinstance(contatori, dict):
+            raise ValueError("tratti/contatori non sono oggetti")
+        pronti = []
+        for nome, r in tratti.items():
+            if nome not in TRATTI_PAGINA:
+                raise ValueError("tratto non ammesso: %s" % str(nome)[:40])
+            pronti.append((nome, _riassunto_valido(r)))
+        conti = []
+        for k, v in contatori.items():
+            if k not in CONTATORI_PAGINA or not isinstance(v, int) or isinstance(v, bool) \
+                    or not (0 <= v <= N_MAX_PAGINA):
+                raise ValueError("contatore non ammesso: %s" % str(k)[:40])
+            conti.append((k, v))
+        for nome, (n, somma, mn, mx, secchi) in pronti:
+            if n > 0:
+                REGISTRO.fondi(nome, n, somma, mn, mx, secchi)
+        for k, v in conti:
+            REGISTRO.conta("pagina", k, v)
+        REGISTRO.conta("pagina", "riassunti_accolti")
+        return {"id": msg_id, "ok": True, "d": {"tratti": len(pronti)}}
+    except Exception as e:  # noqa: BLE001 - un riassunto storto non tocca il registro
+        try:
+            REGISTRO.conta("pagina", "riassunti_rifiutati")
+        except Exception:  # noqa: BLE001
+            pass
+        return {"id": msg_id, "ok": False, "e": "riassunto rifiutato: " + str(e)[:160]}
+
+
+# --- attore di un ordine dal suo riferimento --------------------------------
+_RE_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_RE_PREFISSO = re.compile(r"^([a-z]{2,12})-")
+
+
+def attore_da_rif(rif: Any) -> str:
+    """Chi ha deciso l'ordine, dal riferimento che il comando porta:
+    UUID (``crypto.randomUUID`` della pagina, canale e coda) = ``desktop``;
+    ``mike-``/``omega-``/``safe-``/``risk-``/... = il prefisso; altro = ``altro``."""
+    s = str(rif or "").strip().lower()
+    if not s or s == "na":
+        return "ignoto"
+    if _RE_UUID.match(s):
+        return "desktop"
+    m = _RE_PREFISSO.match(s)
+    return m.group(1) if m else "altro"
+
+
+# --- peso delle richieste REST (Betfair "Market Data Request Limits") --------
+#: punti per mercato di ``priceProjection.priceData`` (listMarketBook,
+#: listRunnerBook); senza priceData = 2. EX_ALL_OFFERS + EX_TRADED insieme = 17.
+PESI_PREZZI = {"SP_AVAILABLE": 3, "SP_TRADED": 7, "EX_BEST_OFFERS": 5, "EX_ALL_OFFERS": 17,
+               "EX_TRADED": 17}
+PESO_SENZA_PROIEZIONE = 2
+#: punti per mercato di ``marketProjection`` (listMarketCatalogue, x maxResults)
+PESI_CATALOGO = {"MARKET_DESCRIPTION": 1, "RUNNER_METADATA": 1}
+#: punti per mercato di listMarketProfitAndLoss
+PESO_PNL = 4
+#: oltre questo Betfair rifiuta la richiesta (TOO_MUCH_DATA)
+PESO_MAX_RICHIESTA = 200
+
+
+def peso_richiesta(metodo: str, corpo: Any) -> Optional[float]:
+    """Punti di peso di una richiesta JSON-RPC (None = metodo non pesato o corpo
+    illeggibile). Pura."""
+    if metodo not in ("listMarketBook", "listRunnerBook", "listMarketCatalogue",
+                      "listMarketProfitAndLoss"):
+        return None
+    if isinstance(corpo, bytes):
+        corpo = corpo.decode("utf-8", "replace")
+    if not isinstance(corpo, str):
+        return None
+    d = json.loads(corpo)
+    if not isinstance(d, dict):
+        return None
+    par = d.get("params") or {}
+    if not isinstance(par, dict):
+        return None
+    if metodo == "listMarketCatalogue":
+        proiezione = par.get("marketProjection") or []
+        per = sum(PESI_CATALOGO.get(str(x), 0) for x in proiezione)
+        return float(per * int(par.get("maxResults") or 0))
+    if metodo == "listMarketProfitAndLoss":
+        return float(PESO_PNL * len(par.get("marketIds") or []))
+    n = 1 if metodo == "listRunnerBook" else len(par.get("marketIds") or [])
+    pp = par.get("priceProjection") or {}
+    dati = set(str(x) for x in (pp.get("priceData") or [])) if isinstance(pp, dict) else set()
+    if not dati:
+        return float(PESO_SENZA_PROIEZIONE * n)
+    per = 0.0
+    if {"EX_ALL_OFFERS", "EX_TRADED"} <= dati:
+        per += 17
+        dati = dati - {"EX_ALL_OFFERS", "EX_TRADED"}
+    for x in dati:
+        w = float(PESI_PREZZI.get(x, 0))
+        if x == "EX_BEST_OFFERS":
+            ov = pp.get("exBestOffersOverrides") or {}
+            prof = ov.get("bestPricesDepth") if isinstance(ov, dict) else None
+            if isinstance(prof, int) and prof > 3:
+                w = w * prof / 3.0
+        per += w
+    return round(per * n, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -375,9 +667,26 @@ def _bf_risposta(resp: Any, *args: Any, **kwargs: Any) -> None:
         st = int(getattr(resp, "status_code", 0) or 0)
         if st >= 400:
             REGISTRO.conta("betfair_rest_errori", f"{st} {metodo}")
+        _pesa_richiesta(metodo, resp)
     except Exception:  # noqa: BLE001
         pass
     return None
+
+
+def _pesa_richiesta(metodo: str, resp: Any) -> None:
+    """M-2 (11/10): il PESO della richiesta (punti Betfair, tetto 200 per
+    richiesta) per i metodi di dati di mercato. Somma per metodo + istogramma
+    dei punti per richiesta (``rest_peso.<metodo>``, l'unita' e' il punto)."""
+    try:
+        peso = peso_richiesta(metodo, getattr(getattr(resp, "request", None), "body", None))
+    except Exception:  # noqa: BLE001 - corpo illeggibile: nessun peso
+        peso = None
+    if peso is None:
+        return
+    REGISTRO.conta("betfair_rest_peso", metodo, peso)
+    REGISTRO.tratto("rest_peso." + metodo, peso)
+    if peso > PESO_MAX_RICHIESTA:
+        REGISTRO.conta("betfair_rest_oltre_peso", metodo)
 
 
 setattr(_bf_risposta, _MARCA_GANCIO, True)
@@ -410,6 +719,15 @@ def aggancia_client_betfair(client: Any) -> Any:
 class _Gestore(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover - sovrascritto
         pass
+
+    def handle(self, record: logging.LogRecord) -> bool:  # type: ignore[override]
+        # M-2 (11/10): ``logging.Handler.handle`` NON cattura le eccezioni di
+        # ``emit``: senza questo una lettura storta risalirebbe fino a chi ha
+        # scritto il log (flumine, il worker ordini). La misura non rompe mai.
+        try:
+            return bool(super().handle(record))
+        except Exception:  # noqa: BLE001
+            return False
 
     def handleError(self, record: logging.LogRecord) -> None:  # noqa: N802
         pass  # la misura non scrive mai tracce d'errore nel log del servizio
@@ -450,6 +768,13 @@ class _GestoreEsecuzione(_Gestore):
                 REGISTRO.tratto("betfair_" + fn + "_ms", float(el) * 1000.0)
             if live and fn in ("place", "replace"):
                 REGISTRO.conta("transazioni", fn, n)
+            if live and fn == "place" and isinstance(pacchetto, dict):
+                # M-2 (11/10): pacchetto creato (l'ordine nato nella strategia:
+                # scalper, bot tennis, motore del runner) -> risposta di
+                # placeOrders registrata, dallo stesso orologio di flumine
+                es = pacchetto.get("elapsed_seconds")
+                if isinstance(es, (int, float)) and not isinstance(es, bool):
+                    REGISTRO.tratto("pacchetto_risposta_ms", float(es) * 1000.0)
         elif msg.startswith("High latency between current time and OrderPackage"):
             lat = getattr(record, "latency", None)
             if isinstance(lat, (int, float)):
@@ -470,6 +795,10 @@ class _GestoreStatoStream(_Gestore):
 
     def emit(self, record: logging.LogRecord) -> None:
         a = record.args
+        if record.msg == "[%s: %s]: connection_id: %s":
+            # M-2 (11/10): una connessione allo Stream API aperta (o riaperta)
+            REGISTRO.conta("stream_connessioni", "aperte")
+            return
         if not isinstance(a, tuple) or len(a) != 4 or record.msg != "[%s: %s]: %s (%s connections available)":
             return
         REGISTRO.conta("stream_status_log", str(a[2])[:30])
@@ -485,6 +814,76 @@ class _GestoreAvviiStream(_Gestore):
         msg = record.msg if isinstance(record.msg, str) else ""
         if msg.startswith("Starting ") and "Stream" in msg:
             REGISTRO.conta("stream_avvii", msg.split()[1][:30])
+            _segna_stream(msg, record.args, aperto=True)
+        elif msg.startswith("Stopped ") and "Stream" in msg:
+            _segna_stream(msg, record.args, aperto=False)
+
+
+def _segna_stream(msg: str, args: Any, *, aperto: bool) -> None:
+    """M-2 (11/10): stream di flumine APERTI nel processo, per tipo (valore
+    ``stream_aperti``): "Starting <Tipo> <id>" li apre, "Stopped <Tipo> <id>" li
+    chiude. ``SimulatedOrderStream`` e' simulato (nessuna connessione a Betfair):
+    resta nella sua chiave, il referto non lo conta fra le connessioni."""
+    tipo = msg.split()[1][:30]
+    if not tipo.endswith("Stream"):
+        return                      # "Starting output_thread (...)": non e' uno stream
+    sid = str(args[0])[:40] if isinstance(args, tuple) and args else "?"
+    aperti = _STREAM_APERTI.setdefault(tipo, set())
+    if aperto:
+        aperti.add(sid)
+    else:
+        aperti.discard(sid)
+        REGISTRO.conta("stream_arresti", tipo)
+    REGISTRO.valore("stream_aperti", tipo, len(aperti))
+
+
+class _GestoreTempiOrdine(_Gestore):
+    """M-2 (11/10): ``Betfair.stream.tempi_ordine`` scrive UNA riga per ordine
+    (``tempi_ordine ref=... strada=... decisione_ms=... rif=...``, F0): qui la si
+    legge e se ne fanno istogrammi per ATTORE (dal ``rif``), strada e modalita'.
+    Zero agganci nel percorso degli ordini: si legge cio' che il log dice gia'.
+
+    Tratti (ms, chiave ``<attore>.<strada>.<modo>``): ``decisione_invio_ms``,
+    ``invio_presa_ms``, ``presa_place_ms`` (interno), ``place_risposta_ms`` e,
+    se ci sono tutti e quattro, ``decisione_risposta_ms`` = la loro somma, cioe'
+    decisione -> risposta di placeOrders (gli orologi misti della coda, PC/DB, si
+    elidono nella somma). Solo le azioni che PIAZZANO (place*, greenup)."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        msg = record.msg if isinstance(record.msg, str) else ""
+        if not msg.startswith("tempi_ordine "):
+            return
+        campi = dict(p.split("=", 1) for p in msg.split(" ")[1:] if "=" in p)
+        azione = campi.get("azione", "")
+        if not (azione.startswith("place") or azione == "greenup"):
+            REGISTRO.conta("tempi_altre_azioni", azione[:20])
+            return
+        chiave = "%s.%s.%s" % (attore_da_rif(campi.get("rif")), campi.get("strada", "?")[:12],
+                               _modo(campi.get("mode")))
+        REGISTRO.conta("ordini_misurati", chiave)
+        valori = []
+        for campo, nome in _TRATTI_TEMPI:
+            v = _ms_del_campo(campi.get(campo))
+            if v is not None:
+                valori.append(v)
+                REGISTRO.tratto(nome + "." + chiave, v)
+        if len(valori) == len(_TRATTI_TEMPI):
+            REGISTRO.tratto("decisione_risposta_ms." + chiave, sum(valori))
+
+
+#: campo della riga ``tempi_ordine`` -> tratto della Salute
+_TRATTI_TEMPI = (("decisione_ms", "decisione_invio_ms"), ("ricezione_ms", "invio_presa_ms"),
+                 ("interno_ms", "presa_place_ms"), ("risposta_ms", "place_risposta_ms"))
+
+
+def _ms_del_campo(v: Any) -> Optional[float]:
+    if v is None or v == "na":
+        return None
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if math.isfinite(x) else None
 
 
 class _GestoreErrori(_Gestore):
@@ -499,6 +898,7 @@ _GESTORI = (
     ("flumine.execution", _GestoreEsecuzione, logging.INFO),
     ("betfairlightweight.streaming.listener", _GestoreStatoStream, logging.INFO),
     ("flumine.streams", _GestoreAvviiStream, logging.INFO),
+    ("Betfair.stream.tempi_ordine", _GestoreTempiOrdine, logging.INFO),   # M-2 (11/10)
     ("", _GestoreErrori, logging.ERROR),
 )
 

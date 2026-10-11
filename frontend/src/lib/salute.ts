@@ -173,6 +173,24 @@ export const TRATTI: readonly { prefisso: string; testo: string }[] = [
     { prefisso: 'db_ms', testo: 'richiesta al DB -> risposta' },
     { prefisso: 'rest_ms.', testo: 'REST Betfair per metodo' },
     { prefisso: 'monitor_giro_ms', testo: 'costo del monitor (fuori dal ciclo)' },
+    // 11/10 (M-2): misure della mappatura dei flussi (M1 a schermo, M2 per attore)
+    { prefisso: 'ladder_rx_pub_ms', testo: 'M1 arrivo nel processo -> ladder pubblicato' },
+    { prefisso: 'pagina_canale_ms', testo: 'M1 ladder pubblicato -> arrivo nella pagina' },
+    { prefisso: 'pagina_dipinto_ms', testo: 'M1 arrivo nella pagina -> frame a schermo' },
+    { prefisso: 'pagina_rx_dipinto_ms', testo: 'M1 arrivo nel processo -> frame a schermo' },
+    { prefisso: 'pagina_pt_dipinto_ms', testo: 'M1 pt di Betfair -> frame (include lo scarto)' },
+    { prefisso: 'pagina_pub_dipinto_ms', testo: 'M1 ladder pubblicato -> frame a schermo' },
+    { prefisso: 'decisione_invio_ms.', testo: 'M2 decisione -> invio (attore.strada.modo)' },
+    { prefisso: 'invio_presa_ms.', testo: 'M2 invio -> presa del worker' },
+    { prefisso: 'presa_place_ms.', testo: 'M2 presa -> place_order' },
+    { prefisso: 'place_risposta_ms.', testo: 'M2 place_order -> risposta di placeOrders' },
+    { prefisso: 'decisione_risposta_ms.', testo: 'M2 decisione -> risposta di placeOrders' },
+    { prefisso: 'clic_canale_ms.', testo: 'M2 clic -> arrivo sul canale' },
+    { prefisso: 'clic_presa_ms.', testo: 'M2 clic -> presa del worker' },
+    { prefisso: 'pacchetto_risposta_ms', testo: 'M2 pacchetto flumine -> risposta (live)' },
+    { prefisso: 'canale_ricezione_ms.', testo: 'canale locale -> ricezione nel bot' },
+    { prefisso: 'ordini_rx_pt_ms.', testo: 'stream ordini pt -> ricezione' },
+    { prefisso: 'rest_peso.', testo: 'peso REST in punti Betfair (non ms)' },
 ];
 
 export function spiegaTratto(nome: string): string {

@@ -148,6 +148,27 @@ class Registro:
                 h = self._tratti[nome] = Istogramma()
             h.aggiungi(ms)
 
+    def fondi(self, nome: str, n: int, somma: float, minimo: Optional[float],
+              massimo: Optional[float], secchi: List[int]) -> None:
+        """M-2 (11/10): somma secchio per secchio un riassunto GIA' VALIDATO
+        (stessi bordi) nell'istogramma ``nome`` della finestra. Lo usa la misura
+        della pagina (``sonde.misure_pagina``): la pagina misura nel suo processo
+        e manda il riassunto, il registro lo fonde come se l'avesse misurato qui."""
+        with self._lock:
+            h = self._tratti.get(nome)
+            if h is None:
+                if len(self._tratti) >= MAX_CHIAVI:
+                    return
+                h = self._tratti[nome] = Istogramma()
+            h.n += int(n)
+            h.somma += float(somma)
+            if minimo is not None and (h.minimo is None or minimo < h.minimo):
+                h.minimo = float(minimo)
+            if massimo is not None and (h.massimo is None or massimo > h.massimo):
+                h.massimo = float(massimo)
+            for i, c in enumerate(secchi):
+                h.secchi[i] += int(c)
+
     def valore(self, gruppo: str, chiave: str, v: Any) -> None:
         with self._lock:
             g = self._valori.get(gruppo)
