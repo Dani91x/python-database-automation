@@ -6,8 +6,8 @@ Buco che chiude: `ARCHITETTURA_2026-10/ondata2/PIANO_AGGANCIO.md` (ramo `ondata2
 nessuna registrazione `ocm` nel repo, quindi lo stream ordini sostituito in LIVE non e' certificabile sul banco.
 
 Codice: `Betfair/monitor/registratore_ordini.py` (registratore), `Betfair/monitor/analisi_ordini.py` (lettura),
-`Betfair/monitor/tests/test_registratore_ordini_2026_10_11.py` (29 test), `ARCHITETTURA_2026-10/mappa/m1_mutazioni.py`
-(25 mutazioni).
+`Betfair/monitor/tests/test_registratore_ordini_2026_10_11.py` (84 test), `ARCHITETTURA_2026-10/mappa/m1_mutazioni.py`
+(42 mutazioni, comprese le A e C della revisione del coordinatore).
 
 ---
 
@@ -152,7 +152,21 @@ Dove passano oggi gli ordini di tutti, e quale punto li vede:
 * **Nessun errore del registratore arriva al bot**: due strati (le porte della coda non sollevano; ogni aggancio ha la
   sua cattura). Ogni errore e' loggato col motivo (WARNING `[registro-ordini] ...`, al piu' uno al minuto per motivo).
   Test `test_metti_non_solleva_mai`, `test_eccezioni_del_registratore_non_arrivano_al_bot`,
-  `test_errore_di_disco_non_arriva_al_bot`; mutazioni M5-M7, M21-M24.
+  `test_errore_di_disco_non_arriva_al_bot`; mutazioni M5-M7, M21-M24, M40.
+* **UNA sola chiamata a Betfair per chiamata** (revisione del coordinatore, 11/10): su entrambe le strade
+  (`BetfairClient.betting_rpc` e APIClient di `build_client`) e per i quattro metodi con soldi, il test
+  `test_una_sola_richiesta_http_per_chiamata` conta le richieste HTTP all'adattatore finto: esattamente UNA, con
+  esito positivo, con l'HTTP che solleva (l'eccezione che arriva al chiamante e' lo STESSO oggetto sollevato dallo
+  strato sotto il gancio) e con il registratore guasto (`registra_rest`, `metti_record`, orologio); spento e
+  acceso inviano gli stessi byte e danno lo stesso esito. La registrazione dopo la chiamata passa da
+  `_registra_sicuro`, che non solleva mai. Le letture senza soldi: una richiesta, nessun record. Tee e
+  sottoscrizione: l'`on_data` originale e' chiamato una volta per riga e il suo valore (anche il `False` di uno
+  `status` FAILURE con `connectionClosed`, che ferma lo stream con `ListenerError`) torna identico;
+  `create_stream` e `subscribe_to_orders` originali una volta, stesso oggetto e stesso id. Mutazioni A, C,
+  M26-M37 (chiamata ripetuta prima o dopo, saltata, valore sostituito, eccezione inghiottita). `decisione`
+  non chiama niente del bot e non restituisce niente: non ha mutazioni di questo genere.
+* **Segreti letti anche DOPO la chiamata**: se il client rifa' il login dentro la chiamata, anche il token nuovo
+  e' oscurato (`test_segreti_letti_dopo_la_chiamata_*`, mutazioni M38-M39).
 * **Disco**: tetto con potatura (M8, M25), rotazione giornaliera (M12), coda limitata (M11).
 
 ## 7. Come si analizza la giornata
@@ -189,8 +203,8 @@ ordinate per `seq`, divise per `sid`).
    `git diff a3a58ad8 --stat`: SOLO aggiunte; nei tre file esistenti (`auth.py`, `client.py`, `tempi_ordine.py`) solo
    un import e una riga `if _ro.attivo(...)`. Rileggere il diff di persona.
 2. Test nuovi: `python -m pytest Betfair/monitor/tests/test_registratore_ordini_2026_10_11.py -q -p no:cacheprovider`
-   -> 29 verdi.
-3. Mutazioni: `python ARCHITETTURA_2026-10/mappa/m1_mutazioni.py` -> 25 righe `ROSSO ... ripristino sha256 identico`,
+   -> 84 verdi.
+3. Mutazioni: `python ARCHITETTURA_2026-10/mappa/m1_mutazioni.py` -> 42 righe `ROSSO ... ripristino sha256 identico`,
    uscita 0; poi `git status` pulito.
 4. Suite intera UNA volta: `python -m pytest Betfair/ -q -p no:cacheprovider` -> 0 rossi.
 5. Giro PAPER a interruttore SPENTO (nessuna riga in `.env`): avvio dell'app da parte dell'utente, un bot in paper per

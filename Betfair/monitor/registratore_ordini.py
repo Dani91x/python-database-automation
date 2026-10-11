@@ -657,20 +657,44 @@ def registra_rest(*, via: str, method: Any, params: Any, invio: Tuple[int, int],
         _avvisa("rest", "chiamata %s non registrata: %s", method, str(ex)[:160])
 
 
+def _leggi_segreti(segreti: Any) -> Tuple[Any, ...]:
+    """I segreti da oscurare: una tupla, o una funzione che li legge ADESSO
+    (il token puo' cambiare durante la chiamata se il client rifa' il login)."""
+    try:
+        valori = segreti() if callable(segreti) else segreti
+        return tuple(valori or ())
+    except Exception as ex:  # noqa: BLE001
+        _avvisa("segreti", "segreti non letti: %s", str(ex)[:160])
+        return ()
+
+
+def _registra_sicuro(**kwargs: Any) -> None:
+    """``registra_rest`` che non solleva MAI (secondo strato: la chiamata a
+    Betfair e' gia' avvenuta, il suo esito deve tornare al chiamante)."""
+    try:
+        registra_rest(**kwargs)
+    except Exception as ex:  # noqa: BLE001
+        _avvisa("rest", "chiamata %s non registrata: %s", kwargs.get("method"), str(ex)[:160])
+
+
 def rest_nostro(method: str, params: Dict[str, Any], chiama: Callable[[], Any],
-                segreti: Iterable[Any] = ()) -> Any:
-    """``BetfairClient.betting_rpc`` (client REST nostro): esegue ``chiama`` IDENTICA
-    e ne registra richiesta e risultato. L'esito o l'eccezione tornano al
-    chiamante tali e quali."""
+                segreti: Any = ()) -> Any:
+    """``BetfairClient.betting_rpc`` (client REST nostro): esegue ``chiama`` UNA
+    volta sola, identica, e ne registra richiesta e risultato. L'esito o
+    l'eccezione (lo STESSO oggetto) tornano al chiamante tali e quali.
+    ``segreti`` (tupla o funzione) si leggono prima e DOPO la chiamata."""
+    prima = _leggi_segreti(segreti)
     invio = _adesso_sicuro()
     try:
         out = chiama()
     except BaseException as ex:
-        registra_rest(via="rest_nostro", method=method, params=params, invio=invio,
-                      risposta=_adesso_sicuro(), eccezione=ex, segreti=segreti)
+        _registra_sicuro(via="rest_nostro", method=method, params=params, invio=invio,
+                         risposta=_adesso_sicuro(), eccezione=ex,
+                         segreti=prima + _leggi_segreti(segreti))
         raise
-    registra_rest(via="rest_nostro", method=method, params=params, invio=invio,
-                  risposta=_adesso_sicuro(), esito=out, segreti=segreti)
+    _registra_sicuro(via="rest_nostro", method=method, params=params, invio=invio,
+                     risposta=_adesso_sicuro(), esito=out,
+                     segreti=prima + _leggi_segreti(segreti))
     return out
 
 
@@ -678,6 +702,7 @@ def rest_nostro(method: str, params: Dict[str, Any], chiama: Callable[[], Any],
 # betfairlightweight: l'APIClient di ``build_client``
 # ---------------------------------------------------------------------------
 def _segreti_di(client: Any) -> Tuple[Any, ...]:
+    """Token e app key dell'APIClient, letti ADESSO (prima e dopo la chiamata)."""
     out = []
     for nome in ("session_token", "app_key"):
         try:
@@ -699,19 +724,24 @@ def _avvolgi_request(client: Any, endpoint: Any) -> None:
         if not soldi:
             return originale(*args, **kwargs)
         params = args[1] if len(args) > 1 else kwargs.get("params")
+        prima = _segreti_di(client)
         invio = _adesso_sicuro()
+        # UNA sola chiamata a Betfair; il suo esito (o la sua eccezione, lo
+        # stesso oggetto) torna al chiamante qualunque cosa faccia la registrazione
         try:
             out = originale(*args, **kwargs)
         except BaseException as ex:
-            registra_rest(via="bflw", method=method, params=params, invio=invio,
-                          risposta=_adesso_sicuro(), eccezione=ex, segreti=_segreti_di(client))
+            _registra_sicuro(via="bflw", method=method, params=params, invio=invio,
+                             risposta=_adesso_sicuro(), eccezione=ex,
+                             segreti=prima + _segreti_di(client))
             raise
         try:
             esito = out[1] if isinstance(out, tuple) and len(out) > 1 else None
         except Exception:  # noqa: BLE001
             esito = None
-        registra_rest(via="bflw", method=method, params=params, invio=invio,
-                      risposta=_adesso_sicuro(), esito=esito, segreti=_segreti_di(client))
+        _registra_sicuro(via="bflw", method=method, params=params, invio=invio,
+                         risposta=_adesso_sicuro(), esito=esito,
+                         segreti=prima + _segreti_di(client))
         return out
 
     setattr(request, _MARCA, True)

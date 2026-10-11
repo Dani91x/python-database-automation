@@ -189,7 +189,7 @@ class BetfairClient:
         Chiamata JSON-RPC alla Betting API.
         method es: "SportsAPING/v1.0/listEventTypes"
         """
-        if _ro.attivo() and _ro.metodo_soldi(method): return _ro.rest_nostro(method, params, lambda: self._rpc(self.BETTING_RPC_URL, method, params, request_id, max_retries), (self.app_key, self._session_token))  # noqa: E701,E501 - M-1
+        if _ro.attivo() and _ro.metodo_soldi(method): return _ro.rest_nostro(method, params, lambda: self._rpc(self.BETTING_RPC_URL, method, params, request_id, max_retries), lambda: (self.app_key, self._session_token))  # noqa: E701,E501 - M-1
         return self._rpc(self.BETTING_RPC_URL, method, params, request_id, max_retries)
 
     def account_rpc(

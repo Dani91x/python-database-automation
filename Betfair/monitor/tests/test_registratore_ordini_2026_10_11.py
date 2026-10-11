@@ -158,6 +158,13 @@ def _risultato(metodo: str, params: Dict[str, Any]) -> Dict[str, Any]:
     return {"jsonrpc": "2.0", "result": res, "id": 1}
 
 
+#: ogni richiesta JSON-RPC che arriva all'adattatore (i byte del corpo): conta
+#: quante volte una chiamata con soldi parte davvero verso "Betfair"
+RICHIESTE: List[bytes] = []
+MERCATO_RETE_GIU = "1.997"      # l'HTTP solleva (rete giu')
+MERCATO_ECO_TOKEN = "1.998"     # Betfair echeggia il token che ha ricevuto
+
+
 class _Adattatore(requests.adapters.HTTPAdapter):
     def send(self, request, **kw):  # type: ignore[override]
         r = requests.Response()
@@ -170,10 +177,22 @@ class _Adattatore(requests.adapters.HTTPAdapter):
             corpo = {"token": TOKEN, "status": "SUCCESS", "error": ""}
         else:
             body = request.body
-            if isinstance(body, bytes):
-                body = body.decode()
-            d = json.loads(body)
-            corpo = _risultato(d["method"].rsplit("/", 1)[-1], d.get("params") or {})
+            if isinstance(body, str):
+                body = body.encode()
+            RICHIESTE.append(bytes(body))
+            d = json.loads(body.decode())
+            params = d.get("params") or {}
+            if params.get("marketId") == MERCATO_RETE_GIU:
+                raise requests.ConnectionError("rete giu' (iniettata M-1)")
+            if params.get("marketId") == MERCATO_ECO_TOKEN:
+                corpo = {"jsonrpc": "2.0", "id": 1, "error": {
+                    "code": -32099,
+                    "message": "ANGX-0003 " + str(request.headers.get("X-Authentication")),
+                    "data": {"exceptionname": "APINGException", "APINGException": {
+                        "requestUUID": "prd-y", "errorCode": "INVALID_SESSION_INFORMATION",
+                        "errorDetails": ""}}}}
+            else:
+                corpo = _risultato(d["method"].rsplit("/", 1)[-1], params)
         r._content = json.dumps(corpo).encode()
         r.headers["Content-Type"] = "application/json"
         return r
@@ -896,3 +915,358 @@ def test_agganci_di_una_riga_dietro_l_interruttore(percorso, attesa):
     with open(os.path.join(radice, percorso), encoding="utf-8") as fh:
         righe = [r for r in fh if "_ro." in r and "import" not in r]
     assert len(righe) == 1 and attesa in righe[0] and "if _ro.attivo()" in righe[0]
+
+
+# ---------------------------------------------------------------------------
+# 7. (revisione del coordinatore, 11/10) UNA chiamata a Betfair per chiamata,
+#    su entrambe le strade, qualunque cosa succeda alla registrazione
+# ---------------------------------------------------------------------------
+_METODI_SOLDI = ("placeOrders", "cancelOrders", "replaceOrders", "updateOrders")
+_SCENARI = ("ok", "http_solleva", "registra_rest_solleva", "metti_record_solleva",
+            "orologio_solleva")
+
+
+def _params(metodo: str, mercato: str) -> Dict[str, Any]:
+    if metodo == "placeOrders":
+        return {"marketId": mercato, "instructions": [_istr()], "customerRef": "a" * 32,
+                "customerStrategyRef": "live"}
+    if metodo == "cancelOrders":
+        return {"marketId": mercato, "instructions": [{"betId": "381200000001",
+                                                       "sizeReduction": 2.0}],
+                "customerRef": "c" * 32}
+    if metodo == "replaceOrders":
+        return {"marketId": mercato, "instructions": [{"betId": "381200000001", "newPrice": 2.6}],
+                "customerRef": "d" * 32}
+    return {"marketId": mercato, "instructions": [{"betId": "381200000002",
+                                                   "newPersistenceType": "PERSIST"}],
+            "customerRef": "e" * 32}
+
+
+def _chiama_bflw(c, metodo: str, p: Dict[str, Any]):
+    """Come la chiama flumine (``BetfairExecution``): i metodi pubblici di Betting."""
+    b = c.betting
+    if metodo == "placeOrders":
+        return b.place_orders(market_id=p["marketId"], instructions=p["instructions"],
+                              customer_ref=p["customerRef"],
+                              customer_strategy_ref=p["customerStrategyRef"])
+    if metodo == "cancelOrders":
+        return b.cancel_orders(market_id=p["marketId"], instructions=p["instructions"],
+                               customer_ref=p["customerRef"])
+    if metodo == "replaceOrders":
+        return b.replace_orders(market_id=p["marketId"], instructions=p["instructions"],
+                                customer_ref=p["customerRef"])
+    return b.update_orders(market_id=p["marketId"], instructions=p["instructions"],
+                           customer_ref=p["customerRef"])
+
+
+def _inietta(monkeypatch, guasto: str) -> None:
+    """Guasti del REGISTRATORE (non di Betfair)."""
+    if guasto in ("registra_rest_solleva", "registra_rest"):
+        monkeypatch.setattr(RO, "registra_rest", _esplode)
+    elif guasto in ("metti_record_solleva", "metti_record"):
+        monkeypatch.setattr(RO.Scrittore, "metti_record", _esplode)
+    elif guasto in ("orologio_solleva", "orologio"):
+        monkeypatch.setattr(RO, "adesso_us", _esplode)
+
+
+def _una_chiamata(monkeypatch, strada: str, metodo: str, scenario: str):
+    """Esegue UNA chiamata con soldi. Ritorna (richieste HTTP, byte inviati,
+    esito, eccezione vista dal chiamante, eccezioni sollevate dallo strato sotto
+    il gancio, chiamate allo strato sotto il gancio)."""
+    from betfairlightweight.endpoints.baseendpoint import BaseEndpoint
+
+    import Betfair.client as BC
+
+    monkeypatch.setattr(BC.time, "sleep", lambda s: None)
+    sotto: List[BaseException] = []
+    chiamate_sotto = [0]
+    orig_req = BaseEndpoint.request
+    orig_rpc = BC.BetfairClient._rpc
+
+    def spia_req(self, *a, **k):
+        chiamate_sotto[0] += 1
+        try:
+            return orig_req(self, *a, **k)
+        except BaseException as e:
+            sotto.append(e)
+            raise
+
+    def spia_rpc(self, *a, **k):
+        chiamate_sotto[0] += 1
+        try:
+            return orig_rpc(self, *a, **k)
+        except BaseException as e:
+            sotto.append(e)
+            raise
+
+    monkeypatch.setattr(BaseEndpoint, "request", spia_req)
+    monkeypatch.setattr(BC.BetfairClient, "_rpc", spia_rpc)
+    mercato = MERCATO_RETE_GIU if scenario == "http_solleva" else MID
+    p = _params(metodo, mercato)
+    c = _build_client(monkeypatch) if strada == "bflw" else _client_nostro()
+    _inietta(monkeypatch, scenario)
+    n0 = len(RICHIESTE)
+    chiamate_sotto[0] = 0
+    esito, eccezione = None, None
+    try:
+        if strada == "bflw":
+            r = _chiama_bflw(c, metodo, p)
+            esito = json.dumps(getattr(r, "_data", None), sort_keys=True, default=str)
+        else:
+            r = c.betting_rpc("SportsAPING/v1.0/" + metodo, p, max_retries=1)
+            esito = json.dumps(r, sort_keys=True)
+    except Exception as ex:  # noqa: BLE001
+        eccezione = ex
+    monkeypatch.undo()
+    return (len(RICHIESTE) - n0, RICHIESTE[n0:], esito, eccezione, sotto, chiamate_sotto[0])
+
+
+@pytest.mark.parametrize("scenario", _SCENARI)
+@pytest.mark.parametrize("metodo", _METODI_SOLDI)
+@pytest.mark.parametrize("strada", ("bflw", "rest_nostro"))
+def test_una_sola_richiesta_http_per_chiamata(strada, metodo, scenario, monkeypatch, tmp_path):
+    out = {}
+    for v in ("0", "1"):
+        monkeypatch.setenv(RO.ENV, v)
+        monkeypatch.setattr(RO, "_consenti_in_test", True)
+        monkeypatch.setattr(RO, "nel_banco", lambda: False)
+        scr = RO.Scrittore(cartella=str(tmp_path / v), servizio="p", avvia_thread=False)
+        RO._azzera_per_test(scr)
+        try:
+            out[v] = _una_chiamata(monkeypatch, strada, metodo, scenario)
+            if v == "1" and scenario in ("ok", "http_solleva"):
+                righe = _righe(scr)
+                assert [r["metodo"] for r in righe if r["k"] == "rest"] == [metodo]
+        finally:
+            scr.chiudi()
+            RO._azzera_per_test(None)
+            RO._ULTIMO_AVVISO.clear()
+    for v in ("0", "1"):
+        n, _corpi, esito, ecc, sotto, n_sotto = out[v]
+        assert n == 1, "%s: %d richieste HTTP per UNA chiamata (registratore %s)" % (
+            metodo, n, "acceso" if v == "1" else "spento")
+        assert n_sotto == 1, "lo strato sotto il gancio chiamato %d volte" % n_sotto
+        if scenario == "http_solleva":
+            assert ecc is not None and esito is None
+            assert sotto and ecc is sotto[-1], "l'eccezione non e' lo STESSO oggetto"
+        else:
+            assert ecc is None and esito is not None, ecc
+    # spento e acceso: stessi byte inviati, stesso esito, stessa eccezione
+    assert out["0"][1] == out["1"][1]
+    assert out["0"][2] == out["1"][2]
+    e0, e1 = out["0"][3], out["1"][3]
+    assert (type(e0), str(e0)) == (type(e1), str(e1))
+
+
+@pytest.mark.parametrize("strada", ("bflw", "rest_nostro"))
+def test_lettura_senza_soldi_una_richiesta_e_niente_registro(strada, acceso, monkeypatch):
+    import Betfair.client as BC
+
+    monkeypatch.setattr(BC.time, "sleep", lambda s: None)
+    c = _build_client(monkeypatch) if strada == "bflw" else _client_nostro()
+    n0 = len(RICHIESTE)
+    if strada == "bflw":
+        assert c.betting.list_market_book(market_ids=[MID], lightweight=True) == []
+    else:
+        assert c.betting_rpc("SportsAPING/v1.0/listMarketBook", {"marketIds": [MID]}) == []
+    assert len(RICHIESTE) - n0 == 1
+    assert [r for r in _righe(acceso) if r["k"] == "rest"] == []
+
+
+@pytest.mark.parametrize("guasto", (None, "registra_rest", "metti_record", "orologio"))
+def test_rest_nostro_una_chiamata_stesso_oggetto(guasto, acceso, monkeypatch):
+    n = [0]
+    errore = RuntimeError("esito di Betfair")
+    sentinella = object()
+
+    def fallisce():
+        n[0] += 1
+        raise errore
+
+    def riesce():
+        n[0] += 1
+        return sentinella
+
+    if guasto:
+        _inietta(monkeypatch, guasto)
+    with pytest.raises(RuntimeError) as ei:
+        RO.rest_nostro("SportsAPING/v1.0/placeOrders", {}, fallisce)
+    assert ei.value is errore and n[0] == 1
+    n[0] = 0
+    assert RO.rest_nostro("SportsAPING/v1.0/placeOrders", {}, riesce) is sentinella
+    assert n[0] == 1
+
+
+@pytest.mark.parametrize("guasto", (None, "registra_rest", "metti_record", "orologio"))
+def test_request_bflw_una_chiamata_stesso_oggetto(guasto, acceso, monkeypatch):
+    n = [0]
+    errore = ValueError("APIError finto")
+    risposta = (object(), {"result": {"status": "SUCCESS"}}, 0.01)
+    lettura = (object(), {"result": []}, 0.01)
+
+    class _Ep:
+        def request(self, method, params, session):
+            n[0] += 1
+            if params.get("marketId") == "x":
+                raise errore
+            return lettura if "list" in method else risposta
+
+    ep = _Ep()
+    RO._avvolgi_request(SimpleNamespace(session_token=TOKEN, app_key=APPKEY), ep)
+    if guasto:
+        _inietta(monkeypatch, guasto)
+    for metodo in _METODI_SOLDI:
+        n[0] = 0
+        assert ep.request("SportsAPING/v1.0/" + metodo, {}, None) is risposta
+        assert n[0] == 1, metodo
+        n[0] = 0
+        with pytest.raises(ValueError) as ei:
+            ep.request("SportsAPING/v1.0/" + metodo, {"marketId": "x"}, None)
+        assert ei.value is errore and n[0] == 1, metodo
+    n[0] = 0
+    assert ep.request(method="SportsAPING/v1.0/listMarketBook", params={},
+                      session=None) is lettura
+    assert n[0] == 1
+
+
+# -- segreti letti anche DOPO la chiamata (il client puo' rifare il login dentro)
+TOKEN_NUOVO = "TOKEN-NUOVO-DOPO-RELOGIN-987654321"
+
+
+def _grezzo(scr: RO.Scrittore) -> bytes:
+    _righe(scr)
+    return b"".join(gzip.open(p, "rb").read() for p in _tutti_i_file(scr.cartella()))
+
+
+def test_segreti_letti_dopo_la_chiamata_rest_nostro(acceso, monkeypatch):
+    import Betfair.client as BC
+
+    monkeypatch.setattr(BC.time, "sleep", lambda s: None)
+    c = _client_nostro()
+    vera = BC.BetfairClient._rpc
+
+    def rpc_con_relogin(*a, **k):
+        c._session_token = TOKEN_NUOVO          # relogin dentro la chiamata
+        return vera(c, *a, **k)
+
+    c._rpc = rpc_con_relogin
+    with pytest.raises(RuntimeError) as ei:
+        c.place_orders(MERCATO_ECO_TOKEN, [_istr()], customer_ref="k1", max_retries=1)
+    assert TOKEN_NUOVO in str(ei.value), "la prova non echeggia il token nuovo"
+    grezzo = _grezzo(acceso)
+    assert TOKEN_NUOVO.encode() not in grezzo, "token del relogin finito su disco"
+    assert TOKEN.encode() not in grezzo and b"***" in grezzo
+
+
+def test_segreti_letti_dopo_la_chiamata_bflw(acceso, monkeypatch):
+    from betfairlightweight.endpoints.baseendpoint import BaseEndpoint
+
+    vera = BaseEndpoint.request
+
+    def request_con_relogin(self, *a, **k):
+        self.client.set_session_token(TOKEN_NUOVO)   # relogin dentro la chiamata
+        return vera(self, *a, **k)
+
+    monkeypatch.setattr(BaseEndpoint, "request", request_con_relogin)
+    c = _build_client(monkeypatch)
+    with pytest.raises(Exception) as ei:
+        _chiama_bflw(c, "placeOrders", _params("placeOrders", MERCATO_ECO_TOKEN))
+    assert TOKEN_NUOVO in str(ei.value), "la prova non echeggia il token nuovo"
+    grezzo = _grezzo(acceso)
+    assert TOKEN_NUOVO.encode() not in grezzo, "token del relogin finito su disco"
+    assert b"***" in grezzo
+
+
+# -- tee e sottoscrizione: stesso valore di ritorno, una chiamata ------------
+def _gira_righe(monkeypatch, api_client, righe: List[str], stream_id: int = 1000):
+    from betfairlightweight.streaming.betfairstream import BetfairStream
+    from flumine import clients
+    from flumine.streams.orderstream import OrderStream
+
+    sock = _SocketFinto(righe)
+    monkeypatch.setattr(BetfairStream, "_create_socket", lambda self: sock)
+    client = clients.BetfairClient(api_client, order_stream=True, paper_trade=False,
+                                   min_bet_validation=False)
+    st = OrderStream(flumine=SimpleNamespace(), stream_id=stream_id, conflate_ms=None,
+                     streaming_timeout=0.25, client=client)
+    errore = None
+    try:
+        OrderStream.run.__wrapped__(st)
+    except Exception as ex:  # noqa: BLE001
+        errore = ex
+    n_libri = 0
+    while not st._output_queue.empty():
+        n_libri += len(st._output_queue.get_nowait())
+    return type(errore).__name__, st.stream_id, list(sock.inviati), n_libri
+
+
+def test_tee_rende_il_false_del_listener_e_la_sottoscrizione_il_suo_id(monkeypatch, tmp_path):
+    """Un ``status`` FAILURE con ``connectionClosed``: il listener vero ritorna
+    False e lo stream si ferma con ListenerError. Col registratore acceso deve
+    succedere lo STESSO (valore di ritorno del tee), con lo stesso id di
+    sottoscrizione restituito a flumine e gli stessi byte inviati."""
+    base = righe_stream_ordini(1001, 1002)
+    righe = base[:5] + [json.dumps(
+        {"op": "status", "id": 1001, "statusCode": "FAILURE", "errorCode": "TIMEOUT",
+         "errorMessage": "x", "connectionClosed": True})] + base[5:]
+    monkeypatch.setattr(RO, "_consenti_in_test", True)
+    monkeypatch.setattr(RO, "nel_banco", lambda: False)
+    out = {}
+    for v in ("0", "1"):
+        monkeypatch.setenv(RO.ENV, v)
+        scr = RO.Scrittore(cartella=str(tmp_path / v), servizio="p", avvia_thread=False)
+        RO._azzera_per_test(scr)
+        try:
+            out[v] = _gira_righe(monkeypatch, _build_client(monkeypatch), list(righe))
+        finally:
+            scr.chiudi()
+            RO._azzera_per_test(None)
+    assert out["0"][0] == "ListenerError", out["0"]
+    assert out["0"] == out["1"], "il tee o la sottoscrizione cambiano cio' che vede flumine"
+    assert out["1"][1] == 1001
+
+
+def test_tee_una_chiamata_al_listener_per_riga(acceso, monkeypatch):
+    from betfairlightweight import StreamListener
+
+    n = [0]
+    vera = StreamListener.on_data
+
+    def conta(self, raw):
+        n[0] += 1
+        return vera(self, raw)
+
+    monkeypatch.setattr(StreamListener, "on_data", conta)
+    c = _build_client(monkeypatch)
+    righe = righe_stream_ordini(1001, 1002)
+    esito = _gira_righe(monkeypatch, c, list(righe))
+    assert esito[0] == "SocketError" and esito[3] >= 1
+    assert n[0] == len(righe), "on_data originale chiamato %d volte per %d righe" % (
+        n[0], len(righe))
+    assert sum(1 for r in _righe(acceso) if r["k"] == "stream") == len(righe)
+
+
+def test_create_stream_e_subscribe_una_chiamata_stesso_oggetto(acceso, monkeypatch):
+    from betfairlightweight import StreamListener
+    from betfairlightweight.endpoints.streaming import Streaming
+    from betfairlightweight.streaming.betfairstream import BetfairStream
+
+    creati: List[Any] = []
+    vera_cs = Streaming.create_stream
+
+    def cs(self, *a, **k):
+        s = vera_cs(self, *a, **k)
+        creati.append(s)
+        return s
+
+    monkeypatch.setattr(Streaming, "create_stream", cs)
+    c = _build_client(monkeypatch)
+    st = c.streaming.create_stream(unique_id=7, listener=StreamListener())
+    assert creati == [st], "create_stream originale chiamato %d volte" % len(creati)
+    sock = _SocketFinto([json.dumps({"op": "connection", "connectionId": "x"}),
+                         json.dumps({"op": "status", "id": 9, "statusCode": "SUCCESS"})])
+    monkeypatch.setattr(BetfairStream, "_create_socket", lambda self: sock)
+    uid = st.subscribe_to_orders(order_filter={}, conflate_ms=None)
+    assert uid == 8, "id della sottoscrizione cambiato"
+    inviati = [json.loads(b.decode().strip()) for b in sock.inviati]
+    assert [m["op"] for m in inviati] == ["authentication", "orderSubscription"]
