@@ -22,6 +22,7 @@ from config import (
 )
 
 from ..monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
+from ..monitor import registratore_ordini as _ro  # 11/10 (M-1): spento di serie
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ def build_client(login: bool = True) -> betfairlightweight.APIClient:
     if _mon.ATTIVO:
         # 09/10 (T0A "Salute"): conta login/keepAlive/metodi REST della sessione
         _mon.aggancia_client_betfair(client)
+    if _ro.attivo(): _ro.aggancia_api_client(client)  # noqa: E701 - M-1: REST con soldi + stream ordini su disco
 
     if login:
         try:
