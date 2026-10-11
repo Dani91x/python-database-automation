@@ -89,6 +89,14 @@ VERSIONE_FORMATO = 1
 
 #: righe in attesa del thread di scrittura oltre le quali si perde (contato)
 CODA_MAX = 50_000
+#: ... e byte in attesa (stessa regola: si perde, contato)
+CODA_MAX_BYTE = 64 * 1024 * 1024
+#: dopo un avvio fallito del thread di scrittura si riprova fra (s)
+RIPROVA_AVVIO_S = 60.0
+#: ``chiudi`` (atexit) non aspetta il thread di scrittura oltre (s)
+CHIUDI_ATTESA_S = 2.0
+#: dopo un errore di file si riapre (in un file nuovo) non prima di (s)
+RIAPRI_DOPO_ERRORE_S = 5.0
 #: ogni quanto il thread di scrittura svuota la coda e il gzip (s)
 GIRO_S = 0.1
 SVUOTA_GZIP_S = 1.0
@@ -261,23 +269,42 @@ class Scrittore:
         self.righe_scritte = 0
         self.byte_scritti = 0
         self.file_potati = 0
+        self.avvii_falliti = 0
+        self.scartati_errore = 0
+        self._riapri_dopo = 0.0
+        # byte in coda = entrati - usciti. ``entrati`` lo scrivono i thread del
+        # bot senza lucchetto: un aggiornamento perso fa CONTARE MENO (mai uno
+        # scarto in piu'); ``usciti`` lo scrive solo il thread di scrittura.
+        self._byte_entrati = 0
+        self._byte_usciti = 0
+        self._prossimo_avvio = 0.0
 
     # -- percorso caldo ----------------------------------------------------
-    def _accoda(self, voce: Any) -> None:
+    def _accoda(self, voce: Any, n_byte: int) -> None:
         if self._chiuso:
             return
-        if len(self._coda) >= CODA_MAX:
+        if len(self._coda) >= CODA_MAX or \
+                self._byte_entrati - self._byte_usciti >= CODA_MAX_BYTE:
             self.persi_coda += 1
             return
+        self._byte_entrati += n_byte
         self._coda.append(voce)
-        if self._thread is None and self._avvia_thread:
+        if self._thread is None and self._avvia_thread and \
+                time.monotonic() >= self._prossimo_avvio:
             self._avvia()
+
+    @staticmethod
+    def _dimensione(voce: Any) -> int:
+        """I byte di una voce, calcolati UGUALI in entrata e in uscita."""
+        dato = voce[5] if voce[0] == "s" else voce[1]
+        return len(dato) if isinstance(dato, (str, bytes)) else 0
 
     def metti_stream(self, sid: int, raw: Any) -> None:
         """Una riga grezza dello stream ordini (dal ``on_data`` del listener)."""
         try:
             ep, mono = adesso_us()
-            self._accoda(("s", next(self._seq), ep, mono, sid, raw))
+            voce = ("s", next(self._seq), ep, mono, sid, raw)
+            self._accoda(voce, self._dimensione(voce))
         except Exception as ex:  # noqa: BLE001
             _avvisa("metti_stream", "riga dello stream non accodata: %s", str(ex)[:160])
 
@@ -286,7 +313,8 @@ class Scrittore:
         try:
             rec["seq"] = next(self._seq)
             riga = json.dumps(rec, separators=(",", ":"), ensure_ascii=True, default=str)
-            self._accoda(("l", riga, tuple(s for s in segreti if isinstance(s, str) and len(s) >= 8)))
+            voce = ("l", riga, tuple(s for s in segreti if isinstance(s, str) and len(s) >= 8))
+            self._accoda(voce, self._dimensione(voce))
         except Exception as ex:  # noqa: BLE001
             _avvisa("metti_record", "record %s non accodato: %s", rec.get("k"), str(ex)[:160])
 
@@ -295,14 +323,45 @@ class Scrittore:
         with _LOCK:
             if self._thread is not None:
                 return
-            t = threading.Thread(target=self._giro_continuo, name="registro-ordini",
-                                 daemon=True)
-            self._thread = t
-            t.start()
+            try:
+                t = threading.Thread(target=self._giro_continuo, name="registro-ordini",
+                                     daemon=True)
+                t.start()
+            except Exception as ex:  # noqa: BLE001 - mai verso il bot
+                self.avvii_falliti += 1
+                self._prossimo_avvio = time.monotonic() + RIPROVA_AVVIO_S
+                _avvisa("avvio", "thread di scrittura non avviato (riprovo fra %.0f s): %s",
+                        RIPROVA_AVVIO_S, str(ex)[:160])
+                return
+            self._thread = t        # SOLO dopo un avvio riuscito
+            _registra_fork()
             try:
                 atexit.register(self.chiudi)
             except Exception:  # noqa: BLE001
                 pass
+
+    def dimentica_nel_figlio(self) -> None:
+        """Nel FIGLIO di un ``fork``: il file e' del padre. Il figlio non scrive
+        mai (nemmeno alla chiusura): lo scrittore e' chiuso, la coda vuota, e il
+        descrittore ereditato punta a /dev/null (cosi' anche un ``close`` del
+        gzip ereditato, o lo svuotamento dei suoi buffer, non tocca il file)."""
+        self._chiuso = True
+        self._io = threading.Lock()
+        self._coda = collections.deque()
+        fh, self._fh = self._fh, None
+        if fh is None:
+            return
+        _ORFANI.append(fh)
+        f = getattr(fh, "myfileobj", None) or getattr(fh, "fileobj", None)
+        try:
+            fd = f.fileno()
+            nul = os.open(os.devnull, os.O_WRONLY)
+            try:
+                os.dup2(nul, fd)
+            finally:
+                os.close(nul)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _giro_continuo(self) -> None:
         while not self._fermo.is_set():
@@ -339,6 +398,7 @@ class Scrittore:
                 voce = self._coda.popleft()
             except IndexError:
                 break
+            self._byte_usciti += self._dimensione(voce)
             try:
                 riga = self._riga(voce)
             except Exception as ex:  # noqa: BLE001
@@ -371,6 +431,11 @@ class Scrittore:
         if self._fh is None or giorno != self._giorno:
             if self._fh is not None:
                 self._chiudi_file("giorno")
+            if time.monotonic() < self._riapri_dopo:
+                # dopo un errore di file (disco pieno...) non si riapre a ogni
+                # riga: si aspetta RIAPRI_DOPO_ERRORE_S, contando cio' che si perde
+                self.scartati_errore += 1
+                return False
             if not self._apri(giorno):
                 return False
         if self._pieno:
@@ -390,7 +455,9 @@ class Scrittore:
     def _errore_file(self, motivo: str) -> None:
         """Handle rotto: si chiude e si riapre alla riga dopo (come il tee raw)."""
         self.errori_scrittura += 1
-        _avvisa("file", "%s (file %s, riapro alla prossima riga)", motivo, self._percorso)
+        self._riapri_dopo = time.monotonic() + RIAPRI_DOPO_ERRORE_S
+        _avvisa("file", "%s (file %s, riapro fra %.0f s in un file NUOVO)", motivo,
+                self._percorso, RIAPRI_DOPO_ERRORE_S)
         fh, self._fh = self._fh, None
         if fh is not None:
             try:
@@ -409,9 +476,11 @@ class Scrittore:
                 self._servizio = _nome_servizio()
             d = os.path.join(self.cartella(), giorno)
             os.makedirs(d, exist_ok=True)
-            percorso = os.path.join(d, "%s%s_%d%s" % (PREFISSO_FILE, self._servizio,
-                                                       os.getpid(), ESTENSIONE))
-            self._fh = gzip.open(percorso, "ab", compresslevel=6)  # noqa: SIM115 - chiuso in chiudi()
+            percorso = self._nome_libero(d)
+            # MAI in coda a un file non vuoto (pid riusato, riapertura dopo un
+            # errore di disco): un membro gzip tronco seguito da un altro rende
+            # illeggibile cio' che segue. Sempre un file nuovo.
+            self._fh = gzip.open(percorso, "wb", compresslevel=6)  # noqa: SIM115 - chiuso in chiudi()
             self._percorso = percorso
             self._giorno = giorno
             self._ultima_potatura = 0.0
@@ -429,6 +498,16 @@ class Scrittore:
         except Exception as ex:  # noqa: BLE001
             self._errore_file("apertura KO: %s" % str(ex)[:160])
             return False
+
+    def _nome_libero(self, d: str) -> str:
+        """``ordini_<servizio>_<pid>.jsonl.gz``, poi ``_2``, ``_3``...: il primo
+        che non esiste (o e' vuoto)."""
+        radice = "%s%s_%d" % (PREFISSO_FILE, self._servizio, os.getpid())
+        for n in range(1, 10_000):
+            p = os.path.join(d, radice + ("" if n == 1 else "_%d" % n) + ESTENSIONE)
+            if not os.path.exists(p) or os.path.getsize(p) == 0:
+                return p
+        raise OSError("nessun nome libero per %s" % radice)
 
     def tetto(self) -> int:
         if self._tetto is None:
@@ -497,6 +576,8 @@ class Scrittore:
     def _togli_cartelle_vuote(base: str) -> None:
         try:
             for nome in os.listdir(base):
+                if not _RE_GIORNO.fullmatch(nome):
+                    continue        # solo le cartelle giorno AAAAMMGG del registratore
                 p = os.path.join(base, nome)
                 if os.path.isdir(p) and not os.listdir(p):
                     os.rmdir(p)
@@ -512,7 +593,8 @@ class Scrittore:
             fine = {"k": "chiusura", "seq": 0, "ep_us": ep, "mono_us": mono, "motivo": motivo,
                     "persi_coda": self.persi_coda, "scartati_tetto": self.scartati_tetto,
                     "errori_scrittura": self.errori_scrittura,
-                    "righe_scritte": self.righe_scritte}
+                    "righe_scritte": self.righe_scritte,
+                    "scartati_errore": self.scartati_errore}
             fh.write((json.dumps(fine, separators=(",", ":")) + "\n").encode("ascii"))
         except Exception as ex:  # noqa: BLE001
             _avvisa("chiusura", "riga di chiusura KO: %s", str(ex)[:160])
@@ -524,15 +606,31 @@ class Scrittore:
         self._sporco = False
 
     def chiudi(self) -> None:
-        """Fine processo: scrive cio' che resta e chiude il file. Idempotente."""
+        """Fine processo: scrive cio' che resta e chiude il file. Idempotente.
+        Non aspetta il thread di scrittura oltre ``CHIUDI_ATTESA_S`` (un disco
+        appeso non deve trattenere l'uscita del processo)."""
         try:
+            if self._chiuso:
+                return
             self._fermo.set()
-            with self._io:
+            if not self._io.acquire(timeout=CHIUDI_ATTESA_S):
+                self._chiuso = True
+                _avvisa("chiudi", "scrittura occupata da oltre %.1f s: chiudo senza "
+                        "svuotare la coda", CHIUDI_ATTESA_S)
+                return
+            try:
                 if self._chiuso:
                     return
+                self._riapri_dopo = 0.0      # all'uscita si ritenta subito
                 self._scrivi_coda()
+                if self._fh is None and self._percorso is not None:
+                    # il file era stato chiuso da un errore: la riga di chiusura
+                    # (con i contatori delle perdite) va comunque in un file nuovo
+                    self._apri(giorno_utc())
                 self._chiudi_file("fine_processo")
                 self._chiuso = True
+            finally:
+                self._io.release()
         except Exception as ex:  # noqa: BLE001
             _avvisa("chiudi", "chiusura KO: %s", str(ex)[:160])
 
@@ -547,6 +645,30 @@ def _versioni() -> Dict[str, Any]:
 
 
 _SCRITTORE: Optional[Scrittore] = None
+_RE_GIORNO = re.compile(r"\d{8}")
+#: gzip ereditati da un fork: tenuti vivi nel figlio (puntano a /dev/null)
+_ORFANI: List[Any] = []
+_FORK: Dict[str, bool] = {"registrato": False}
+
+
+def _dopo_fork_nel_figlio() -> None:
+    s = _SCRITTORE
+    if s is not None:
+        try:
+            s.dimentica_nel_figlio()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _registra_fork() -> None:
+    """Una volta per processo, solo a registratore avviato (Windows: niente fork)."""
+    if _FORK["registrato"] or not hasattr(os, "register_at_fork"):
+        return
+    try:
+        os.register_at_fork(after_in_child=_dopo_fork_nel_figlio)
+        _FORK["registrato"] = True
+    except Exception as ex:  # noqa: BLE001
+        _avvisa("fork", "gancio del fork non registrato: %s", str(ex)[:160])
 
 
 def scrittore() -> Scrittore:

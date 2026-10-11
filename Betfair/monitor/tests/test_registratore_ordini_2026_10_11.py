@@ -719,10 +719,17 @@ def test_rotazione_giornaliera(tmp_path, monkeypatch):
 def test_thread_vero_scrive_e_chiude(tmp_path, monkeypatch):
     monkeypatch.setattr(RO, "GIRO_S", 0.01)
     scr = RO.Scrittore(cartella=str(tmp_path), servizio="p")
-    scr.metti_stream(1, '{"op":"ocm","id":1,"pt":1,"ct":"HEARTBEAT"}')
-    assert scr._thread is not None and scr._thread.daemon
-    scr.chiudi()
-    scr._thread.join(2)
+    try:
+        scr.metti_stream(1, '{"op":"ocm","id":1,"pt":1,"ct":"HEARTBEAT"}')
+        avviato = scr._thread is not None
+        demone = avviato and scr._thread.daemon
+    finally:
+        # prima si ferma il thread, POI si giudica: un thread non demone mai
+        # fermato terrebbe vivo pytest (un rosso che appende invece di fallire)
+        scr.chiudi()
+        if scr._thread is not None:
+            scr._thread.join(2)
+    assert avviato and demone, "il thread di scrittura deve essere demone"
     righe, info = AO.leggi_file(_tutti_i_file(str(tmp_path))[0])
     assert [r["k"] for r in righe] == ["avvio", "stream", "chiusura"]
 
@@ -767,7 +774,8 @@ def _giornata(tmp_path, monkeypatch) -> str:
                     "ripresa": False, "heartbeat_ms": None, "conflate_ms": None})
     a.metti_stream(1, ocm("c0", PT0, ct="SUB_IMAGE"))
     a.metti_record({"k": "dec", "ep_us": oro.ep, "mono_us": oro.mono,
-                    "cor": "6279886fde090-1401", "chiave": "cmd-1", "decisione_ms": PT0 - 30})
+                    "cor": "6279886fde090-1401", "chiave": "cmd-1", "decisione_ms": PT0 - 30,
+                    "mode": "live"})
     invio = oro()
     oro.avanza(40)
     # il primo ocm arriva PRIMA della risposta della REST (succede in produzione)
@@ -849,7 +857,8 @@ def test_analisi_giornata(tmp_path, monkeypatch):
 def test_analisi_senza_buchi_dice_nessuno(tmp_path, monkeypatch):
     monkeypatch.setattr(RO, "giorno_utc", lambda ep_s=None: "20261011")
     scr = RO.Scrittore(cartella=str(tmp_path), servizio="p", avvia_thread=False)
-    scr.metti_record({"k": "sub", "ep_us": 1, "mono_us": 1, "sid": 1, "ripresa": False})
+    ep, mono = RO.adesso_us()
+    scr.metti_record({"k": "sub", "ep_us": ep, "mono_us": mono, "sid": 1, "ripresa": False})
     scr.metti_stream(1, json.dumps({"op": "ocm", "id": 1, "clk": "a", "pt": 1, "ct": "SUB_IMAGE"}))
     scr.giro(forza_svuota=True)
     scr.chiudi()

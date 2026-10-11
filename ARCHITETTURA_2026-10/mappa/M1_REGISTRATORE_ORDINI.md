@@ -6,8 +6,10 @@ Buco che chiude: `ARCHITETTURA_2026-10/ondata2/PIANO_AGGANCIO.md` (ramo `ondata2
 nessuna registrazione `ocm` nel repo, quindi lo stream ordini sostituito in LIVE non e' certificabile sul banco.
 
 Codice: `Betfair/monitor/registratore_ordini.py` (registratore), `Betfair/monitor/analisi_ordini.py` (lettura),
-`Betfair/monitor/tests/test_registratore_ordini_2026_10_11.py` (84 test), `ARCHITETTURA_2026-10/mappa/m1_mutazioni.py`
-(42 mutazioni, comprese le A e C della revisione del coordinatore).
+`Betfair/monitor/tests/test_registratore_ordini_2026_10_11.py` (84 test) e
+`Betfair/monitor/tests/test_registratore_ordini_rev_2026_10_11.py` (27 test della revisione indipendente),
+`ARCHITETTURA_2026-10/mappa/m1_mutazioni.py` (80 mutazioni: le nostre, A e C del coordinatore, N1-N20 del revisore,
+I1/I3/M1-M7/E5 della revisione).
 
 ---
 
@@ -21,8 +23,8 @@ Per ogni processo che usa Betfair, a interruttore acceso:
 | `sub` | ogni `subscribe_to_orders` dello stream ordini del processo (prima e ogni ripartenza) | `sid` (numero della sottoscrizione nel processo), filtro ordini, `initial_clk`/`clk` (ripresa o immagine piena), `conflate_ms`, `heartbeat_ms` |
 | `stream` | ogni messaggio che arriva al listener dello stream ordini: `connection`, `status`, `ocm` (SUB_IMAGE, UPDATE, RESUB_DELTA, HEARTBEAT) | la riga GREZZA di Betfair **verbatim** in `msg` (nessuna ri-serializzazione), `sid`, istante di ricezione |
 | `rest` | ogni `placeOrders`, `cancelOrders`, `replaceOrders`, `updateOrders` | `via` (`bflw` = APIClient di betfairlightweight, `rest_nostro` = `Betfair/client.py`), metodo, mercato, `attore`, `csr` (customerStrategyRef), `cref` (customerRef), `corefs` (customerOrderRef per istruzione), richiesta intera, risposta intera di Betfair (busta JSON-RPC o `result`), `stato`, `errore` (errorCode del rapporto o dell'APINGException), `codici` per istruzione, `eccezione` (tipo e testo) se la chiamata solleva, thread |
-| `dec` | `tempi_ordine.place` (subito prima di `market.place_order` sulle strade del runner calcio e tennis) | `cor` = customerOrderRef che l'ordine avra' nella REST, id ordine flumine, chiave del comando, strada, azione, `decisione_ms` (da `emesso_ms` di `sonde.marca_emesso` o dalle altre chiavi di decisione del comando), ricezione |
-| `chiusura` | fine processo (atexit) o cambio di giorno | motivo, righe scritte, righe perse in coda, righe scartate per tetto, errori di scrittura |
+| `dec` | `tempi_ordine.place` (subito prima di `market.place_order` sulle strade del runner calcio e tennis; in LIVE **e in PAPER**, col `mode` del comando) | `cor` = customerOrderRef che l'ordine avra' nella REST, id ordine flumine, chiave del comando, strada, azione, `decisione_ms` (da `emesso_ms` di `sonde.marca_emesso` o dalle altre chiavi di decisione del comando), ricezione |
+| `chiusura` | fine processo (atexit) o cambio di giorno | motivo, righe scritte, righe perse in coda (`persi_coda`), scartate per tetto (`scartati_tetto`), scartate dopo un errore di file (`scartati_errore`), errori di scrittura |
 
 Ogni record porta `seq` (numero progressivo del processo: un buco = righe perse), `ep_us` (epoca in microsecondi)
 e `mono_us` (orologio monotono `perf_counter` in microsecondi; su Windows e' QueryPerformanceCounter, comune a tutti i
@@ -39,8 +41,10 @@ portano). Se Betfair li echeggiasse in un testo d'errore, token e app key sono s
 (test `test_acceso_rest_bflw_registra_e_non_cambia_gli_esiti`, mutazione M9). L'autenticazione dello stream
 (`op=authentication`, con token e app key) e' un messaggio IN USCITA e non passa dal listener: non e' mai registrata.
 
-In PAPER non c'e' nulla da registrare: flumine usa `SimulatedOrderStream`, che non chiama mai `create_stream`, e
-`SimulatedExecution`, che non fa REST. Il registratore e' spento per costruzione nel banco (`Betfair.stream.backtest`
+In PAPER non ci sono ne' stream ordini ne' REST da registrare: flumine usa `SimulatedOrderStream`, che non chiama mai
+`create_stream`, e `SimulatedExecution`, che non fa REST. Si scrivono pero' i record `dec` (la decisione passa da
+`tempi_ordine.place` anche in paper) con `mode=paper`: non toccano Betfair, e l'analisi li tiene SEPARATI per modo
+(paper e live mai sommati; solo le decisioni live si legano alle REST). Il registratore e' spento per costruzione nel banco (`Betfair.stream.backtest`
 caricato) e sotto pytest.
 
 ## 2. Dove
@@ -54,12 +58,23 @@ caricato) e sotto pytest.
 * JSON per riga, gzip livello 6 svuotato (Z_SYNC_FLUSH) al piu' ogni secondo: un arresto brusco perde al piu' l'ultimo
   secondo; il lettore tollera la coda tronca e i gzip a piu' membri;
 * rotazione: al cambio di giorno UTC si scrive `chiusura` (motivo `giorno`) e si apre il file del giorno nuovo. La riga
-  va nel file del giorno in cui viene SCRITTA (a cavallo della mezzanotte puo' finire nel giorno dopo).
+  va nel file del giorno in cui viene SCRITTA (a cavallo della mezzanotte puo' finire nel giorno dopo: per gli ordini a
+  cavallo si analizzano piu' giorni insieme, `--dal`/`--al`);
+* **mai in coda a un file non vuoto** (revisione I1): se il nome esiste gia' (pid riusato, riapertura dopo un errore di
+  disco) si usa `_2`, `_3`...; un membro gzip tronco seguito da un altro non rovina piu' niente. Il lettore, comunque,
+  riprende dal membro successivo dopo un membro tronco e tiene le righe intere di quello rotto;
+* dopo un errore di file (disco pieno...) non si riapre a ogni riga: si aspettano 5 s (righe contate in
+  `scartati_errore`) e si riapre in un file NUOVO; all'uscita la `chiusura` coi contatori si scrive comunque;
+* fine processo: `atexit` svuota la coda e scrive `chiusura` (`fine_processo`) ma non aspetta il thread di scrittura
+  oltre 2 s (disco appeso); nel figlio di un `fork` lo scrittore si chiude senza scrivere e il descrittore ereditato
+  punta a /dev/null (il file resta solo del padre);
+* coda limitata a 50.000 righe E a 64 MB; se l'avvio del thread di scrittura fallisce, nessun errore al bot: contato
+  (`avvii_falliti`), WARNING, nuovo tentativo dopo 60 s.
 
 **Tetto di disco**: `REGISTRO_ORDINI_TETTO_MB` (di serie 512 MB; valori illeggibili o <= 0 -> 512). Controllato
 all'apertura di ogni file e ogni 10 minuti: oltre il tetto si cancellano i file `ordini_*.jsonl.gz` piu' vecchi (per
 data di modifica), mai il file aperto da questo processo e mai un file toccato negli ultimi 15 minuti (di un altro
-processo vivo); si tolgono le cartelle di giorno rimaste vuote; se non basta si smette di scrivere fino al controllo
+processo vivo); si tolgono le cartelle di giorno `AAAAMMGG` rimaste vuote (nessun'altra cartella); se non basta si smette di scrivere fino al controllo
 dopo, contando le righe scartate (`scartati_tetto` nella `chiusura`) con un WARNING.
 
 ## 3. Quanto pesa (misurato)
@@ -167,33 +182,45 @@ Dove passano oggi gli ordini di tutti, e quale punto li vede:
   non chiama niente del bot e non restituisce niente: non ha mutazioni di questo genere.
 * **Segreti letti anche DOPO la chiamata**: se il client rifa' il login dentro la chiamata, anche il token nuovo
   e' oscurato (`test_segreti_letti_dopo_la_chiamata_*`, mutazioni M38-M39).
-* **Disco**: tetto con potatura (M8, M25), rotazione giornaliera (M12), coda limitata (M11).
+* **Disco**: tetto con potatura (M8, M25), rotazione giornaliera (M12), coda limitata in righe e in byte (M11, M5),
+  mai in coda a un file non vuoto (I1), riapertura dopo un errore di file non a ogni riga (E5).
+* **Processo**: thread demone (N1), chiusura all'uscita (N8) che non resta appesa (M2), figlio di un fork muto (M1).
 
 ## 7. Come si analizza la giornata
 
 ```
 python -m Betfair.monitor.analisi_ordini --giorno 20261011
 python -m Betfair.monitor.analisi_ordini --giorno 20261011 --cartella D:\...\_live_raw\_ordini --json giornata.json --dettaglio 50
+python -m Betfair.monitor.analisi_ordini --dal 20261011 --al 20261012     # ordini a cavallo della mezzanotte UTC
 ```
 
 Legge tutti i file del giorno (tutti i processi) e stampa:
 
-* **conteggi**: REST, ordini (nostri / del sito / di altri processi non registrati), rifiuti senza `betId`, decisioni legate;
-* **latenze (ms)** p50/p90/p99/max: REST per metodo e per attore (monotono), risposta REST -> primo `ocm` e invio REST ->
-  primo `ocm` (epoca, stesso PC), decisione -> invio REST (se il comando portava l'istante di decisione);
-* **errori REST** per metodo e codice (`INSUFFICIENT_FUNDS`, `BET_TAKEN_OR_LAPSED`, `INVALID_SESSION_INFORMATION`, eccezioni...);
+* **conteggi**: REST, ordini (nostri / del sito / di altri processi non registrati), rifiuti senza `betId`, decisioni
+  PER MODO (`live`, `paper`: mai sommate);
+* **latenze (ms)** p50/p90/p99/max, SOLO sulle chiamate pulite: REST per metodo, per via (`bflw`/`rest_nostro`) e per
+  attore (monotono). Escluse dai percentili, e mostrate a parte (`ESCLUSE dai percentili`): le chiamate con eccezione o
+  codice d'errore, e quelle del client nostro lunghe almeno 2 s (`probabile_ritentativo`: `_rpc` dorme 2**tentativo s
+  fra un tentativo e l'altro, e i tentativi non si vedono). Poi risposta REST -> primo `ocm` e invio REST -> primo
+  `ocm` (epoca, stesso PC), decisione LIVE -> invio REST (se il comando portava l'istante di decisione);
+* **errori REST** per metodo e codice, compresi i codici ANNIDATI di `replaceOrders` (`cancelInstructionReport`,
+  `placeInstructionReport`): `INSUFFICIENT_FUNDS`, `BET_TAKEN_OR_LAPSED`, `INVALID_SESSION_INFORMATION`, eccezioni...;
 * **ocm prima della risposta REST**: gli ordini il cui primo `ocm` e' arrivato PRIMA della risposta del `placeOrders`
   (con l'anticipo in ms);
 * **ordini del sito**: `uo` senza `rfo` ne' `rfs` e senza un piazzamento registrato;
 * **buchi**, per file: ripartenze (sottoscrizioni dopo la prima, con «ripresa da clk» o «immagine piena»), immagini
   piene ripetute, `status` d'errore (`connectionClosed`, `errorCode`), messaggi di dati senza `clk`, silenzi oltre 3
-  battiti (15 s di serie) per sottoscrizione, righe perse (buchi di `seq`, coda piena, oltre tetto), file senza
-  `chiusura` (processo morto), coda gzip tronca, righe rotte. Riga finale `BUCHI: SI|nessuno`;
+  battiti (`heartbeatMs`/`conflateMs` della sottoscrizione, 15 s di serie): `intermedio` fra due messaggi, `iniziale`
+  (sottoscrizione -> primo messaggio), `finale` (ultimo messaggio -> sottoscrizione dopo, `chiusura`, o per un
+  processo morto l'ultimo istante visto in QUALUNQUE file del giorno), `nessun_messaggio`; righe perse (buchi di
+  `seq`, coda piena, oltre tetto, dopo un errore di file), file senza `chiusura` (processo morto), coda gzip tronca,
+  righe rotte. Riga finale `BUCHI: SI|nessuno`;
 * **sequenze ordine per ordine**: `place` -> `E(sm=0)` -> `E(sm=..)` parziali -> `EC`, con `rest_cancelOrders`,
   `rest_replace_cancel` e l'ordine nato da un `replaceOrders` legato al padre (`nato_da`). Lo stesso `uo` visto da
   piu' processi conta una volta (il primo arrivo), le copie si contano (`copie_ocm`).
 
-Da Python: `AO.analizza_giorno(cartella, giorno)` restituisce il dizionario completo; `AO.formatta(a)` il testo;
+Da Python: `AO.analizza_giorno(cartella, giorno)` (o `AO.analizza_giorni(cartella, AO.giorni_fra(dal, al))`)
+restituisce il dizionario completo; `AO.formatta(a)` il testo;
 `AO.leggi_file(p)` le righe di un file (per il futuro trasporto sul banco: le righe `stream` hanno `msg` verbatim,
 ordinate per `seq`, divise per `sid`).
 
@@ -202,9 +229,9 @@ ordinate per `seq`, divise per `sid`).
 1. `git fetch` e `git log --oneline a3a58ad8..origin/mappa/m1-ordini` (o il ramo consegnato): un commit M-1.
    `git diff a3a58ad8 --stat`: SOLO aggiunte; nei tre file esistenti (`auth.py`, `client.py`, `tempi_ordine.py`) solo
    un import e una riga `if _ro.attivo(...)`. Rileggere il diff di persona.
-2. Test nuovi: `python -m pytest Betfair/monitor/tests/test_registratore_ordini_2026_10_11.py -q -p no:cacheprovider`
-   -> 84 verdi.
-3. Mutazioni: `python ARCHITETTURA_2026-10/mappa/m1_mutazioni.py` -> 42 righe `ROSSO ... ripristino sha256 identico`,
+2. Test nuovi: `python -m pytest Betfair/monitor/tests/test_registratore_ordini_2026_10_11.py
+   Betfair/monitor/tests/test_registratore_ordini_rev_2026_10_11.py -q -p no:cacheprovider` -> 111 verdi.
+3. Mutazioni: `python ARCHITETTURA_2026-10/mappa/m1_mutazioni.py` -> 80 righe `ROSSO ... ripristino sha256 identico`,
    uscita 0; poi `git status` pulito.
 4. Suite intera UNA volta: `python -m pytest Betfair/ -q -p no:cacheprovider` -> 0 rossi.
 5. Giro PAPER a interruttore SPENTO (nessuna riga in `.env`): avvio dell'app da parte dell'utente, un bot in paper per
@@ -229,6 +256,16 @@ ordinate per `seq`, divise per `sid`).
   dello stesso PC: corretti fra loro, non rispetto a Betfair (il `pt` dei messaggi resta nel `msg`).
 * Lo stream ordini di flumine e' filtrato da `config.customer_strategy_ref` se impostato: gli ordini del sito
   compaiono solo se il filtro e' vuoto (oggi lo e': `flumine.config.customer_strategy_ref` = `None`).
+* **Interfaccia con M-3** (`Betfair/stream/mappa_flussi.py` del ramo `mappa/m3-canale`, `--ordini`): provata sui file
+  VERI di M-1 (lettore di M-3 estratto in sola lettura, file scritti dallo scrittore vero). Oggi non li legge:
+  (a) cerca `<ordini>/AAAA-MM-GG/` o file direttamente in `<ordini>/`, mentre M-1 scrive in `<ordini>/AAAAMMGG/`
+  -> «nessun *.jsonl[.gz]»; (b) puntato sulla cartella del giorno, 7 righe su 7 «senza istante»: cerca un istante in
+  ms fra `epoca_ms`, `ts_ms`, `epoch_ms`, `rx`, `pt` in cima alla riga, M-1 ha `ep_us` (MICROsecondi; il `pt` di
+  Betfair sta dentro `msg`); (c) il giorno di M-3 e' Europe/Rome, quello dei file di M-1 e' UTC (un giorno di Roma
+  sta in due cartelle UTC); (d) `gzip.open` si ferma al primo membro tronco (I1): meglio `analisi_ordini.leggi_file`;
+  (e) il genere `k` mette insieme battiti e dati (`stream`): la distinzione e' in `msg.op`/`msg.ct`.
+  Proposta per M-3: leggere `ep_us/1000`, cercare anche `AAAAMMGG` (e il giorno UTC prima/dopo), usare
+  `leggi_file`, o chiamare direttamente `AO.analizza_giorni`.
 * Non verificati qui (macchina condivisa del cloud, nessuna app): il giro paper e quello live sul PC; il comportamento
   su Windows della cancellazione di file aperti da altri processi (gestito: errore catturato e loggato) e di
   `perf_counter` fra processi (QueryPerformanceCounter e' di sistema).

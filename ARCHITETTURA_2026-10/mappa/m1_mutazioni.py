@@ -13,7 +13,8 @@ import sys
 
 RADICE = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))))
-T = "Betfair/monitor/tests/test_registratore_ordini_2026_10_11.py"
+T = ["Betfair/monitor/tests/test_registratore_ordini_2026_10_11.py",
+     "Betfair/monitor/tests/test_registratore_ordini_rev_2026_10_11.py"]
 RO = "Betfair/monitor/registratore_ordini.py"
 AO = "Betfair/monitor/analisi_ordini.py"
 
@@ -54,7 +55,7 @@ MUT = [
      "        stream = originale(*args, **kwargs)\n        _monta_tee(stream, {}, ())\n        try:\n",
      "test_acceso_stream_dei_prezzi"),
     ("M11 coda senza tetto", RO,
-     "        if len(self._coda) >= CODA_MAX:", "        if False:",
+     "        if len(self._coda) >= CODA_MAX or", "        if False or",
      "test_coda_piena"),
     ("M12 niente rotazione", RO,
      "        if self._fh is None or giorno != self._giorno:", "        if self._fh is None:",
@@ -78,8 +79,8 @@ MUT = [
      '"fine_pulita": bool(ch),', '"fine_pulita": True,',
      "test_analisi_giornata"),
     ("M19 gzip tronco non tollerato", AO,
-     "        except zlib.error:\n            troncato = True\n            break\n        if not d.eof:\n            troncato = True",
-     "        except zlib.error:\n            troncato = True\n            break\n        if not d.eof:\n            raise EOFError('tronco')",
+     "    if not d.eof:\n        try:\n            out.append(d.flush())",
+     "    if not d.eof:\n        raise EOFError('tronco')\n        try:\n            out.append(d.flush())",
      "test_analisi_righe_perse"),
     ("M20 tee senza on_data originale (stream rotto)", RO,
      "            return originale(raw_data)\n", "            return None\n",
@@ -175,6 +176,101 @@ MUT = [
      'str(ex)[:160])',
      "        raise",
      "test_una_sola_richiesta_http or test_rest_nostro_una_chiamata"),
+    # -- revisione indipendente (11/10): le 20 del revisore (N), poi I1, I3, M1-M7.
+    #    Selezione None = TUTTI i test dei due file.
+    ("N1 thread non demone", RO,
+     'name="registro-ordini",\n                                     daemon=True)',
+     'name="registro-ordini",\n                                     daemon=False)', None),
+    ("N2 segreti: lunghezza minima 0", RO,
+     "isinstance(s, str) and len(s) >= 8", "isinstance(s, str) and len(s) >= 0", None),
+    ("N3 attore watchlist=desktop", RO,
+     '"watchlist": "desktop_watchlist"}', '"watchlist": "desktop"}', None),
+    ("N4 giorno in ora locale (TZ=Asia/Tokyo)", RO,
+     "time.gmtime(time.time() if ep_s is None else ep_s)",
+     "time.localtime(time.time() if ep_s is None else ep_s)", None, {"TZ": "Asia/Tokyo"}),
+    ("N5 parziali con sm >= 0", AO, '(e.get("sm") or 0) > 0)', '(e.get("sm") or 0) >= 0)', None),
+    ("N6 replace: attore del figlio dalla richiesta", AO,
+     'o.attore = padre.attore if padre is not None else (r.get("attore") or "?")',
+     'o.attore = (r.get("attore") or "?")', None),
+    ("N7 righe stream con sid 0", RO,
+     'voce = ("s", next(self._seq), ep, mono, sid, raw)',
+     'voce = ("s", next(self._seq), ep, mono, 0, raw)', None),
+    ("N8 atexit non registrato", RO,
+     "                atexit.register(self.chiudi)", "                pass", None),
+    ("N9 riga stream ri-serializzata", RO,
+     """return testa + ',"msg":' + testo + "}\"""",
+     """return testa + ',"msg":' + json.dumps(json.loads(testo), sort_keys=True) + "}\"""", None),
+    ("N10 durata dall'epoca", RO,
+     "round((risposta[1] - invio[1]) / 1000.0, 3)", "round((risposta[0] - invio[0]) / 1000.0, 3)",
+     None),
+    ("N11 errorCode dell'istruzione perso", RO,
+     'codici.append(r.get("errorCode"))', "codici.append(None)", None),
+    ("N12 potatura del file proprio", RO,
+     "                    if mio is not None and os.path.abspath(p) == mio:\n"
+     "                        continue\n", "", None),
+    ("N13 dedup ocm sempre vero", AO,
+     "                    if chiave in o.chiavi_viste:", "                    if True:", None),
+    ("N14 immagini ripetute mai viste", AO,
+     'b["immagini_ripetute"] = max(0, b["immagini_piene"] - len(b["sottoscrizioni"]))',
+     'b["immagini_ripetute"] = 0', None),
+    ("N15 soglia di silenzio senza heartbeat_ms", AO,
+     "float(max(hb, cf))", "float(BATTITO_DEFAULT_MS)", None),
+    ("N16 sid non aggiornato al riuso del listener", RO,
+     '    if contesto is not None:\n        contesto["sid"] = sid\n',
+     "    if contesto is not None:\n        pass\n", None),
+    ("N17 tee montato due volte", RO,
+     '    if contesto is not None:\n        contesto["sid"] = sid\n    elif callable(attuale):',
+     "    if callable(attuale):", None),
+    ("N18 aggancio non idempotente", RO,
+     'if betting is not None and not getattr(getattr(betting, "request", None), _MARCA, False):',
+     "if betting is not None:", None),
+    ("N19 avvio senza versione", RO, '"versione": VERSIONE_FORMATO, ', "", None),
+    ("N20 svuotamento gzip mai", RO,
+     "forza_svuota or adesso - self._ultimo_svuota >= SVUOTA_GZIP_S", "forza_svuota", None),
+    ("I1 scrittore: in coda/sopra al file esistente", RO,
+     "            if not os.path.exists(p) or os.path.getsize(p) == 0:\n                return p\n",
+     "            return p\n", None),
+    ("I1 lettore: non riprende dopo il membro tronco", AO,
+     "            if prova or _c:\n                pos = i\n                break\n",
+     "            break\n", None),
+    ("I3 silenzio finale non visto", AO,
+     "            if ultimo is not None and fine_rif - ultimo > soglia_us:",
+     "            if False:", None),
+    ("I3 silenzio iniziale non visto", AO,
+     "            if primo - ep_sub > soglia_us:", "            if False:", None),
+    ("I3 fine del processo morto non misurata sul giorno", AO,
+     "            else fine_giorno_us\n", "            else 0\n", None),
+    ("M1 niente gancio del fork", RO, "            _registra_fork()\n", "", None),
+    ("M2 chiudi aspetta per sempre", RO,
+     "if not self._io.acquire(timeout=CHIUDI_ATTESA_S):", "if not self._io.acquire():", None),
+    ("M3 decisioni paper legate alle REST live", AO,
+     'dec_live = decisioni.get("live", {})',
+     "dec_live = {k: v for m in decisioni.values() for k, v in m.items()}", None),
+    ("M4 ritentativi nei percentili", AO,
+     'elif r.get("via") == "rest_nostro" and float(d) >= SOGLIA_RITENTATIVO_MS:', "elif False:",
+     None),
+    ("M4 errori nei percentili", AO,
+     'if r.get("eccezione") or codici:', 'if r.get("eccezione"):', None),
+    ("M5 coda senza tetto in byte", RO,
+     "self._byte_entrati - self._byte_usciti >= CODA_MAX_BYTE:", "False:", None),
+    ("M5 thread assegnato anche se l'avvio fallisce", RO,
+     "                self.avvii_falliti += 1\n",
+     "                self.avvii_falliti += 1\n                self._thread = t\n", None),
+    ("M5 avvio ritentato a ogni riga", RO,
+     "time.monotonic() >= self._prossimo_avvio:", "True:", None),
+    ("M6 cartelle vuote di chiunque", RO,
+     "                if not _RE_GIORNO.fullmatch(nome):", "                if False:", None),
+    ("M7 codici annidati di replaceOrders persi", AO,
+     'for sotto in ("cancelInstructionReport", "placeInstructionReport"):', "for sotto in ():",
+     None),
+    ("M7 piu' giorni: solo l'ultimo", AO,
+     "return analizza(leggi_file(p) for g in giorni for p in file_del_giorno(cartella, g))",
+     "return analizza(leggi_file(p) for p in file_del_giorno(cartella, list(giorni)[-1]))", None),
+    ("E5 riapertura a ogni riga dopo un errore", RO,
+     "            if time.monotonic() < self._riapri_dopo:", "            if False:", None),
+    ("E5 chiusura persa dopo un errore di file", RO,
+     "                if self._fh is None and self._percorso is not None:",
+     "                if False:", None),
 ]
 
 
@@ -184,7 +280,9 @@ def sha(p):
 
 
 esito = 0
-for nome, rel, vecchio, nuovo, sel in MUT:
+for voce in MUT:
+    nome, rel, vecchio, nuovo, sel = voce[:5]
+    extra_env = voce[5] if len(voce) > 5 else {}
     p = RADICE + "/" + rel
     with open(p, "rb") as fh:
         orig = fh.read()
@@ -197,10 +295,17 @@ for nome, rel, vecchio, nuovo, sel in MUT:
     try:
         with open(p, "wb") as fh:
             fh.write(testo.replace(vecchio, nuovo).encode("utf-8"))
-        r = subprocess.run([sys.executable, "-m", "pytest", T, "-q", "-p", "no:cacheprovider",
-                            "-k", sel], cwd=RADICE, capture_output=True, text=True, timeout=600)
-        ultima = [x for x in r.stdout.strip().splitlines() if x.strip()][-1]
-        rosso = r.returncode != 0
+        cmd = [sys.executable, "-m", "pytest", *T, "-q", "-p", "no:cacheprovider", "-x"]
+        if sel:
+            cmd += ["-k", sel]
+        try:
+            r = subprocess.run(cmd, cwd=RADICE, capture_output=True, text=True, timeout=300,
+                               env=dict(os.environ, **extra_env))
+            ultima = [x for x in r.stdout.strip().splitlines() if x.strip()][-1]
+            rosso = r.returncode != 0
+        except subprocess.TimeoutExpired:
+            # un test appeso non certifica niente: conta VERDE (!!) e va guardato
+            ultima, rosso = "APPESO oltre 300 s", False
     finally:
         with open(p, "wb") as fh:
             fh.write(orig)

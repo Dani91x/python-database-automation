@@ -45,25 +45,77 @@ STATI_OCM = {"E": "EXECUTABLE", "EC": "EXECUTION_COMPLETE"}
 # ---------------------------------------------------------------------------
 # lettura dei file
 # ---------------------------------------------------------------------------
+MAGIA_GZIP = b"\x1f\x8b\x08"
+_BLOCCO = 4096
+
+
+def _un_membro(dati: bytes, da: int) -> Tuple[bytes, Optional[int], bool]:
+    """Decomprime UN membro gzip a partire da ``da``, a blocchi, tenendo
+    l'uscita gia' ottenuta anche se poi il membro si rompe.
+    Ritorna (byte, posizione del membro dopo | None, membro completo)."""
+    d = zlib.decompressobj(wbits=31)
+    out: List[bytes] = []
+    pos = da
+    while pos < len(dati) and not d.eof:
+        prima = d.copy()
+        blocco = dati[pos:pos + _BLOCCO]
+        try:
+            out.append(d.decompress(blocco))
+        except zlib.error:
+            # il blocco si rifa' byte per byte: si tiene TUTTO cio' che precede
+            # il primo byte che non si decomprime
+            for j in range(len(blocco)):
+                try:
+                    out.append(prima.decompress(blocco[j:j + 1]))
+                except zlib.error:
+                    break
+            return b"".join(out), None, False
+        pos += _BLOCCO
+    if not d.eof:
+        try:
+            out.append(d.flush())
+        except zlib.error:
+            pass
+        return b"".join(out), None, False
+    # membro completo: il successivo comincia dove finiscono i byte usati
+    dopo = min(pos, len(dati)) - len(d.unused_data)
+    return b"".join(out), dopo, True
+
+
 def decomprimi_tollerante(dati: bytes) -> Tuple[bytes, bool]:
-    """Decomprime un gzip anche a piu' membri e con la coda tronca (processo
-    morto fra due svuotamenti): tiene tutto cio' che si puo' leggere.
+    """Decomprime un gzip a piu' membri anche quando un membro e' TRONCO
+    (processo morto fra due svuotamenti) e altri membri lo seguono: tiene cio'
+    che il membro rotto ha gia' dato (fino all'ultima riga intera) e riprende
+    dal membro successivo (prossima firma ``1f 8b 08`` che si decomprime).
     Ritorna (byte, troncato)."""
     out: List[bytes] = []
     troncato = False
-    while dati:
-        d = zlib.decompressobj(wbits=31)
-        try:
-            out.append(d.decompress(dati))
-        except zlib.error:
-            troncato = True
+    pos = 0
+    while pos < len(dati):
+        if not dati[pos:].lstrip(b"\x00"):
             break
-        if not d.eof:
-            troncato = True
-            break
-        dati = d.unused_data
-        if dati and not dati.lstrip(b"\x00"):
-            break
+        pezzo, dopo, completo = _un_membro(dati, pos)
+        if completo:
+            out.append(pezzo)
+            pos = dopo  # type: ignore[assignment]
+            continue
+        troncato = True
+        # del membro rotto si tengono solo le righe intere
+        taglio = pezzo.rfind(b"\n")
+        if taglio >= 0:
+            out.append(pezzo[:taglio + 1])
+        # il prossimo membro che si lascia decomprimere
+        cerca = pos + 1
+        pos = len(dati)
+        while True:
+            i = dati.find(MAGIA_GZIP, cerca)
+            if i < 0:
+                break
+            prova, _dopo, _c = _un_membro(dati, i)
+            if prova or _c:
+                pos = i
+                break
+            cerca = i + 1
     return b"".join(out), troncato
 
 
@@ -177,6 +229,33 @@ def _report_place(rep: Dict[str, Any]) -> Tuple[Optional[str], Dict[str, Any]]:
     }
 
 
+SOGLIA_RITENTATIVO_MS = 2000.0
+
+
+def _codici_annidati(rec: Dict[str, Any]) -> List[str]:
+    """Tutti i codici d'errore di una REST: quello del rapporto, quelli delle
+    istruzioni E quelli annidati di ``replaceOrders`` (cancel e place)."""
+    out: List[str] = []
+    res = _result(rec)
+    if res.get("errorCode"):
+        out.append(str(res["errorCode"]))
+    for rep in res.get("instructionReports") or []:
+        if not isinstance(rep, dict):
+            continue
+        if rep.get("errorCode"):
+            out.append(str(rep["errorCode"]))
+        for sotto in ("cancelInstructionReport", "placeInstructionReport"):
+            x = rep.get(sotto)
+            if isinstance(x, dict) and x.get("errorCode"):
+                out.append(str(x["errorCode"]))
+    if not res:
+        # risposta senza ``result`` (errore JSON-RPC): il codice gia' estratto
+        out.extend(str(c) for c in (rec.get("codici") or []) if c)
+        if rec.get("errore"):
+            out.append(str(rec["errore"]))
+    return out
+
+
 def _result(rec: Dict[str, Any]) -> Dict[str, Any]:
     r = rec.get("risposta")
     if isinstance(r, dict) and "result" in r and isinstance(r.get("result"), dict):
@@ -191,7 +270,13 @@ def analizza(letti: Iterable[Tuple[List[Dict[str, Any]], Dict[str, Any]]],
     ordini: Dict[str, _Ordine] = {}
     rest_tutte: List[Dict[str, Any]] = []
     rifiuti: List[Dict[str, Any]] = []
-    decisioni: Dict[str, Dict[str, Any]] = {}
+    # decisioni PER MODO: paper e live non si sommano mai; si legano alle REST
+    # solo quelle live (il paper non fa REST)
+    decisioni: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    # l'ultimo istante visto in QUALUNQUE file (riferimento per la fine di un
+    # processo morto senza riga di chiusura)
+    fine_giorno_us = max([int(r["ep_us"]) for righe, _i in letti for r in righe
+                          if isinstance(r.get("ep_us"), (int, float))] or [0])
     buchi_file: List[Dict[str, Any]] = []
     eventi_ocm: List[Tuple[int, str, Dict[str, Any], Dict[str, Any]]] = []
 
@@ -209,12 +294,15 @@ def analizza(letti: Iterable[Tuple[List[Dict[str, Any]], Dict[str, Any]]],
             "righe": info["righe"], "rotte": info["rotte"], "coda_gzip_tronca": info["troncato"],
             "fine_pulita": bool(ch), "motivo_fine": ch.get("motivo"),
             "persi_coda": ch.get("persi_coda"), "scartati_tetto": ch.get("scartati_tetto"),
+            "scartati_errore": ch.get("scartati_errore"),
             "seq_mancanti": seq_mancanti, "sottoscrizioni": [], "silenzi": [],
             "status_errori": [], "immagini_piene": 0, "dati_senza_clk": 0,
             "messaggi_stream": 0, "battiti": 0,
         }
         battito_sid: Dict[int, float] = {}
         ultimo_sid: Dict[int, int] = {}
+        primo_sid: Dict[int, int] = {}
+        sub_ord: List[Tuple[int, int]] = []
         for r in righe:
             k = r.get("k")
             if k == "sub":
@@ -225,9 +313,11 @@ def analizza(letti: Iterable[Tuple[List[Dict[str, Any]], Dict[str, Any]]],
                 hb = r.get("heartbeat_ms") or BATTITO_DEFAULT_MS
                 cf = r.get("conflate_ms") or 0
                 battito_sid[int(r.get("sid") or 0)] = float(max(hb, cf))
+                sub_ord.append((int(r.get("sid") or 0), int(r.get("ep_us") or 0)))
             elif k == "dec":
                 if r.get("cor"):
-                    decisioni[str(r["cor"])] = r
+                    modo = str(r.get("mode") or "?").strip().lower() or "?"
+                    decisioni.setdefault(modo, {})[str(r["cor"])] = r
             elif k == "rest":
                 rest_tutte.append(dict(r, _file=nome))
             elif k == "stream":
@@ -240,9 +330,10 @@ def analizza(letti: Iterable[Tuple[List[Dict[str, Any]], Dict[str, Any]]],
                 prec = ultimo_sid.get(sid)
                 soglia_us = fattore_silenzio * battito_sid.get(sid, BATTITO_DEFAULT_MS) * 1000.0
                 if prec is not None and ep - prec > soglia_us:
-                    b["silenzi"].append({"sid": sid, "da_ep_us": prec, "a_ep_us": ep,
-                                         "secondi": round((ep - prec) / 1e6, 3)})
+                    b["silenzi"].append({"sid": sid, "tipo": "intermedio", "da_ep_us": prec,
+                                         "a_ep_us": ep, "secondi": round((ep - prec) / 1e6, 3)})
                 ultimo_sid[sid] = ep
+                primo_sid.setdefault(sid, ep)
                 op = msg.get("op")
                 if op == "status":
                     if msg.get("statusCode") not in (None, "SUCCESS") or msg.get("connectionClosed"):
@@ -262,6 +353,29 @@ def analizza(letti: Iterable[Tuple[List[Dict[str, Any]], Dict[str, Any]]],
                 if not msg.get("clk") and not msg.get("initialClk"):
                     b["dati_senza_clk"] += 1
                 eventi_ocm.append((ep, nome, msg, {"sid": sid, "ct": ct or "UPDATE"}))
+        # silenzi ai BORDI di ogni sottoscrizione: sottoscrizione -> primo
+        # messaggio, ultimo messaggio -> sottoscrizione dopo / chiusura / ultimo
+        # istante visto nel giorno (processo morto senza chiusura)
+        fine_file = ch.get("ep_us") if isinstance(ch.get("ep_us"), (int, float)) \
+            else fine_giorno_us
+        for i, (sid, ep_sub) in enumerate(sub_ord):
+            soglia_us = fattore_silenzio * battito_sid.get(sid, BATTITO_DEFAULT_MS) * 1000.0
+            fine_rif = sub_ord[i + 1][1] if i + 1 < len(sub_ord) else int(fine_file or 0)
+            primo = primo_sid.get(sid)
+            ultimo = ultimo_sid.get(sid)
+            if primo is None:
+                if fine_rif - ep_sub > soglia_us:
+                    b["silenzi"].append({"sid": sid, "tipo": "nessun_messaggio",
+                                         "da_ep_us": ep_sub, "a_ep_us": fine_rif,
+                                         "secondi": round((fine_rif - ep_sub) / 1e6, 3)})
+                continue
+            if primo - ep_sub > soglia_us:
+                b["silenzi"].append({"sid": sid, "tipo": "iniziale", "da_ep_us": ep_sub,
+                                     "a_ep_us": primo, "secondi": round((primo - ep_sub) / 1e6, 3)})
+            if ultimo is not None and fine_rif - ultimo > soglia_us:
+                b["silenzi"].append({"sid": sid, "tipo": "finale", "da_ep_us": ultimo,
+                                     "a_ep_us": fine_rif,
+                                     "secondi": round((fine_rif - ultimo) / 1e6, 3)})
         b["ripartenze"] = max(0, len(b["sottoscrizioni"]) - 1)
         b["immagini_ripetute"] = max(0, b["immagini_piene"] - len(b["sottoscrizioni"]))
         buchi_file.append(b)
@@ -400,8 +514,9 @@ def analizza(letti: Iterable[Tuple[List[Dict[str, Any]], Dict[str, Any]]],
         if o.place is not None:
             p = o.place
             riga["place"] = p
-            if o.rfo and str(o.rfo) in decisioni:
-                d = decisioni[str(o.rfo)]
+            dec_live = decisioni.get("live", {})
+            if o.rfo and str(o.rfo) in dec_live:
+                d = dec_live[str(o.rfo)]
                 riga["decisione"] = {k: d.get(k) for k in ("chiave", "strada", "azione", "rif",
                                                            "decisione_ms", "ricezione_ms")}
                 dm = d.get("decisione_ms")
@@ -430,17 +545,29 @@ def analizza(letti: Iterable[Tuple[List[Dict[str, Any]], Dict[str, Any]]],
                                  or (r["eventi"][0].get("ep_us") if r["eventi"] else 0) or 0))
 
     # -- latenze REST ----------------------------------------------------------
+    # I percentili si fanno SOLO sulle chiamate pulite: niente eccezione, niente
+    # codice d'errore, e per il client nostro niente durata da ritentativo
+    # (``_rpc`` dorme 2**tentativo s fra un tentativo e l'altro: >= 2 s e'
+    # quasi certamente un ritentativo). Le altre hanno percentili a parte.
     per_metodo: Dict[str, List[float]] = {}
+    per_via: Dict[str, List[float]] = {}
     per_attore: Dict[str, List[float]] = {}
+    scartate: Dict[str, List[float]] = {}
     errori: Dict[str, int] = {}
     for r in rest_tutte:
         d = r.get("durata_ms")
+        codici = _codici_annidati(r)
         if isinstance(d, (int, float)):
-            per_metodo.setdefault(str(r.get("metodo")), []).append(float(d))
-            per_attore.setdefault("%s %s" % (r.get("attore"), r.get("metodo")), []).append(float(d))
-        codici = [c for c in (r.get("codici") or []) if c]
-        if r.get("errore"):
-            codici.append(r["errore"])
+            if r.get("eccezione") or codici:
+                scartate.setdefault("con_errore " + str(r.get("metodo")), []).append(float(d))
+            elif r.get("via") == "rest_nostro" and float(d) >= SOGLIA_RITENTATIVO_MS:
+                scartate.setdefault("probabile_ritentativo " + str(r.get("metodo")),
+                                    []).append(float(d))
+            else:
+                per_metodo.setdefault(str(r.get("metodo")), []).append(float(d))
+                per_via.setdefault("%s %s" % (r.get("via"), r.get("metodo")), []).append(float(d))
+                per_attore.setdefault("%s %s" % (r.get("attore"), r.get("metodo")),
+                                      []).append(float(d))
         if r.get("eccezione"):
             codici.append("eccezione:" + str(r["eccezione"]).split(":", 1)[0])
         for c in codici:
@@ -456,11 +583,13 @@ def analizza(letti: Iterable[Tuple[List[Dict[str, Any]], Dict[str, Any]]],
             "ordini_altri_processi": sum(1 for o in ordini.values() if o.origine == "altro_processo"),
             "rifiuti_senza_bet": len(rifiuti),
             "ocm_prima_della_risposta": len(prima_della_risposta),
-            "decisioni": len(decisioni),
+            "decisioni": {m: len(v) for m, v in sorted(decisioni.items())},
         },
         "latenze": {
             "rest_ms_per_metodo": {k: _percentili(v) for k, v in sorted(per_metodo.items())},
             "rest_ms_per_attore": {k: _percentili(v) for k, v in sorted(per_attore.items())},
+            "rest_ms_per_via": {k: _percentili(v) for k, v in sorted(per_via.items())},
+            "rest_ms_escluse": {k: _percentili(v) for k, v in sorted(scartate.items())},
             "risposta_rest_primo_ocm_ms": _percentili(lat_rest_ocm),
             "invio_rest_primo_ocm_ms": _percentili(lat_invio_ocm),
             "decisione_invio_rest_ms": _percentili(lat_decisione_invio),
@@ -475,13 +604,31 @@ def analizza(letti: Iterable[Tuple[List[Dict[str, Any]], Dict[str, Any]]],
             b["ripartenze"] or b["silenzi"] or b["status_errori"] or b["seq_mancanti"]
             or b["dati_senza_clk"] or b["immagini_ripetute"] or not b["fine_pulita"]
             or b["coda_gzip_tronca"] or b["rotte"] or (b["persi_coda"] or 0)
-            or (b["scartati_tetto"] or 0)
+            or (b["scartati_tetto"] or 0) or (b["scartati_errore"] or 0)
             for b in buchi_file),
     }
 
 
 def analizza_giorno(cartella: str, giorno: str) -> Dict[str, Any]:
     return analizza(leggi_file(p) for p in file_del_giorno(cartella, giorno))
+
+
+def giorni_fra(dal: str, al: str) -> List[str]:
+    """I giorni AAAAMMGG da ``dal`` ad ``al`` compresi."""
+    import datetime as _dt
+
+    a = _dt.datetime.strptime(dal, "%Y%m%d").date()
+    b = _dt.datetime.strptime(al, "%Y%m%d").date()
+    out = []
+    while a <= b:
+        out.append(a.strftime("%Y%m%d"))
+        a += _dt.timedelta(days=1)
+    return out
+
+
+def analizza_giorni(cartella: str, giorni: Iterable[str]) -> Dict[str, Any]:
+    """Piu' giorni INSIEME (es. gli ordini a cavallo della mezzanotte UTC)."""
+    return analizza(leggi_file(p) for g in giorni for p in file_del_giorno(cartella, g))
 
 
 # ---------------------------------------------------------------------------
@@ -492,15 +639,18 @@ def formatta(a: Dict[str, Any], dettaglio: int = 20) -> str:
     c = a["conteggi"]
     out.append("REGISTRO ORDINI - file: %d" % len(a["file"]))
     out.append("  REST con soldi: %d | ordini: %d (nostri %d, sito %d, altri processi %d) | "
-               "rifiuti senza bet: %d | decisioni legate: %d"
+               "rifiuti senza bet: %d | decisioni per modo: %s"
                % (c["rest"], c["ordini"], c["ordini_nostri"], c["ordini_sito"],
-                  c["ordini_altri_processi"], c["rifiuti_senza_bet"], c["decisioni"]))
+                  c["ordini_altri_processi"], c["rifiuti_senza_bet"],
+                  ", ".join("%s %d" % kv for kv in c["decisioni"].items()) or "nessuna"))
     out.append("LATENZE (ms)")
     for k, v in a["latenze"]["rest_ms_per_metodo"].items():
         out.append("  REST %-14s %s" % (k, _riga_perc(v)))
     out.append("  risposta REST -> primo ocm   %s" % _riga_perc(a["latenze"]["risposta_rest_primo_ocm_ms"]))
     out.append("  invio REST -> primo ocm      %s" % _riga_perc(a["latenze"]["invio_rest_primo_ocm_ms"]))
     out.append("  decisione -> invio REST      %s" % _riga_perc(a["latenze"]["decisione_invio_rest_ms"]))
+    for k, v in a["latenze"].get("rest_ms_escluse", {}).items():
+        out.append("  ESCLUSE dai percentili: %-34s %s" % (k, _riga_perc(v)))
     if a["errori_rest"]:
         out.append("ERRORI REST")
         for k, n in a["errori_rest"].items():
@@ -528,7 +678,7 @@ def formatta(a: Dict[str, Any], dettaglio: int = 20) -> str:
             out.append("    sottoscrizione sid %s %s" % (
                 s["sid"], "ripresa da clk" if s["ripresa"] else "immagine piena"))
         for s in b["silenzi"][:dettaglio]:
-            out.append("    silenzio sid %s di %.1f s" % (s["sid"], s["secondi"]))
+            out.append("    silenzio %s sid %s di %.1f s" % (s.get("tipo"), s["sid"], s["secondi"]))
     out.append("SEQUENZE (prime %d)" % dettaglio)
     for r in a["sequenze"][:dettaglio]:
         passi = []
@@ -552,7 +702,9 @@ def _riga_perc(v: Dict[str, Any]) -> str:
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Analisi di una giornata del registratore ordini (M-1)")
-    ap.add_argument("--giorno", required=True, help="AAAAMMGG (UTC)")
+    ap.add_argument("--giorno", default=None, help="AAAAMMGG (UTC)")
+    ap.add_argument("--dal", default=None, help="AAAAMMGG (UTC), con --al: piu' giorni insieme")
+    ap.add_argument("--al", default=None, help="AAAAMMGG (UTC), compreso")
     ap.add_argument("--cartella", default=None, help="di serie <LIVE_STREAM_DATA_DIR>/_ordini")
     ap.add_argument("--json", default=None, help="scrive l'analisi intera in questo file")
     ap.add_argument("--dettaglio", type=int, default=20)
@@ -562,7 +714,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         from .registratore_ordini import cartella_base
 
         cartella = cartella_base()
-    a = analizza_giorno(cartella, args.giorno)
+    if args.dal or args.al:
+        giorni = giorni_fra(args.dal or args.al, args.al or args.dal)
+    elif args.giorno:
+        giorni = [args.giorno]
+    else:
+        ap.error("serve --giorno oppure --dal/--al")
+        return 2
+    a = analizza_giorni(cartella, giorni)
     print(formatta(a, args.dettaglio))
     if args.json:
         with open(args.json, "w", encoding="ascii") as fh:
