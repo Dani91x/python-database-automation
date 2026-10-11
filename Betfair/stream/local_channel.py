@@ -32,6 +32,7 @@ from typing import Any, Dict, Iterable, Optional
 from urllib.parse import parse_qs, urlsplit
 
 from ..monitor import sonde as _mon  # 09/10 (T0A "Salute"): spento di serie
+from . import registratore_canale as _reg  # 11/10 (M-3): registratore, spento di serie
 
 logger = logging.getLogger(__name__)
 
@@ -401,6 +402,8 @@ class LocalChannel:
 
     def _on_message(self, ws: Any, raw: Any) -> None:
         """Parse + enqueue (nel thread del loop). MAI eseguire ordini qui."""
+        if _reg.ATTIVO:  # 11/10 (M-3): copia del messaggio ricevuto, mai decide
+            _reg.ricevuto(self, ws, raw)
         if ws in self._comando_ws:
             self._on_comando(ws, raw)
             return
@@ -562,6 +565,8 @@ class LocalChannel:
             text = json.dumps(payload, default=str)
         except Exception:  # noqa: BLE001
             return
+        if _reg.ATTIVO:  # 11/10 (M-3): esito verso il client, mai decide
+            _reg.risposta(self, ws, text, "send")
         self._loop.create_task(self._safe_send(ws, text))
 
     async def _safe_send(self, ws: Any, text: str) -> None:
@@ -619,6 +624,8 @@ class LocalChannel:
             text = json.dumps(payload, default=str)
         except Exception:  # noqa: BLE001
             return
+        if _reg.ATTIVO:  # 11/10 (M-3): esito verso il client, mai decide
+            _reg.risposta(self, ws, text, "invia")
         try:
             loop.call_soon_threadsafe(lambda: loop.create_task(self._safe_send(ws, text)))
         except RuntimeError:
@@ -639,6 +646,8 @@ class LocalChannel:
             text = json.dumps(payload, default=str)
         except Exception:  # noqa: BLE001
             return
+        if _reg.ATTIVO:  # 11/10 (M-3): esito verso l'attore, mai decide
+            _reg.risposta_attore(self, attore, text)
 
         def _manda() -> None:
             for w, (att, _tok) in list(self._comando_ws.items()):
@@ -691,6 +700,8 @@ class LocalChannel:
         if self._client_pronti <= 0:
             # nessuno puo' ricevere: si esce PRIMA di serializzare, come prima
             self._conti["saltati"] += 1
+            if _reg.ATTIVO:  # 11/10 (M-3): giro saltato, mai decide
+                _reg.giro_saltato(self, topic)
             ora = time.monotonic()
             if ora - self._ultimo_avviso > 30.0:
                 self._ultimo_avviso = ora
@@ -708,6 +719,8 @@ class LocalChannel:
             return
 
         def _broadcast() -> None:
+            if _reg.ATTIVO:  # 11/10 (M-3): metadati del giro (thread del loop), mai decide
+                _reg.pubblicato(self, topic, text)
             for ws in list(self._clients):
                 filtro = self._lettori.get(ws)
                 if filtro is not None and topic not in filtro:
@@ -748,6 +761,8 @@ class LocalChannel:
             text = json.dumps(payload, default=str)
         except Exception:  # noqa: BLE001
             text = json.dumps({"id": req.msg_id, "ok": False, "e": "risposta non serializzabile"})
+        if _reg.ATTIVO:  # 11/10 (M-3): esito del comando, mai decide
+            _reg.risposta(self, req.ws, text, "respond")
         try:
             loop.call_soon_threadsafe(lambda: loop.create_task(self._safe_send(req.ws, text)))
         except RuntimeError:
