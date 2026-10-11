@@ -54,10 +54,18 @@ Come funziona:
 3. La pagina (solo con la build a `MONITOR_SALUTE=1`): all'arrivo di un push `ladder` (`localChannel.ts:292`) annota
    arrivo e marche per mercato; il ladder (`LadderView.tsx:1530`) dopo il commit chiede UN frame e lo segna. Un push =
    una misura; due push fusi in un render contano una volta (l'ultimo); al massimo `MAX_ARRIVI = 500` mercati in attesa.
+   **Revisione 11/10 (I-1)**: il frame chiude l'arrivo SOLO se la riga dipinta e' quella arrivata (stesso
+   `ladder.updated_ms`, che e' identico su canale e DB per lo stesso book) e se l'arrivo ha meno di
+   `ETA_MAX_ARRIVO_MS = 2000` ms; gli arrivi piu' vecchi (mercati senza ladder montato) si scartano a ogni arrivo nuovo
+   e si contano in `pagina.scartati`. Prima un ladder aperto 40 s dopo l'ultimo push (riga letta dalla cache,
+   `localTransport.ts:122`) o una riga dal ripiego DB chiudevano un arrivo vecchio: `pagina_dipinto_ms` = 40000, falso.
+   Dopo l'invio del riassunto si azzerano i numeri, non lo sport: un arrivo in volo resta abbinabile (M-3).
 4. Ogni 30 s la pagina manda un RIASSUNTO per sport (stessi bordi dei secchi del Python: un test li confronta e il
    Python rifiuta un riassunto con bordi diversi, catalogo PSB par. 7 n.33) come richiesta `salute` sul canale del
    runner gia' aperto (47331 calcio, 47332 tennis). Il runner lo valida PER INTERO (versione, bordi, nomi ammessi,
-   `n` = somma dei secchi, numeri finiti, tetto 100.000) e lo fonde nel suo registro (`sonde.misure_pagina`,
+   `n` = somma dei secchi, numeri finiti, tetto 100.000; **revisione 11/10 (M-1)**: lunghezza dei bordi controllata
+   PRIMA di leggerne gli elementi, ogni valore entro `VALORE_MAX_MS = 1e7`, `min <= max`, `n*min <= somma <= n*max`,
+   primo e ultimo secchio pieni coerenti con `min` e `max`) e lo fonde nel suo registro (`sonde.misure_pagina`,
    `sonde.py:457-500`; `registro.Registro.fondi`, `registro.py:151-170`): tutto o niente. Mai in coda comandi, nessun
    token, nessun parametro d'ordine. Canale giu': il riassunto si scarta (la misura non aspetta).
 
@@ -72,8 +80,21 @@ servirebbero una policy o una RPC nuove e una scrittura nuova del guscio).
 | Omega, Safe | coda DB (`betfair_live_order_requests`) | `emesso_ms` nei params (T0A, `marca_emesso`) | righe `tempi_ordine` strada=coda lette per attore | `decisione_invio_ms`, `invio_presa_ms`, `presa_place_ms`, `place_risposta_ms`, `decisione_risposta_ms` `.<attore>.coda.<modo>` |
 | Omega, Safe, **Mike** (paper) | `/comando/<attore>` del motore ordini | `creato_ms` del comando (GIA' nel protocollo, chiave obbligatoria; `motore_ordini.py:1040-1042` lo passa a `tempi_ordine`) | righe `tempi_ordine` strada=comando | idem `.<attore>.comando.<modo>` |
 | **Clic del desktop** (calcio e tennis) | canale `order` (47331/47332) | **`emesso_ms` nuovo**: `Date.now()` preso PER PRIMO in `localOrderApi.send` (`localTransport.ts:439-442`, campo in `:453`), solo sul canale e solo a monitor acceso | `drenate` (`sonde._clic_del_desktop`, `sonde.py:213-231`): clic -> arrivo sul canale, clic -> presa del worker; e le righe `tempi_ordine` strada=canale/tennis (presa -> place -> risposta) | `clic_canale_ms.<modo>`, `clic_presa_ms.<modo>`; `presa_place_ms`/`place_risposta_ms` `.desktop.canale.<modo>` |
-| **Scalper calcio** | in processo (`market.place_order` nella sessione flumine) | creazione del pacchetto di flumine (l'ordine nasce nella strategia, stesso thread) | `elapsed_seconds` del pacchetto nel log `execute_place` di flumine (Betfair vero) | `pacchetto_risposta_ms` nella riga `scalper-sessione-*` (referto: attore `scalper`) |
-| **Bot tennis** | in processo (runner tennis) | idem | idem | `pacchetto_risposta_ms` nella riga `runner-tennis` (referto: `tennis-processo`: bot e manuali dello stesso processo) |
+| **Scalper calcio** | in processo (`market.place_order` nella sessione flumine) | creazione del pacchetto di flumine (l'ordine nasce nella strategia, stesso thread) | `elapsed_seconds` del pacchetto nel log `execute_place` di flumine (Betfair vero) | `pacchetto_risposta_ms` nella riga `scalper-sessione-*` (referto: `processo:scalper-sessioni`) |
+| **Bot tennis** | in processo (runner tennis) | idem | idem | `pacchetto_risposta_ms` nella riga `runner-tennis` (referto: `processo:runner-tennis`) |
+
+**`pacchetto_risposta_ms` e' una misura per PROCESSO, non per attore** (revisione 11/10, M-5): nel runner tennis
+convivono i quattro bot e gli ordini manuali, nel runner calcio il motore esegue gli ordini di tutti; il referto lo
+scrive nella colonna attore come `processo:<servizio>` e la spiegazione del tratto lo dice.
+
+**Orologi del clic** (revisione 11/10, M-4): `clic_canale_ms` e `clic_presa_ms` confrontano `Date.now()` della pagina
+(Chromium: risoluzione al millisecondo) con `time.time()` di Python nello stesso PC. Su Windows con Python < 3.13
+`time.time()` ha risoluzione di circa 15,6 ms (orologio di sistema a scatti); da Python 3.13 usa
+`GetSystemTimePreciseAsFileTime` (sotto il microsecondo). `time.time_ns()` ha la stessa risoluzione di
+`time.time()` e non aiuterebbe; `perf_counter` non e' confrontabile con un orologio di un altro processo. Quindi:
+con Python < 3.13 sul PC i tratti del clic hanno un errore fino a ~16 ms per misura, da leggere come tale (la
+versione di Python del servizio e' nella riga `sistema.python` del monitor). I tratti dentro un processo
+(`presa_place_ms`, `place_risposta_ms`, `pacchetto_risposta_ms`) non hanno questo limite.
 | **Mike** (live) | REST in processo (`omega_market.place_order_live`) | in processo | `rest_ms.placeOrders` (T0A, sessione dell'APIClient) | - |
 
 Perche' `marca_emesso` NON e' stato aggiunto a Mike, scalper e bot tennis: Mike in paper porta gia' l'istante della
@@ -82,8 +103,10 @@ tennis non hanno una coda ne' dei params - decidono e piazzano nello stesso thre
 invio" e' il calcolo della strategia e il resto e' il pacchetto di flumine, misurato dal log che flumine scrive gia'.
 
 Lettura delle righe `tempi_ordine` (handler `_GestoreTempiOrdine`, `sonde.py:840-886`, logger
-`Betfair.stream.tempi_ordine`): attore dal `rif` (`attore_da_rif`, `sonde.py:505-516`: UUID della pagina = `desktop`,
-`mike-`/`omega-`/`safe-`/`risk-`... = il prefisso, altro = `altro`); solo le azioni che PIAZZANO (`place*`,
+`Betfair.stream.tempi_ordine`): attore dal `rif` (`attore_da_rif`: UUID della pagina = `desktop`; revisione 11/10
+(M-2): solo i prefissi di `ATTORI_NOTI` = mike, omega, safe, risk, scalper, tennis, desktop, ui, cr, ft diventano chiavi,
+ogni altro prefisso = `altro`; le chiavi oltre il tetto `MAX_CHIAVI` del registro non spariscono piu' in silenzio ma si
+contano in `contatori.registro_scartati`); solo le azioni che PIAZZANO (`place*`,
 `greenup`; le altre si contano in `tempi_altre_azioni`). `decisione_risposta_ms` = somma dei quattro tratti quando ci
 sono tutti: sulla coda gli orologi misti PC/DB si elidono nella somma (decisione e risposta sono entrambi del PC).
 Contatori: `ordini_misurati.<attore>.<strada>.<modo>`, `ordini_emessi.desktop`.
@@ -106,14 +129,18 @@ tetto 200 punti per richiesta.
 
 ## 2. Punti toccati (file:riga sul commit `7b74b7e4`)
 
+Le correzioni della revisione (`2bcad9bc`) toccano solo `Betfair/monitor/` e `frontend/src/lib/misuraSchermo*` /
+`salute.ts`: le righe dei file d'aggancio qui sotto restano valide; quelle citate dentro `sonde.py`, `registro.py`
+e `referto.py` si spostano di qualche riga (i nomi delle funzioni restano).
+
 Fuori da `Betfair/monitor/` (ognuno dietro `_mon.ATTIVO` o `misuraAccesa()`):
 
 | File | Righe | Cosa | Nota |
 |---|---|---|---|
-| `Betfair/stream/tennis_live/tennis_runner.py` | 87 (import), 1509-1511 | ladder tennis sul canale con `marca_ladder` | riga del DB `tennis_live_ladder` identica |
+| `Betfair/stream/tennis_live/tennis_runner.py` | 87 (import), 1509-1511 | ladder tennis sul canale con `marca_ladder` | riga del DB `tennis_live_ladder` identica; **cambia l'impronta del codice dei 4 bot tennis**: ricertificazione dal punto d'ingresso unico sul PC (nessuna registrazione tennis qui, par. 4) |
 | `Betfair/stream/local_channel.py` | 432-437 | metodo `salute` (riassunto della pagina), solo a monitor acceso; spento = "metodo sconosciuto" come prima | **file condiviso con M-1** (il canale porta anche gli ordini): aggiunta in un punto lontano dal percorso ordini (accanto alla `sveglia`), dichiarata |
 | `Betfair/stream/local_channel.py` | 702-705 | `ts` nella busta dei push (`publish`) | riga sostituita: spento = stessa `json.dumps({"t","d"})` |
-| `Betfair/safe_strategy/canale_scan.py` | 49 (import), 443-444 | lettore dello scanner nei bot: latenza per topic | modulo resta puro (test di contratto verde); cambia l'impronta del codice di Safe nel banco (tolleranza U-59), non la strategia |
+| `Betfair/safe_strategy/canale_scan.py` | 49 (import), 443-444 | lettore dello scanner nei bot: latenza per topic | modulo resta puro (test di contratto verde); **cambia l'impronta del codice** di safe_base, safe_esatto, safe_punta e safe_tennis: serve la ricertificazione dal punto d'ingresso unico (par. 3 e 4) |
 | `frontend/src/lib/localChannel.ts` | 26-27 (import), 292 | arrivo del push `ladder` | |
 | `frontend/src/lib/localTransport.ts` | 32 (import), 439-442, 453 | istante del clic nel comando `order` del canale | coda DB (canale giu') invariata |
 | `frontend/src/components/live/LadderView.tsx` | 40 (import), 1530 | `useMisuraDipinto(marketId, row)` | nessun DOM nuovo |
@@ -138,11 +165,16 @@ Lasciato a M-1 (percorso ordini) o al coordinatore, dichiarato:
 
 ## 3. Prove (rieseguibili)
 
-- `python -m pytest Betfair/monitor -q -p no:cacheprovider`: **126 passati** (60 di T0A + 66 nuovi).
-- Falsificazione (`mutazione -> test -> ripristino con sha256`, script nel referto al coordinatore): **Python 25/25
-  rosse, frontend 8/8 rosse**. Al primo giro la mutazione "busta con ts anche spento" sul punto d'aggancio in
-  `local_channel.py` e' SOPRAVVISSUTA: e' equivalente (la funzione `busta` ha la sua guardia). Aggiunto il test
-  diretto della seconda guardia; la mutazione sulla guardia di `busta` e' rossa.
+- `python -m pytest Betfair/monitor -q -p no:cacheprovider`: **145 passati** (60 di T0A + 85 di M-2, revisione
+  dell'11/10 compresa).
+- Falsificazione (`mutazione -> test -> ripristino con sha256`, script nel referto al coordinatore): **Python 33/34
+  rosse, frontend 12/12 rosse**. Due sopravvissute, entrambe EQUIVALENTI e dichiarate:
+  - al primo giro "busta con ts anche spento" sul punto d'aggancio in `local_channel.py`: la funzione `busta` ha la
+    sua guardia; aggiunto il test diretto della seconda guardia, la mutazione su quella guardia (M4) e' rossa;
+  - M30 "min > max accettato": con `min > max` l'intervallo `[n*min, n*max]` e' vuoto, quindi il controllo della
+    somma (M31, rosso) rifiuta sempre lo stesso riassunto; il controllo esplicito resta per chiarezza.
+- Revisione indipendente dell'11/10: il test del caso I-1 (ladder aperto 40 s dopo l'ultimo push, riga dalla cache)
+  e i tre test di M-3/TTL erano ROSSI sul codice di `400558d0` (4 rossi su 22) e sono verdi dopo la correzione.
 
 | # | Mutazione | Esito |
 |---|---|---|
@@ -179,27 +211,49 @@ Lasciato a M-1 (percorso ordini) o al coordinatore, dichiarato:
 | F6 | riassunto non azzerato dopo l'invio | rossa |
 | F7 | secchio = bisect_right | rossa |
 | F8 | riassunto mandato a canale giu' | rossa |
+| M26 | (rev T-1) totale con tre tratti su quattro | rossa |
+| M27 | (rev T-2) `clic_presa_ms` misurato dall'arrivo invece che dal drenaggio | rossa |
+| M28 | (rev M-1) bordi letti prima della lunghezza | rossa |
+| M29 | (rev M-1) nessun tetto ai valori | rossa |
+| M30 | (rev M-1) min > max accettato | SOPRAVVISSUTA, equivalente (vedi sopra) |
+| M31 | (rev M-1) somma fuori da `[n*min, n*max]` | rossa |
+| M32 | (rev M-1) secchi incoerenti con min/max | rossa |
+| M33 | (rev M-2) attori senza lista nota | rossa |
+| M34 | (rev M-2) tratto oltre il tetto scartato in silenzio | rossa |
+| F9 | (rev I-1) frame abbinato senza guardare la riga | rossa |
+| F10 | (rev I-1) arrivo vecchio misurato al frame | rossa |
+| F11 | (rev I-1) arrivi vecchi mai scartati | rossa |
+| F12 | (rev M-3) invio che cancella lo sport (arrivo in volo perso) | rossa |
 
-- Banco con il monitor spento, PRIMA (`a3a58ad8`) e DOPO (`7b74b7e4`), registrazione `35760084` scompattata da
-  `registrazioni_banco/`: `certifica safe_base 35760084 --scenari rapidi` 132/132 righe uguali tolti i tempi
-  (`18 scenari, KO 0, ESITO: OK`); `certifica mike 35760084 --scenari base` DOPO identico al referto T0A
-  (`tick= 52082 decisioni= 5246 azioni= 6`, `codice bot 1db476391a03`: i file di Mike non sono toccati).
+- Banco con il monitor spento, dal punto d'ingresso unico, registrazione `35760084` scompattata da
+  `registrazioni_banco/` (poi cancellata): PRIMA = file di `a3a58ad8`, DOPO = `2bcad9bc`.
+  `certifica safe_base|safe_esatto|safe_punta 35760084 --scenari rapidi`: per ciascuno **132/132 righe uguali tolti
+  i tempi** (`scenari di trasporto: 18, KO 0`, `ESITO: OK`). `certifica mike 35760084 --scenari base` (su `7b74b7e4`)
+  identico al referto T0A (`tick= 52082 decisioni= 5246 azioni= 6`, `codice bot 1db476391a03`: i file di Mike non
+  sono toccati). **Cambia l'impronta del codice** di safe_base, safe_esatto, safe_punta, safe_tennis (via
+  `canale_scan.py`) e dei 4 bot tennis (via `tennis_runner.py`): serve la ricertificazione dal punto d'ingresso unico;
+  safe_tennis e i bot tennis non sono rilanciati qui (nessuna registrazione tennis): checklist del PC, par. 4.
 - Frontend: `npx tsc -p tsconfig.app.json --noEmit` **0 errori**; `npx vitest run src/fotografia` **4 file, 43 test
   verdi, nessuna fotografia cambiata** (nessun DOM nuovo; misura spenta di serie); vitest dei componenti toccati
-  (misuraSchermo, localChannel, localTransport, salute, Salute, LadderView e i 10 test che rendono LadderView,
-  MarketWatch.canale, ladderPopout): **verdi** (125 + 73 test).
+  (misuraSchermo, localChannel, localTransport, salute, monitorSalute, Salute, tutta `components/live`,
+  MarketWatch.canale, ladderPopout, trainingLadder.replay, SchedaPropostaOpportunita.alms, MissionPanel,
+  mikeCanaleLocale, safeStrategyScan.localCanale): **324 verdi** dopo la revisione.
 - Suite Python intera (una volta, a fine lavoro, `python -m pytest Betfair/ -q -p no:cacheprovider`):
-  **11607 passati, 67 saltati, 6 xfailed, 0 rossi** (464,9 s).
+  **11607 passati, 67 saltati, 6 xfailed, 0 rossi** (464,9 s, su `7b74b7e4`, con la registrazione `35760084`
+  scompattata in `_live_raw/`). Dopo la revisione (`2bcad9bc`, registrazione gia' cancellata): **11604 passati,
+  87 saltati, 6 xfailed, 0 rossi** (343,0 s); i 20 saltati in piu' sono i test di replay che senza `_live_raw/` si
+  saltano da soli (24 SKIPPED in quei 9 file).
 
 ## 4. Checklist di firma per il PC (in quest'ordine)
 
 1. Rileggere il diff `a3a58ad8..mappa/m2-misure` (fuori da `Betfair/monitor/` e `frontend/src/lib/misuraSchermo*`
    sono 8 file, tabella par. 2) e rilanciare di persona:
-   `python -m pytest Betfair/monitor -q -p no:cacheprovider` (126 verdi) e la suite intera;
+   `python -m pytest Betfair/monitor -q -p no:cacheprovider` (145 verdi) e la suite intera;
    `cd frontend && npx tsc -p tsconfig.app.json --noEmit && npx vitest run src/lib/misuraSchermo.test.ts src/lib/salute.test.ts src/fotografia`.
-2. Banco spento identico: `python -m Betfair.stream.backtest.certifica safe_base 35760084 --scenari rapidi` e
-   `... mike 35760084 --scenari base` (stessi numeri del par. 3); con una registrazione tennis, uno dei bot tennis
-   (tocca `tennis_runner.py`: cambia l'impronta del codice, non la strategia).
+2. Ricertificazione dal punto d'ingresso unico (cambia l'impronta del codice): `python -m Betfair.stream.backtest.certifica`
+   per safe_base, safe_esatto, safe_punta (35760084, `--scenari rapidi`: stessi numeri del par. 3), **safe_tennis** e i
+   **4 bot tennis** su una registrazione tennis del PC, prima (`a3a58ad8`) e dopo, a monitor spento, confrontando le
+   righe tolti i tempi; `mike 35760084 --scenari base` come controllo.
 3. Falsificare almeno due mutazioni a mano (es. M8 e F2) e vederle rosse.
 4. Con `MONITOR_SALUTE=1` nel `.env` (gia' previsto da T0A): **`npm run build` in `frontend/` AD APP SPENTA** (vedi
    par. 5), poi l'utente riavvia l'app.
