@@ -59,6 +59,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from ..monitor import registratore_ordini as _ro  # 11/10 (M-1): spento di serie
+
 logger = logging.getLogger(__name__)
 
 ENV = "LIVE_TEMPI_ORDINE"
@@ -202,6 +204,7 @@ def place(order: Any, t: Optional[Tuple[float, float]] = None) -> None:
                 "abbinato_wall": None, "emesso": False,
             }
             _ordini[str(oid)] = chiave
+        if _ro.attivo(): _ro.decisione(order, voce)  # noqa: E701 - M-1: decisione -> customerOrderRef su disco
     except Exception:  # noqa: BLE001
         logger.debug("[tempi] place KO", exc_info=True)
 
