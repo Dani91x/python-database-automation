@@ -12,6 +12,10 @@
 //   - il ladder (`LadderView`, un solo hook) dopo il COMMIT della riga chiede un
 //     requestAnimationFrame: il suo istante e' l'inizio del frame che dipinge la
 //     riga nuova (`useLayoutEffect` + rAF = prima del paint di quel frame).
+//     Revisione 11/10 (I-1): il frame chiude l'arrivo SOLO se la riga dipinta e'
+//     quella arrivata (stesso `ladder.updated_ms`) e se l'arrivo ha meno di
+//     ETA_MAX_ARRIVO_MS: una riga dalla cache all'apertura del ladder o dal
+//     ripiego DB non produce mai un tratto falso.
 //   Tratti (ms): pagina_canale_ms (ts_pub_ms -> arrivo), pagina_dipinto_ms
 //   (arrivo -> frame), pagina_pub_dipinto_ms (ts_pub_ms -> frame),
 //   pagina_rx_dipinto_ms (rx_ms -> frame: M1 sull'orologio del PC, senza lo
@@ -50,6 +54,14 @@ export const INTERVALLO_RIASSUNTO_MS = 30_000;
 export const VERSIONE_RIASSUNTO = 1;
 /** Mercati con un push in attesa di essere dipinto, al massimo (memoria limitata). */
 export const MAX_ARRIVI = 500;
+/**
+ * Revisione 11/10 (I-1): vita massima di un arrivo in attesa del frame. Oltre,
+ * l'arrivo si scarta (contatore `scartati`): un ladder aperto DOPO (riga dalla
+ * cache) o una riga dal ripiego DB non devono mai chiudere un arrivo vecchio.
+ */
+export const ETA_MAX_ARRIVO_MS = 2_000;
+/** I contatori che il Python accetta (`sonde.CONTATORI_PAGINA`, senza `riassunti_*`). */
+export const CONTATORI_PAGINA = ['push_ladder', 'dipinti', 'scartati'] as const;
 
 /** Il minimo del LocalChannel che serve qui (iniettabile nei test). */
 export interface CanaleMisura {
@@ -67,12 +79,24 @@ interface Arrivo {
     tsPub: number | null;
     rx: number | null;
     pt: number | null;
+    /** `ladder.updated_ms` del push: l'identita' della riga (uguale su canale e DB) */
+    upd: number | null;
 }
 
 interface DatiSport {
     canale: CanaleMisura;
     tratti: Map<TrattoPagina, Istogramma>;
-    contatori: { push_ladder: number; dipinti: number };
+    contatori: { push_ladder: number; dipinti: number; scartati: number };
+}
+
+const contatoriVuoti = (): DatiSport['contatori'] => ({ push_ladder: 0, dipinti: 0, scartati: 0 });
+
+/** `ladder.updated_ms` di una riga o di un push (null se assente). */
+function updDi(r: unknown): number | null {
+    if (!r || typeof r !== 'object') return null;
+    const lad = (r as { ladder?: unknown }).ladder;
+    if (!lad || typeof lad !== 'object') return null;
+    return numero((lad as { updated_ms?: unknown }).updated_ms);
 }
 
 /** Orologi (sostituibili nei test). */
@@ -114,7 +138,7 @@ function aggiungi(h: Istogramma, v: number): void {
 function datiDi(canale: CanaleMisura): DatiSport {
     let d = perSport.get(canale.sport);
     if (!d) {
-        d = { canale, tratti: new Map(), contatori: { push_ladder: 0, dipinti: 0 } };
+        d = { canale, tratti: new Map(), contatori: contatoriVuoti() };
         perSport.set(canale.sport, d);
     }
     d.canale = canale;
@@ -155,11 +179,16 @@ export function notaArrivoLadder(canale: CanaleMisura, d: unknown): void {
         const tsPub = numero(m.ts_pub_ms);
         if (tsPub != null) registra(dati, 'pagina_canale_ms', wall - tsPub);
         arrivi.delete(mid);   // l'ultimo arrivo va in coda (ordine = eta')
-        arrivi.set(mid, { sport: canale.sport, perf, wall, tsPub, rx: numero(m.rx_ms), pt: numero(m.pt) });
-        while (arrivi.size > MAX_ARRIVI) {
-            const primo = arrivi.keys().next().value;
-            if (primo === undefined) break;
-            arrivi.delete(primo);
+        arrivi.set(mid, {
+            sport: canale.sport, perf, wall, tsPub, rx: numero(m.rx_ms), pt: numero(m.pt), upd: updDi(m),
+        });
+        // I-1 (revisione 11/10): via gli arrivi mai dipinti (mercati senza ladder
+        // montato) appena superano la vita massima; e comunque mai oltre MAX_ARRIVI
+        for (const [k, a] of arrivi) {
+            if (perf - a.perf <= ETA_MAX_ARRIVO_MS && arrivi.size <= MAX_ARRIVI) break;
+            arrivi.delete(k);
+            const ds = perSport.get(a.sport);
+            if (ds) ds.contatori.scartati += 1;
         }
         avviaTimer();
     } catch {
@@ -168,18 +197,24 @@ export function notaArrivoLadder(canale: CanaleMisura, d: unknown): void {
 }
 
 /**
- * Il frame che dipinge il ladder di `marketId` e' cominciato: chiude l'ultimo
- * arrivo non ancora dipinto di quel mercato (un push = una misura; due push
- * fusi in un solo render contano una volta, l'ultimo).
+ * Il frame che dipinge il ladder di `marketId` con la riga `updMs`
+ * (`ladder.updated_ms`) e' cominciato: chiude l'arrivo di QUELLA riga (un push =
+ * una misura; due push fusi in un solo render contano una volta, l'ultimo).
+ * Revisione 11/10 (I-1): una riga diversa (cache all'apertura, ripiego DB) non
+ * chiude niente; un arrivo oltre la vita massima si scarta senza misura.
  */
-export function segnaDipinto(marketId: string): void {
+export function segnaDipinto(marketId: string, updMs: number | null): void {
     try {
         const a = arrivi.get(marketId);
-        if (!a) return;
+        if (!a || updMs == null || a.upd == null || a.upd !== updMs) return;
         arrivi.delete(marketId);
         const d = perSport.get(a.sport);
         if (!d) return;
         const dt = orologi.perf() - a.perf;
+        if (dt > ETA_MAX_ARRIVO_MS) {
+            d.contatori.scartati += 1;
+            return;
+        }
         const pixel = a.wall + dt;
         d.contatori.dipinti += 1;
         registra(d, 'pagina_dipinto_ms', dt);
@@ -199,7 +234,8 @@ export function useMisuraDipinto(marketId: string | null | undefined, row: unkno
     useLayoutEffect(() => {
         if (!marketId || row == null || !misuraAccesa()) return undefined;
         if (typeof requestAnimationFrame !== 'function') return undefined;
-        const id = requestAnimationFrame(() => { segnaDipinto(marketId); });
+        const upd = updDi(row);
+        const id = requestAnimationFrame(() => { segnaDipinto(marketId, upd); });
         return () => { cancelAnimationFrame(id); };
     }, [marketId, row]);
 }
@@ -208,6 +244,8 @@ export function useMisuraDipinto(marketId: string | null | undefined, row: unkno
 export function riassuntoDi(sport: LocalSport): Record<string, unknown> | null {
     const d = perSport.get(sport);
     if (!d) return null;
+    const c = d.contatori;
+    if (d.tratti.size === 0 && c.push_ladder === 0 && c.dipinti === 0 && c.scartati === 0) return null;
     const tratti: Record<string, unknown> = {};
     for (const [nome, h] of d.tratti) {
         tratti[nome] = { n: h.n, somma: h.somma, min: h.min, max: h.max, secchi: [...h.secchi] };
@@ -225,7 +263,10 @@ export function inviaRiassunti(): number {
     for (const [sport, d] of [...perSport]) {
         try {
             const p = riassuntoDi(sport);
-            perSport.delete(sport);
+            // M-3 (revisione 11/10): si azzerano i NUMERI, non lo sport: un arrivo
+            // in volo (gia' annotato, frame non ancora venuto) resta abbinabile
+            d.tratti = new Map();
+            d.contatori = contatoriVuoti();
             if (!p || d.canale.getStatus() !== 'connected') continue;
             d.canale.request('salute', p).catch(() => { /* best-effort */ });
             mandati += 1;

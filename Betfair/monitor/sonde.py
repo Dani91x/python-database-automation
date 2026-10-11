@@ -35,6 +35,7 @@ ASCII-only; commenti in italiano.
 """
 from __future__ import annotations
 
+import bisect
 import json
 import logging
 import math
@@ -423,13 +424,20 @@ TRATTI_PAGINA = frozenset({
     "pagina_pt_dipinto_ms",    # pt di Betfair -> frame (orologi diversi)
     "pagina_pub_dipinto_ms",   # ts_pub_ms -> frame
 })
-CONTATORI_PAGINA = frozenset({"push_ladder", "dipinti", "riassunti"})
+CONTATORI_PAGINA = frozenset({"push_ladder", "dipinti", "scartati"})
+#: valore massimo di un tratto della pagina (ms, in modulo): ~2,8 ore
+VALORE_MAX_MS = 1e7
 #: tetto di misure per riassunto (30 s di pagina con 20 ladder a 10 push/s = 6000)
 N_MAX_PAGINA = 100_000
 
 
 def _riassunto_valido(r: Any) -> tuple:
-    """(n, somma, min, max, secchi) di un riassunto della pagina, o ValueError."""
+    """(n, somma, min, max, secchi) di un riassunto della pagina, o ValueError.
+
+    Revisione 11/10 (M-1): oltre alla forma, la COERENZA interna (un riassunto
+    avvelenato non deve spostare i percentili del giorno): ogni valore in
+    ``[-VALORE_MAX_MS, VALORE_MAX_MS]``, ``min <= max``, ``n*min <= somma <= n*max``,
+    il primo e l'ultimo secchio non vuoti sono quelli di ``min`` e di ``max``."""
     if not isinstance(r, dict):
         raise ValueError("riassunto non e' un oggetto")
     n = r.get("n")
@@ -450,8 +458,24 @@ def _riassunto_valido(r: Any) -> tuple:
             continue
         if not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v):
             raise ValueError(k + " non numerico")
+        lim = VALORE_MAX_MS * (max(n, 1) if k == "somma" else 1)
+        if abs(v) > lim:
+            raise ValueError(k + " fuori misura")
         vals.append(float(v))
-    return n, vals[0], vals[1], vals[2], secchi
+    somma, mn, mx = vals
+    if n == 0:
+        if somma != 0.0:
+            raise ValueError("somma senza misure")
+        return n, somma, mn, mx, secchi
+    if mn is None or mx is None or mn > mx:
+        raise ValueError("min/max incoerenti")
+    tol = 1e-6 * n * max(abs(mn), abs(mx), 1.0)
+    if not (n * mn - tol <= somma <= n * mx + tol):
+        raise ValueError("somma fuori da [n*min, n*max]")
+    pieni = [i for i, c in enumerate(secchi) if c]
+    if pieni[0] != bisect.bisect_left(BORDI_MS, mn) or pieni[-1] != bisect.bisect_left(BORDI_MS, mx):
+        raise ValueError("secchi incoerenti con min/max")
+    return n, somma, mn, mx, secchi
 
 
 def misure_pagina(msg_id: Any, p: Any) -> Dict[str, Any]:
@@ -465,7 +489,10 @@ def misure_pagina(msg_id: Any, p: Any) -> Dict[str, Any]:
         if not isinstance(p, dict) or p.get("v") != VERSIONE_PAGINA:
             raise ValueError("versione del riassunto sconosciuta")
         bordi = p.get("bordi")
-        if not isinstance(bordi, list) or [float(b) for b in bordi] != [float(b) for b in BORDI_MS]:
+        # M-1 (revisione 11/10): la LUNGHEZZA prima di toccare gli elementi (un
+        # messaggio enorme non costa nulla al thread del canale)
+        if not isinstance(bordi, list) or len(bordi) != len(BORDI_MS) \
+                or [float(b) for b in bordi] != [float(b) for b in BORDI_MS]:
             raise ValueError("bordi dei secchi diversi da registro.BORDI_MS")
         tratti = p.get("tratti") or {}
         contatori = p.get("contatori") or {}
@@ -500,19 +527,25 @@ def misure_pagina(msg_id: Any, p: Any) -> Dict[str, Any]:
 # --- attore di un ordine dal suo riferimento --------------------------------
 _RE_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _RE_PREFISSO = re.compile(r"^([a-z]{2,12})-")
+#: prefissi dei riferimenti d'ordine che il codice di oggi scrive (``mike-t``,
+#: ``omega-t``, ``safe-t``, ``risk-`` delle regole, ``ui-``/``cr-``/``ft-`` della UI)
+ATTORI_NOTI = frozenset({"mike", "omega", "safe", "risk", "scalper", "tennis", "desktop",
+                         "ui", "cr", "ft"})
 
 
 def attore_da_rif(rif: Any) -> str:
     """Chi ha deciso l'ordine, dal riferimento che il comando porta:
     UUID (``crypto.randomUUID`` della pagina, canale e coda) = ``desktop``;
-    ``mike-``/``omega-``/``safe-``/``risk-``/... = il prefisso; altro = ``altro``."""
+    prefisso in ``ATTORI_NOTI`` = il prefisso; tutto il resto = ``altro``."""
     s = str(rif or "").strip().lower()
     if not s or s == "na":
         return "ignoto"
     if _RE_UUID.match(s):
         return "desktop"
     m = _RE_PREFISSO.match(s)
-    return m.group(1) if m else "altro"
+    # M-2 (revisione 11/10): solo attori NOTI diventano chiavi (le chiavi del
+    # registro hanno un tetto): ogni altro prefisso e' ``altro``
+    return m.group(1) if m and m.group(1) in ATTORI_NOTI else "altro"
 
 
 # --- peso delle richieste REST (Betfair "Market Data Request Limits") --------

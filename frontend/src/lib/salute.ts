@@ -187,7 +187,7 @@ export const TRATTI: readonly { prefisso: string; testo: string }[] = [
     { prefisso: 'decisione_risposta_ms.', testo: 'M2 decisione -> risposta di placeOrders' },
     { prefisso: 'clic_canale_ms.', testo: 'M2 clic -> arrivo sul canale' },
     { prefisso: 'clic_presa_ms.', testo: 'M2 clic -> presa del worker' },
-    { prefisso: 'pacchetto_risposta_ms', testo: 'M2 pacchetto flumine -> risposta (live)' },
+    { prefisso: 'pacchetto_risposta_ms', testo: 'M2 per processo: pacchetto flumine -> risposta (live)' },
     { prefisso: 'canale_ricezione_ms.', testo: 'canale locale -> ricezione nel bot' },
     { prefisso: 'ordini_rx_pt_ms.', testo: 'stream ordini pt -> ricezione' },
     { prefisso: 'rest_peso.', testo: 'peso REST in punti Betfair (non ms)' },

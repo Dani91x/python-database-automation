@@ -271,7 +271,7 @@ def _riassunto(n_dipinti: int = 2) -> Dict[str, Any]:
     secchi = [0] * (len(BORDI_MS) + 1)
     secchi[7] = n_dipinti                 # (10, 20] ms
     return {"v": 1, "bordi": list(BORDI_MS),
-            "tratti": {"pagina_dipinto_ms": {"n": n_dipinti, "somma": 30.0, "min": 12.0, "max": 18.0,
+            "tratti": {"pagina_dipinto_ms": {"n": n_dipinti, "somma": 15.0 * n_dipinti, "min": 12.0, "max": 18.0,
                                              "secchi": secchi}},
             "contatori": {"push_ladder": 5, "dipinti": n_dipinti}}
 
@@ -301,7 +301,7 @@ def test_pagina_acceso_fusa_nel_registro_mai_in_coda(monitor_acceso):
     assert ch.pop_requests() == []                       # nessun comando in coda
     f = M.REGISTRO.fotografa_e_azzera()
     t = f["tratti"]["pagina_dipinto_ms"]
-    assert t["n"] == 5 and t["somma"] == 60.0 and t["min"] == 12.0 and t["max"] == 18.0
+    assert t["n"] == 5 and t["somma"] == 75.0 and t["min"] == 12.0 and t["max"] == 18.0
     assert t["secchi"][7] == 5 and t["p50"] == 18.0       # bordo 20, limitato al massimo visto
     assert f["contatori"]["pagina"] == {"push_ladder": 10, "dipinti": 5, "riassunti_accolti": 2}
 
@@ -390,7 +390,8 @@ def test_drenate_registro_che_solleva(monkeypatch, monitor_acceso):
 @pytest.mark.parametrize("rif,attore", [
     ("mike-t12", "mike"), ("omega-t5", "omega"), ("safe-t6", "safe"), ("risk-3-x", "risk"),
     ("1b4e28ba-2fa1-11d2-883f-0016d3cca427", "desktop"), ("na", "ignoto"), (None, "ignoto"),
-    ("awlq12", "altro"), ("XY-1", "xy"), ("x-1", "altro"),
+    ("awlq12", "altro"), ("XY-1", "altro"), ("x-1", "altro"), ("scalper-7", "scalper"),
+    ("UI-3", "ui"), ("zzzz-9", "altro"),
 ])
 def test_attore_da_rif(rif, attore):
     assert M.attore_da_rif(rif) == attore
@@ -653,7 +654,7 @@ def test_referto_m1_m2_per_sport_attore_e_modo():
     assert m2[("calcio", "mike", "comando", "paper", "decisione_risposta_ms")]["n"] == 2
     assert m2[("calcio", "mike", "comando", "live", "decisione_risposta_ms")]["n"] == 1   # MAI sommati
     assert m2[("calcio", "desktop", "canale", "live", "clic_canale_ms")]["n"] == 1
-    assert m2[("tennis", "tennis-processo", "processo", "live", "pacchetto_risposta_ms")]["max"] == 120.0
+    assert m2[("tennis", "processo:runner-tennis", "processo", "live", "pacchetto_risposta_ms")]["max"] == 120.0
     for t in x["m1"] + x["m2"]:
         assert {"p50", "p95", "p99", "max", "n"} <= set(t)
     assert x["canale"] == [dict(servizio="mike-service", topic="scan_calcio", n=2, min=0.4,
@@ -687,3 +688,94 @@ def test_referto_senza_misure_m2():
     x = R.misure_m2([_riga("omega-service", "calcio", "2026-10-10T08:00:00+00:00", {"db_ms": _ist([5.0])})])
     assert x == {"m1": [], "m2": [], "canale": [], "stream": [], "stream_aperti": {},
                  "connessioni_aperte": {}, "rest_peso": []}
+
+
+# ---------------------------------------------------------------------------
+# revisione indipendente dell'11/10 (M-1, M-2, T-1, T-2)
+# ---------------------------------------------------------------------------
+def _uno(n=2, somma=30.0, mn=12.0, mx=18.0, secchi=None):
+    if secchi is None:
+        secchi = [0] * (len(BORDI_MS) + 1)
+        secchi[7] = n
+    return {"v": 1, "bordi": list(BORDI_MS),
+            "tratti": {"pagina_dipinto_ms": {"n": n, "somma": somma, "min": mn, "max": mx, "secchi": secchi}}}
+
+
+def _secchi(**pos):
+    s = [0] * (len(BORDI_MS) + 1)
+    for k, v in pos.items():
+        s[int(k[1:])] = v
+    return s
+
+
+@pytest.mark.parametrize("p", [
+    _uno(mn=-1e300),                                   # valori avvelenati che passavano
+    _uno(somma=1e300),
+    _uno(mn=12.0, mx=1e8, secchi=_secchi(b7=1, b18=1)),  # oltre VALORE_MAX_MS
+    _uno(mn=18.0, mx=12.0),                            # min > max
+    _uno(somma=100.0),                                 # somma > n*max
+    _uno(somma=1.0),                                   # somma < n*min
+    _uno(mn=3.0, secchi=_secchi(b7=2)),                # min fuori dal primo secchio pieno
+    _uno(mx=19.0, mn=12.0, secchi=_secchi(b7=1, b9=1)),  # max fuori dall'ultimo secchio pieno
+    _uno(n=0, somma=5.0, mn=None, mx=None, secchi=_secchi()),   # somma senza misure
+])
+def test_pagina_valori_avvelenati_rifiutati(p, monitor_acceso):
+    assert M.misure_pagina(1, p)["ok"] is False
+    assert M.REGISTRO.fotografa_e_azzera()["tratti"] == {}
+
+
+def test_pagina_bordi_enormi_rifiutati_senza_leggerli(monitor_acceso):
+    class _Esplode(list):
+        def __iter__(self):
+            raise AssertionError("letti gli elementi prima della lunghezza")
+    p = _uno()
+    p["bordi"] = _Esplode([0.1] * 100_000)
+    r = M.misure_pagina(1, p)
+    assert r["ok"] is False and "bordi" in r["e"]
+
+
+def test_pagina_valori_coerenti_e_scartati_accolti(monitor_acceso):
+    p = _uno(n=3, somma=40.0, mn=12.0, mx=15.0)
+    p["contatori"] = {"push_ladder": 4, "dipinti": 3, "scartati": 1}
+    assert M.misure_pagina(1, p)["ok"] is True
+    f = M.REGISTRO.fotografa_e_azzera()
+    assert f["contatori"]["pagina"]["scartati"] == 1 and f["tratti"]["pagina_dipinto_ms"]["n"] == 3
+
+
+def test_registro_conta_le_chiavi_scartate_dal_tetto():
+    from Betfair.monitor.registro import GRUPPO_SCARTATI, MAX_CHIAVI, Registro
+
+    r = Registro()
+    for i in range(MAX_CHIAVI + 3):
+        r.tratto("t%d" % i, 1.0)
+    for i in range(MAX_CHIAVI + 2):
+        r.valore("g", "k%d" % i, i)
+    f = r.fotografa_e_azzera()
+    assert len(f["tratti"]) == MAX_CHIAVI
+    assert f["contatori"][GRUPPO_SCARTATI] == {"tratti": 3, "valori.g": 2}
+
+
+def test_tempi_con_un_tratto_mancante_nessun_totale(monitor_acceso, caplog):
+    caplog.set_level(logging.INFO)
+    logging.getLogger("Betfair.stream.tempi_ordine").info(
+        "tempi_ordine ref=a strada=canale via=canale azione=place mode=live ordine=o1 decisione_ms=na "
+        "ricezione_ms=4 presa_ms=1 place_ms=1 risposta_ms=30 abbinato_ms=na interno_ms=2 "
+        "risposta_bf_ms=na abbinato_fonte=na orologi=na esito=ok rif=mike-t1")
+    t = M.REGISTRO.fotografa_e_azzera()["tratti"]
+    assert t["invio_presa_ms.mike.canale.live"]["n"] == 1
+    assert t["place_risposta_ms.mike.canale.live"]["max"] == 30.0
+    assert "decisione_invio_ms.mike.canale.live" not in t
+    assert not [k for k in t if k.startswith("decisione_risposta_ms.")]
+
+
+def test_clic_valori_esatti_ricevuto_diverso_da_adesso(monkeypatch, monitor_acceso):
+    import time as _t
+
+    monkeypatch.setattr(M, "time", SimpleNamespace(time=lambda: 2_000.0, perf_counter=_t.perf_counter,
+                                                   monotonic=_t.monotonic))
+    M.drenate([SimpleNamespace(method="order", ricevuto_ms=1_999_990,
+                               params={"mode": "live", "emesso_ms": 1_999_950})])
+    t = M.REGISTRO.fotografa_e_azzera()["tratti"]
+    assert t["clic_canale_ms.live"]["min"] == t["clic_canale_ms.live"]["max"] == 40.0
+    assert t["clic_presa_ms.live"]["min"] == t["clic_presa_ms.live"]["max"] == 50.0
+    assert t["canale_coda_ms"]["max"] == 10.0

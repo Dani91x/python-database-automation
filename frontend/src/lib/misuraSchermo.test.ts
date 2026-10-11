@@ -19,7 +19,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 }));
 
 import {
-    BORDI_MS, TRATTI_PAGINA, VERSIONE_RIASSUNTO, INTERVALLO_RIASSUNTO_MS, MAX_ARRIVI,
+    BORDI_MS, TRATTI_PAGINA, CONTATORI_PAGINA, VERSIONE_RIASSUNTO, INTERVALLO_RIASSUNTO_MS, MAX_ARRIVI, ETA_MAX_ARRIVO_MS,
     __resetMisuraSchermo, __statoMisuraSchermo, inviaRiassunti, notaArrivoLadder, riassuntoDi,
     secchioDi, segnaDipinto, useMisuraDipinto, type CanaleMisura,
 } from './misuraSchermo';
@@ -109,6 +109,9 @@ describe('parita\' col Python (Betfair/monitor)', () => {
         expect([...TRATTI_PAGINA].sort()).toEqual(nomi);
         expect(py).toContain(`VERSIONE_PAGINA = ${VERSIONE_RIASSUNTO}`);
         expect(py).toContain('METODO_PAGINA = "salute"');
+        const bc = py.split('CONTATORI_PAGINA = frozenset({')[1].split('})')[0];
+        const contatori = [...bc.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]).sort();
+        expect([...CONTATORI_PAGINA].sort()).toEqual(contatori);
         expect(INTERVALLO_RIASSUNTO_MS).toBe(30_000);
     });
 
@@ -163,9 +166,9 @@ describe('ACCESA', () => {
     it('arrivo -> frame: i cinque tratti coerenti con gli orologi', () => {
         accendi();
         const c = canaleFinto();
-        notaArrivoLadder(c, { market_id: '1.9', ts_pub_ms: wall - 3, rx_ms: wall - 8, pt: wall - 900 });
+        notaArrivoLadder(c, { market_id: '1.9', ts_pub_ms: wall - 3, rx_ms: wall - 8, pt: wall - 900, ladder: { updated_ms: 1 } });
         perf += 12;                    // il frame comincia 12 ms dopo l'arrivo
-        segnaDipinto('1.9');
+        segnaDipinto('1.9', 1);
         const r = riassuntoDi('calcio') as { v: number; bordi: number[]; tratti: Record<string, { n: number; min: number; secchi: number[] }>; contatori: Record<string, number> };
         expect(r.v).toBe(1);
         expect(r.bordi).toEqual([...BORDI_MS]);
@@ -179,19 +182,19 @@ describe('ACCESA', () => {
             expect(t.secchi.reduce((a, b) => a + b, 0)).toBe(1);
             expect(t.secchi).toHaveLength(BORDI_MS.length + 1);
         }
-        expect(r.contatori).toEqual({ push_ladder: 1, dipinti: 1 });
+        expect(r.contatori).toEqual({ push_ladder: 1, dipinti: 1, scartati: 0 });
     });
 
     it('un frame chiude UN arrivo; un mercato mai dipinto non produce dipinti', () => {
         accendi();
         const c = canaleFinto();
-        notaArrivoLadder(c, { market_id: '1.9', ts_pub_ms: wall });
-        notaArrivoLadder(c, { market_id: '1.9', ts_pub_ms: wall });    // fuso nello stesso render
+        notaArrivoLadder(c, { market_id: '1.9', ts_pub_ms: wall, ladder: { updated_ms: 1 } });
+        notaArrivoLadder(c, { market_id: '1.9', ts_pub_ms: wall, ladder: { updated_ms: 2 } });    // fuso nello stesso render
         notaArrivoLadder(c, { market_id: '1.8', ts_pub_ms: wall });    // nessun ladder aperto
-        segnaDipinto('1.9');
-        segnaDipinto('1.9');                                             // niente da chiudere
+        segnaDipinto('1.9', 2);
+        segnaDipinto('1.9', 2);                                             // niente da chiudere
         const r = riassuntoDi('calcio') as { contatori: Record<string, number>; tratti: Record<string, { n: number }> };
-        expect(r.contatori).toEqual({ push_ladder: 3, dipinti: 1 });
+        expect(r.contatori).toEqual({ push_ladder: 3, dipinti: 1, scartati: 0 });
         expect(r.tratti.pagina_dipinto_ms.n).toBe(1);
         expect(r.tratti.pagina_canale_ms.n).toBe(3);
         expect(__statoMisuraSchermo().arrivi).toBe(1);
@@ -271,8 +274,8 @@ describe('ACCESA', () => {
         vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cbs.push(cb); return cbs.length; });
         vi.stubGlobal('cancelAnimationFrame', vi.fn());
         const c = canaleFinto();
-        notaArrivoLadder(c, { market_id: '1.9', rx_ms: wall - 4 });
-        renderHook(() => useMisuraDipinto('1.9', { r: 1 }));
+        notaArrivoLadder(c, { market_id: '1.9', rx_ms: wall - 4, ladder: { updated_ms: 3 } });
+        renderHook(() => useMisuraDipinto('1.9', { ladder: { updated_ms: 3 } }));
         expect(cbs).toHaveLength(1);
         perf += 7;
         cbs[0](perf);
@@ -289,7 +292,7 @@ describe('ERRORE: mai propagato', () => {
         for (const d of [null, 3, 'x', [], {}, { market_id: 5 }, { market_id: '1.1', ts_pub_ms: 'no', rx_ms: NaN }]) {
             expect(() => notaArrivoLadder(c, d)).not.toThrow();
         }
-        expect(() => segnaDipinto('inesistente')).not.toThrow();
+        expect(() => segnaDipinto('inesistente', 1)).not.toThrow();
     });
 
     it('canale che solleva, rifiuta o e\' giu\'', async () => {
@@ -306,5 +309,63 @@ describe('ERRORE: mai propagato', () => {
         const solleva: CanaleMisura = { sport: 'calcio', getStatus: () => 'connected', request: () => { throw new Error('x'); } };
         notaArrivoLadder(solleva, { market_id: '1.1', ts_pub_ms: wall });
         expect(() => inviaRiassunti()).not.toThrow();
+    });
+});
+
+describe('revisione 11/10 (I-1, M-3): il frame si abbina SOLO alla riga arrivata', () => {
+    const conRaf = () => {
+        const cbs: FrameRequestCallback[] = [];
+        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cbs.push(cb); return cbs.length; });
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        return cbs;
+    };
+    const riga = (upd: number) => ({ market_id: '1.9', ladder: { updated_ms: upd, selections: [] } });
+
+    it('ladder aperto 40 s dopo l\'ultimo push (riga dalla cache): nessun dipinto', () => {
+        accendi();
+        const cbs = conRaf();
+        notaArrivoLadder(canaleFinto(), { market_id: '1.9', ts_pub_ms: wall, ladder: { updated_ms: 5 } });
+        perf += 40_000;
+        renderHook(() => useMisuraDipinto('1.9', riga(5)));
+        cbs.forEach((cb) => cb(perf));
+        const r = riassuntoDi('calcio') as { tratti: Record<string, unknown> } | null;
+        expect(r?.tratti.pagina_dipinto_ms).toBeUndefined();
+    });
+
+    it('riga dipinta diversa da quella arrivata (cache o DB): l\'arrivo resta per la sua riga', () => {
+        accendi();
+        const cbs = conRaf();
+        notaArrivoLadder(canaleFinto(), { market_id: '1.9', ts_pub_ms: wall, ladder: { updated_ms: 6 } });
+        const { rerender } = renderHook(({ r }) => useMisuraDipinto('1.9', r), { initialProps: { r: riga(5) } });
+        perf += 3;
+        cbs[0](perf);
+        expect((riassuntoDi('calcio') as { tratti: Record<string, unknown> }).tratti.pagina_dipinto_ms).toBeUndefined();
+        rerender({ r: riga(6) });
+        perf += 4;
+        cbs[cbs.length - 1](perf);
+        const t = (riassuntoDi('calcio') as { tratti: Record<string, { n: number; min: number }> }).tratti;
+        expect(t.pagina_dipinto_ms.n).toBe(1);
+        expect(t.pagina_dipinto_ms.min).toBe(7);
+    });
+
+    it('arrivi oltre la vita massima scartati (memoria limitata ai mercati vivi)', () => {
+        accendi();
+        const c = canaleFinto();
+        notaArrivoLadder(c, { market_id: '1.1', ladder: { updated_ms: 1 } });
+        perf += ETA_MAX_ARRIVO_MS + 1;
+        notaArrivoLadder(c, { market_id: '1.2', ladder: { updated_ms: 1 } });
+        expect(__statoMisuraSchermo().arrivi).toBe(1);
+        expect((riassuntoDi('calcio') as { contatori: Record<string, number> }).contatori.scartati).toBe(1);
+    });
+
+    it('un arrivo in volo durante l\'invio del riassunto non si perde', () => {
+        accendi();
+        const c = canaleFinto();
+        notaArrivoLadder(c, { market_id: '1.9', ladder: { updated_ms: 9 } });
+        expect(inviaRiassunti()).toBe(1);
+        perf += 6;
+        segnaDipinto('1.9', 9);
+        const t = (riassuntoDi('calcio') as { tratti: Record<string, { n: number; min: number }> }).tratti;
+        expect(t.pagina_dipinto_ms.min).toBe(6);
     });
 });

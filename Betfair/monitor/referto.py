@@ -311,9 +311,10 @@ TRATTI_M1 = ("feed_rx_pt_ms.", "ladder_pub_pt_ms", "ladder_rx_pub_ms", "pagina_c
 #: i tratti di M2 con chiave ``<prefisso>.<attore>.<strada>.<modo>``
 TRATTI_M2 = ("decisione_invio_ms", "invio_presa_ms", "presa_place_ms", "place_risposta_ms",
              "decisione_risposta_ms")
-#: chi decide gli ordini piazzati DENTRO un processo (pacchetto di flumine)
-ATTORE_DEL_PROCESSO = {"scalper-sessioni": "scalper", "runner-tennis": "tennis-processo",
-                       "runner-calcio": "calcio-processo"}
+#: M-5 (revisione 11/10): ``pacchetto_risposta_ms`` e' per PROCESSO, non per attore
+#: (nel runner tennis convivono i quattro bot e gli ordini manuali): nel referto la
+#: colonna attore dice ``processo:<servizio>``
+PREFISSO_PROCESSO = "processo:"
 
 
 def _riga_tratto(base: Dict[str, Any], t: Dict[str, Any]) -> Dict[str, Any]:
@@ -355,8 +356,7 @@ def misure_m2(righe: List[Dict[str, Any]]) -> Dict[str, Any]:
             elif parti[0] in ("clic_canale_ms", "clic_presa_ms") and len(parti) == 2:
                 m2.setdefault((sport, "desktop", "canale", parti[1], parti[0]), []).append(t)
             elif nome == "pacchetto_risposta_ms":
-                att = ATTORE_DEL_PROCESSO.get(serv, serv)
-                m2.setdefault((sport, att, "processo", "live", nome), []).append(t)
+                m2.setdefault((sport, PREFISSO_PROCESSO + serv, "processo", "live", nome), []).append(t)
             elif parti[0] == "canale_ricezione_ms" and len(parti) == 2:
                 canale.setdefault((serv, parti[1]), []).append(t)
             elif parti[0] == "rest_peso" and len(parti) == 2:
@@ -698,7 +698,7 @@ _TRATTI_SPIEGATI = (
     ("decisione_risposta_ms.", "M2 decisione -> risposta di placeOrders (somma dei quattro)"),
     ("clic_canale_ms.", "M2 clic della pagina -> arrivo sul canale"),
     ("clic_presa_ms.", "M2 clic della pagina -> presa del worker"),
-    ("pacchetto_risposta_ms", "M2 pacchetto flumine creato -> risposta di placeOrders (live)"),
+    ("pacchetto_risposta_ms", "M2 per PROCESSO: pacchetto flumine creato -> risposta di placeOrders (live)"),
     ("canale_ricezione_ms.", "canale locale: pubblicazione -> ricezione nel bot (per topic)"),
     ("ordini_rx_pt_ms.", "stream ordini: pt -> ricezione (orologi diversi)"),
     ("rest_peso.", "peso della richiesta REST in PUNTI Betfair (tetto 200), non ms"),
