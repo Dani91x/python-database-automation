@@ -150,14 +150,15 @@ Dentro `Betfair/monitor/`: `sonde.py` (misure e handler sopra), `registro.py:151
 (`misure_m2`, `TRATTI_M1/M2`), `:688-704` (`_TRATTI_SPIEGATI`), `:670` (campo `misure_m2`), `:782` e `:825-866`
 (`_markdown_m2`), `COSA_FA.md`. Nuovi: `frontend/src/lib/misuraSchermo.ts` (+ test), `Betfair/monitor/tests/test_monitor_m2_misure_2026_10_11.py`.
 
-Lasciato a M-1 (percorso ordini) o al coordinatore, dichiarato:
-- **ocm**: `osserva_stream` conta gia' gli `ocm` (`stream_ocm`), ma nessun listener dello stream ORDINI lo chiama: serve
+Lasciato a M-1 (percorso ordini) o al coordinatore, dichiarato (**i primi tre FATTI l'11/10 sul ramo
+`mappa/agganci`, par. 7**):
+- **ocm** (FATTO, par. 7.1): `osserva_stream` conta gia' gli `ocm` (`stream_ocm`), ma nessun listener dello stream ORDINI lo chiama: serve
   UNA riga `if _mon.ATTIVO: _mon.osserva_stream("ordini-<sport>", raw_data)` nell'`on_data` del listener ordini, che e'
   nel percorso dello stream ordini (dominio M-1). Senza, `stream_ocm` resta vuoto.
-- lettore degli **esiti ordini** dei bot (`esiti_ordini_canale.py`, topic `order`): stessa riga di `canale_scan`
+- lettore degli **esiti ordini** dei bot (FATTO, par. 7.2) (`esiti_ordini_canale.py`, topic `order`): stessa riga di `canale_scan`
   (`_mon.ricevuto_canale(msg)`) darebbe la latenza "esito -> bot"; non messa perche' e' il percorso degli esiti
   degli ordini. La busta porta gia' `ts`.
-- `tempi_ordine` per la strada `canale` (clic) scrive `decisione_ms=na` perche' non passa `invio`: il tratto del clic
+- (FATTO, par. 7.3) `tempi_ordine` per la strada `canale` (clic) scrive `decisione_ms=na` perche' non passa `invio`: il tratto del clic
   e' coperto da `clic_canale_ms`/`clic_presa_ms`; se M-1 passasse `invio=req.ricevuto_ms` in `live_order_worker.py:3997`
   il totale `decisione_risposta_ms.desktop.canale.<modo>` comparirebbe da solo.
 - Mike live: REST in processo, `rest_ms.placeOrders` di T0A; nessun istante di decisione separato.
@@ -286,4 +287,96 @@ riassunti; i servizi Python misurano comunque la loro parte.
 - Tabella dei pesi REST di Betfair non riletta sul sito (non raggiungibile da qui).
 - Bot tennis e registrazioni tennis: nessuna registrazione tennis disponibile, il banco tennis non e' stato rilanciato.
 - Suite `npx vitest run` INTERA non lanciata (macchina condivisa): lanciati tsc, fotografia e i test dei componenti toccati.
-- `ocm` e latenza "esito -> bot" restano vuoti finche' M-1 non mette la riga d'aggancio nel suo percorso (par. 2).
+- ~~`ocm` e latenza "esito -> bot" restano vuoti finche' M-1 non mette la riga d'aggancio nel suo percorso~~:
+  agganci fatti l'11/10 (par. 7); restano non misurati sul campo (nessun PC, nessun Betfair dal cloud).
+
+## 7. Agganci fatti dopo M-1 (11/10/2026, ramo `mappa/agganci` da `mappa/integrazione` `8e768f7f`)
+
+I tre punti di "Lasciato a M-1" del par. 2. Tutti dietro `MONITOR_SALUTE` (`_mon.ATTIVO`): spento = identico a
+prima (nessun wrapper, nessun campo, nessun contatore: provato). Righe sul commit del ramo `mappa/agganci`.
+
+### 7.1 `ocm` dello stream ORDINI in "Salute"
+
+| File:riga | Cosa |
+|---|---|
+| `Betfair/stream/auth.py:73` | `if _ro.attivo() or _mon.ATTIVO: _ro.aggancia_api_client(client)`: l'APIClient si aggancia se ALMENO UNO dei due interruttori e' acceso (prima: solo `REGISTRO_ORDINI`) |
+| `Betfair/monitor/registratore_ordini.py:87` | import di `sonde` (il pacchetto resta senza flumine/betfairlightweight al caricamento) |
+| `Betfair/monitor/registratore_ordini.py:886-898` | `sorgente_salute()`: `ordini-<sport>` dallo stato in memoria del monitor (`sonde.stato()`, lo sport dato a `avvia`; senza sport il servizio); `None` a monitor spento. Nessuna lettura nuova |
+| `Betfair/monitor/registratore_ordini.py:901-943` | `_monta_tee`: il tee scrive su disco SOLO a registratore acceso (`scr = scrittore() if registra else None`, record `sub` solo se `registra`), conta in Salute SOLO a monitor acceso (`_mon.osserva_stream(sorgente, raw_data)`, `:932-936`, errore catturato e loggato `[registro-ordini] ocm non contato in Salute`). L'`on_data` originale e' chiamato una volta e il suo valore torna identico (come M-1) |
+| `Betfair/monitor/registratore_ordini.py:985-1009` | `aggancia_api_client`: registratore spento e monitor acceso = si avvolge SOLO `streaming.create_stream` (mai `betting.request`: nessuna registrazione REST, nessuno scrittore, nessun file, nessun thread) |
+
+Cosa si legge (riga del processo, es. `runner-calcio`, `runner-tennis`, `scalper-sessione-*`):
+`contatori.stream_ocm.ordini-<sport>`, tratto `ordini_rx_pt_ms.ordini-<sport>` (pt -> ricezione, orologi diversi),
+`contatori.stream_status["ordini-<sport> SUCCESS|FAILURE ..."]`, `valori.connessioni_disponibili.ordini-<sport>`
+(lo `status` dello stream ordini porta anche `connectionsAvailable`), `contatori.stream_altri.ordini-<sport>`
+(`connection`). Calcio e tennis non si mischiano: la sorgente porta lo sport del processo (test
+`test_ocm_sport_del_processo_tennis_mai_mischiato`). Il referto li raccoglie gia' (`referto.py`, gruppo `stream_ocm`).
+
+Ordine nei servizi: `_mon.avvia(...)` e' chiamato PRIMA di `build_client` (runner calcio `runner.py:3256` ->
+`:2712`, runner tennis `tennis_runner.py:3560` -> `:3198`, sessione scalper `scalper_session.py:2440` -> `:1544`):
+alla costruzione del client il monitor e' gia' deciso. Gli stream dei prezzi non sono toccati (il tee si monta solo
+su `subscribe_to_orders`).
+
+### 7.2 Latenza esito -> bot (lettore degli esiti ordini dei bot)
+
+| File:riga | Cosa |
+|---|---|
+| `Betfair/stream/esiti_ordini_canale.py:64` | import di `sonde` (modulo resta PURO: test `test_esiti_ordini_canale_e_un_modulo_puro` verde) |
+| `Betfair/stream/esiti_ordini_canale.py:335-336` | `ClientEsiti.incassa`: `if _mon.ATTIVO: _mon.ricevuto_canale(msg, per_modo=True)`, DOPO il filtro dei topic del lettore (hello e altri non contano) e PRIMA della memoria (conta anche una riga poi scartata come vecchia) |
+| `Betfair/monitor/sonde.py:400-414` | `ricevuto_canale(msg, *, per_modo=False)`: con `per_modo` la chiave e' `<topic>.<modo>` (`mode` della riga dello specchio, `modo` della fotografia del conto): **paper e live mai sommati**. Senza (`canale_scan`) chiavi di sempre |
+
+Si legge nella riga del BOT (Omega, Safe, Mike): `canale_ricezione_ms.order.paper|live`,
+`canale_ricezione_ms.conto.live`, `canale_ricezione_ms.conto_paper.paper`; contatori `canale_ric`. `ts` 0 o
+assente (busta di un runner a monitor spento): nessun tratto (`_numero_positivo`).
+
+**Impronta**: `esiti_ordini_canale.py` e' un modulo CONDIVISO di `Betfair/stream/`, NON e' in nessun
+`moduli_produzione` del registro del banco (`registro_bot.py`, chiusura degli import DENTRO il pacchetto del bot):
+l'impronta `codice_bot` di Mike, Omega, Safe NON cambia (verificato: intersezione vuota per tutti gli 11 bot
+registrati). E' pero' codice di produzione dei bot (lettore degli esiti di Omega/Safe, del conto di Mike/Omega/Safe,
+montato anche dai replay del banco): va nella checklist del PC come ricertificazione di CONTROLLO (par. 7.4).
+
+### 7.3 `invio` della strada canale (clic del desktop)
+
+| File:riga | Cosa |
+|---|---|
+| `Betfair/stream/live_order_worker.py:3999-4000` | `_TEMPI.nuovo(..., invio=req.ricevuto_ms)` nella strada canale di `_process_local_requests`. Solo l'argomento di misura: nessun altro cambiamento |
+
+Verificato in `tempi_ordine.py`: `invio` -> `voce["invio_ms"]` (`nuovo`, `_ms_da`), letto SOLO da `tratti`
+(`decisione_ms` = invio - decisione, `ricezione_ms` = presa - invio) e dal record `dec` di M-1
+(`registratore_ordini.decisione`, campo `invio_ms`): nessuna decisione, nessuna guardia. `_ms_da` tratta `0` e
+negativi come ASSENTI (`tempi_ordine.py:107-108`): `req.ricevuto_ms` = 0 a monitor spento -> `decisione_ms=na`,
+`ricezione_ms=na` come prima (test `test_clic_spento_identico_a_prima_nessuna_misura`,
+`test_clic_acceso_ricevuto_zero_nessuna_misura_falsa`). `ricevuto_ms` e' l'orologio del PC (`invio_orologio="pc"`,
+nessun tratto a orologi misti). A monitor acceso compaiono `decisione_invio_ms`, `invio_presa_ms` e il totale
+`decisione_risposta_ms.desktop.canale.<modo>`.
+
+Non toccato (dichiarato): la strada canale del TENNIS (`tennis_live_order_worker.py:1799-1802`) ha lo stesso `na`;
+quel file e' nella chiusura dei 4 bot tennis (`_MODULI_TENNIS`): metterci `invio=` cambierebbe la loro impronta e
+richiederebbe la ricertificazione tennis. Lasciato al coordinatore.
+
+### 7.4 Prove (rieseguibili) e checklist del PC
+
+- Test nuovi: `Betfair/monitor/tests/test_agganci_m1_m2_2026_10_11.py` (21): APIClient VERO da `build_client`,
+  `OrderStream.run` VERO di flumine col solo socket finto, listener VERO; `LocalChannel` VERO (`publish`,
+  `_on_message`), `ClientEsiti` VERO con righe da `LiveTradingStrategy._order_row` VERA e `payload_conto*` VERI;
+  `LocalRequest` VERE, worker VERO, `tempi_ordine` VERO e handler di log VERO della Salute.
+- Mutazioni: `python ARCHITETTURA_2026-10/mappa/agganci_mutazioni.py` -> **20/20 ROSSE**, ripristino sha256
+  identico (G1-G10 aggancio 1, H1-H6 aggancio 2, K1-K4 aggancio 3). `m1_mutazioni.py` (anchor di M1 aggiornato alla
+  riga nuova di `auth.py`): **80/80 ROSSE**.
+- `python -m pytest Betfair/monitor -q -p no:cacheprovider`: **277 passati**.
+- Test vicini (canale locale, live_order_worker, tempi_ordine F0, motore ordini, esiti canale e purezza,
+  canale_scan, conto W3a/W3b, registro e impronta del banco): **522 passati**.
+- Suite intera, una volta: `python -m pytest Betfair/ -q -p no:cacheprovider` -> **11736 passati, 87 saltati,
+  6 xfailed, 0 rossi** (390 s; senza `_live_raw/`, i test di replay si saltano da soli).
+
+Checklist del PC (in piu' di quella del par. 4):
+1. Rileggere il diff `mappa/integrazione..mappa/agganci` (7 file toccati + test + script) e rilanciare i test nuovi
+   e `agganci_mutazioni.py` (20 righe ROSSO, uscita 0, `git status` pulito).
+2. Ricertificazione di CONTROLLO a monitor spento (l'impronta non cambia, il codice condiviso si'):
+   `certifica omega|safe_base|safe_esatto|safe_punta|mike 35760084` prima/dopo, righe uguali tolti i tempi.
+3. Con `MONITOR_SALUTE=1` e `REGISTRO_ORDINI` assente: nel `runner-calcio.jsonl` compaiono
+   `contatori.stream_ocm.ordini-calcio` (battiti ogni 5 s anche senza ordini) e nessuna cartella `_live_raw\_ordini`;
+   nel `runner-tennis.jsonl` `ordini-tennis` (solo con lo stream ordini LIVE aperto: in PAPER flumine usa
+   `SimulatedOrderStream` e non c'e' nessun `ocm`).
+4. Con `ESITI_ORDINI_CANALE=1` e un ordine paper di Omega/Safe: `canale_ricezione_ms.order.paper` nella riga del bot.
+5. Un clic paper dal ladder calcio: `decisione_risposta_ms.desktop.canale.paper` nella riga del runner calcio.

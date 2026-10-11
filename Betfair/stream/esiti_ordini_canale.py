@@ -61,6 +61,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .canale_bot import VALORI_ACCESI, acceso
+from ..monitor import sonde as _mon  # 11/10 (agganci M-2 "Salute"): spento di serie
 
 logger = logging.getLogger(__name__)
 
@@ -331,6 +332,8 @@ class ClientEsiti:
             return False
         if not isinstance(msg, dict) or msg.get("t") not in self._accettati:
             return False                    # hello e altro: non sono righe
+        if _mon.ATTIVO:  # 11/10 (agganci M-2): latenza esito -> bot, paper e live separati
+            _mon.ricevuto_canale(msg, per_modo=True)
         riga = msg.get("d")
         # 08/10 (W3a): la fotografia del conto PAPER viaggia sul suo topic
         # gemello e porta ``modo='paper'``; quella del runner LIVE sul topic di

@@ -36,6 +36,14 @@ nessun file, nessuna cartella, nessun thread, nessuna istanza avvolta. Anche
 acceso il registratore e' spento nel banco (``Betfair.stream.backtest``
 caricato) e sotto pytest (salvo i test di questo modulo).
 
+AGGANCI (11/10): lo stesso tee dello stream ordini serve anche al monitor
+"Salute" (``MONITOR_SALUTE``, interruttore indipendente): ``build_client``
+chiama ``aggancia_api_client`` se ALMENO UNO dei due e' acceso; il tee scrive
+su disco solo a registratore acceso e conta gli ``ocm`` in "Salute"
+(``sonde.osserva_stream("ordini-<sport>", riga)``) solo a monitor acceso.
+Registratore spento e monitor acceso: si avvolge solo ``create_stream`` (mai
+``betting.request``), nessuno scrittore, nessun file, nessun thread.
+
 PERCORSO CALDO. Sul thread dello stream e su quello della REST si fa solo:
 due letture d'orologio, un numero di sequenza e un ``deque.append`` (mai un
 lucchetto, mai un'attesa). Se la coda e' piena la riga si PERDE (contata, e il
@@ -75,6 +83,8 @@ import sys
 import threading
 import time
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
+
+from . import sonde as _mon  # agganci (11/10): ocm contati in "Salute" (spento di serie)
 
 logger = logging.getLogger(__name__)
 
@@ -873,12 +883,35 @@ def _avvolgi_request(client: Any, endpoint: Any) -> None:
 _SID = itertools.count(1)
 
 
+def sorgente_salute() -> Optional[str]:
+    """La sorgente con cui la "Salute" conta i messaggi dello stream ORDINI:
+    ``ordini-<sport>`` (lo sport che il servizio ha dato a ``sonde.avvia``;
+    senza sport, il nome del servizio). ``None`` a monitor spento. Nessuna
+    lettura nuova: solo lo stato in memoria del monitor. Non solleva mai."""
+    try:
+        if not _mon.ATTIVO:
+            return None
+        st = _mon.stato() or {}
+        nome = st.get("sport") or st.get("servizio") or "processo"
+        return "ordini-" + re.sub(r"[^A-Za-z0-9_.-]+", "-", str(nome))[:30]
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _monta_tee(stream: Any, kwargs: Dict[str, Any], args: Tuple[Any, ...]) -> None:
     """Il tee sul listener dello stream ordini (una volta per listener; a ogni
-    sottoscrizione nuova un ``sid`` nuovo e un record ``sub``)."""
+    sottoscrizione nuova un ``sid`` nuovo e un record ``sub``).
+
+    Agganci (11/10): il tee ha DUE usi indipendenti, ciascuno col suo
+    interruttore. Registratore acceso (``REGISTRO_ORDINI``): la riga su disco e
+    il record ``sub``. Monitor acceso (``MONITOR_SALUTE``): il conteggio degli
+    ``ocm`` in "Salute" (``sonde.osserva_stream``). Con uno solo dei due acceso
+    l'altro non lascia traccia (registratore spento: nessuno scrittore, nessun
+    file, nessun thread)."""
     listener = getattr(stream, "listener", None)
     if listener is None:
         return
+    registra = attivo()
     sid = next(_SID)
     attuale = getattr(listener, "on_data", None)
     contesto = getattr(attuale, "_contesto_m1", None)
@@ -887,18 +920,27 @@ def _monta_tee(stream: Any, kwargs: Dict[str, Any], args: Tuple[Any, ...]) -> No
     elif callable(attuale):
         originale = attuale
         contesto = {"sid": sid}
-        scr = scrittore()
+        scr = scrittore() if registra else None
+        sorgente = sorgente_salute()
 
         def on_data(raw_data: Any) -> Any:
             try:
-                scr.metti_stream(contesto["sid"], raw_data)
+                if scr is not None:
+                    scr.metti_stream(contesto["sid"], raw_data)
             except Exception as ex:  # noqa: BLE001 - mai rompere lo stream
                 _avvisa("tee", "tee dello stream ordini KO: %s", str(ex)[:160])
+            if sorgente is not None and _mon.ATTIVO:
+                try:
+                    _mon.osserva_stream(sorgente, raw_data)
+                except Exception as ex:  # noqa: BLE001 - la misura non rompe lo stream
+                    _avvisa("salute", "ocm non contato in Salute: %s", str(ex)[:160])
             return originale(raw_data)
 
         setattr(on_data, "_contesto_m1", contesto)
         setattr(on_data, _MARCA, True)
         listener.on_data = on_data
+    if not registra:
+        return
     nomi = ("order_filter", "initial_clk", "clk", "conflate_ms", "heartbeat_ms",
             "segmentation_enabled")
     valori = dict(zip(nomi, args))
@@ -943,11 +985,18 @@ def _avvolgi_create_stream(streaming: Any) -> None:
 def aggancia_api_client(client: Any) -> Any:
     """Avvolge, sulla SOLA istanza, ``client.betting.request`` (REST con soldi) e
     ``client.streaming.create_stream`` (tee dello stream ordini). Idempotente.
-    Ritorna il client (lo stesso oggetto). Spento: non tocca niente."""
-    if client is None or not attivo():
+    Ritorna il client (lo stesso oggetto). Spento: non tocca niente.
+
+    Agganci (11/10): registratore SPENTO e monitor "Salute" ACCESO = si avvolge
+    SOLO ``create_stream`` (tee per contare gli ``ocm``); ``betting.request``
+    resta quello di betfairlightweight. Entrambi spenti: non tocca niente."""
+    if client is None:
+        return client
+    registra = attivo()
+    if not registra and not _mon.ATTIVO:
         return client
     try:
-        betting = getattr(client, "betting", None)
+        betting = getattr(client, "betting", None) if registra else None
         if betting is not None and not getattr(getattr(betting, "request", None), _MARCA, False):
             _avvolgi_request(client, betting)
         streaming = getattr(client, "streaming", None)

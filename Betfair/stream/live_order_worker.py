@@ -3996,7 +3996,8 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any,
                     continue
             if _t_tempi is not None: _TEMPI.nuovo(  # noqa: E701 - F0 misura (solo RAM)
                 _cust_ref(rid), "canale", t=_t_tempi, azione=action, mode=req_mode,
-                rif=client_ref, decisione_ms=_TEMPI.decisione_da(cmd, cmd.get("params")))
+                rif=client_ref, decisione_ms=_TEMPI.decisione_da(cmd, cmd.get("params")),
+                invio=req.ricevuto_ms)  # agganci 11/10: arrivo sul canale (0 = monitor spento = assente)
             try:
                 with LUCCHETTO_ORDINI:  # 24/09: un thread ordini alla volta
                     _dispatch(lsb, flumine, row, req_mode, strategy)

@@ -20,7 +20,9 @@ AO = "Betfair/monitor/analisi_ordini.py"
 
 MUT = [
     ("M1 aggancio auth tolto", "Betfair/stream/auth.py",
-     "    if _ro.attivo(): _ro.aggancia_api_client(client)", "    if False: _ro.aggancia_api_client(client)",
+     # agganci (11/10): la riga ora aggancia anche a monitor "Salute" acceso
+     "    if _ro.attivo() or _mon.ATTIVO: _ro.aggancia_api_client(client)",
+     "    if False: _ro.aggancia_api_client(client)",
      "test_acceso_rest_bflw_registra or test_acceso_stream_ordini_flumine"),
     ("M2 aggancio client nostro tolto", "Betfair/client.py",
      "        if _ro.attivo() and _ro.metodo_soldi(method):", "        if False and _ro.metodo_soldi(method):",

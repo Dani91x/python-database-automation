@@ -269,3 +269,31 @@ ordinate per `seq`, divise per `sid`).
 * Non verificati qui (macchina condivisa del cloud, nessuna app): il giro paper e quello live sul PC; il comportamento
   su Windows della cancellazione di file aperti da altri processi (gestito: errore catturato e loggato) e di
   `perf_counter` fra processi (QueryPerformanceCounter e' di sistema).
+
+## 10. Agganci fatti (11/10/2026, ramo `mappa/agganci`)
+
+Il tee di M-1 sul listener dello stream ordini serve ora anche alla "Salute" (`M2_MISURE.md` par. 7.1). I due
+interruttori restano INDIPENDENTI:
+
+| `REGISTRO_ORDINI` | `MONITOR_SALUTE` | `build_client` | cosa succede |
+|---|---|---|---|
+| spento | spento | nessun aggancio | identico a prima (nessun wrapper) |
+| acceso | spento | `betting.request` + `create_stream` | come M-1: disco, nessuna misura |
+| spento | acceso | SOLO `create_stream` | `ocm` contati in Salute (`stream_ocm.ordini-<sport>`); nessuno scrittore, nessun file, nessun thread, REST non avvolta |
+| acceso | acceso | entrambi | disco + Salute |
+
+Punti toccati (file:riga sul ramo `mappa/agganci`):
+- `Betfair/stream/auth.py:73`: `if _ro.attivo() or _mon.ATTIVO: _ro.aggancia_api_client(client)` (resta UNA riga;
+  `test_agganci_di_una_riga_dietro_l_interruttore` verde);
+- `Betfair/monitor/registratore_ordini.py:87` (import di `sonde`), `:886-898` (`sorgente_salute`), `:901-943`
+  (`_monta_tee`: scrittore e record `sub` solo se `registra`; `osserva_stream` solo a monitor acceso, errore
+  catturato), `:985-1009` (`aggancia_api_client`: `betting.request` solo se `registra`);
+- `Betfair/stream/live_order_worker.py:3999-4000`: `invio=req.ricevuto_ms` nel `tempi_ordine.nuovo` della strada
+  canale: il record `dec` del registratore porta ora anche `invio_ms` per i clic del desktop (a monitor acceso).
+
+Prove: `Betfair/monitor/tests/test_agganci_m1_m2_2026_10_11.py` (21 verdi), `agganci_mutazioni.py` 20/20 rosse;
+`m1_mutazioni.py` 80/80 rosse (anchor M1 aggiornato alla riga nuova di `auth.py`), i 111 test M-1 verdi.
+
+Checklist del PC (in piu' del par. 8): giro con `MONITOR_SALUTE=1` e `REGISTRO_ORDINI` assente -> nessuna cartella
+`_live_raw\_ordini`, nessun thread `registro-ordini`, nessuna riga `[registro-ordini] ACCESO`; nel file del monitor
+del runner `stream_ocm.ordini-calcio`.

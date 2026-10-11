@@ -397,13 +397,21 @@ def busta(topic: str, payload: Any) -> Dict[str, Any]:
     return b
 
 
-def ricevuto_canale(msg: Any) -> None:
+def ricevuto_canale(msg: Any, *, per_modo: bool = False) -> None:
     """Un lettore (bot) ha ricevuto una busta del canale locale: latenza
-    ``pubblicazione -> ricezione`` per topic (stesso orologio del PC)."""
+    ``pubblicazione -> ricezione`` per topic (stesso orologio del PC).
+
+    ``per_modo`` (agganci, 11/10: lettore degli ESITI ordini dei bot): la chiave
+    diventa ``<topic>.<modo>`` col modo della riga (``mode`` della riga dello
+    specchio, ``modo`` della fotografia del conto): paper e live MAI sommati."""
     if not ATTIVO or not isinstance(msg, dict):
         return
     try:
         topic = str(msg.get("t") or "?")[:40]
+        if per_modo:
+            d = msg.get("d")
+            m = (d.get("mode") if "mode" in d else d.get("modo")) if isinstance(d, dict) else None
+            topic = topic + "." + _modo(m)
         REGISTRO.conta("canale_ric", topic)
         ts = msg.get("ts")
         if _numero_positivo(ts):

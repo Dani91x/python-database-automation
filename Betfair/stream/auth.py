@@ -70,7 +70,7 @@ def build_client(login: bool = True) -> betfairlightweight.APIClient:
     if _mon.ATTIVO:
         # 09/10 (T0A "Salute"): conta login/keepAlive/metodi REST della sessione
         _mon.aggancia_client_betfair(client)
-    if _ro.attivo(): _ro.aggancia_api_client(client)  # noqa: E701 - M-1: REST con soldi + stream ordini su disco
+    if _ro.attivo() or _mon.ATTIVO: _ro.aggancia_api_client(client)  # noqa: E701 - M-1: REST con soldi + stream ordini su disco; ocm in Salute
 
     if login:
         try:
