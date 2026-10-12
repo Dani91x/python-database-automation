@@ -190,8 +190,8 @@ Under 4,5 7,47 € @1,03», accettata.
     - alcune size sono rifiutate comunque (1,49 @1,01).
 - **Rischio sul conto**: secondo un commento su bettingtraderblog del 28/03/2022 (link al
   §1.4), un utente è stato «richiamato» da Betfair per uso ripetuto della tecnica.
-  Secondo Market Feeder Pro, citato sul forum Bet Angel nel 2010
-  (https://forum.betangel.com/viewtopic.php?t=2620), alcuni conti sono stati sospesi per
+  Secondo MF, citato sul forum BA nel 2010
+  ([fonte rimossa]), alcuni conti sono stati sospesi per
   abuso. **Aneddotico, non documentato da Betfair.**
 
 ---
@@ -203,73 +203,73 @@ Under 4,5 7,47 € @1,03», accettata.
 Tutti usano la stessa macchina in 3 o 4 passi: parcheggio del minimo a quota fuori
 mercato, riduzione, spostamento del prezzo. Le varianti:
 
-- **BACK** parcheggiato @1000 (Bet Angel, Geeks Toy) o @990/900 (Cymatic).
+- **BACK** parcheggiato @1000 (BA, GT) o @990/900 (CY).
 - **LAY** parcheggiato @1,01. Dal 06/2020 si parcheggia invece alla quota più bassa che
   supera `INVALID_PROFIT_RATIO`: 1,02-1,10 secondo la size, oppure 1,8 per le size più
-  piccole (Gruss, forum per sviluppatori).
-- **Riduzione** con `cancelOrders.sizeReduction` (Bet Angel), oppure con un «size-up»
-  che crea un secondo ordine piccolo, seguito dalla cancellazione del primo (Geeks Toy,
-  Gruss, tecnica manuale italiana).
-- **Residuo accettato.** Se Betfair rifiuta il trim per arrotondamento, Bet Angel accetta
+  piccole (GR, forum per sviluppatori).
+- **Riduzione** con `cancelOrders.sizeReduction` (BA), oppure con un «size-up»
+  che crea un secondo ordine piccolo, seguito dalla cancellazione del primo (GT,
+  GR, tecnica manuale italiana).
+- **Residuo accettato.** Se Betfair rifiuta il trim per arrotondamento, BA accetta
   un P&L «sbilanciato di qualche centesimo» e lo scrive nel log.
-- **Guardia sul prezzo.** Bet Angel blocca le chiusure sotto il minimo su selezioni con
+- **Guardia sul prezzo.** BA blocca le chiusure sotto il minimo su selezioni con
   quota sopra una soglia scelta dall'utente.
 - **Bet delay.** Ogni passo di place o replace subisce il ritardo. Il cancel no.
 
-**Bet Angel non funziona con conti .it**: è il loro supporto a dirlo (vedi sotto).
+**BA non funziona con conti .it**: è il loro supporto a dirlo (vedi sotto).
 
 ### Evidenze
 
-- **Bet Angel**
+- **BA**
   - KB «What is the minimum bet allowed», 23/04/2023:
-    https://support.betangel.com/support/solutions/articles/80001073147-what-is-the-minimum-bet-allowed
+    [fonte rimossa]
     *«Place a bet of £2 at 1000. 80p is removed and the remain moved down to 7.8… it will
     take twice as long… this also includes the in-play delay… on very rare occasions your
     bet might get matched at 1000…»*
   - Guida «Green Up Settings», senza data:
-    https://www.betangel.com/user-guide/green_up_settings.html
+    [fonte rimossa]
     Opzione «Trade Closure Bets Being Placed on Selections Priced >»: *«In fast moving
-    markets the £2 stake maybe matched @ 1000 before Bet Angel can cancel part of it…»*
+    markets the £2 stake maybe matched @ 1000 before BA can cancel part of it…»*
   - KB «When I see bets at 1.01 or 1000», 26/04/2023:
-    https://support.betangel.com/support/solutions/articles/80001073646-when-i-am-using-the-software-i-see-bets-at-1-01-or-1000
+    [fonte rimossa]
     *«During in-play events each step… is subject to the in-play delay… This can add up to
     30 seconds»*.
   - KB su `INVALID_PROFIT_RATIO`, 21/04/2023:
-    https://support.betangel.com/support/solutions/articles/80001073003-while-greening-up-unable-to-place-lay-bet-due-to-betfair-s-rules-regarding-pay-out-liability-rounding
+    [fonte rimossa]
     P&L «uneven by a few pence».
   - KB su .es e .it, 23/04/2023:
-    https://support.betangel.com/support/solutions/articles/80001073138-using-bet-angel-with-betfair-es-and-betfair-it-accounts
+    [fonte rimossa]
     *«It will not work with the Betfair.es and the Betfair.it betting exchanges»*.
-  - Peter Webb (Bet Angel), 06/2020:
+  - Peter Webb (BA), 06/2020:
     https://www.peterwebb.com/betfair-api-greening-hedging-cash-out-issues/
     Patch rilasciata in giornata dopo aver chiarito con Betfair i nuovi parametri.
-- **Geeks Toy**
+- **GT**
   - Forum «Hedging delay», mercato U/O 2.5 calcio:
-    https://www.geekstoy.com/forum/forum/geeks-toy/help/4222-hedging-delay
+    [fonte rimossa]
     Sequenza: lay 2 @1,01 (8 s nel calcio estero in gioco), size-up a 3 (crea un ordine
     separato da 1, altri 8 s), cancel del 2 e riprezzo dell'1 (altri 8 s): **circa 25 s
     in totale**.
   - Forum, sotto-minimo:
-    https://www.geekstoy.com/forum/forum/betting-trading/newbies-corner/6806-minimum-bet-placement-possible-with-geeks-toy
+    [fonte rimossa]
     *«first places a 2 euro bet @1000 and then amends stake… if current price is already
     1000, all 2 euro are matched»*.
-- **Gruss Betting Assistant**
+- **GR**
   - Forum «Laying below minimum stakes», 19-23/06/2020:
-    http://www.gruss-software.co.uk/forum/viewtopic.php?f=13&t=10610
+    [fonte rimossa]
   - Dopo il cambio del 2020 il trim falliva e **l'ordine pieno da 5 AUD finiva alla quota
     vera (1000)**. Un utente segnala una perdita di circa 1.300 AUD.
-  - Un utente italiano: il parcheggio @1,01 falliva, @1,10 funzionava. Gruss ha
+  - Un utente italiano: il parcheggio @1,01 falliva, @1,10 funzionava. GR ha
     rilasciato una correzione.
-- **Cymatic Trader** (forum, 12/10/2014): http://www.cymatic.co.uk/forum/topic106-10.html
+- **CY** (forum, 12/10/2014): [fonte rimossa]
   *«a bet can get stuck at 990, if you are trying to back a stake less than £2… it has to
   first make a £2 bet and then amend it»*. Il supporto consiglia di aprire con stake
   sopra il minimo, per non dover chiudere con il «4 stage process».
-- **Bf Bot Manager**: la pagina della KB
-  (https://www.bfbotmanager.com/en/help/knowledge_base/article/38-what-is-minimum-bet-size-and-can-bot-place-bets-below-minimum-bet-size)
+- **BBM**: la pagina della KB
+  ([fonte rimossa])
   risponde 403. Ho letto solo l'estratto del motore di ricerca: per gli ordini exchange
   «no minimum bet size, but bet payout must result in fair payout», e il consiglio di
   alternare anche puntate regolari. **Non verificato sulla pagina.**
-- **Fairbot, BetTrader**: **non ho trovato** documentazione su come trattano il
+- **FB, BT**: **non ho trovato** documentazione su come trattano il
   sotto-minimo.
 - **Quando il place-and-trim non è possibile o è lento in gioco**:
   - Il **cancel (anche parziale) non subisce il bet delay**; place e replace sì.
@@ -286,7 +286,7 @@ mercato, riduzione, spostamento del prezzo. Le varianti:
     `betDelayModels` (PASSIVE / DYNAMIC). Articolo del 15/06/2026:
     https://support.developer.betfair.com/hc/en-us/articles/26791968420636-How-can-I-identify-markets-that-accept-passive-orders-via-the-Betfair-API
     Nel calcio la funzione è attiva solo su «selected football markets». Sintesi
-    divulgativa di Bet Angel: https://www.betangel.com/betfair-passive-bet-delay/
+    divulgativa di BA: [fonte rimossa]
   - Il riprezzo verso una quota abbinabile è «aggressivo» e resta comunque ritardato
     (*dedotto*, dalla definizione stessa di passive bet).
 
@@ -379,14 +379,14 @@ Vale anche per le LAY sotto 0,50 € quando non c'è un'equivalente sopra il min
    - In gioco subisce il bet delay, salvo mercato con `betDelayModels` PASSIVE: il
      parcheggio non si abbina, quindi è passivo.
    - Prima di inviare, controllare che la miglior quota di banca su U sia ≪ 1000. Se U è
-     già prossima a 1000, il parcheggio si abbina (Geeks Toy, Bet Angel).
+     già prossima a 1000, il parcheggio si abbina (GT, BA).
 2. **Osservazione.** Dallo stream: ordine EXECUTABLE con `sizeMatched = 0`. Se
    `sizeMatched > 0` → ABORT, senza ritentare. La guardia c'è già in `submin.py`.
 3. **Trim.** `cancelOrders(marketId, [{betId, sizeReduction: round(min − B, 2)}])`. È
    **immediato**: il cancel non subisce ritardo. Prima del trim, controllare il ratio
    sul residuo a 1000: con B·999 è praticamente sempre valido.
 4. **Verifica del trim.** `sizeRemaining == B` osservato sullo stream. Senza questa
-   osservazione non si riprezza: lezione Gruss 2020 e bug del 10/07 annotato in
+   osservazione non si riprezza: lezione GR 2020 e bug del 10/07 annotato in
    `submin.py`.
 5. **Riprezzo.** `replaceOrders(marketId, [{betId, newPrice: p_target}],
    marketVersion: {...})`.
@@ -412,7 +412,7 @@ controllo sul residuo**, cioè `p_park ≥ 1 + 0,008/S` arrotondato al tick supe
 **Rischi in gioco** (sintesi delle fonti sopra):
 
 - **Tempo.** Ritardo di parcheggio + 0 + ritardo di riprezzo. Nel calcio sono circa
-  2 × 5-8 s (Geeks Toy misura 8 s per passo nel calcio estero). Diventa circa un solo
+  2 × 5-8 s (GT misura 8 s per passo nel calcio estero). Diventa circa un solo
   ritardo se il mercato è PASSIVE. Il prezzo intanto si muove: il riprezzo va ricalcolato
   sul libro attuale, non su quello di partenza.
 - **Gol durante il ritardo.** Il parcheggio o il riprezzo decadono: `marketVersion` o
@@ -422,10 +422,10 @@ controllo sul residuo**, cioè `p_park ≥ 1 + 0,008/S` arrotondato al tick supe
   normale. Possibile quando la selezione è già a quote estreme, o se il mercato si
   riforma. → ABORT e riconciliazione a mano.
 - **Trim che fallisce in silenzio.** Il rischio più costoso: l'ordine pieno finisce alla
-  quota vera (Gruss 2020). → Mai riprezzare senza aver osservato il residuo.
+  quota vera (GR 2020). → Mai riprezzare senza aver osservato il residuo.
 - **`INVALID_PROFIT_RATIO` al trim o al riprezzo.** → Controllo preventivo; se fallisce,
   restano un parcheggio a vuoto (da cancellare, immediato) e un residuo di P&L di pochi
-  centesimi (la stessa scelta di Bet Angel).
+  centesimi (la stessa scelta di BA).
 - **Uso ripetuto.** Possibile attenzione da parte di Betfair (aneddotico, §2).
 
 ### Reperti sul codice da portare all'utente (non corretti: fuori perimetro)
@@ -456,11 +456,11 @@ controllo sul residuo**, cioè `p_park ≥ 1 + 0,008/S` arrotondato al tick supe
 |---|---|---|---|
 | Ordine diretto ≥ minimo | size ≥ minimo .it (BACK 2 €, LAY con size ≥ 0,50 €) | 1 bet delay; prezzo che scorre | Betting On Italian Exchange (31/07/2026); placeOrders (31/07/2026) |
 | **Punta equivalente sulla stessa selezione** (B = S·(q−1)) | chiusura calcolata come banca < 0,50 € sull'altra selezione di un mercato a 2 esiti | libri di U e O non identici; eventuale passo di 0,50 € | algebra dedotta; regole .it come sopra |
-| Place-and-trim BACK (2 € @1000 → cancel `sizeReduction` → replace) | punta necessaria < minimo .it | 2 ritardi in gioco (1 se PASSIVE); abbinamento a 1000 se la selezione è già lì; `INVALID_PROFIT_RATIO` al riprezzo su quote basse; possibile attenzione del conto | Bet Angel KB (23/04/2023); Geeks Toy forum; articolo INVALID_PROFIT_RATIO (21/07/2026) |
-| Place-and-trim LAY (0,50 € @ p ≥ 1+0,008/S → cancel → replace) | banca necessaria < 0,50 € senza un'equivalente sopra il minimo | parcheggio a 1,01 rifiutato per size piccole; trim fallito → size piena alla quota vera (Gruss 2020) | forum per sviluppatori 32066 (06/2020); forum Gruss t=10610 (06/2020) |
-| Size-up che crea un secondo ordine, poi cancel del primo | variante senza `sizeReduction` (Geeks Toy, tecnica manuale .it) | 3 ritardi (circa 25 s nel calcio); su .it produce multipli di 0,50 | Geeks Toy «Hedging delay»; bettingtraderblog (25/05/2014) |
-| Accettare il residuo (P&L sbilanciato di pochi cent) | trim o riprezzo rifiutato per `INVALID_PROFIT_RATIO` | piccolo squilibrio tra gli esiti | Bet Angel KB (21/04/2023) |
-| Blocco delle chiusure sotto il minimo su selezioni a quota alta | selezione vicina a 1000 (il parcheggio si abbinerebbe) | posizione lasciata aperta | Bet Angel «Green Up Settings» |
+| Place-and-trim BACK (2 € @1000 → cancel `sizeReduction` → replace) | punta necessaria < minimo .it | 2 ritardi in gioco (1 se PASSIVE); abbinamento a 1000 se la selezione è già lì; `INVALID_PROFIT_RATIO` al riprezzo su quote basse; possibile attenzione del conto | BA KB (23/04/2023); GT forum; articolo INVALID_PROFIT_RATIO (21/07/2026) |
+| Place-and-trim LAY (0,50 € @ p ≥ 1+0,008/S → cancel → replace) | banca necessaria < 0,50 € senza un'equivalente sopra il minimo | parcheggio a 1,01 rifiutato per size piccole; trim fallito → size piena alla quota vera (GR 2020) | forum per sviluppatori 32066 (06/2020); forum GR t=10610 (06/2020) |
+| Size-up che crea un secondo ordine, poi cancel del primo | variante senza `sizeReduction` (GT, tecnica manuale .it) | 3 ritardi (circa 25 s nel calcio); su .it produce multipli di 0,50 | GT «Hedging delay»; bettingtraderblog (25/05/2014) |
+| Accettare il residuo (P&L sbilanciato di pochi cent) | trim o riprezzo rifiutato per `INVALID_PROFIT_RATIO` | piccolo squilibrio tra gli esiti | BA KB (21/04/2023) |
+| Blocco delle chiusure sotto il minimo su selezioni a quota alta | selezione vicina a 1000 (il parcheggio si abbinerebbe) | posizione lasciata aperta | BA «Green Up Settings» |
 | `marketVersion` su place e replace | sempre in gioco nel calcio | l'ordine decade dopo un gol (sicuro, posizione ancora aperta) | placeOrders (31/07/2026) |
 | Mercati PASSIVE (`betDelayModels`) | in gioco, per il parcheggio non abbinabile | disponibile solo su alcuni campionati | supporto per sviluppatori (15/06/2026) |
 | `betTargetType` / Min Bet Payout | **mai su .it** | `INVALID_BET_SIZE` o rifiuto | placeOrders (31/07/2026) |
@@ -476,10 +476,10 @@ controllo sul residuo**, cioè `p_park ≥ 1 + 0,008/S` arrotondato al tick supe
   documentato.
 - Se su .it il trim con `sizeReduction` sotto il minimo sia ammesso via API, e fino a
   quale floor: nessuna fonte pubblica per .it. Le fonti dei competitor riguardano .com, e
-  Bet Angel dichiara di non supportare .it.
+  BA dichiara di non supportare .it.
 - Il metodo di arrotondamento di Betfair nel calcolo di `INVALID_PROFIT_RATIO` (al più
   vicino o per difetto): non documentato. La soglia di 0,008 è empirica (utenti, 2020).
-- Fairbot e BetTrader: nessuna documentazione trovata sul sotto-minimo. Bf Bot Manager:
+- FB e BT: nessuna documentazione trovata sul sotto-minimo. BBM:
   pagina 403, solo l'estratto del motore di ricerca.
 - La data del thread «Betdelay» (forum per sviluppatori 3347) non è rilevabile
   dall'HTML.

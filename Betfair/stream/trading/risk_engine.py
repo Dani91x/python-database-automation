@@ -6,11 +6,11 @@ SE e COME chiudere/coprire una posizione. Tutta la logica qui è pura (nessun I/
 rete, nessun ordine): è il worker a leggere prezzi/esposizioni fresche e ad ACCODARE
 l'ordine risultante nella coda ``betfair_live_order_requests`` (stesso path audited/mirror).
 
-Replica la semantica dei tool professionali (Bet Angel / Cymatic / Fairbot):
+Replica la semantica dei tool professionali (BA / CY / FB):
   * OFFSET / bracket   : al fill dell'ingresso, ordine OPPOSTO di chiusura a target profit,
                          a N tick (o %) dal prezzo d'ingresso. Back-first → LAY più BASSO;
                          Lay-first → BACK più ALTO. Variante "greening" = size che pareggia.
-  * STOP-LOSS          : due parametri (Bet Angel) — ``trigger`` (quanto contro prima che
+  * STOP-LOSS          : due parametri (BA) — ``trigger`` (quanto contro prima che
                          scatti) e ``place_at`` (dove si invia). Ma la CHIUSURA avviene al
                          BEST disponibile opposto (attraversa lo spread → match garantito),
                          NON letteralmente a N tick. Ticks o %.
@@ -619,7 +619,7 @@ def bracket_missing_stop(params: Optional[dict]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # STOP-ENTRY (roadmap C23) — ordine condizionale che ENTRA al tocco della soglia
 # ---------------------------------------------------------------------------
-# Semantica Bet Angel: armi "entra BACK/LAY quando il prezzo tocca X" con direzione
+# Semantica BA: armi "entra BACK/LAY quando il prezzo tocca X" con direzione
 # esplicita (at_or_above = breakout verso l'alto; at_or_below = verso il basso).
 # Logica PURA: il worker legge l'LTP corrente e chiama questa funzione a ogni giro.
 VALID_STOP_ENTRY_DIRECTIONS = ("at_or_above", "at_or_below")

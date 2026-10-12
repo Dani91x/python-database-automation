@@ -7,7 +7,7 @@
 -- 'triggered'. NESSUN ordine viene piazzato da questa tabella: è solo lo stato
 -- delle regole. La matematica (tick/soglie) è in Betfair/stream/trading/risk_engine.py.
 --
--- ⚠️ SOFTWARE-SIDE: come in tutti i tool pro (Bet Angel/Cymatic/Fairbot) questi
+-- ⚠️ SOFTWARE-SIDE: come in tutti i tool pro (BA/CY/FB) questi
 -- stop/offset sono innescati dal software, NON sono ordini "resting" sull'Exchange:
 -- se il runner/processo cade, NON esistono. La UI lo dichiara esplicitamente.
 --

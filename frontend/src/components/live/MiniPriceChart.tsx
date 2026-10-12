@@ -1,6 +1,6 @@
 // ============================================================================
 // MiniPriceChart — candele OHLC del prezzo (LTP) della selezione, laterali al
-// ladder (stile BetTrader "matchstick chart"). Dati dal buffer campioni del
+// ladder (stile BT "matchstick chart"). Dati dal buffer campioni del
 // LadderView (un campione per update dello stream), bucketing in lib/ladderChart.
 //
 // Design (skill dataviz): polarità su/giù = emerald/rose (convenzione del

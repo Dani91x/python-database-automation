@@ -7,7 +7,7 @@ Limiti Betfair (documentazione + risposte del BDP sul forum ufficiale, 09/09/202
   · fino a 10 connessioni stream per app key;
   · i mercati CLOSED vengono esclusi dal conteggio al re-subscribe (job interno
     Betfair ogni 5', eviction dopo 1h): il client non deve fare nulla;
-  · cosa fanno i tool concorrenti (Bet Angel, BFExplorer): catalogo via REST,
+  · cosa fanno i tool concorrenti (BA, BX): catalogo via REST,
     stream per marketIds SOLO sui mercati monitorati, più connessioni quando il
     numero supera il limite per connessione — esattamente questo modulo.
 

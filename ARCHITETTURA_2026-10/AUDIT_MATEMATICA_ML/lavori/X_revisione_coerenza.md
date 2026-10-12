@@ -117,7 +117,7 @@ ARCHITETTURA_2026-10/AUDIT_MATEMATICA_ML/ (mai sulla radice); lettura per indice
 
 30. **03 par. 4 (Kelly)**: "frazioni 0,10 (K1) e 0,25 (K2) ALLINEATE" con fonte "MacLean-Thorp-Ziemba 2011 (FONTE NON APERTA): frazioni 1/4-1/2". 0,10 e' FUORI dall'intervallo citato; la fonte e' da memoria.
    | "K2 allineata; K1 piu' prudente della forchetta citata (non verificata)".
-31. **03 par. 5 (green-up "ALLINEATO")**: Bet Angel/Geeks Toy senza URL ne' pagina aperta. **03 par. 7 (commissione "ALLINEATO")**: fonte non indicata nel paragrafo e l'aliquota reale (5% vs 4,5%) e' dichiarata non
+31. **03 par. 5 (green-up "ALLINEATO")**: BA/GT senza URL ne' pagina aperta. **03 par. 7 (commissione "ALLINEATO")**: fonte non indicata nel paragrafo e l'aliquota reale (5% vs 4,5%) e' dichiarata non
    risolvibile. **03 par. 8 (tick "ALLINEATO per CLASSIC")**: la pagina Betfair "Price Increments" NON e' stata aperta (WebFetch vuoto), solo snippet di ricerca. | Marcare "[RICERCA]/da memoria" accanto ad ALLINEATO.
 32. **01 par. 0(d) e par. 4 ("tattico = Dixon-Coles 1997 completo: pratica allineata")** e **02 par. 5 ("walk-forward/purged CV: allineato", Lopez de Prado 2018)**: entrambe FONTE NON APERTA, citate da memoria; 01 la
    formula DC l'ha verificata numericamente (1,7e-7), 02 no. | Aprire la fonte o marcare "allineato (da memoria)".

@@ -1,6 +1,6 @@
 // ============================================================================
 // GridView — "Grid one-click" (roadmap D28): vista ALTERNATIVA al ladder in
-// stile Bet Angel grid. Una RIGA per selezione: nome + LTP (flash direzionale),
+// stile BA grid. Una RIGA per selezione: nome + LTP (flash direzionale),
 // P&L di posizione, micro-sparkline della storia LTP, 3 best BACK (blu) e
 // 3 best LAY (rosa) cliccabili, stake per riga (persistito per sport).
 //

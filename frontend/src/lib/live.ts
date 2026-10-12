@@ -587,7 +587,7 @@ export function subscribeLiveSignals(
 }
 
 // ------------------------------------------------------------- Live Ladder
-// Ladder LIVE per-mercato (Betting Toolkit / Bet Angel / Geeks Toy), SOLA LETTURA.
+// Ladder LIVE per-mercato (BTK / BA / GT), SOLA LETTURA.
 // Pubblicata dal runner (ladder_worker) sulla tabella realtime `live_ladder` in
 // modalità write-on-change, costruita dai soli dati dello stream già sottoscritto.
 // La pagina ladder sottoscrive QUESTA tabella filtrando per market_id (come live_now).

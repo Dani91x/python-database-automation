@@ -6,7 +6,7 @@
 --     (oltre all'env LIVE_KILL_SWITCH), max esposizione per selezione, rate-limit ordini/min,
 --     parametri velocità. Il runner li rilegge ad ogni ciclo.
 --   betfair_live_audit     (append-only): traccia chi/cosa/mode/esito di ogni comando
---     (events log stile Betting Toolkit). Scritto dal worker come service_role.
+--     (events log stile BTK). Scritto dal worker come service_role.
 --
 -- IDEMPOTENTE. RPC SECURITY DEFINER owner-only (betfair_live_is_owner). Applicare DOPO
 -- betfair_live_order_queue.sql.

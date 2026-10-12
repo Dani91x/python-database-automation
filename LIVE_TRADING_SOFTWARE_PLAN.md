@@ -1,4 +1,4 @@
-# Piano — Sezione LIVE come software di trading (livello Bet Angel/Fairbot) su flumine
+# Piano — Sezione LIVE come software di trading (livello BA/FB) su flumine
 
 > Obiettivo: trasformare la sezione live in-play in un vero software di trading sul Betfair
 > Exchange, su TUTTI i mercati della partita, back e lay, sfruttando **tutto** ciò che
@@ -89,7 +89,7 @@ Regole documentate:
 - Helper `min_stake_rules(jurisdiction, side, price, size, reduces_liability)` → valido/non valido
   + motivo + size legalizzata (arrotondamento a incremento per .it). Config `BETFAIR_JURISDICTION` (it|com).
 
-## 1bis. Sotto-minimo "place-and-trim" (come Bet Angel/Geeks Toy)
+## 1bis. Sotto-minimo "place-and-trim" (come BA/GT)
 Tecnica per piazzare size < minimo (sfrutta che il minimo è controllato solo al `placeOrders`
 iniziale, non su cancel/replace). **flumine la supporta nativamente** (place + cancel size_reduction
 + replace):

@@ -833,7 +833,7 @@ def place_order_live(
 # ---------------------------------------------------------------------------
 # Betfair rifiuta un place DIRETTO sotto il minimo di giurisdizione (.it BACK
 # 2,00 / LAY 0,50), ma NON rifiuta un ordine gia' esistente RIDOTTO sotto quella
-# soglia. E' la tecnica che usano Bet Angel, Fairbot e Betting Toolkit:
+# soglia. E' la tecnica che usano BA, FB e BTK:
 #
 #   1. placeOrders   del MINIMO a una quota NON abbinabile (BACK 1000 / LAY 1.01),
 #                    persistenza LAPSE e SENZA fill-or-kill (deve restare a riposo);

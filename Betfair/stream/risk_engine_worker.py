@@ -19,7 +19,7 @@ Anti-doppio-trigger: client_ref DETERMINISTICO per ogni azione accodata (``risk<
 ``risk<id>o`` offset, ``risk<id>oc`` cancel-offset, ``risk<id>s`` stop) → il vincolo UNIQUE
 della coda garantisce UN SOLO ordine anche se la regola viene rivalutata.
 
-⚠️ SOFTWARE-SIDE: se il runner cade, stop/offset NON esistono (come in Bet Angel/Cymatic).
+⚠️ SOFTWARE-SIDE: se il runner cade, stop/offset NON esistono (come in BA/CY).
 BEST-EFFORT: un errore TRANSITORIO NON disarma una regola protettiva (resta armata, retry).
 Testabile a unità: framework/Market/blotter/coda mockabili, nessuna rete.
 """

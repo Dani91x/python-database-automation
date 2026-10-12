@@ -38,7 +38,7 @@ Legenda «forza»: **E** = esplicita (regola detta come tale, con numeri), **I**
 | X8 | Bisogna VEDERE la partita (non statistiche, non radiocronaca, non «riquadrino») | `STR/9 @0.3-24.3`, `@91.1-100.6` «non facciamo l'errore di non vedere le partite perché vuol dire non stare facendo la strategia» | E |
 | X9 | Primo criterio di selezione = orario: operare solo se posso seguire concentrato | `SEL/1 @76-115`; `RE-SEL/1 @25.6` «il primo criterio è sempre l'orario» | E (umano) |
 | X10 | Dispositivo di riserva sempre pronto per il cashout | `STR/8 @5.5-21.0` | E (umano) |
-| X11 | Uscita: tastone cashout (conferma, 3-4 s) oppure a mano con il calcolatore (contropunta alla quota del momento) oppure Betting Toolkit | `STR/4 @6-23`, `EXT/2 @29.1-207.1`, `RE/4 @17.3`, `PU/4 @0-20` | E |
+| X11 | Uscita: tastone cashout (conferma, 3-4 s) oppure a mano con il calcolatore (contropunta alla quota del momento) oppure BTK | `STR/4 @6-23`, `EXT/2 @29.1-207.1`, `RE/4 @17.3`, `PU/4 @0-20` | E |
 | X12 | Il cashout di Betfair a volte «sfasa»/scompare, soprattutto nei minuti finali: saper uscire in manuale; restano centesimi di aggiustamento | `EXT/2 @0.1-29.1`, `STR/10 @136-183` | E |
 | X13 | Emergenza (Betfair in tilt): contropuntare su altro bookmaker (o doppia chance) | `STR/11 @0-230.7` | E (umano, «ultima spiaggia») |
 | X14 | Appena entrati una piccola perdita apparente è normale (spread), si pareggia «in un minuto di solito» | `STR/10 @71.4-91.4` | E (descrittiva) |

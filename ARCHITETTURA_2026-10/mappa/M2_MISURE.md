@@ -41,7 +41,7 @@ I tratti sono istogrammi a secchi fissi (`registro.BORDI_MS`): p50/p95/p99 al bo
 | `pagina_canale_ms` **nuovo** | c. ladder pubblicato (`ts_pub_ms`) -> arrivo del push nella pagina | PC/PC (Date.now) | `frontend/src/lib/misuraSchermo.ts::notaArrivoLadder` | pagina -> riga del runner dello sport |
 | `pagina_dipinto_ms` **nuovo** | d. arrivo nella pagina -> primo frame dopo il commit della riga | performance.now | `misuraSchermo.ts::segnaDipinto` via `useMisuraDipinto` (useLayoutEffect + requestAnimationFrame) | idem |
 | `pagina_pub_dipinto_ms` **nuovo** | pubblicato -> frame | PC/PC | idem | idem |
-| `pagina_rx_dipinto_ms` **nuovo** | **M1 sul PC: arrivo nel processo -> frame** (il numero da confrontare con Bet Angel, p95 <= 20 ms) | PC/PC | idem | idem |
+| `pagina_rx_dipinto_ms` **nuovo** | **M1 sul PC: arrivo nel processo -> frame** (il numero da confrontare con BA, p95 <= 20 ms) | PC/PC | idem | idem |
 | `pagina_pt_dipinto_ms` **nuovo** | `pt` di Betfair -> frame | Betfair/PC (contiene lo scarto, U-62) | idem | idem |
 
 Contatori: `ladder.pubblicati_canale` (T0A); `pagina.{push_ladder, dipinti, riassunti_accolti, riassunti_rifiutati}`.

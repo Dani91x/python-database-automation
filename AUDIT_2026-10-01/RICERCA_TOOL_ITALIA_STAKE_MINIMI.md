@@ -42,17 +42,17 @@ punta Under 7,47 € @1,03 dall'app è stata accettata.
    storico del conto.
 3. **Quasi nessun tool «professionale» lavora su betfair.it**, a differenza di quanto si
    pensava:
-   - **Cymatic**: non funziona (forum ufficiale, 21/10/2021).
-   - **Bet Angel**: non funziona (KB del 23/04/2023).
-   - **Bf Bot Manager**: non funziona (titolo e estratto della sua KB n. 22; pagina 403).
-   - **FairBot Italy**: chiusa. Oggi fairbot.it mostra *«Il servizio di FairBot Italy è
+   - **CY**: non funziona (forum ufficiale, 21/10/2021).
+   - **BA**: non funziona (KB del 23/04/2023).
+   - **BBM**: non funziona (titolo e estratto della sua KB n. 22; pagina 403).
+   - **FB**: chiusa. Oggi [fonte rimossa] mostra *«Il servizio di FB è
      definitivamente chiuso»*.
-   - **Geeks Toy**: nel 2014 prometteva il supporto, ma non ho trovato conferme.
-   - **Gruss**: nessuna menzione di .it.
-   - **Funzionano** su .it (autorizzati ADM): **Traderline** e **Betting Toolkit**.
+   - **GT**: nel 2014 prometteva il supporto, ma non ho trovato conferme.
+   - **GR**: nessuna menzione di .it.
+   - **Funzionano** su .it (autorizzati ADM): **TL** e **BTK**.
 4. **Come fanno i tool italiani sotto il minimo.** Unica descrizione trovata per .it:
    Gianluca Landi (bettingexchange.net, pagina del 03/11/2020 aggiornata il 02/06/2026 [C],
-   vicino a Traderline).
+   vicino a TL).
    - Il software «spezza la scommessa in due ordini». Il ritardo raddoppia: da 5 a 10 s nel
      calcio.
    - **Sotto 0,50 € l'ordine viene rifiutato del tutto**: «non sono nemmeno permessi dalla
@@ -62,7 +62,7 @@ punta Under 7,47 € @1,03 dall'app è stata accettata.
 5. **Chiudere sulla stessa selezione dal lato opposto.** Lo fa Betfair stessa su .it:
    - il Cash Out ufficiale *«potrebbe piazzare una combinazione di scommesse di tipo punta
      e/o banca»* (help center betfair.it, art. 3776 [U]);
-   - FairBot sceglie, nei mercati a due esiti, la chiusura più conveniente fra le due
+   - FB sceglie, nei mercati a due esiti, la chiusura più conveniente fra le due
      possibili [M];
    - la comunità italiana insegna l'equivalenza: «puntare 100 € sull'under 2,5 a quota 1,5
      significa esattamente bancare l'over 2,5 con 50 € a quota 3,00» [C].
@@ -112,15 +112,15 @@ punta Under 7,47 € @1,03 dall'app è stata accettata.
 
 | Tool | Supporta .it oggi? | Tecnica sotto il minimo | Fonte |
 |---|---|---|---|
-| **FairBot (Binteko)** | **No più.** Fino a ottobre 2025 esisteva FairBot Italy (fairbot.it, FAQ: «è necessario essere registrati su Betfair.it»). Oggi http://fairbot.it mostra «Il servizio di FairBot Italy è definitivamente chiuso». La pagina «chiusura-fairbot-italy» è archiviata dal 16/12/2025, ma non è leggibile (pagina anti-bot nell'archivio). | Versione .com: **«"Small Bets" support… below the Betfair minimum»** (FairBot 2.0). «Improved "Green Up All" function for 2-way markets. Now it selects one Greening Up bet which offers the most profitable result from 2 available bets» (FairBot 3.2). «Greening Up on both selections even if bet(s) were placed just on a single selection» (2 esiti, tennis). Il meccanismo interno del sotto-minimo **non è documentato**. Nel changelog italiano (FairBot.it 4.53-4.90, archiviato il 06/10/2025) **nessuna voce** sul minimo. | [M] https://binteko.com/whatsnew/fairbot (pagine 3-7, lette oggi); sito chiuso letto il 01/10/2026; Wayback `web.archive.org/web/20250905120316/https://fairbot.it/faq/` e `.../20251006160431/https://fairbot.it/aggiornamenti/` |
-| **Cymatic Trader** | **No.** «Unfortunately Cymatic is still not able to work for residents of Italy… not being actively pursued» | Su .com: «1) Back $5 at 990 2) Request a change to $7.50, Betfair… making a second bet… 3) Cancel the 1st bet 4) Move the 2nd bet» (Gavin, 04/02/2013). Il 05/02/2013 Betfair rifiutava già la creazione di stake sotto 0,50 (INVALID_ODDS). | [M] forum ufficiale: http://www.cymatic.co.uk/forum/topic224.html (04/04/2014, 20/01/2015, 21/10/2021); https://www.cymatic.co.uk/forum/topic19.html |
-| **Bf Bot Manager** | **No** (titolo della KB «Does software work with Italian betfair.it exchange?», n. 22; estratto del motore: non funziona) | n/d per .it | [M] https://www.bfbotmanager.com/en/help/knowledge_base/article/22-does-software-work-with-italian-betfair-it-exchange — **403 da curl e da WebFetch: letto solo l'estratto del motore** |
-| **Bet Angel** | **No** («It will not work with the Betfair.es and the Betfair.it») | (vedi la ricerca precedente) | [M] KB del 23/04/2023, già citata |
-| **Geeks Toy** | **Non verificato.** Il 08/04/2014 lo staff scriveva «We expect to add support for it later this year… before November 1st». Non ho trovato conferme successive. Il sotto-forum italiano esiste ma non tratta il minimo. | (su .com: 2 € @1000 poi riduzione, ricerca precedente) | [M/C] https://geekstoy.com/forum/forum/the-forums/international-forums/italiano/generale-scommesse-e-trading/11768-geeks-toy-per-betfair-it |
-| **Gruss Betting Assistant** | **Nessuna menzione di .it** nel manuale (528 pagine, letto per intero con ricerca). Il caso italiano di Gruss nel 2020 (parcheggio @1,10) era un utente su .com. | Opzioni «Lay @ 1000 stake», «Ignore minimum payout when placing below minimum stakes», «batch size for below minimum stake bets». Forum, 14/11/2024: «Betfair now accept below minimum stake bets in one transaction so workaround no longer required». È il Min Bet Payout di .com, **vietato su .it**. | [M] https://www.gruss-software.co.uk/Betting_Assistant/userguide/docs/userguide.pdf ; http://www.gruss1-software.co.uk/forum/viewtopic.php?f=9&t=11521 |
-| **Traderline** | **Sì**, «certificata anche da ADM», attiva su .it dal 22/09/2014, nuova versione dal 28/12/2024 | Vedi §3: spezza in due ordini, ritardo doppio, rifiuto sotto 0,50 €, consiglio di «rientrare con altri 2 euro» e chiudere. | [C/M] https://bettingexchange.net/software/traderline (modificata il 01/04/2025); https://bettingexchange.net/video/stake-inferiore-2-euro-software-trading-sportivo-betfair |
-| **Betting Toolkit** | **Sì**, «certificato ADM… su Betfair Italia» (annuncio del 24-25/07/2023) | La guida (aggiornata il 03/09/2026) **non parla** del sotto-minimo. Sul cash out: «If you are laying a selection, you may not be able to close your position with a back bet if the current lay odds are 1.01». | [M] https://help.bettingtoolkit.com/knowledge-base/betting-toolkit-user-guide/functions/cash-out-1-31 |
-| BetTrader, «Tradingfair», TradeSports, BetPractice, BotBeast, «Betfair Bot Italia» | **Nessuna fonte trovata** su .it o sul minimo | — | — |
+| **FB (produttore di FB)** | **No più.** Fino a ottobre 2025 esisteva FB [fonte rimossa], FAQ: «è necessario essere registrati su Betfair.it»). Oggi [fonte rimossa] mostra «Il servizio di FB è definitivamente chiuso». La pagina «chiusura-FB-italy» è archiviata dal 16/12/2025, ma non è leggibile (pagina anti-bot nell'archivio). | Versione .com: **«"Small Bets" support… below the Betfair minimum»** (FB 2.0). «Improved "Green Up All" function for 2-way markets. Now it selects one Greening Up bet which offers the most profitable result from 2 available bets» (FB 3.2). «Greening Up on both selections even if bet(s) were placed just on a single selection» (2 esiti, tennis). Il meccanismo interno del sotto-minimo **non è documentato**. Nel changelog italiano [fonte rimossa] 4.53-4.90, archiviato il 06/10/2025) **nessuna voce** sul minimo. | [M] [fonte rimossa] (pagine 3-7, lette oggi); sito chiuso letto il 01/10/2026; Wayback `web.archive.org/web/20250905120316/[fonte rimossa]` e `.../20251006160431/[fonte rimossa]` |
+| **CY** | **No.** «Unfortunately CY is still not able to work for residents of Italy… not being actively pursued» | Su .com: «1) Back $5 at 990 2) Request a change to $7.50, Betfair… making a second bet… 3) Cancel the 1st bet 4) Move the 2nd bet» (Gavin, 04/02/2013). Il 05/02/2013 Betfair rifiutava già la creazione di stake sotto 0,50 (INVALID_ODDS). | [M] forum ufficiale: [fonte rimossa] (04/04/2014, 20/01/2015, 21/10/2021); [fonte rimossa] |
+| **BBM** | **No** (titolo della KB «Does software work with Italian betfair.it exchange?», n. 22; estratto del motore: non funziona) | n/d per .it | [M] [fonte rimossa] — **403 da curl e da WebFetch: letto solo l'estratto del motore** |
+| **BA** | **No** («It will not work with the Betfair.es and the Betfair.it») | (vedi la ricerca precedente) | [M] KB del 23/04/2023, già citata |
+| **GT** | **Non verificato.** Il 08/04/2014 lo staff scriveva «We expect to add support for it later this year… before November 1st». Non ho trovato conferme successive. Il sotto-forum italiano esiste ma non tratta il minimo. | (su .com: 2 € @1000 poi riduzione, ricerca precedente) | [M/C] [fonte rimossa] |
+| **GR** | **Nessuna menzione di .it** nel manuale (528 pagine, letto per intero con ricerca). Il caso italiano di GR nel 2020 (parcheggio @1,10) era un utente su .com. | Opzioni «Lay @ 1000 stake», «Ignore minimum payout when placing below minimum stakes», «batch size for below minimum stake bets». Forum, 14/11/2024: «Betfair now accept below minimum stake bets in one transaction so workaround no longer required». È il Min Bet Payout di .com, **vietato su .it**. | [M] [fonte rimossa] ; [fonte rimossa] |
+| **TL** | **Sì**, «certificata anche da ADM», attiva su .it dal 22/09/2014, nuova versione dal 28/12/2024 | Vedi §3: spezza in due ordini, ritardo doppio, rifiuto sotto 0,50 €, consiglio di «rientrare con altri 2 euro» e chiudere. | [C/M] [fonte rimossa] (modificata il 01/04/2025); https://bettingexchange.net/video/stake-inferiore-2-euro-software-trading-sportivo-betfair |
+| **BTK** | **Sì**, «certificato ADM… su Betfair Italia» (annuncio del 24-25/07/2023) | La guida (aggiornata il 03/09/2026) **non parla** del sotto-minimo. Sul cash out: «If you are laying a selection, you may not be able to close your position with a back bet if the current lay odds are 1.01». | [M] [fonte rimossa] |
+| BT, «TF», TS, BP, BB, «BBI» | **Nessuna fonte trovata** su .it o sul minimo | — | — |
 
 ## 3. La comunità italiana: tecniche descritte
 
@@ -128,7 +128,7 @@ punta Under 7,47 € @1,03 dall'app è stata accettata.
   trading sportivo»
   (https://bettingexchange.net/video/stake-inferiore-2-euro-software-trading-sportivo-betfair).
   Pubblicata il 03/11/2020, modificata il 02/06/2026 (metadati della pagina). [C], formatore
-  vicino a Traderline.
+  vicino a TL.
   - *«I software spezzano la scommessa in due ordini per inviare a mercato l'importo
     richiesto»*; *«I secondi di delay vengono raddoppiati»* (5 → 10 s nel calcio).
   - Green up: *«guarda sempre l'importo di puntata e bancata, non il profitto realizzato»*.
@@ -222,7 +222,7 @@ punta Under 7,47 € @1,03 dall'app è stata accettata.
 Esempio: «banca Over S@q» equivale a «punta Under S(q−1) @ q/(q−1)».
 
 - **Chi la usa.** Il Cash Out ufficiale di betfair.it la usa implicitamente («combinazione
-  di… punta e/o banca», art. 3776). FairBot sceglie fra le due chiusure possibili nei
+  di… punta e/o banca», art. 3776). FB sceglie fra le due chiusure possibili nei
   mercati a due esiti. Le guide italiane insegnano l'equivalenza.
 - **Cosa non ho trovato.** Nessuna fonte italiana la raccomanda **per nome** come rimedio al
   minimo.
@@ -266,7 +266,7 @@ Le scelte di strategia (prezzo, aggressività) spettano all'utente: qui non le t
    pari al minimo commerciale (1,00 €; la nostra costante `IT_LAY_MIN_SIZE = 0,50` va
    verificata, perché Betfair potrebbe rifiutare un parcheggio da 0,50). Sotto 0,50 € le
    possibilità sono due, e la scelta spetta all'utente:
-   - lasciare il residuo, quantificandolo: è la scelta di Bet Angel («P&L uneven by a few
+   - lasciare il residuo, quantificandolo: è la scelta di BA («P&L uneven by a few
      pence»);
    - fare come consiglia Landi, cioè **aumentare la posizione di almeno il minimo** e
      chiudere tutto con un ordine sopra soglia. Costa uno spread in più, ed è una modifica
@@ -287,13 +287,13 @@ Le scelte di strategia (prezzo, aggressività) spettano all'utente: qui non le t
 - Se il minimo commerciale di 1 € valga anche per il **trim** via API (cancel parziale), o
   se il trim scenda fino a 0,50: nessuna fonte.
 - Come il Cash Out di betfair.it gestisca i residui sotto il minimo: non documentato.
-- La pagina di chiusura di FairBot Italy (data e motivo): l'archivio mostra solo la pagina
+- La pagina di chiusura di FB (data e motivo): l'archivio mostra solo la pagina
   anti-bot. Chiusura certa al 20/05/2026 (snapshot), avvenuta probabilmente fra ottobre e
   dicembre 2025 (dedotto dalle date degli snapshot).
-- La KB di Bf Bot Manager (403): ho letto solo l'estratto del motore di ricerca.
-- Il supporto .it attuale di Geeks Toy: non verificato.
-- Documentazione sul sotto-minimo di BetTrader, Tradingfair, TradeSports, BetPractice,
-  BotBeast e dei bot Excel/VBA italiani: nulla trovato.
+- La KB di BBM (403): ho letto solo l'estratto del motore di ricerca.
+- Il supporto .it attuale di GT: non verificato.
+- Documentazione sul sotto-minimo di BT, TF, TS, BP,
+  BB e dei bot Excel/VBA italiani: nulla trovato.
 - Forum FinanzaOnline e Infobetting (403), gruppi Telegram e Facebook, Reddit in italiano,
   trascrizioni YouTube: non letti o non trovati.
 - La Gazzetta Ufficiale originale del DM 47/2013: letta su una copia (studiocerbone.com),

@@ -1,5 +1,5 @@
 -- ============================================================================
--- betfair_live_cashout_v3.sql — CASH OUT PROFESSIONALE (livello Betfair / Bet Angel):
+-- betfair_live_cashout_v3.sql — CASH OUT PROFESSIONALE (livello Betfair / BA):
 --   * greenup:                params.amount   (stake ASSOLUTO in EUR, > 0) — copre un
 --                             importo qualunque invece della sola frazione; il worker lo
 --                             cappa al green totale (mai un ordine che inverte la posizione);

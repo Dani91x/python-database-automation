@@ -263,7 +263,7 @@ Cash-out Mike: slippage/profondita' NON incluso nel numero mostrato (NON VERIFIC
 | hedging.py / xhedge.py / dutching.py | commissione ignorata (lordo) | quarta convenzione (E-4) |
 | UI chiudi-ora: etichetta lordo/netto | NON VERIFICATO quale etichetta mostri la UI nei punti D01/D03 | - |
 
-**Stato dell'arte (R)**: green-up = back*B/L (Bet Angel / Geeks Toy), "greening" prezzo-per-prezzo di ladder; eguagliare il P&L LORDO e' corretto anche con commissione
+**Stato dell'arte (R)**: green-up = back*B/L (BA / GT), "greening" prezzo-per-prezzo di ladder; eguagliare il P&L LORDO e' corretto anche con commissione
 (il netto e' P(1-c) su entrambi gli esiti). **ALLINEATO**. flumine ha `calculate_matched_exposure/unmatched_exposure` (utils.py:210-229): il repo non le usa
 (formule proprie coerenti fra loro; parita' con flumine NON testata).
 **Reperti**: C-7 BASSO; D-R8 BASSO/MEDIO (non rivalutato da H/V2); E-4 BASSO; E2-12 BASSO; E2-14 BASSO.

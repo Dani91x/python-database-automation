@@ -1,5 +1,5 @@
 // ============================================================================
-// DutchingPanel — calcolatore + piazzamento DUTCHING (stile Bet Angel / Fairbot).
+// DutchingPanel — calcolatore + piazzamento DUTCHING (stile BA / FB).
 // L'utente sceglie ≥2 selezioni, una puntata TOTALE, il lato back (dutch) o lay
 // (bookmaking) e la modalità equal / variable (peso per-selezione). L'ANTEPRIMA
 // LIVE mostra il book% (overround) — verde se favorevole — lo stake per gamba e il

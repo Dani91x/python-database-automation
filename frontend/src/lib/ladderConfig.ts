@@ -8,7 +8,7 @@
 // colonne; la scelta viene salvata per sport e ripristinata alla riapertura.
 // ============================================================================
 
-// Colonne disponibili nel ladder (mirror dei ladder pro tipo Geeks Toy / Bet Angel):
+// Colonne disponibili nel ladder (mirror dei ladder pro tipo GT / BA):
 //   my_lay     — le tue size LAY non abbinate a quel prezzo
 //   avail_back — denaro disponibile in BACK (lato blu/sky)
 //   price      — la quota (colonna centrale)

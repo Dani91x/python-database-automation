@@ -322,7 +322,7 @@ registrazioni (`record_multi.py`). Ogni refresh: aggiornare la tabella e §11.
 | Opzione | Latenza vs punto | Costo | Privati? |
 |---|---|---|---|
 | Betfair IPS (attuale) | ~2-8s | gratis | — |
-| **Bet Angel Pro feed tennis** | ~1-2s dal pulsante umpire (≈2-5s di vantaggio su IPS) | **£150/ANNO** | ✅ |
+| **BA Pro feed tennis** | ~1-2s dal pulsante umpire (≈2-5s di vantaggio su IPS) | **£150/ANNO** | ✅ |
 | BetsAPI (specchio bet365) | ~2-5s | $150/mese | ✅ (zona grigia) |
 | tennis-api.com | "sub-secondo" NON verificato | ~$30-300/mese | ✅ (trial) |
 | Goalserve | 5s (≥ IPS, inutile) | $150/mese | ✅ |
@@ -332,7 +332,7 @@ registrazioni (`record_multi.py`). Ogni refresh: aggiornare la tabella e §11.
 **Verità di catena**: il feed "ufficiale" parte dal TABLET dell'umpire
 (+1-3s di gesto umano) — nessun feed comprabile da privato è davvero
 sub-secondo, e il courtsider fisico (0.5s) resta imbattibile. Nemmeno
-Bet Angel possiede i dati: li LICENZIA da un provider B2B e li rivende
+BA possiede i dati: li LICENZIA da un provider B2B e li rivende
 spalmati sugli abbonati.
 
 **ESPERIMENTO DECISIVO (10/07, costo 0€)** — Atlante rigirato con la
@@ -408,9 +408,9 @@ un eventuale maker futuro — ma il maker è senza carburante (§5.13).
 ### Fonti practitioner/regole exchange (ricerca 10/07)
 - Passive bet delay tennis 100% tornei (2025) + test delay dinamico 1s ai
   cambi campo (2026): newsletter ufficiali Betfair Exchange (ago 2025,
-  gen 2026); spiegazione Bet Angel "betfair-passive-bet-delay".
+  gen 2026); spiegazione BA "betfair-passive-bet-delay".
 - Bet delay 3s dal 2020 (5s su alcuni tornei/ITF) — coerente coi nostri raw.
-- Forum Bet Angel (Peter Webb/LeTiss): scalping punto-per-punto = pasto dei
+- Forum BA (Peter Webb/LeTiss): scalping punto-per-punto = pasto dei
   courtsider; operare solo tra i punti/game/cambi campo; ordini resting
   raccolti quando la probabilità vera è già oltre il prezzo (= il nostro
   fade 53/54). Strategia 15-40 (mai 30-40), tie-break Weston (lay leader

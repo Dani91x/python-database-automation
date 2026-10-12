@@ -1,6 +1,6 @@
 // ============================================================================
-// LadderView — ladder LIVE per-mercato fedele ai software pro (Betting Toolkit,
-// Bet Angel, Geeks Toy). OPERATIVA: profondità back/lay con size, scala tick col
+// LadderView — ladder LIVE per-mercato fedele ai software pro (BTK,
+// BA, GT). OPERATIVA: profondità back/lay con size, scala tick col
 // PREZZO al centro e LTP evidenziato, volume tradato per livello, i TUOI ordini
 // non abbinati sui livelli, WOM, P&L-per-livello, PIQ e ONE-CLICK trading.
 //
@@ -10,7 +10,7 @@
 //   2) Disponibile al LAY (rosa)    6) Cash-out/P&L per livello (viola)
 //   3) PREZZO (centro) + LTP        7) Volume tradato (EUR) per prezzo
 //   4) Disponibile al BACK (blu)    8) PIQ (coda al tuo livello, stima)
-// (convenzione colori STANDARD Betfair/Bet Angel/Geeks Toy: BACK=blu, LAY=rosa)
+// (convenzione colori STANDARD Betfair/BA/GT: BACK=blu, LAY=rosa)
 //
 // DATI: la profondità arriva dalla tabella realtime `live_ladder` (subscribeLiveLadder),
 // pubblicata dal runner dai soli dati dello stream già sottoscritto → ZERO API Betfair.
@@ -90,7 +90,7 @@ export interface LadderGreenupArgs {
     mode: LiveOrderMode;
     handicap?: number;
     fraction?: number;
-    // "greening column" (Bet Angel): chiudi la posizione A QUESTO prezzo assoluto invece
+    // "greening column" (BA): chiudi la posizione A QUESTO prezzo assoluto invece
     // che al best opposto — l'ordine può restare sul book come take-profit resting.
     targetPrice?: number;
     // A3 (cash-out COMPLETO): annulla i resting della selezione PRIMA dell'hedge.
@@ -338,7 +338,7 @@ function buildLadder(
             myBack: myBack.get(t) ?? 0,
         };
     });
-    rows.reverse(); // prezzo alto in cima (default Geeks Toy).
+    rows.reverse(); // prezzo alto in cima (default GT).
 
     const hasPosition = win0 !== 0 || lose0 !== 0;
 
@@ -413,7 +413,7 @@ const COL_WIDTH: Record<ColumnKey, string> = {
     ev: '54px', // F38: EV per livello dal fair del motore
 };
 
-// intestazioni brevi per colonna (come i ladder pro Geeks Toy / Bet Angel).
+// intestazioni brevi per colonna (come i ladder pro GT / BA).
 const COL_HEADER: Record<ColumnKey, { label: string; cls: string; title?: string }> = {
     my_lay: { label: 'L', cls: 'text-rose-300/70', title: 'I tuoi LAY non abbinati (clic per annullare)' },
     avail_back: { label: 'Back', cls: 'text-sky-300/80' },
@@ -530,7 +530,7 @@ const SelectionLadder = memo(function SelectionLadder({
 }: SelectionLadderProps) {
     const botAttivo = botEtichetta != null;
     const prezziBot = useMemo(() => (bot ? bot.livelli.map(l => l.quota) : []), [bot]);
-    // ---- navigazione/centraggio (B11/B18): auto-center sul LTP (default, come Bet Angel)
+    // ---- navigazione/centraggio (B11/B18): auto-center sul LTP (default, come BA)
     // o centro MANUALE (click su prezzo/price bar/frecce). localSeq forza lo scroll one-shot.
     const [autoCenter, setAutoCenter] = useState(true);
     const [manualCenter, setManualCenter] = useState<number | null>(null);
@@ -906,7 +906,7 @@ const SelectionLadder = memo(function SelectionLadder({
                 {gridCols.map((k) => {
                     const h = COL_HEADER[k];
                     // B14: click sull'intestazione dei TUOI ordini = annulla TUTTO quel lato
-                    // con un click (stile BetTrader "K"). Visibile solo quando ci sono ordini.
+                    // con un click (stile BT "K"). Visibile solo quando ci sono ordini.
                     if (k === 'my_lay' || k === 'my_back') {
                         const side: TradeSide = k === 'my_lay' ? 'lay' : 'back';
                         const ids = side === 'lay' ? sideBets.lay : sideBets.back;
@@ -1112,7 +1112,7 @@ const SelectionLadder = memo(function SelectionLadder({
                                     );
                                 }
                                 case 'pnl': {
-                                    // P&L per livello (viola). B13 "greening column" (Bet Angel):
+                                    // P&L per livello (viola). B13 "greening column" (BA):
                                     // CLIC sul valore = chiudi la posizione A QUEL prezzo (l'ordine
                                     // di hedge può restare sul book come take-profit resting).
                                     if (pnl == null && bot && (bot.abbinatoBack > 0 || bot.abbinatoLay > 0)) {

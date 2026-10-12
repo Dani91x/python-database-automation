@@ -1,6 +1,6 @@
 // ============================================================================
-// PlaceConfirmDialog — popup di conferma di un PLACE dal ladder (stile Bet
-// Angel/Fairbot) quando la modalità 1-CLICK NON è armata. Mostra importo
+// PlaceConfirmDialog — popup di conferma di un PLACE dal ladder (stile BA o
+// FB) quando la modalità 1-CLICK NON è armata. Mostra importo
 // EDITABILE (precompilato con lo stake preset) e la PROIEZIONE P&L (se vince /
 // se perde, con responsabilità dei LAY), poi conferma → l'ordine parte davvero.
 //

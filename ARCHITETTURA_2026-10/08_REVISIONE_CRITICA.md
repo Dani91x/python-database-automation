@@ -146,7 +146,7 @@ provvisorio»); 04 §7 non ha righe di risorse; 05 §0 criterio (e) «uguale o m
 confermate dopo la baseline di T0A). Applicata: SI' (04 §7).
 
 **R13 - MEDIA. Manca il limite di transazioni per ora fra i limiti API.**
-Fonte: 02 riga 45 (Bet Angel: «il limite orario e' fissato da Betfair, oltre si paga»), riga 249 (flumine `MaxTransactionCount`), riga
+Fonte: 02 riga 45 (BA: «il limite orario e' fissato da Betfair, oltre si paga»), riga 249 (flumine `MaxTransactionCount`), riga
 314 (P-13: tetto 1000/ora in `config_stream.py:256-262`, non in UI); C riga 417 (`_max_orders_per_min` per bot). 04 §5.2 elenca login,
 keepAlive e concorrenza ma non il tetto orario. Con UNA porta per tutti i bot il contatore deve essere uno per conto, nella porta.
 Applicata: SI' (04 §5.2; 05 T10).

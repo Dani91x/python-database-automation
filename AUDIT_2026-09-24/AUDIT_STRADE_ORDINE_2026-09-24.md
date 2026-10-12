@@ -30,7 +30,7 @@ Convenzioni usate nel documento:
 4. Dalla decisione a `placeOrders`, Omega e Safe calcio sulla coda DB impiegano 1,3-3,5 s,
    bet delay escluso. Mike in REST 0,1-0,5 s, ma in gioco il suo unico thread resta fermo
    per tutto il bet delay.
-5. I competitor (Bet Angel, Geeks Toy, Fairbot, Gruss) hanno un unico processo locale che
+5. I competitor (BA, GT, FB, GR) hanno un unico processo locale che
    chiama l'API direttamente, prezzi e ordini in streaming, nessun database fra clic e
    ordine. Stimo 40-150 ms dal clic a Betfair: siamo 10-40 volte piu' lenti.
 6. **Proposta (la tua ipotesi regge, con quattro condizioni).** Esecutore unico = il runner
@@ -283,11 +283,11 @@ Il desktop non espone IPC (`desktop/preload.js` e' vuoto). Nessuno script d'ordi
 
 | Tool | Architettura d'invio | Prezzi e ordini | Note |
 |---|---|---|---|
-| **Bet Angel Professional** | app Windows (.NET), processo unico sul PC dell'utente; chiama API-NG direttamente (HTTPS keep-alive) | Exchange Stream API per i prezzi, con aggiornamento configurabile fino a ~20 ms; conferme dalla risposta di `placeOrders` e dallo stream ordini (che lo usi per gli ordini: *probabile, non certo*) | ladder one-click; offset, stop e green-up tenuti dal client (Betfair non ha stop lato server); automazione "Guardian" con regole in memoria; esegue ordini sotto il minimo con il place-and-trim (documentato da loro) |
-| **Geeks Toy** | app .NET, processo unico, chiamate dirette | stream per i prezzi; esiti dalla risposta e dagli aggiornamenti ordini (*stream o poll ad alta frequenza: incerto*) | famoso per la reattivita' della ladder; "fill or kill" e offset lato client |
-| **Fairbot** | app .NET, processo unico | stream (*incerto se anche per gli ordini*) | ladder, dutching, automazione |
-| **Gruss Betting Assistant** | app Windows con ponte verso Excel | poll ad alta frequenza (20-200 ms) e stream nelle versioni recenti (*incerto*) | le automazioni in Excel scrivono celle, e il client invia |
-| **Betting Toolkit / Cymatic** | client desktop simili (*non ho dati affidabili sull'interno*) | - | - |
+| **BA Professional** | app Windows (.NET), processo unico sul PC dell'utente; chiama API-NG direttamente (HTTPS keep-alive) | Exchange Stream API per i prezzi, con aggiornamento configurabile fino a ~20 ms; conferme dalla risposta di `placeOrders` e dallo stream ordini (che lo usi per gli ordini: *probabile, non certo*) | ladder one-click; offset, stop e green-up tenuti dal client (Betfair non ha stop lato server); automazione "Guardian" con regole in memoria; esegue ordini sotto il minimo con il place-and-trim (documentato da loro) |
+| **GT** | app .NET, processo unico, chiamate dirette | stream per i prezzi; esiti dalla risposta e dagli aggiornamenti ordini (*stream o poll ad alta frequenza: incerto*) | famoso per la reattivita' della ladder; "fill or kill" e offset lato client |
+| **FB** | app .NET, processo unico | stream (*incerto se anche per gli ordini*) | ladder, dutching, automazione |
+| **GR** | app Windows con ponte verso Excel | poll ad alta frequenza (20-200 ms) e stream nelle versioni recenti (*incerto*) | le automazioni in Excel scrivono celle, e il client invia |
+| **BTK / CY** | client desktop simili (*non ho dati affidabili sull'interno*) | - | - |
 
 Cosa hanno in comune (con sicurezza):
 - **un solo processo** tiene la sessione, il book in memoria e chiama `placeOrders`;

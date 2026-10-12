@@ -60,7 +60,7 @@ UPLOAD_CHUNK: int = int(os.getenv("LIVE_UPLOAD_CHUNK", "500"))
 LADDER_PUBLISH_SEC: float = float(os.getenv("LIVE_LADDER_PUBLISH_SEC", "2.0"))
 # Cadenza (MILLISECONDI) della pubblicazione del ladder sul CANALE LOCALE
 # (127.0.0.1, local_channel.py) - 23/09, regola dell'utente: cio' che il trader
-# vede passa dal canale al ms, come Bet Angel/Fairbot (20-200 ms). Governa SOLO il
+# vede passa dal canale al ms, come BA/FB (20-200 ms). Governa SOLO il
 # canale: la scrittura su live_ladder/tennis_live_ladder resta a LADDER_PUBLISH_SEC
 # (write-on-change). Si pubblica solo il mercato la cui firma e' cambiata (un
 # mercato fermo non genera traffico) e solo se il canale ha client.

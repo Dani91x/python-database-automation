@@ -13,14 +13,14 @@ quelli gia' nel repo con fonte (`SCHEMI_BOT/sistema/MISURE_2026-10-02.md`, `ARCH
   articoli del centro assistenza dall'API pubblica Zendesk
   (`https://support.developer.betfair.com/api/v2/help_center/en-us/articles/<id>.json`). Sono le stesse pagine
   `docs.developer.betfair.com` / `support.developer.betfair.com`; le URL citate sono quelle web.
-- **Bet Angel**: il manuale ufficiale PDF (copyright 2025, 11.583 righe di testo estratte con `pdftotext -layout`) e' stato
+- **BA**: il manuale ufficiale PDF (copyright 2025, 11.583 righe di testo estratte con `pdftotext -layout`) e' stato
   scaricato e letto; le citazioni `BA-PDF r.N` sono righe del testo estratto (rieseguibile: scaricare il PDF e lanciare
-  `pdftotext -layout Bet-angel-user-guide.pdf ba.txt`).
-- **Geeks Toy, Cymatic, Fairbot, Gruss**: pagine prodotto e manuali online letti direttamente.
-- **Bfexplorer**: `bfexplorer.net` NON e' raggiungibile ne' dal mio PC ne' da WebFetch (connessione rifiutata). Ho solo
-  frammenti di motore di ricerca (URL `bfexplorer.net/...` indicizzati) e il README GitHub del BOT SDK: la scheda e' piu'
-  magra e lo dichiara. `fairbot.com` con `www.` ha il certificato sbagliato: letto senza `www.`.
-- **Traderline**: sito ufficiale e pagine «education» letti; le pagine non dichiarano ne' latenze ne' architettura.
+  `pdftotext -layout BA-user-guide.pdf ba.txt`).
+- **GT, CY, FB, GR**: pagine prodotto e manuali online letti direttamente.
+- **BX**: `[fonte rimossa]` NON e' raggiungibile ne' dal mio PC ne' da WebFetch (connessione rifiutata). Ho solo
+  frammenti di motore di ricerca (URL `[fonte rimossa]` indicizzati) e il README GitHub del BOT SDK: la scheda e' piu'
+  magra e lo dichiara. `[fonte rimossa]` con `www.` ha il certificato sbagliato: letto senza `www.`.
+- **TL**: sito ufficiale e pagine «education» letti; le pagine non dichiarano ne' latenze ne' architettura.
 - **Non e' stato misurato niente sui competitor**: tutti i numeri di velocita' sono DICHIARAZIONI dei produttori.
 - Nessuna chiamata a Betfair o ad API-Football; nessun codice di produzione eseguito; solo lettura del repo.
 
@@ -31,20 +31,20 @@ quelli gia' nel repo con fonte (`SCHEMI_BOT/sistema/MISURE_2026-10-02.md`, `ARCH
 Legenda: «dich.» = dichiarato dal produttore nella fonte citata; «n.d.» = non dichiarato nelle pagine che ho letto (non
 vuol dire che non esista).
 
-### 1.1 Bet Angel Professional (Bet Angel Limited, UK)
+### 1.1 BA Professional (BA Limited, UK)
 
 | Voce | Cosa dice la fonte |
 |---|---|
-| Prodotto/versione | Guida utente 2025 per Bet Angel Professional (BA-PDF r.1-4); esistono anche Trader, Basic, Betdaq (BA-HOME). Sistema operativo e requisiti hardware: n.d. nel manuale (il testo nomina Windows solo nelle istruzioni su data e ora, r.789; il sito ha anche una pagina `/apple/` che non ho letto, BA-PRO). |
+| Prodotto/versione | Guida utente 2025 per BA Professional (BA-PDF r.1-4); esistono anche Trader, Basic, Betdaq (BA-HOME). Sistema operativo e requisiti hardware: n.d. nel manuale (il testo nomina Windows solo nelle istruzioni su data e ora, r.789; il sito ha anche una pagina `/apple/` che non ho letto, BA-PRO). |
 | Architettura desktop | Applicazione desktop unica; **Guardian** e' la finestra multi-mercato (BA-PDF r.1254, 4584). Piu' finestre (ladder, one-click, grafici) staccabili su piu' monitor (BA-PDF r.1285-1286, 2491). Processi interni: n.d. |
 | Stream vs polling | Entrambi. Polling di default; **Exchange Streaming** attivabile in Impostazioni > Comunicazioni (BA-PDF r.8908-8916). «Da quando Betfair ha introdotto lo streaming nel 2016 consigliamo di usarlo» (BA-PDF r.4730). |
 | Frequenze dichiarate | Polling: minimo **200 ms** (BA-PDF r.2141-2142, 8913, 9954). Streaming: refresh della schermata fino a **20 ms**, «10 volte piu' veloce del polling» (BA-PDF r.9956-9960). Opzione «Refresh every: Update» = aggiorna appena arriva un messaggio; se non arriva nulla in 500 ms rinfresca comunque per tenere vivi grafici e Servants (BA-PDF r.1231-1236, 9965-9966, 11113-11116). Guardian ha un suo refresh indipendente; per l'automazione avanzata consigliato 20 ms (BA-PDF r.2148-2150). |
 | Latenze dichiarate | Indicatori di «responsiveness» in ms per prezzi e scommesse; in streaming sostituiti dalla parola «Streaming» (BA-PDF r.9893-9903). Nessun valore ms ordine->risposta dichiarato (n.d.). Home page: «prezzi dieci volte piu' veloci con lo streaming Betfair e la comunicazione specializzata» (BA-HOME). |
-| Mercati monitorabili | Guardian: «regole su 50 mercati al secondo a 20 ms» (BA-PDF r.4732-4734, calcolo del produttore). In streaming c'e' «una restrizione a **1000** mercati imposta da Betfair» (BA-PDF r.5281, 10264). **Attenzione**: la documentazione Betfair dice 200 mercati per sottoscrizione «di serie» (sezione 3); la guida di Bet Angel dice 1000. Non e' una contraddizione dimostrata (il limite per app key si alza su richiesta, vedi nota in 3.1), ma la cifra 1000 e' del produttore. |
+| Mercati monitorabili | Guardian: «regole su 50 mercati al secondo a 20 ms» (BA-PDF r.4732-4734, calcolo del produttore). In streaming c'e' «una restrizione a **1000** mercati imposta da Betfair» (BA-PDF r.5281, 10264). **Attenzione**: la documentazione Betfair dice 200 mercati per sottoscrizione «di serie» (sezione 3); la guida di BA dice 1000. Non e' una contraddizione dimostrata (il limite per app key si alza su richiesta, vedi nota in 3.1), ma la cifra 1000 e' del produttore. |
 | Ordini | One-click e **ladder** (BA-PDF indice r.1-100; BA-PRO). Offset a tick o a percentuale (BA-PDF r.1895); **Fill or Kill** = timer SOFTWARE: cancella dopo N secondi (0 s = abbina quanto c'e' ora e cancella il resto) (BA-PDF r.1897-1925); **batch di offset** (offset parziale durante il fill) (BA-PDF r.2151-2162); **stop loss e trailing stop** a tick/% (BA-PDF r.2045-2090), con la nota che gli stop non si portano dal pre-gara all'in-play (BA-PDF r.2051); **greening/hedge/cash-out** (BA-PDF r.1582, 2018-2026); **dutching** avanzato e bookmaking (BA-PDF indice r.87-93); persistenza «At in-play»: cancella (default) / Keep / Take SP (BA-PDF r.1784-1800); **posizione stimata in coda (EPIQ)** (BA-PDF r.9082-9084). |
 | Transazioni | Contatore delle transazioni/ora in basso; «il limite orario e' fissato da Betfair, oltre si paga» (BA-PDF r.9905-9913). |
 | Grafici | Grafici avanzati in streaming con indicatori (BA-PDF r.1526, indice); colonne/grafici su valori storici memorizzati (BA-PDF r.1697-1717, 2754); 20 liste di storia per selezione (v1.50, BA-PDF r.11120). |
-| Automazione | **Automation / Servants** (regole a trigger, centinaia di modelli) (BA-HOME, BA-PRO); **Guardian** esegue le regole su molti mercati; **Excel** (lettura prezzi, scommesse da foglio, trading automatico da foglio) (BA-PDF indice r.116-139); **Bet Angel API**: operazioni JSON chiamabili da un'applicazione sullo stesso PC/rete, su una porta (BA-PDF r.9749-9760, 8550-8555). |
+| Automazione | **Automation / Servants** (regole a trigger, centinaia di modelli) (BA-HOME, BA-PRO); **Guardian** esegue le regole su molti mercati; **Excel** (lettura prezzi, scommesse da foglio, trading automatico da foglio) (BA-PDF indice r.116-139); **BA API**: operazioni JSON chiamabili da un'applicazione sullo stesso PC/rete, su una porta (BA-PDF r.9749-9760, 8550-8555). |
 | Registrazione/replay | **Practice mode**: dati veri di mercato, scommesse abbinate LOCALMENTE, simula il cross-matching Betfair, Take-SP e Keep Bets (BA-PDF r.816-830); avvertenza: uso prolungato puo' far sospendere l'account Betfair (BA-PDF r.837). Replay di mercati storici: **non trovato** nel manuale (grep `replay` / `Market Replay`: solo le «liste storiche» dei valori). |
 | Storico locale | File di log e diagnostica (BA-PDF r.8556); storico dei valori nelle History List (sopra). Altro n.d. |
 | Riconnessione | Il manuale tratta errori di login (BA-PDF r.780-830) e la riconnessione ai dati corse TPD (BA-PDF r.9618-9623); la ripresa dello stream (initialClk/clk) n.d. |
@@ -52,12 +52,12 @@ vuol dire che non esista).
 | P&L | Calcolo locale (obbligatorio con lo streaming) (BA-PDF r.8932-8942). |
 | Prezzo | Professional: 1 giorno 1,50 GBP; 1 mese 29,99 GBP; 3 mesi 59,99 GBP; 6 mesi 99,99 GBP; 12 mesi 149,99 GBP (BA-BUY). Prova gratuita (BA-HOME). |
 
-### 1.2 Geeks Toy (Talented Mavericks Ltd, UK)
+### 1.2 GT (produttore di GT, UK)
 
 | Voce | Cosa dice la fonte |
 |---|---|
 | Architettura | Applicazione Windows (7, 8, 10; CPU 1,6 GHz single core, 1 GB RAM, 20 MB disco) (GT-DL); versione per Betfair, Betdaq, Matchbook (GT-HOME). Dal 2009 (GT-FEAT). |
-| Stream vs polling | Il manuale (pagine Introduzione, Ladder, Place Bets, Staking & Tools, API Settings Manager, Market & API Status, ricerca testo `stream`) descrive SOLO polling: gruppi di chiamate (Bets, Prices, Complete Prices, Traded Volume, External Bets, Account Funds), frequenza da **150 ms a 20.000 ms**, «MPC» (chiamate parallele massime, 1-5), «Max Weighted Calls Per Second» 5-20; default 11 chiamate/s (GT-API). Parola `stream` non trovata nelle 11 pagine lette. deduzione: il manuale online e' pre-streaming o non aggiornato; non posso dire se oggi Geeks Toy usi lo Stream API. |
+| Stream vs polling | Il manuale (pagine Introduzione, Ladder, Place Bets, Staking & Tools, API Settings Manager, Market & API Status, ricerca testo `stream`) descrive SOLO polling: gruppi di chiamate (Bets, Prices, Complete Prices, Traded Volume, External Bets, Account Funds), frequenza da **150 ms a 20.000 ms**, «MPC» (chiamate parallele massime, 1-5), «Max Weighted Calls Per Second» 5-20; default 11 chiamate/s (GT-API). Parola `stream` non trovata nelle 11 pagine lette. deduzione: il manuale online e' pre-streaming o non aggiornato; non posso dire se oggi GT usi lo Stream API. |
 | Latenze dichiarate | «Lightning fast» (GT-HOME) senza numeri. Soglia errore API configurabile 500-2000 ms; da 3 chiamate in ritardo in su «problemi di connessione» (GT-STATUS). |
 | Ordini | One-click sul ladder (si clicca sulla quantita' disponibile al prezzo) (GT-LADDER); stake per liquidita' o % del bank; **Fill or Kill** (timer: se non abbinata entro il tempo, cancella anche il residuo) e **Tick Offset** (GT-STAKING); stop loss globale con opzione **Trailing** (1 tick per tick a favore) (GT-STAKING); **OCO** (entry, exit, stop condizionato; exit parziale riduce lo stop) (GT-OCO); persistenza Cancel/Keep/Take SP, anche per ordine da menu destro (GT-LADDER); hedge dell'intero mercato con un clic (GT-STATUS); dutching e bookmaking (GT-FEAT). |
 | Ladder/grafici | Ladder verticale con barra dei prezzi 1.01-1000, centratura, **grafici avanzati** «tra i piu' personalizzabili», Market Overview (GT-LADDER, GT-FEAT). |
@@ -66,7 +66,7 @@ vuol dire che non esista).
 | Multi-mercato | «quanti mercati vuoi» (GT-FEAT); numero massimo n.d. |
 | Prezzo | Licenza 3 mesi 20 GBP; 12 mesi 60 GBP; prova 14 giorni; versioni Betdaq/Matchbook gratuite (GT-BUY, GT-HOME). |
 
-### 1.3 Fairbot (Binteko)
+### 1.3 FB (produttore di FB)
 
 | Voce | Cosa dice la fonte |
 |---|---|
@@ -80,7 +80,7 @@ vuol dire che non esista).
 | Rete | v5.12: risolto lo sfarfallio via Remote Desktop (FB-NEW): il prodotto viene usato anche su desktop remoto. Riconnessione n.d. |
 | Prezzo | 12 mesi 85 EUR; 6 mesi 44,99 EUR; 3 mesi 24,99 EUR; 1 mese 9,99 EUR; prova 15 giorni (FB-ORDER, FB-HOME). |
 
-### 1.4 Cymatic Trader (Cymatic Ltd, UK; «Advanced Cymatic Trader»)
+### 1.4 CY (CY Ltd, UK; «Advanced CY»)
 
 | Voce | Cosa dice la fonte |
 |---|---|
@@ -94,18 +94,18 @@ vuol dire che non esista).
 | Altro | Football Odds Predictor (CY-FEAT); Live Video; accounting (storico scommesse/estratti) (CY-FEAT). |
 | Prezzo | Annuale 99,99 -> 59,99 GBP; 6 mesi 59,99 -> 35,99; mensile 10,99 -> 6,69; prova 14 giorni (la pagina mostra due cifre per piano, la seconda dopo una freccia: non dichiara quale sia in vigore) (CY-PRICE). |
 
-### 1.5 Bfexplorer (Belo Soft) - scheda magra (sito non raggiungibile)
+### 1.5 BX (produttore di BX) - scheda magra (sito non raggiungibile)
 
 | Voce | Cosa dice la fonte |
 |---|---|
 | Architettura | Applicazione .NET + **BOT SDK** (librerie .NET: client API Betfair REST e streaming, servizi di dominio, framework per eseguire strategie e monitorare mercati e scommesse; piu' di 30 trigger per bot; esempi C#, F#, VB) (BX-SDK). Tre interfacce utente (ladder, esecuzione bot) (BX-SEARCH). |
-| Stream | Tutorial su REST e streaming API; «quando un nuovo mercato entra nell'exchange la sottoscrizione lo riceve automaticamente; unico limite: **200 mercati per sottoscrizione**» (BX-SEARCH, snippet di `bfexplorer.net/Articles/...`). |
+| Stream | Tutorial su REST e streaming API; «quando un nuovo mercato entra nell'exchange la sottoscrizione lo riceve automaticamente; unico limite: **200 mercati per sottoscrizione**» (BX-SEARCH, snippet di `[fonte rimossa]`). |
 | Ordini/bot | Dutching, chiusura posizioni, **essere primi in coda**, tick offset, drip feeding, trailing stop loss, «piu' di dieci altri bot» (BX-SEARCH). |
 | Monitoraggio | P&L in tempo reale, chiusura di posizione singola/mercato/tutte (BX-SEARCH). |
-| Prezzi (snippet motore di ricerca di `bfexplorer.net/Subscribe`, NON letti sulla pagina) | Community: ladder e 1 mercato con bot; Basic: fino a 3 mercati senza bot; Professional: mercati illimitati e bot. Cifre riportate dal motore: Basic 5 GBP/mese o 50/anno; Professional 30 GBP/mese o 300/anno; sconti per membri attivi della community. Prova 7 giorni (BX-SEARCH). Da verificare sulla pagina viva. |
+| Prezzi (snippet motore di ricerca di `[fonte rimossa]`, NON letti sulla pagina) | Community: ladder e 1 mercato con bot; Basic: fino a 3 mercati senza bot; Professional: mercati illimitati e bot. Cifre riportate dal motore: Basic 5 GBP/mese o 50/anno; Professional 30 GBP/mese o 300/anno; sconti per membri attivi della community. Prova 7 giorni (BX-SEARCH). Da verificare sulla pagina viva. |
 | Latenze, requisiti, replay, registrazione | **n.d. (non raggiungibile)**. |
 
-### 1.6 Traderline
+### 1.6 TL
 
 | Voce | Cosa dice la fonte |
 |---|---|
@@ -113,7 +113,7 @@ vuol dire che non esista).
 | Funzioni Betfair | Griglia e ladder, grafici «expert», click singolo, calcolo automatico del rischio, **Cashout Mode** (profitto uguale su tutti gli esiti), **Freebet Mode**, pulsante **Trade** (chiude la posizione), P&L in tempo reale, multi-mercato, calcolatore dutching e hedge (TL-EDU). Stop: la guida «ladder» suggerisce di piazzare in anticipo l'ordine di uscita; **uno stop loss software non e' dichiarato** (TL-EDU, TL-SEARCH). |
 | Architettura, stream, latenze, risorse, practice, replay | **n.d.** nelle pagine pubbliche («reserva i dettagli ad altre risorse»). |
 
-### 1.7 Gruss Betting Assistant (Gruss Software, UK) - pertinente per il replay
+### 1.7 GR (GR, UK) - pertinente per il replay
 
 | Voce | Cosa dice la fonte |
 |---|---|
@@ -126,7 +126,7 @@ vuol dire che non esista).
 
 ## 2. Sintesi comparativa (solo cio' che e' dichiarato)
 
-| Voce | Bet Angel | Geeks Toy | Fairbot | Cymatic | Bfexplorer | Traderline | Gruss |
+| Voce | BA | GT | FB | CY | BX | TL | GR |
 |---|---|---|---|---|---|---|---|
 | Stream API | si' (opzionale) | n.d. (manuale solo polling) | si' («Stream API mode») | si' (default) | si' | n.d. | n.d. |
 | Refresh minimo dichiarato | stream 20 ms / «Update»; polling 200 ms | polling 150 ms | n.d. | conflation 0 ms; polling 200 ms | n.d. | n.d. | n.d. |
@@ -146,9 +146,9 @@ vuol dire che non esista).
 | Prezzo | 12,50-29,99 GBP/mese | 20/60 GBP per 3/12 mesi | 85 EUR/anno | 59,99-99,99 GBP/anno (ambiguo) | 0-30 GBP/mese (snippet) | gratis | 6-9 GBP/mese (valuta dedotta) |
 
 Cosa NON dichiara nessun competitor, nelle pagine lette: latenza ordine (decisione -> placeOrders -> risposta) in ms, uso di CPU/RAM
-in esercizio (solo Geeks Toy dice i requisiti minimi), ne' la ripresa dello stream con `initialClk`/`clk`. Quindi il confronto
-«al millisecondo come i competitor» ha come unico metro pubblico i **20 ms di refresh** (Bet Angel), lo **0 ms di conflation**
-(Cymatic) e i **150-200 ms di polling minimo**; tutto il resto del confronto va misurato da noi con la stessa metrica
+in esercizio (solo GT dice i requisiti minimi), ne' la ripresa dello stream con `initialClk`/`clk`. Quindi il confronto
+«al millisecondo come i competitor» ha come unico metro pubblico i **20 ms di refresh** (BA), lo **0 ms di conflation**
+(CY) e i **150-200 ms di polling minimo**; tutto il resto del confronto va misurato da noi con la stessa metrica
 (misura «messaggio Betfair -> ladder a schermo» e «decisione -> risposta di placeOrders», delegato 07).
 
 ---
@@ -189,7 +189,7 @@ Fonti: sigle B-xx e S-xx della sezione 9 (docs.developer.betfair.com e support.d
 | Richieste concorrenti | `TOO_MANY_REQUESTS` se ci sono **3** richieste in coda: `listMarketBook` con proiezione ordini/abbinamenti, `listCurrentOrders`, `listMarketProfitAndLoss` si contendono lo stesso tetto, **per conto, non per sessione**; `listClearedOrders` ha un meccanismo separato | B-EXC, S-TMR |
 | Istruzioni al secondo | `placeOrders`, `cancelOrders`, `updateOrders`, `replaceOrders`: errore se le istruzioni inviate superano **1000 in un secondo** | B-EXC, S-TMR |
 | Istruzioni per `placeOrders` | max **200** (exchange globale), **50** (exchange italiano) per richiesta; una richiesta italiana con back e lay insieme e' RIFIUTATA | B-PLACE, B-IT |
-| Istanze per mercato | **non trovato** nella documentazione che ho letto un tetto di «istanze/ordini per mercato» ne' un tetto orario di transazioni in numero. Il tetto «5000 transazioni/ora oltre cui scattano gli addebiti» e' scritto nella documentazione di flumine (`flumine/controls/clientcontrols.py:13-18`, `docs/controls.md`) e nel nostro `Betfair/stream/config_stream.py:256-262`; Bet Angel dice solo «il limite orario e' fissato da Betfair, oltre si paga» (BA-PDF r.9912). La pagina Betfair delle tariffe (`betfair.com/aboutUs/Betfair.Charges`) non e' raggiungibile dal mio PC (bloccata dal filtro ADM) | repo, F-FLUMINE |
+| Istanze per mercato | **non trovato** nella documentazione che ho letto un tetto di «istanze/ordini per mercato» ne' un tetto orario di transazioni in numero. Il tetto «5000 transazioni/ora oltre cui scattano gli addebiti» e' scritto nella documentazione di flumine (`flumine/controls/clientcontrols.py:13-18`, `docs/controls.md`) e nel nostro `Betfair/stream/config_stream.py:256-262`; BA dice solo «il limite orario e' fissato da Betfair, oltre si paga» (BA-PDF r.9912). La pagina Betfair delle tariffe (`betfair.com/aboutUs/Betfair.Charges`) non e' raggiungibile dal mio PC (bloccata dal filtro ADM) | repo, F-FLUMINE |
 | Conteggio transazioni | il costo include scommesse non abbinate, abbinate, cancellate e lapsed; **una cancellazione riuscita non conta** (piazza+cancella = 1); una cancellazione fallita conta | S-TXN |
 | Login | richieste di login riuscite max **100 al minuto**, oltre: ban di **20 minuti** per nuovi login (`TEMPORARY_BAN_TOO_MANY_REQUESTS`), le sessioni esistenti restano valide | B-LOGIN |
 | HTTP | consigliati `Accept-Encoding: gzip, deflate`, `Connection: keep-alive`; i keep-alive inattivi sono chiusi dai server ogni **3 min**; `Expect: 100-Continue` da NON mandare (errore 417) | B-BEST, B-OPT |
@@ -278,7 +278,7 @@ ultimo push 08/10/2026). Letti README, `docs/*.md` e i sorgenti elencati; le rig
 - Runner calcio: `Betfair/stream/runner.py:2858-2864`: sottoscrizione flumine con `market_data_filter` `STREAM_FIELDS` e `ladder_levels=LADDER_DEPTH` (default 10, `config_stream.py:47`), **`conflate_ms=STREAM_CONFLATE_MS or None`** con default **0** (`config_stream.py:87`). Order stream: `ORDER_STREAM_CONFLATE_MS` default 0 (`config_stream.py:235`; usato in `runner.py:2162,2185,2224`).
 - Scanner (alimenta Mike/Safe/Omega): `Betfair/safe_strategy/stream.py:65-66` **`_HEARTBEAT_MS = 5000`, `_CONFLATE_MS = 1000`**; sottoscrizione `EX_BEST_OFFERS`+`EX_MARKET_DEF`, `ladder_levels=1` (righe 268-277). Il commento in `Betfair/safe_strategy/scanner.py:655` e `service.py:1487` dice che il salto massimo e' «conflate (1 s) piu' la cadenza del tick». Il banco replica questo conflate (`Betfair/stream/backtest/banco_comune.py:2539-2551`) e nota che il registratore invece scrive a conflate 0 (`recorder.py:127`).
 - Capacita': 180 mercati per connessione (< 200), fino a 4 connessioni di default e 10 di tetto (`safe_strategy/stream.py:3-40`); il runner calcio a frammenti (`frammenti_mercato.py:1-40`).
-- Ladder al frontend: `Betfair/stream/ladder_canale.py:1-35`: canale locale ogni **`canale_ms` = 200 ms** (default) e scrittura DB ogni **2 s**; il commento cita come metro «Bet Angel/Fairbot (refresh 20-200 ms)». `frontend/src/components/live/LadderView.tsx:15-16` dice che la profondita' arriva dalla tabella realtime `live_ladder` pubblicata dal runner; la corsia locale e' nel trasporto (`lib/localTransport.ts`, citato in `ladder_canale.py:30-33`).
+- Ladder al frontend: `Betfair/stream/ladder_canale.py:1-35`: canale locale ogni **`canale_ms` = 200 ms** (default) e scrittura DB ogni **2 s**; il commento cita come metro «BA/FB (refresh 20-200 ms)». `frontend/src/components/live/LadderView.tsx:15-16` dice che la profondita' arriva dalla tabella realtime `live_ladder` pubblicata dal runner; la corsia locale e' nel trasporto (`lib/localTransport.ts`, citato in `ladder_canale.py:30-33`).
 - Ordine: `Betfair/stream/motore_ordini.py:1-40`: strada unica = runner con flumine nello stesso processo; il desktop arriva dal canale locale; thread che dorme su un `Event` (nessun sonno da 1 s); **nessun I/O DB fra ricezione e `_dispatch`**; diario write-ahead `_diario_ordini/<data>.jsonl` con fsync PRIMA della chiamata a Betfair; scrittura DB (audit, specchio) asincrona. Le misure di decisione -> risposta spettano a `07_MISURE_OGGI.md`.
 
 ### 5.2 Duplicazioni rispetto a librerie/competitor (alimentano la sezione 4 delle schede A e C)
@@ -299,12 +299,12 @@ Colonne: competitor che la dichiara | c'e' da noi? | misura dichiarata da loro |
 
 | # | Funzione competitor | Da noi? (`file:riga` / grep) | Misura dichiarata da loro | Misura nostra | Gap | Dove si chiude |
 |---|---|---|---|---|---|---|
-| P-01 | Prezzi via Stream API push (Bet Angel, Cymatic, Fairbot «Stream API mode», Bfexplorer) | SI': `runner.py:2858-2864`; scanner `safe_strategy/stream.py:259-277` | BA refresh fino a **20 ms** o «Update» (BA-PDF r.9956-9966); Cymatic conflation **0 ms** (CY-STREAM) | runner: conflate 0 (`config_stream.py:87`); **scanner: conflate 1000 ms** (`safe_strategy/stream.py:66`); registrazioni: p50 fra messaggi 105 ms, p99 1,2-3,2 s (`strumenti/misure/uscite/m01_feed_raw.txt`); latenza vera: 07 | lo **scanner che alimenta Mike/Safe/Omega e' a 1 s**, 50 volte piu' lento del refresh di Bet Angel: e' un'ipotesi di input dei bot, quindi **decisione per l'utente** (non si cambia da soli) | A |
-| P-02 | Conflation configurabile a 0 (Cymatic) | SI' nel runner (`config_stream.py:87`, env `LIVE_STREAM_CONFLATE_MS`); NO nello scanner (costante `_CONFLATE_MS=1000`, nessun env) | 0 ms, «alza a 200-500 se il PC e' lento» (CY-STREAM) | vedi P-01 | scanner non configurabile | A |
+| P-01 | Prezzi via Stream API push (BA, CY, FB «Stream API mode», BX) | SI': `runner.py:2858-2864`; scanner `safe_strategy/stream.py:259-277` | BA refresh fino a **20 ms** o «Update» (BA-PDF r.9956-9966); CY conflation **0 ms** (CY-STREAM) | runner: conflate 0 (`config_stream.py:87`); **scanner: conflate 1000 ms** (`safe_strategy/stream.py:66`); registrazioni: p50 fra messaggi 105 ms, p99 1,2-3,2 s (`strumenti/misure/uscite/m01_feed_raw.txt`); latenza vera: 07 | lo **scanner che alimenta Mike/Safe/Omega e' a 1 s**, 50 volte piu' lento del refresh di BA: e' un'ipotesi di input dei bot, quindi **decisione per l'utente** (non si cambia da soli) | A |
+| P-02 | Conflation configurabile a 0 (CY) | SI' nel runner (`config_stream.py:87`, env `LIVE_STREAM_CONFLATE_MS`); NO nello scanner (costante `_CONFLATE_MS=1000`, nessun env) | 0 ms, «alza a 200-500 se il PC e' lento» (CY-STREAM) | vedi P-01 | scanner non configurabile | A |
 | P-03 | Ripresa con `initialClk`/`clk` (bflw/flumine; competitor n.d.) | SI' (libreria): `frammenti_mercato.py:49,189`; listener bflw | Betfair: `RESUB_DELTA` invece dell'immagine piena (B-STREAM) | n.d. | nessuno; da provare nel banco (scenario di caduta) | A, H |
-| P-04 | Mercati monitorabili | SI': 180/connessione, shard fino a 10 (`safe_strategy/stream.py:3-40`, `frammenti_mercato.py:1-40`) | BA «1000» (BA-PDF r.5281); Bfexplorer/Betfair «200 per sottoscrizione» | in uso: 67 mercati su 2 connessioni il 26/09 (`CANTIERE_B...md:440`) | cifra per app key non verificata nei documenti ufficiali (3.1) | A |
+| P-04 | Mercati monitorabili | SI': 180/connessione, shard fino a 10 (`safe_strategy/stream.py:3-40`, `frammenti_mercato.py:1-40`) | BA «1000» (BA-PDF r.5281); BX/Betfair «200 per sottoscrizione» | in uso: 67 mercati su 2 connessioni il 26/09 (`CANTIERE_B...md:440`) | cifra per app key non verificata nei documenti ufficiali (3.1) | A |
 | P-05 | Order Stream / posizioni a push | SI': `runner.py:2162-2224` | BA: scommesse spinte da Betfair (BA-PDF r.2137) | n.d. | nessun gap funzionale | A, C |
-| P-06 | Monitor della salute del flusso (503, heartbeat) | SI': `safe_strategy/stream.py:70-75` (503), `flusso_prezzi.py:1-40`, `runner.py:1599-1606`; UI `FlussoStreamBanner.tsx:1-12` | Cymatic API Monitor (soglie, pausa trading, e-mail) (CY-FEAT); Geeks Toy soglia 500-2000 ms (GT-STATUS) | n.d. | da noi manca l'**indicatore numerico di durata round-trip** in UI e la **pausa automatica del trading oltre soglia di latenza** (grep `latenz\|latency\|rtt\|round.?trip` in `frontend/src` fuori da test: solo icone di allarme in `PannelloBot.tsx`) | A, J |
+| P-06 | Monitor della salute del flusso (503, heartbeat) | SI': `safe_strategy/stream.py:70-75` (503), `flusso_prezzi.py:1-40`, `runner.py:1599-1606`; UI `FlussoStreamBanner.tsx:1-12` | CY API Monitor (soglie, pausa trading, e-mail) (CY-FEAT); GT soglia 500-2000 ms (GT-STATUS) | n.d. | da noi manca l'**indicatore numerico di durata round-trip** in UI e la **pausa automatica del trading oltre soglia di latenza** (grep `latenz\|latency\|rtt\|round.?trip` in `frontend/src` fuori da test: solo icone di allarme in `PannelloBot.tsx`) | A, J |
 | P-07 | keepAlive e sessione | SI': `auth.py:83`, `runner.py:1316-1322` (480 s), `omega_service.py:8526` (600 s), custode con relogin al 90% (`runner.py:1599-1606`) | .it **20 min** (B-LOGIN); flumine ogni 1200 s | n.d. | 3 implementazioni da unificare | A |
 | P-08 | Sincronia dell'orologio col server | PARZIALE per scelta: `Betfair/stream/orologio.py:1-60` **dichiara** lo scarto e rende «non affidabili» i confronti sotto l'incertezza (`SCARTO_MISURATO_MS = 2080.0` misurato il 17/09; env `BETFAIR_SCARTO_OROLOGIO_MS`), ma **non corregge l'orologio** (righe 17-20: «sistemare l'ora e' un'impostazione di sistema, la fa l'utente») | Betfair raccomanda NTP (B-ADDINFO) | PC indietro di **2080 ms** il 17/09 (`orologio.py:6`) e di circa **844 ms** oggi su 3 server NTP (`strumenti/misure/uscite/m00b_ntp_offset.txt`: -826...-846 ms) | ogni latenza calcolata con `publishTime`/`placedDate` e' falsata di 0,8-2 s se non si dichiara lo scarto; l'ora di Windows resta fuori sincronia (decisione dell'utente: impostazione di sistema) | A, H, I |
 | P-09 | **Heartbeat API** (auto-cancel ordini) | **NON trovata**: `grep -rn -il "HeartbeatAPING\|exchange/heartbeat" Betfair tools` = nessun file | Betfair: cancella gli ordini LIMIT se manca il battito (B-HBAPI); competitor n.d. | n.d. | stop/offset software-side: «se il processo cade non esistono» (`trading/risk_engine.py:21-23`, `config_stream.py:309-310`) | C, I |
@@ -319,14 +319,14 @@ Colonne: competitor che la dichiara | c'e' da noi? | misura dichiarata da loro |
 | # | Funzione competitor | Da noi? | Misura dichiarata da loro | Misura nostra | Gap | Dove |
 |---|---|---|---|---|---|---|
 | L-01 | Ladder one-click a profondita' completa, LTP, volume per livello | SI': `LadderView.tsx:1-22` (2984 righe), `GridView.tsx` (653), `StandaloneLadder.tsx`, `LadderPopout.tsx` | BA/GT/FB/CY (sezione 1) | n.d. | nessuno funzionale | J |
-| L-02 | Cadenza di refresh del ladder | SI': canale locale **200 ms**, DB 2 s (`ladder_canale.py:1-35`) | BA **20 ms** o «Update» (BA-PDF r.9959-9966); Cymatic «0 ms» | 200 ms nominali + 07 per il tempo messaggio->schermo | **10 volte** piu' lento del refresh dichiarato da Bet Angel; il commento nostro cita «20-200 ms» ma il default e' il margine alto | A, J |
-| L-03 | Posizione in coda stimata (PIQ/EPIQ) | SI': colonna 8 di `LadderView.tsx:12`; modello di coda nello scalper (`scalper_bot.py:559,1418`) | Cymatic «primi a mostrarla» (CY-FEAT); BA EPIQ (BA-PDF r.9082) | n.d. | nessuno | J |
-| L-04 | Weight of Money, profondita' totale | SI': `runner.py:594-639`, `DepthPanel.tsx:2` | Fairbot WoM, indicatori (FB-HOME) | n.d. | nessuno | J |
-| L-05 | Grafici avanzati, indicatori tecnici (RSI, Stochastic, candele) | PARZIALE: `SelectionChartPanel.tsx` (357), `MiniPriceChart.tsx`; grep `rsi\|stochastic\|candlestick\|bollinger` in `frontend/src` fuori da test: solo testi di strategia tennis (`lib/tennis.ts:820`) | BA, Cymatic (trendline magnetiche), Fairbot (indicatori) | n.d. | niente indicatori tecnici ne' disegno di trendline sul grafico | J |
+| L-02 | Cadenza di refresh del ladder | SI': canale locale **200 ms**, DB 2 s (`ladder_canale.py:1-35`) | BA **20 ms** o «Update» (BA-PDF r.9959-9966); CY «0 ms» | 200 ms nominali + 07 per il tempo messaggio->schermo | **10 volte** piu' lento del refresh dichiarato da BA; il commento nostro cita «20-200 ms» ma il default e' il margine alto | A, J |
+| L-03 | Posizione in coda stimata (PIQ/EPIQ) | SI': colonna 8 di `LadderView.tsx:12`; modello di coda nello scalper (`scalper_bot.py:559,1418`) | CY «primi a mostrarla» (CY-FEAT); BA EPIQ (BA-PDF r.9082) | n.d. | nessuno | J |
+| L-04 | Weight of Money, profondita' totale | SI': `runner.py:594-639`, `DepthPanel.tsx:2` | FB WoM, indicatori (FB-HOME) | n.d. | nessuno | J |
+| L-05 | Grafici avanzati, indicatori tecnici (RSI, Stochastic, candele) | PARZIALE: `SelectionChartPanel.tsx` (357), `MiniPriceChart.tsx`; grep `rsi\|stochastic\|candlestick\|bollinger` in `frontend/src` fuori da test: solo testi di strategia tennis (`lib/tennis.ts:820`) | BA, CY (trendline magnetiche), FB (indicatori) | n.d. | niente indicatori tecnici ne' disegno di trendline sul grafico | J |
 | L-06 | Multi-mercato / Guardian / watch list | SI': `MultiLadder.tsx` (197), `MarketWatch.tsx`, `Watchlist.tsx`, `auto_follow.py:1-30` (aggancio al volo dei mercati dei bot) | BA Guardian 50 mercati/s a 20 ms (BA-PDF r.4732) | n.d. | l'auto-follow e' un vantaggio (i bot seguono da soli) | J, A |
-| L-07 | Tasti rapidi | SI': `LadderView.tsx:473` (B/L/C/frecce), `lib/workspace.ts:239` `resolveHotkey` | Cymatic «rapid keyboard betting», GT Shortcut Manager | n.d. | nessuno | J |
+| L-07 | Tasti rapidi | SI': `LadderView.tsx:473` (B/L/C/frecce), `lib/workspace.ts:239` `resolveHotkey` | CY «rapid keyboard betting», GT Shortcut Manager | n.d. | nessuno | J |
 | L-08 | Allarmi sonori/avvisi | PARZIALE: banner visivi (`LiveAlertBanner.tsx`); grep `new Audio\|beep\|AudioContext\|sound` in `frontend/src` = nessun risultato | GT Audio Alerts Manager (GT-MAN); BA Alerts | n.d. | nessun allarme sonoro | J |
-| L-09 | Layout salvabili, piu' monitor | SI': `LadderPopout.tsx` (51), `lib/workspace.ts` | BA undock, Cymatic «layout illimitati» | n.d. | verificare salvataggio layout | J |
+| L-09 | Layout salvabili, piu' monitor | SI': `LadderPopout.tsx` (51), `lib/workspace.ts` | BA undock, CY «layout illimitati» | n.d. | verificare salvataggio layout | J |
 
 ### 6.3 Ordini
 
@@ -337,38 +337,38 @@ Colonne: competitor che la dichiara | c'e' da noi? | misura dichiarata da loro |
 | O-03 | Tick offset / bracket / batch di offset | SI': `trading/risk_engine.py:11-13`, `RiskRulesPanel.tsx` (764); scalper `scalper_bot.py` | BA offset a tick/% e a batch (BA-PDF r.1895, 2151-2162) | n.d. | **offset a batch** (offset parziale) non trovato (grep `batch` nel risk engine) | C |
 | O-04 | Stop loss e trailing stop | SI': `risk_engine.py:14-20`, `risk_engine_worker.py:360-370` | BA/GT/CY (BA: gli stop non attraversano il pre-gara->in-play, BA-PDF r.2051) | cadenza del worker `RISK_ENGINE_POLL_SEC=1.0` s (`config_stream.py:311`) | **1 s di cadenza** contro refresh dichiarati da 20 ms: uno stop puo' scattare con 1 s di ritardo; software-side come tutti | C |
 | O-05 | Greening / cash-out | SI': `trading/greenup.py:118`, `CashOutButton.tsx` (471), `mike/engine.py:1045` | BA, CY, FB (cash-out avanzato con ripartizione libera) | n.d. | ripartizione libera del profitto fra esiti: non trovata | C, J |
-| O-06 | Dutching / bookmaking | SI': `trading/dutching.py:81,147,184`, `DutchingPanel.tsx` (617); bookmaking: non trovato (grep `bookmak`: solo opzioni di `CreateStrategy.tsx:233`) | BA, GT, FB, Gruss | n.d. | bookmaking assente | C, J |
+| O-06 | Dutching / bookmaking | SI': `trading/dutching.py:81,147,184`, `DutchingPanel.tsx` (617); bookmaking: non trovato (grep `bookmak`: solo opzioni di `CreateStrategy.tsx:233`) | BA, GT, FB, GR | n.d. | bookmaking assente | C, J |
 | O-07 | Persistenza in-play (Cancel/Keep/Take SP) | SI': `order_exec.py:88,238`, `LadderView.tsx:187`, `DutchingPanel.tsx:140` | GT, BA, CY | n.d. | nessuno | C, J |
 | O-08 | OCO (entry+exit+stop) | EQUIVALENTE funzionale nel risk engine (bracket); non esiste un oggetto «OCO» esplicito (deduzione: `risk_engine.py:11-22` fa offset+stop sullo stesso ingresso) | GT OCO (GT-OCO) | n.d. | verificare il caso parziale (stop che si riduce con l'exit parziale) | C |
-| O-09 | Repeat on Success (ripete il trade N volte) | **non trovata** in UI (grep `ripeti\|repeat` in `frontend/src`: solo stili) ne' nel risk engine | Fairbot (FB-HOME) | n.d. | assente (le strategie scalper ripetono per logica propria: fuori perimetro) | C, E |
-| O-10 | Sub-minimo / place-and-trim | SI': `trading/submin.py:79-162`, `PLACE_AND_TRIM_INDAGINE_2026-09-17.md` | competitor n.d. (il nostro documento afferma che funziona su BA e Fairbot: fonte interna) | n.d. | nessuno | C |
+| O-09 | Repeat on Success (ripete il trade N volte) | **non trovata** in UI (grep `ripeti\|repeat` in `frontend/src`: solo stili) ne' nel risk engine | FB (FB-HOME) | n.d. | assente (le strategie scalper ripetono per logica propria: fuori perimetro) | C, E |
+| O-10 | Sub-minimo / place-and-trim | SI': `trading/submin.py:79-162`, `PLACE_AND_TRIM_INDAGINE_2026-09-17.md` | competitor n.d. (il nostro documento afferma che funziona su BA e FB: fonte interna) | n.d. | nessuno | C |
 | O-11 | Passive orders (ingresso senza bet delay) | PARZIALE: misura in `omega/tools/misura_ingresso_passivo.py` | n.d. | n.d. | verificare l'uso reale (S-PASSIVE) | C, E |
 
 ### 6.4 Automazione, simulazione, dati, risorse
 
 | # | Funzione competitor | Da noi? | Misura dichiarata | Misura nostra | Gap | Dove |
 |---|---|---|---|---|---|---|
-| A-01 | Motore di regole editabile dall'utente (BA Automation/Servants, Fairbot Advanced Automation, Bfexplorer >30 trigger, Cymatic robot) | NO come editor generico: i bot sono strategie in codice (Mike, Omega, Safe, scalper) con parametri editabili (`ParamsSheetBase.tsx`) | BA: «centinaia di modelli» (BA-HOME) | n.d. | per scelta (strategie intoccabili): da riportare come decisione, non gap da chiudere | D, E |
-| A-02 | Excel (BA, Cymatic, Gruss) | **non trovata** (grep `openpyxl\|xlsx\|excel` in `Betfair/`: solo `safe_strategy/engine.py:212` commento) | prezzi e ordini da foglio | n.d. | assente (nessun requisito dell'utente) | J |
-| A-03 | API locale per codice di terzi (Bet Angel API su porta locale) | SI' in forma privata: canale locale `local_channel.py`, `canale_bot.py` | BA API JSON su porta (BA-PDF r.9749) | n.d. | contratto non documentato come API | D, I |
+| A-01 | Motore di regole editabile dall'utente (BA Automation/Servants, FB Advanced Automation, BX >30 trigger, CY robot) | NO come editor generico: i bot sono strategie in codice (Mike, Omega, Safe, scalper) con parametri editabili (`ParamsSheetBase.tsx`) | BA: «centinaia di modelli» (BA-HOME) | n.d. | per scelta (strategie intoccabili): da riportare come decisione, non gap da chiudere | D, E |
+| A-02 | Excel (BA, CY, GR) | **non trovata** (grep `openpyxl\|xlsx\|excel` in `Betfair/`: solo `safe_strategy/engine.py:212` commento) | prezzi e ordini da foglio | n.d. | assente (nessun requisito dell'utente) | J |
+| A-03 | API locale per codice di terzi (BA API su porta locale) | SI' in forma privata: canale locale `local_channel.py`, `canale_bot.py` | BA API JSON su porta (BA-PDF r.9749) | n.d. | contratto non documentato come API | D, I |
 | R-01 | Practice/Training con matching locale | SI': PAPER (`modo_ordini.py:1-30`, `client_paper_affiancato.py:1-53`, esecuzione simulata flumine) | BA: matching locale + cross-matching + Take SP + Keep (BA-PDF r.816-830) | n.d. | nessuno; la nostra regola paper=live e' piu' stretta | C, H |
-| R-02 | Replay di mercati storici | SI': banco (`Betfair/stream/backtest/`, `certifica.py`), `MatchReplay.tsx` (1280), `TennisReplay.tsx` (811) | solo Gruss: Market Replay 5 anni, a pagamento (GR-PAGE) | tempo replay: 07 / `PROCESSO_STANDARD_BOT.md` 6.9 (5 min target) | nessuno (e' un nostro punto di forza) | H |
+| R-02 | Replay di mercati storici | SI': banco (`Betfair/stream/backtest/`, `certifica.py`), `MatchReplay.tsx` (1280), `TennisReplay.tsx` (811) | solo GR: Market Replay 5 anni, a pagamento (GR-PAGE) | tempo replay: 07 / `PROCESSO_STANDARD_BOT.md` 6.9 (5 min target) | nessuno (e' un nostro punto di forza) | H |
 | R-03 | Registrazione locale dei dati grezzi | SI': `recorder.py:1-13` (JSONL per evento «source of truth»), `curator.py` | competitor n.d. | volume: `m05_risorse_disco.txt`; 9,6-25 MB per partita (`m01_feed_raw.txt`) | nessuno | G, H |
 | R-04 | Diario degli ordini a prova di crash | SI': `motore_ordini.py:20-30` (JSONL fsync) | competitor n.d. | n.d. | nessuno | C |
-| N-01 | Monitor di rete / API | vedi P-06 | Cymatic, Geeks Toy | n.d. | idem | A, J |
-| N-02 | Risorse: requisiti dichiarati | n.d. per i bot; Geeks Toy: 1,6 GHz, 1 GB RAM, 20 MB disco (GT-DL) | GT | memoria/CPU in 24 h: 07 / `m05_risorse_disco.txt` | non confrontabile: il nostro e' Electron + Python + cloud, non un unico .exe | I |
+| N-01 | Monitor di rete / API | vedi P-06 | CY, GT | n.d. | idem | A, J |
+| N-02 | Risorse: requisiti dichiarati | n.d. per i bot; GT: 1,6 GHz, 1 GB RAM, 20 MB disco (GT-DL) | GT | memoria/CPU in 24 h: 07 / `m05_risorse_disco.txt` | non confrontabile: il nostro e' Electron + Python + cloud, non un unico .exe | I |
 | N-03 | **Il DB cloud non e' nel percorso decisionale** (i competitor desktop non hanno DB remoto) | PARZIALE: ordini e ladder si, ma i servizi dei bot leggono/scrivono Supabase nel ciclo: **1.309 chiamate/min totali** il 02/10, runner calcio 552/min, Mike 279/min, Safe bot 269/min (MIS-02/10, riepilogo) | n.d. | idem (fonte: `SCHEMI_BOT/sistema/MISURE_2026-10-02.md`) | tutto cio' che e' nel percorso stream -> cache -> decisione -> ordine deve restare a zero chiamate di rete (§9.3 del brief) | G, D |
-| N-04 | Prezzo | n/a | BA 12,50-29,99 GBP/mese; GT 20/60 GBP; FB 85 EUR/anno; CY 59,99-99,99 GBP/anno; TL gratis; Gruss 6-9/mese; Bfexplorer 0-30 GBP/mese (snippet) | costo fisso: Live App Key 499 GBP una tantum (S-COST) | n/a | - |
+| N-04 | Prezzo | n/a | BA 12,50-29,99 GBP/mese; GT 20/60 GBP; FB 85 EUR/anno; CY 59,99-99,99 GBP/anno; TL gratis; GR 6-9/mese; BX 0-30 GBP/mese (snippet) | costo fisso: Live App Key 499 GBP una tantum (S-COST) | n/a | - |
 
 ---
 
 ## 7. I gap piu' importanti (ordine di priorita': Betfair -> ladder -> ordine)
 
-1. **Scanner a conflate 1000 ms** (P-01/P-02): il feed che alimenta Mike, Safe e Omega arriva con un salto fino a 1 s (`safe_strategy/stream.py:66`) mentre i competitor dichiarano 20 ms (Bet Angel) o 0 ms (Cymatic) e il nostro runner e' gia' a 0. Cambiarlo cambia l'input dei bot: **decisione per l'utente**, con replay sul banco prima (il banco gia' simula il conflate 1000, `banco_comune.py:2539-2551`). Componente A.
+1. **Scanner a conflate 1000 ms** (P-01/P-02): il feed che alimenta Mike, Safe e Omega arriva con un salto fino a 1 s (`safe_strategy/stream.py:66`) mentre i competitor dichiarano 20 ms (BA) o 0 ms (CY) e il nostro runner e' gia' a 0. Cambiarlo cambia l'input dei bot: **decisione per l'utente**, con replay sul banco prima (il banco gia' simula il conflate 1000, `banco_comune.py:2539-2551`). Componente A.
 2. **Ladder a 200 ms contro 20 ms** (L-02): default del canale locale `ladder_canale.py`. Componenti A e J. Da misurare «messaggio Betfair -> pixel» (07) prima di fissare l'obiettivo.
 3. **Orologio del PC fuori sincronia** (P-08): 2080 ms il 17/09 (`orologio.py:6`), circa 844 ms oggi (`m00b_ntp_offset.txt`); il codice lo dichiara ma non lo corregge, quindi ogni latenza basata su `publishTime` ha un'incertezza di quell'ordine. Betfair raccomanda NTP. Componenti A, H e I (servizio Ora di Windows: impostazione di sistema, la decide l'utente).
 4. **Nessun Heartbeat API e stop/offset solo software** (P-09, O-04): se il processo cade, ordini aperti e stop restano scoperti; Betfair offre la cancellazione automatica degli ordini LIMIT (senza garanzia). Componenti C e I. Cambia il comportamento degli ordini: **decisione per l'utente**.
-5. **Stop e trailing valutati a 1 s** (O-04, `config_stream.py:311`) contro refresh competitor di 20-200 ms; e **nessun indicatore numerico di latenza ne' pausa automatica per latenza** in UI (P-06, Cymatic). Componenti C e A/J.
+5. **Stop e trailing valutati a 1 s** (O-04, `config_stream.py:311`) contro refresh competitor di 20-200 ms; e **nessun indicatore numerico di latenza ne' pausa automatica per latenza** in UI (P-06, CY). Componenti C e A/J.
 6. (minori) contatore transazioni/ora a schermo (P-13), indicatori tecnici sul grafico (L-05), allarmi sonori (L-08), bookmaking (O-06), Repeat on Success (O-09), offset a batch (O-03), ripartizione libera nel cash-out (O-05), Excel (A-02).
 
 Nostri punti di forza senza equivalente pubblico fra i competitor letti: minimi .it e place-and-trim (P-11, O-10), certificazione su replay con codice di produzione (R-02), diario degli ordini con fsync (R-04), auto-follow dei mercati dei bot (L-06), paper = live nello stesso processo (R-01).
@@ -379,16 +379,16 @@ Nostri punti di forza senza equivalente pubblico fra i competitor letti: minimi 
 
 **Verificato di persona** (letto il testo della fonte o il codice oggi):
 - Tutte le pagine Betfair di sezione 3 (testo estratto dalle API pubbliche di Confluence e Zendesk) e i numeri riportati;
-- il manuale PDF di Bet Angel (righe citate rilette dal testo estratto);
-- le pagine di Geeks Toy, Cymatic, Fairbot, Gruss, Traderline e i file GitHub di flumine e betfairlightweight citati;
+- il manuale PDF di BA (righe citate rilette dal testo estratto);
+- le pagine di GT, CY, FB, GR, TL e i file GitHub di flumine e betfairlightweight citati;
 - tutti i `file:riga` del repo citati (letti con `sed`/`grep` oggi); gli ultimi grep «non trovata» sono stati lanciati su `Betfair/`, `tools/` e `frontend/src/` (non sull'intera radice, che contiene un log da 3 GB).
 
 **Non trovato / non verificabile**:
 - **Numero di connessioni stream per app key**: non scritto nelle pagine ufficiali (3.1); il «10» del nostro audit non e' confermato da fonte ufficiale.
 - **Tetto orario di transazioni** e **istanze per mercato** di `placeOrders`: non nelle pagine Betfair raggiungibili; il 5000/ora viene da flumine. La pagina tariffe Betfair non e' raggiungibile dal mio PC.
-- **Bfexplorer**: sito non raggiungibile, scheda da snippet e dal README SDK; prezzi da verificare.
-- **Geeks Toy e Gruss**: nessuna dichiarazione sullo Stream API nelle pagine lette; il manuale di Geeks Toy potrebbe essere anteriore allo streaming.
-- **Fairbot, Traderline**: nessuna latenza ne' frequenza dichiarata.
+- **BX**: sito non raggiungibile, scheda da snippet e dal README SDK; prezzi da verificare.
+- **GT e GR**: nessuna dichiarazione sullo Stream API nelle pagine lette; il manuale di GT potrebbe essere anteriore allo streaming.
+- **FB, TL**: nessuna latenza ne' frequenza dichiarata.
 - **Latenze dei competitor**: nessuna misura indipendente pubblica trovata; solo dichiarazioni (20 ms, 0 ms, 150-200 ms).
 - **P-08 (orologio)**: il valore -844 ms viene da `strumenti/misure/uscite/m00b_ntp_offset.txt` (altro delegato), non ripetuto da me; il valore 2080 ms da `orologio.py:6` (misura del 17/09). Perche' lo scarto sia passato da 2080 a circa 844 ms non l'ho verificato.
 - Misure nostre di latenza (messaggio -> ladder, decisione -> `placeOrders` -> risposta) e di risorse 24 h: **non fatte qui**, sono nel file 07.
@@ -428,28 +428,28 @@ Nostri punti di forza senza equivalente pubblico fra i competitor letti: minimi 
 - F-FLUMINE https://github.com/betcode-org/flumine (README, `docs/architecture.md`, `controls.md`, `workers.md`, `advanced.md`, `performance.md`, `known_issues.md`, `flumine/controls/clientcontrols.py`, `tradingcontrols.py`, `flumine/clients/betfairclient.py`, `flumine/simulation/simulatedorder.py`, `flumine/order/ordertype.py`, `flumine/worker.py`, `flumine/streams/*.py`) - raw: https://raw.githubusercontent.com/betcode-org/flumine/master/<percorso>
 - F-BFLW https://github.com/betcode-org/betfair (README, `betfairlightweight/streaming/betfairstream.py`, `listener.py`, `stream.py`, `endpoints/keepalive.py`) - raw: https://raw.githubusercontent.com/betcode-org/betfair/master/<percorso>
 
-**Bet Angel**
-- BA-PDF Guida utente PDF (2025) https://www.betangel.com/user-guide-pdf/Bet-angel-user-guide.pdf
-- BA-HOME https://www.betangel.com/ ; BA-PRO https://www.betangel.com/bet-angel-professional/ ; BA-BUY https://www.betangel.com/buy/ ; BA-REV https://www.betangel.com/review/ ; indice API https://www.betangel.com/api-guide/
+**BA**
+- BA-PDF Guida utente PDF (2025) [fonte rimossa]
+- BA-HOME [fonte rimossa] ; BA-PRO [fonte rimossa] ; BA-BUY [fonte rimossa] ; BA-REV [fonte rimossa] ; indice API [fonte rimossa]
 
-**Geeks Toy**
-- GT-HOME https://www.geekstoy.com/ ; GT-FEAT https://www.geekstoy.com/en/features ; GT-DL https://www.geekstoy.com/en/download ; GT-BUY https://www.geekstoy.com/en/buy
-- GT-MAN indice https://www.geekstoy.co.uk/UserManuals/english.html ; GT-API https://www.geekstoy.co.uk/UserManuals/EN/API%20Settings%20Manager.html ; GT-STATUS https://www.geekstoy.co.uk/UserManuals/EN/Market%20%26%20API%20Status.html ; GT-LADDER https://www.geekstoy.co.uk/UserManuals/EN/Ladder%20Interface.html ; GT-OCO https://www.geekstoy.co.uk/UserManuals/EN/OCO.html ; GT-STAKING https://www.geekstoy.co.uk/UserManuals/EN/Staking%20%26%20Tools.html ; (lette anche Introduzione, Using the Application, Place Bets, Pending Bets, Unmatched Bets, Multi Market Trading, Main Info Bar, Layout and Settings)
+**GT**
+- GT-HOME [fonte rimossa] ; GT-FEAT [fonte rimossa] ; GT-DL [fonte rimossa] ; GT-BUY [fonte rimossa]
+- GT-MAN indice [fonte rimossa] ; GT-API [fonte rimossa] ; GT-STATUS [fonte rimossa] ; GT-LADDER [fonte rimossa] ; GT-OCO [fonte rimossa] ; GT-STAKING [fonte rimossa] ; (lette anche Introduzione, Using the Application, Place Bets, Pending Bets, Unmatched Bets, Multi Market Trading, Main Info Bar, Layout and Settings)
 
-**Fairbot**
-- FB-HOME https://fairbot.com/ ; FB-NEW https://fairbot.com/whatsnew ; FB-ORDER https://fairbot.com/order ; FB-DL https://fairbot.com/download
+**FB**
+- FB-HOME [fonte rimossa] ; FB-NEW [fonte rimossa] ; FB-ORDER [fonte rimossa] ; FB-DL [fonte rimossa]
 
-**Cymatic**
-- CY-FEAT https://www.cymatic.co.uk/Features.aspx ; CY-PRICE https://www.cymatic.co.uk/Pricing.aspx ; CY-STREAM https://www.cymatic.co.uk/UserManual/Streaming.aspx ; CY-POLL https://www.cymatic.co.uk/UserManual/PollingVersusStreaming.aspx ; CY-APIREF https://www.cymatic.co.uk/UserManual/ApiRefresh.aspx
+**CY**
+- CY-FEAT [fonte rimossa] ; CY-PRICE [fonte rimossa] ; CY-STREAM [fonte rimossa] ; CY-POLL [fonte rimossa] ; CY-APIREF [fonte rimossa]
 
-**Bfexplorer**
-- BX-SDK https://github.com/StefanBelo/Bfexplorer-BOT-SDK
-- BX-SEARCH risultati di ricerca che indicizzano http://bfexplorer.net/ , http://bfexplorer.net/Products/Bfexplorer , http://bfexplorer.net/Subscribe , http://bfexplorer.net/Articles/Content/204 , http://bfexplorer.net/Articles/Content/388 (snippet, pagine NON lette)
+**BX**
+- BX-SDK [fonte rimossa]
+- BX-SEARCH risultati di ricerca che indicizzano [fonte rimossa] , [fonte rimossa] , [fonte rimossa] , [fonte rimossa] , [fonte rimossa] (snippet, pagine NON lette)
 
-**Traderline**
-- TL-HOME https://traderline.com/ ; TL-EDU https://traderline.com/education/new-traderline ; TL-SEARCH https://traderline.com/education/betfair-ladder-trading-guide , https://traderline.com/education/traderline-cashout-freebet-mode-explained , https://traderline.com/about
+**TL**
+- TL-HOME [fonte rimossa] ; TL-EDU [fonte rimossa] ; TL-SEARCH [fonte rimossa] , [fonte rimossa] , [fonte rimossa]
 
-**Gruss**
-- GR-PAGE https://www.gruss-software.co.uk/page/87/Betfair-Betting-Assistant.htm ; GR-PRICE https://www.gruss-software.co.uk/page/82/Pricing.htm ; home https://www.gruss-software.co.uk/
+**GR**
+- GR-PAGE [fonte rimossa] ; GR-PRICE [fonte rimossa] ; home [fonte rimossa]
 
-Conteggio: 63 URL distinte elencate sopra (10 Betfair documentazione, 13 centro assistenza di cui 1 solo titolo, 2 librerie, 6 Bet Angel, 10 Geeks Toy, 4 Fairbot, 5 Cymatic, 6 Bfexplorer di cui 5 solo snippet di ricerca non letti, 5 Traderline, 3 Gruss; i file GitHub sono contati sotto il loro repository), piu' 8 pagine del manuale Geeks Toy lette ma non elencate singolarmente.
+Conteggio: 63 URL distinte elencate sopra (10 Betfair documentazione, 13 centro assistenza di cui 1 solo titolo, 2 librerie, 6 BA, 10 GT, 4 FB, 5 CY, 6 BX di cui 5 solo snippet di ricerca non letti, 5 TL, 3 GR; i file GitHub sono contati sotto il loro repository), piu' 8 pagine del manuale GT lette ma non elencate singolarmente.

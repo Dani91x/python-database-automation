@@ -53,8 +53,8 @@ ABS_MIN_SIZE = 0.01
 
 # SIZE MINIMA di PIAZZAMENTO di Betfair (.it: BACK 1,00 / LAY 1,00 dal 01/10, minimi_it). Sotto
 # questa soglia l'exchange rifiuta un place DIRETTO — ma NON rifiuta un ordine
-# esistente RIDOTTO sotto la soglia. E' la tecnica che usano Bet Angel, Fairbot
-# e Betting Toolkit, si chiama PLACE-AND-TRIM ed e' implementata in
+# esistente RIDOTTO sotto la soglia. E' la tecnica che usano BA, FB
+# e BTK, si chiama PLACE-AND-TRIM ed e' implementata in
 # ``Betfair/stream/trading/submin.py`` (azione di coda ``place_submin``):
 #   1. place del minimo a una quota NON abbinabile (BACK 1000 / LAY quota_parcheggio_lontano);
 #   2. cancel PARZIALE: resta esattamente la size voluta, sotto il minimo;
@@ -1352,7 +1352,7 @@ def place(
 
     # LIVE — soldi veri: REST FOK generico (side esplicito). Sotto il minimo di
     # PIAZZAMENTO si usa il place-and-trim (parcheggio + taglio + riprezzo): e'
-    # la stessa tecnica di Bet Angel/Fairbot, in tre chiamate REST sincrone.
+    # la stessa tecnica di BA/FB, in tre chiamate REST sincrone.
     #
     # CERT. 13/09 — FRENI DI SICUREZZA GLOBALI ANCHE QUI.
     # ``LIVE_KILL_SWITCH`` e ``LIVE_ORDER_MODE`` fermavano solo il WORKER della

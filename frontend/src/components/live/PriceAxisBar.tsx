@@ -1,5 +1,5 @@
 // ============================================================================
-// PriceAxisBar — barra prezzo NAVIGABILE stile Geeks Toy (B18): l'intera scala
+// PriceAxisBar — barra prezzo NAVIGABILE stile GT (B18): l'intera scala
 // tick Betfair 1.01→1000 compressa in una colonna; la heat (ramp ambra a tinta
 // singola, skill dataviz: sequential = one hue) mostra DOVE si concentra il
 // denaro (disponibilità back+lay+volumi tradati). Click/drag = sposta la vista

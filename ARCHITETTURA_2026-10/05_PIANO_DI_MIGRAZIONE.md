@@ -285,7 +285,7 @@ nella sezione 4.
 
 ### T6 - A2: ladder a ogni cambio e DB fuori dal thread del ladder (A P3)
 
-- **Obiettivo**: chiudere il gap L-02 (ladder a 200 ms contro i 20 ms di Bet Angel, 02 §6.2) senza cambiare cio' che ricevono i bot.
+- **Obiettivo**: chiudere il gap L-02 (ladder a 200 ms contro i 20 ms di BA, 02 §6.2) senza cambiare cio' che ricevono i bot.
 - **Voci di 01**: `A-052..A-056`, `A-069`, `G-014`, `J-078`, `J-084`.
 - **File toccati**: `runner.py:573-757` (helper e `ladder_worker`), `tennis_runner.py:200-275,1455-1507`, `ladder_canale.py` (169), `stream/db.py:650-710`;
   NUOVO `nucleo/betfair/ladder.py` (helper gemelli 113+76 -> ~115, A §4.3).

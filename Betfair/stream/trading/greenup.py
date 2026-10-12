@@ -9,14 +9,14 @@ MAI ricalcolate a mano) — nell'UNICO ordine opposto che pareggia profit-se-vin
 Logica pura, nessun I/O: testabile a unità. È il chiamante (worker) a leggere le
 esposizioni fresche e il best price corrente dal book; qui si fa solo l'aritmetica.
 
-Matematica dell'hedge (standard di settore — Bet Angel / Geeks Toy / Betfair Cash Out):
+Matematica dell'hedge (standard di settore — BA / GT / Betfair Cash Out):
     diff = W - L                       con W = profit se la selezione VINCE
                                             L = profit se la selezione PERDE
     diff > 0  → si LAYa  @ p_lay  (best disponibile al LAY),  size = f * diff / p
     diff < 0  → si BACKa @ p_back (best disponibile al BACK), size = f * (-diff) / p
     |diff| ~ 0 → niente da fare (posizione già piatta)
 
-STAKE ASSOLUTO (``amount``, standard Bet Angel "cash out for X"): invece della frazione si
+STAKE ASSOLUTO (``amount``, standard BA "cash out for X"): invece della frazione si
 può chiedere di coprire un IMPORTO in € qualunque (decimale, arrotondato al centesimo). Il
 LATO resta quello determinato da W/L (mai invertire la posizione) e la size è CAPPATA allo
 stake del green TOTALE a quel prezzo: chiedere più del necessario chiude e basta, non apre
@@ -55,7 +55,7 @@ FLAT_EPS = 0.01
 
 def _place_through(side: str, best_price: float, place_at_ticks: int) -> float:
     """Sposta il prezzo di ``place_at_ticks`` PIÙ A FONDO nel book per un fill più sicuro
-    (stop a 2 parametri, stile Bet Angel: chiudi al best ma "place at" N tick oltre).
+    (stop a 2 parametri, stile BA: chiudi al best ma "place at" N tick oltre).
 
     LAY  → prezzo PIÙ ALTO (offri odds migliori ai backer → match più probabile).
     BACK → prezzo PIÙ BASSO (offri odds migliori ai layer → match più probabile).

@@ -1,6 +1,6 @@
 // ============================================================================
 // ladderChart.ts — serie prezzo del ladder → CANDELE per il mini-chart laterale
-// (stile BetTrader "matchstick"). Matematica PURA: il campionamento avviene nel
+// (stile BT "matchstick"). Matematica PURA: il campionamento avviene nel
 // componente (ogni update del ladder ≈ 0.25–2s), qui solo bucketing/aggregazione.
 // ============================================================================
 

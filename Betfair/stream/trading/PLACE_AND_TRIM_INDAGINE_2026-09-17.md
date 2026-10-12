@@ -1,7 +1,7 @@
 # Place-and-trim: indagine e sequenza definitiva (17/09/2026)
 
 Ordine dell'utente: «il place-and-trim funziona alla perfezione su tutti i competitor
-(Bet Angel, Fairbot): va risolto UNA VOLTA PER TUTTE» e «DEVE ESSERE AGGIUSTATO E RESO
+(BA, FB): va risolto UNA VOLTA PER TUTTE» e «DEVE ESSERE AGGIUSTATO E RESO
 UNIVERSALE PER OGNI CASO CHE CI SERVE PRESENTE E FUTURO».
 
 Reperto di partenza: `CRONOSTORIA.md`, «Reperto 25 (h20:15)».
@@ -30,20 +30,20 @@ passato 171 volte su 171). Cio' che non passa e' il **RI-PIAZZAMENTO** dentro il
 
 ## 2. La sequenza dei competitor
 
-Bet Angel, «place bets below minimum stake» (guida utente e forum ufficiale):
+BA, «place bets below minimum stake» (guida utente e forum ufficiale):
 
 1. `placeOrders` del minimo a quota lontana (tipicamente BACK @1000), sperando che non si
    abbini;
 2. si toglie l'eccedenza (cancel parziale);
 3. si **sposta** l'importo residuo alla quota voluta.
 
-E' **esattamente la nostra sequenza**. Bet Angel pero' documenta due cose che noi non
+E' **esattamente la nostra sequenza**. BA pero' documenta due cose che noi non
 avevamo scritto da nessuna parte:
 
 - «it will take twice as long for bets below [il minimo] to reach the market, **this also
   includes the in-play delay** as you're effectively using two transactions to complete
   the process»;
-- «Bet Angel **cannot guarantee** that bets below the minimum value will enter the market
+- «BA **cannot guarantee** that bets below the minimum value will enter the market
   without error or complications as the process to achieve this is complex».
 
 E sul forum, la raccomandazione operativa: **usare il minimo ufficiale quando si opera
