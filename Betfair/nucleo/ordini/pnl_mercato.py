@@ -31,7 +31,7 @@ senza ``numberOfWinners`` il modello vale solo per i ``marketType`` a vincitore
 unico per definizione (altrimenti ``vincitori_ignoti``); ``posizione_per_json``
 da' la posizione per la UI con ``null`` al posto di ``NaN``.
 
-DECISIONE 5 DELL'UTENTE (10/10, "tutti i mercati", come Bet Angel e Geeks Toy):
+DECISIONE 5 DELL'UTENTE (10/10, "tutti i mercati", come BA e GT):
 il "se vince" PER SELEZIONE si calcola SEMPRE, su OGNI mercato, con la stessa
 formula: P&L degli abbinati del mercato se vince QUELLA selezione e PERDONO
 TUTTE le altre. Accanto, la QUALITA' del numero (``CalcoloPosizione.qualita``):

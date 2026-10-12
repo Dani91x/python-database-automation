@@ -1,5 +1,5 @@
 -- ============================================================================
--- live_ladder.sql — ladder LIVE per-mercato (Betting Toolkit / Bet Angel / Geeks Toy)
+-- live_ladder.sql — ladder LIVE per-mercato (BTK / BA / GT)
 -- Step 1 (pipeline dati ladder, SOLA LETTURA): il runner pubblica QUI la ladder
 -- PIENA di ogni mercato sottoscritto, costruita dai soli dati dello stream Betfair
 -- GIA' sottoscritto (recorder.latest_books) → ZERO chiamate API aggiuntive.

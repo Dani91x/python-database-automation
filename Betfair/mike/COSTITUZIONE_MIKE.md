@@ -1259,7 +1259,7 @@ posizione si chiude non c'è più niente da coprire.
 **Regola definitiva: su Betfair si piazza qualunque cifra, fino al centesimo.**
 Il minimo di giurisdizione (.it BACK 2,00 € / LAY 0,50 €) riguarda il place **diretto**, non
 l'ordine in sé: un ordine già esistente può essere **ridotto** sotto quella soglia. È la
-tecnica di Bet Angel, Fairbot e Betting Toolkit, e si chiama **place-and-trim**:
+tecnica di BA, FB e BTK, e si chiama **place-and-trim**:
 
 1. si **parcheggia** il minimo a una quota NON abbinabile (BACK 1000 / LAY 1.01), persistenza
    LAPSE e **senza** fill-or-kill (deve restare a riposo per poter essere tagliato);

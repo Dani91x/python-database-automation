@@ -150,7 +150,7 @@ K. **Cartelle di radice e codice morto**: inventario vive/morte/archivio con pro
 - **Banco**: un adattatore solo, sul contratto; `certifica`/`applica_bot`/replay professionale invariati per l'utente.
 - **Processi**: pochi, con supervisore, memoria propria, riavvio senza perdita (h24).
 
-## 5. Parita' 1:1 con i competitor (Bet Angel, Geeks Toy, Fairbot, Cymatic Trader, Bfexplorer, Traderline)
+## 5. Parita' 1:1 con i competitor (BA, GT, FB, CY, BX, TL)
 
 Ricerca su FONTI PUBBLICHE (manuali, documentazione, forum ufficiali, changelog), citate una per una; nessuna
 deduzione presentata come fatto. Per ciascun competitor una scheda: architettura desktop (processi, stream,

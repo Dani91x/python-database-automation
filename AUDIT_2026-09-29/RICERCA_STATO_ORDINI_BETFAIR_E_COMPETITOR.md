@@ -268,35 +268,35 @@ quanto sopra viene dalle pagine Confluence pubbliche, non da questo PDF.
 
 ## 3. Come fanno i competitor
 
-### 3.1 Bet Angel
+### 3.1 BA
 
 Trovato (guida utente ufficiale, pagine pubbliche):
 
 - «**Lapse** cancels unmatched bets if the market is suspended (when it goes live
   or when it's suspended for any reason, like goals), while **Keep** means the bet
   will not be cancelled if the market is suspended, also known as keep in play.»
-  — [Bet Angel — Bet persistence types (Wagertool mirror della guida)](https://www.wagertool.com/support/user-guide/bet-persistence-types)
+  — [BA — Bet persistence types (Wagertool mirror della guida)](https://www.wagertool.com/support/user-guide/bet-persistence-types)
 - «The default is for all bets to be cancelled when the market turns in play unless
-  you modify them with a Keep or Take SP feature.» — [Bet Angel — Unmatched Bets](https://www.betangel.com/user-guide/unmatched_bets.html)
+  you modify them with a Keep or Take SP feature.» — [BA — Unmatched Bets]([fonte rimossa])
 - «For unmatched bets in the unmatched bets area, if you wish your bet to be
   carried over to the in play market, simply select "keep", or [...] "Take SP".»
-  — [Bet Angel — Unmatched Bets Area](https://www.betangel.com/user-guide/unmatched_bets_area.html)
+  — [BA — Unmatched Bets Area]([fonte rimossa])
 - Sul place-and-trim (già nel repo, `PLACE_AND_TRIM_INDAGINE_2026-09-17.md` §2):
-  Bet Angel dichiara che il trucco sotto-minimo raddoppia i tempi in-play e "**cannot
+  BA dichiara che il trucco sotto-minimo raddoppia i tempi in-play e "**cannot
   guarantee** that bets below the minimum value will enter the market without error".
 
-**Punto notevole per la domanda dell'utente**: Bet Angel dichiara ESPLICITAMENTE, nella
+**Punto notevole per la domanda dell'utente**: BA dichiara ESPLICITAMENTE, nella
 sua guida, che la sospensione **per qualsiasi motivo (compresi i gol)** cancella gli
 ordini non abbinati con persistenza Lapse — è la conferma più diretta trovata fra i
 competitor di ciò che i nostri test dal vivo hanno misurato, anche se non è una fonte
 Betfair ufficiale.
 
-**Non trovato**: nessuna pagina pubblica di Bet Angel descrive un meccanismo di
-rilevamento "questa posizione è stata chiusa da un ordine piazzato fuori da Bet
-Angel" — probabilmente perché Bet Angel STESSO è l'interfaccia con cui si opera
+**Non trovato**: nessuna pagina pubblica di BA descrive un meccanismo di
+rilevamento "questa posizione è stata chiusa da un ordine piazzato fuori da
+BA" — probabilmente perché BA STESSO è l'interfaccia con cui si opera
 (non c'è un "fuori app" nello stesso senso del nostro caso).
 
-### 3.2 Gruss Betting Assistant
+### 3.2 GR
 
 Trovato:
 
@@ -308,34 +308,34 @@ Trovato:
 - Esiste una funzione COM che cancella tutte le bet non abbinate sul mercato
   visualizzato.
 
-Fonte: pagine del forum/manuale ufficiale Gruss (`gruss-software.co.uk`), trovate via
+Fonte: pagine del forum/manuale ufficiale GR (`[fonte rimossa]`), trovate via
 ricerca web; non ho scaricato il PDF completo della user guide (`userguide.pdf`),
 solo gli estratti indicizzati.
 
 **Non trovato**: nessun riferimento pubblico specifico a rilevamento di chiusure
-fatte fuori da Gruss, né a come Gruss distingue LAPSE da CANCELLED nell'interfaccia
+fatte fuori da GR, né a come GR distingue LAPSE da CANCELLED nell'interfaccia
 oltre alla dicitura generica "CANCELLED".
 
-### 3.3 FairBot (Betting.com / binteko.com / fairbot.com)
+### 3.3 FB ([fonte rimossa])
 
 Trovato:
 
-- «FairBot supports early warnings for an event start, partially or fully matched
+- «FB supports early warnings for an event start, partially or fully matched
   bets, a market turning in-play, or **a market suspending during in-play**.»
-  — [fairbot.com](https://fairbot.com/) / [binteko.com/fairbot](https://binteko.com/fairbot)
-- «FairBot includes a "Fill or Kill" tool [...] that cancels unmatched bets
+  — [fonte rimossa]]([fonte rimossa]) / [fonte rimossa]
+- «FB includes a "Fill or Kill" tool [...] that cancels unmatched bets
   automatically after a predefined number of seconds.»
 - «The "Take SP" option for unmatched bets will convert unmatched exchange bets to
   Betfair SP bets at the start of the event.»
 
-**Punto notevole**: FairBot avvisa l'utente **al momento stesso** in cui il mercato
+**Punto notevole**: FB avvisa l'utente **al momento stesso** in cui il mercato
 si sospende in-play, non solo dopo. È uno spunto concreto per la raccomandazione §6.
 
-**Non trovato**: dettagli tecnici su come FairBot legge/mostra `sizeLapsed` o
+**Non trovato**: dettagli tecnici su come FB legge/mostra `sizeLapsed` o
 `lapseStatusReasonCode`; la documentazione pubblica è commerciale/di alto livello,
 non un manuale tecnico dei campi.
 
-### 3.4 Geeks Toy
+### 3.4 GT
 
 Trovato (manuale utente pubblico):
 
@@ -345,11 +345,11 @@ Trovato (manuale utente pubblico):
 - «When the market goes In Play you can cancel the unmatched bet, change the
   unmatched bet to a Keep bet, or change the unmatched bet to a Take SP bet.»
 
-Fonte: [Geeks Toy — Unmatched Bets (manuale)](https://www.geekstoy.co.uk/UserManuals/EN/Unmatched%20Bets.html), forum ufficiale Geeks Toy.
+Fonte: [GT — Unmatched Bets (manuale)]([fonte rimossa]), forum ufficiale GT.
 
-**Non trovato**: nessuna descrizione pubblica specifica di come Geeks Toy gestisce
+**Non trovato**: nessuna descrizione pubblica specifica di come GT gestisce
 una sospensione per gol distinta dal turn-in-play, né di riconciliazione con bet
-piazzate fuori dal tool. La documentazione pubblica di Geeks Toy sul comportamento
+piazzate fuori dal tool. La documentazione pubblica di GT sul comportamento
 interno è la più scarsa dei quattro competitor esaminati.
 
 ### 3.5 Onestà sul limite della ricerca sui competitor
@@ -589,13 +589,13 @@ campo che Betfair manda già.
    (non solo alla ripresa dopo un crash, dove `motore_ordini.riprendi_da_diario`,
    righe 1624-1668, già lo fa bene). Fonte: [Betting Enums — InstructionReportStatus.TIMEOUT](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687455).
 
-5. **[DEDUZIONE, spunto dal competitor FairBot]** FairBot avvisa l'utente **al
+5. **[DEDUZIONE, spunto dal competitor FB]** FB avvisa l'utente **al
    momento stesso** in cui il mercato si sospende in-play (non solo alla riapertura).
    Mike oggi gestisce correttamente l'esito ALLA RIAPERTURA (`_sorveglia_sospensione`,
    `service.py:2872` e seguenti), ma — nei file letti in questo audit — non ho
    trovato un avviso a schermo emesso nell'istante stesso della sospensione
    (potrebbe esistere nel frontend/UI, fuori dal perimetro di sola lettura sul
-   backend di questa ricerca: vedi §7). Fonte competitor: [fairbot.com](https://fairbot.com/).
+   backend di questa ricerca: vedi §7). Fonte competitor: [fonte rimossa]]([fonte rimossa]).
 
 6. **[DEDUZIONE]** Il pattern "posizione di conto" (§5.4) oggi legge solo in LIVE e
    solo ogni `reconcile_every_s` (~30 s per partita): se l'utente chiude una
@@ -617,7 +617,7 @@ campo che Betfair manda già.
   iniziale): l'unico appiglio ufficiale è il `lapseStatusReasonCode=MKT_SUSPENDED`,
   che descrive un tentativo di match durante la sospensione, non la cancellazione a
   freddo di un ordine già in coda. Il fatto che questo avvenga davvero è misurato
-  dai nostri test dal vivo (17/09) e confermato dalla guida di Bet Angel (§3.1), non
+  dai nostri test dal vivo (17/09) e confermato dalla guida di BA (§3.1), non
   da un testo Betfair che io abbia trovato.
 - **Nessuna frase ufficiale** su come/se le bet piazzate manualmente sul sito sono
   visibili all'API esattamente come quelle via API (§2.9): ho dedotto dal
@@ -642,8 +642,8 @@ campo che Betfair manda già.
 - **Documentazione completa dei competitor**: ho letto solo pagine pubbliche
   trovate via ricerca web (manuali, forum, siti commerciali), non il codice
   sorgente (nessuno di questi tool è open source) né manuali PDF completi (es. il
-  `userguide.pdf` di Gruss, 900+ pagine secondo l'indice, non scaricato per intero).
-  Per Geeks Toy in particolare la documentazione pubblica sul comportamento interno
+  `userguide.pdf` di GR, 900+ pagine secondo l'indice, non scaricato per intero).
+  Per GT in particolare la documentazione pubblica sul comportamento interno
   in caso di sospensione/gol è scarsa o assente.
 - **`Betting Type Definitions`** (id 2687465): pagina molto lunga (definizioni di
   decine di tipi); ho letto solo le sezioni con `OrderStatus`/`PersistenceType`/

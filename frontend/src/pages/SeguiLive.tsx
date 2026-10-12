@@ -85,7 +85,7 @@ function newerLiveNow(prev: LiveNowRow | null, next: LiveNowRow): LiveNowRow {
     return Date.parse(next.updated_at) >= Date.parse(prev.updated_at) ? next : prev;
 }
 
-// Strumenti della colonna DESTRA del terminal (UN tab attivo alla volta, stile Bet Angel:
+// Strumenti della colonna DESTRA del terminal (UN tab attivo alla volta, stile BA:
 // One-click | Dutching | Bookmaking | ... come tab, mai tutti i pannelli impilati).
 type ToolKey = 'trading' | 'dutching' | 'risk' | 'xhedge' | 'scalper' | 'chart' | 'depth';
 const TOOL_TABS: { key: ToolKey; label: string }[] = [
@@ -117,7 +117,7 @@ function TerminalModeBadge({ mode }: { mode: PanelMode }) {
     return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/60 text-[10px] font-black">OFF</span>;
 }
 
-// Sezione "Live Trading" del dettaglio Segui Live: COCKPIT MULTI-MERCATO stile Bet Angel.
+// Sezione "Live Trading" del dettaglio Segui Live: COCKPIT MULTI-MERCATO stile BA.
 // Una TAB per mercato dell'evento (dai mercati di live_now, STESSA fonte del tabellone);
 // il mercato attivo viene ricordato per-evento (WORKSPACE: '@/lib/workspace' — tab attivo +
 // quali pannelli sono aperti/collassati, salvati in localStorage per-evento). Per il mercato
@@ -498,7 +498,7 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                 prezzi fermi. Detto in rosso sopra a tutto, con il segnale del runner. */}
             <FlussoStreamBanner sport="calcio" marketId={marketId ?? null} />
             {/* ================= TOP BAR STICKY del terminal =================
-                Canone dei tool pro (Bet Angel/Fairbot): badge modalità, book% back/lay,
+                Canone dei tool pro (BA/FB): badge modalità, book% back/lay,
                 freschezza dati, azioni d'emergenza SEMPRE visibili (cash-out + kill). */}
             <div className="sticky ds-v2-non-sticky top-16 z-40 rounded-xl border border-white/10 bg-black/80 backdrop-blur-xl px-3 py-2 flex items-center gap-3 flex-wrap">
                 <TerminalModeBadge mode={mode} />
@@ -683,7 +683,7 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                 </div>
             )}
 
-            {/* TABS multi-mercato (stile Bet Angel) + link al workspace Multi-ladder */}
+            {/* TABS multi-mercato (stile BA) + link al workspace Multi-ladder */}
             <div className="flex items-stretch gap-1 flex-wrap border-b border-white/5 overflow-x-auto">
                 {markets.map(m => {
                     const active = m.market_id === marketId;

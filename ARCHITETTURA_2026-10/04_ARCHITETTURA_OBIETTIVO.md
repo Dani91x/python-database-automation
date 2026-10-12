@@ -875,8 +875,8 @@ confronto riga per riga contro l'RPC (G §5).
 
 ## 7. Latenze obiettivo per tratta, con il confronto competitor
 
-Il metro pubblico dei competitor e' solo questo: refresh 20 ms (Bet Angel, BA-PDF r.9956-9966), conflation 0 ms (Cymatic,
-CY-STREAM), polling 150-200 ms (Geeks Toy, Bet Angel). Nessuno dichiara la latenza decisione -> risposta di `placeOrders`, ne'
+Il metro pubblico dei competitor e' solo questo: refresh 20 ms (BA, BA-PDF r.9956-9966), conflation 0 ms (CY,
+CY-STREAM), polling 150-200 ms (GT, BA). Nessuno dichiara la latenza decisione -> risposta di `placeOrders`, ne'
 CPU/RAM in esercizio (02 §2). Dove oggi non c'e' misura, l'obiettivo e' prima di tutto MISURARE con lo strumento indicato (tappa T0
 di 05).
 
@@ -884,7 +884,7 @@ di 05).
 |---|---|---|---|---|---|
 | L1 | Betfair `pt` -> ricezione locale | non misurabile: il raw non ha `rx` (07 §1.3); orologio del PC +844 ms, w32time fermo (07 1e) | n.d. | misurata; scarto dell'orologio entro 100 ms (I §7); nessun avviso flumine >2 s fuori dalle risottoscrizioni (oggi 0 fuori da 4 minuti di sottoscrizione a caldo, 07 §1.3) | `rx` in `raw_listener.py:211`; `m00b_ntp_offset.py` |
 | L2 | messaggio -> bot ospite (in-process) | 0 rete (D §1.1); tempo book -> `place_order` NON misurato (E4 §7) | n.d. | misurato e fissato dopo T0; replay non piu' lento (12.559 tick/s scalper, `calcio_dopo_5.txt`) | sonda del banco + py-spy |
-| L3 | messaggio -> pubblicazione ladder | 0-200 ms di attesa (poll 200 ms, `config_stream.py:74`); DB nello stesso thread (`runner.py:743-755`) | BA 20 ms; Cymatic 0 ms | a ogni cambio, minimo 20 ms (A P3): pari al refresh di BA | `ts_pub_ms - pt` in `runner.py:745` (07 §2.4 punto 3) |
+| L3 | messaggio -> pubblicazione ladder | 0-200 ms di attesa (poll 200 ms, `config_stream.py:74`); DB nello stesso thread (`runner.py:743-755`) | BA 20 ms; CY 0 ms | a ogni cambio, minimo 20 ms (A P3): pari al refresh di BA | `ts_pub_ms - pt` in `runner.py:745` (07 §2.4 punto 3) |
 | L4 | canale locale -> UI | loopback 0,635 ms p50 / 4,12 ms p99 in laboratorio (07 2b); `json.dumps` 167 us p50 | n.d. | non peggio di oggi sul canale vero (il laboratorio e' un limite inferiore) | marca nel trasporto della UI |
 | L5 | riga scanner -> decisione dei bot decisori | freno 2,5 s + giro 3,16 s (Safe) + 92-307 ms PostgREST storico (E3 §7); giro Mike >= 1,0 s (D §7) | n.d. | < 0,5 s sul canale (E3 §7), 0 rete; il conflate 1000 dello scanner resta finche' l'utente non decide (U-01) | `ricevuto_ms - ts_pub_ms` (07 §2.4 punto 5) |
 | L6 | decisione -> porta ordini | coda DB p50 492 / p95 2.481 / p99 26.636 ms (paper, n=38, 07 §3.2); canale 84-194 ms (n=3) | n.d. | p50 < 150 ms sul canale, **da misurare** (C §7); 0 rete DB | `LIVE_TEMPI_ORDINE=1` + `leggi_tempi_ordine.py` |
@@ -895,7 +895,7 @@ di 05).
 | L11 | scrittura dello stato del denaro nel ciclo | `insert_trade` sincrono: >= 21,3 ms di rete + query (07 §4.3) | n.d. | accodamento ~15 us; FULL sul thread di scrittura, p50 0,6 ms (07 §6) | `m06` esteso |
 | L12 | regolamento Betfair -> numero a schermo | fino a 35 s (cache) o 300 s (giro ordini), 5-20 s se forzato (F §7) | n.d. | entro 20 s (F §7) | `pnl_letto_at` contro `settled_at` |
 | L13 | clic UI -> stato visibile | poll 1,5-2 s o realtime con debounce 1,2-1,5 s (J §7) | n.d. | un evento dal nucleo | marca dal clic all'evento `bot:<id>` |
-| L14 | «Applica bot» e certificazione | 258-314 s; Mike 728 s; scalper 6.916 s su 47 replay (H §7, CANT 11) | Gruss: replay a pagamento, senza tempi | 30 s; certificazione 300 s, tetto 600 (PSB §6.9, CANT 11) | `certifica`, riga TEMPO TOTALE |
+| L14 | «Applica bot» e certificazione | 258-314 s; Mike 728 s; scalper 6.916 s su 47 replay (H §7, CANT 11) | GR: replay a pagamento, senza tempi | 30 s; certificazione 300 s, tetto 600 (PSB §6.9, CANT 11) | `certifica`, riga TEMPO TOTALE |
 | L6b | [revisione critica 08/10] diario write-ahead (flush+fsync) prima di ogni `place_order` (C riga 73, `motore_ordini.py:183-254,1424`) | non misurato nel percorso; laboratorio: p99 9,7-37 ms, max 0,24-0,89 s (6.1) | n.d. | p50/p99/max misurati in T0A dentro L6; p99 fissato dopo la misura; supporto U-81 (R04) | marca prima/dopo `fsync` in `_pre_invio` |
 | L15 | [revisione critica 08/10] CPU per servizio, 24 h | non misurata (07 §5.1) | n.d. (02 §2) | provvisorio I §7: app <= 100% di un core mediano, nessun servizio > 30% p95 a riposo (R12) | `psutil` nel monitor (T0A) |
 | L16 | [revisione critica 08/10] RAM per servizio, 24 h | non misurata | n.d. | provvisorio I §7: crescita <= 5% fra 2a e 24a ora; totale <= 25% di 15,8 GB | `monitor_metrics.rss` |

@@ -16,7 +16,7 @@ export function lockedPnlAt(price: number, win: number, lose: number): number {
 // Un ordine NON abbinato risiede sul lato OPPOSTO del book (un tuo BACK è "disponibile al
 // LAY" per gli altri; un tuo LAY è "disponibile al BACK"). La size disponibile a quel
 // livello include il tuo ordine: la coda altrui ≈ disponibile_a_quel_livello − tua_size.
-// È la stima live mostrata dai ladder pro (Geeks Toy): non è la posizione esatta in coda
+// È la stima live mostrata dai ladder pro (GT): non è la posizione esatta in coda
 // (Betfair non la espone) ma scende mentre il livello viene tradato. >0 solo se hai un
 // ordine non abbinato a quel prezzo; restingAvail è layAvail per un BACK, backAvail per un LAY.
 export function piqAhead(mySize: number, restingAvail: number): number {
@@ -76,7 +76,7 @@ export function nextPreset(presets: readonly number[], current: number): number 
 }
 
 // ---------------------------------------------------------------------------
-// Proiezione P&L di un PLACE (popup di conferma, stile Bet Angel/Fairbot).
+// Proiezione P&L di un PLACE (popup di conferma, stile BA/FB).
 // PURA: dato lato, prezzo e importo (stake, o responsabilità per i LAY in
 // liability-mode) ritorna cosa succede se la selezione VINCE o PERDE.
 //   BACK  €S @ P → vince: +S×(P−1) ; perde: −S

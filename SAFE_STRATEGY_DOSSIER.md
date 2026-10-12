@@ -127,7 +127,7 @@ Limiti accertati: **200 mercati per connessione stream** (default; il BDP può a
 richiesta via email), **fino a 10 connessioni per app key**, `SUBSCRIPTION_LIMIT_EXCEEDED` se si
 sfora, i mercati CLOSED vengono esclusi dal conteggio al re-subscribe (job Betfair ogni 5', eviction
 dopo 1h). REST: peso ≤200 punti/richiesta (EX_BEST_OFFERS=5 → noi 25 mercati/chiamata = 125).
-Come fanno i concorrenti (Bet Angel/BFExplorer): catalogo via REST, stream **per marketIds SOLO sui
+Come fanno i concorrenti (BA/BX): catalogo via REST, stream **per marketIds SOLO sui
 mercati monitorati**, **più connessioni** quando si supera il limite ("I have 6 on the go 24/7").
 Implementato in `stream.py` (`MarketStreamPool`):
 - [x] ✅ sharding STABILE per market_id (hash mod N): un evento nuovo ricrea la subscription di UNO shard
@@ -233,7 +233,7 @@ package.json o Electron. Lanciare `desktop/release/AlphaScore Trading 1.1.0.exe`
 - [ ] 🔎 primo avvio 1.1.0: nel log `[bootstrap] main.js VIVO dal repo`, barra "Scanner attivo" entro ~30s,
       pulsanti 📺/📊 con attenuazione, SSO OK.
 
-## 12. Ottimizzazione processi e riuso dei dati (09/09 sera) — "come Bet Angel"
+## 12. Ottimizzazione processi e riuso dei dati (09/09 sera) — "come BA"
 Principio: lo scanner Safe Strategy è il FEED UNICO (stream pool + IPS batch); tutti gli altri
 processi LEGGONO da lui e chiamano Betfair solo come fallback o per ciò che è davvero loro.
 

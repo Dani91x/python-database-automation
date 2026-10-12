@@ -9,7 +9,7 @@ index 6fccc45..d7e42a3 100644
 -    "cover_form": ("back_over45", str, None, None, ("lay_under45", "back_over45")),
 +    "cover_form": ("lay_under45", str, None, None, ("lay_under45", "back_over45")),
      # importi ESATTI al centesimo (copertura 3.61, stake 1.23): sotto-minimo / fuori passo via
-     # Betfair/stream/trading/submin.py (place-and-trim, come Bet Angel/Fairbot). False = legalizza .it
+     # Betfair/stream/trading/submin.py (place-and-trim, come BA/FB). False = legalizza .it
      "exact_sizes": (True, bool, None, None, None),
 diff --git a/Betfair/mike/tests/conftest.py b/Betfair/mike/tests/conftest.py
 index 543834f..4e78d61 100644

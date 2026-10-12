@@ -70,7 +70,7 @@ calcio e tennis su cartelle diverse. Lavori aperti per l'ondata 2: W1-C2 "se vin
 dal cloud appena cambiano (non ogni 5 min); allineamento di `segnala_errore` all'attesa del login.
 
 **10/10 - PRINCIPIO DELL'UTENTE, VINCOLANTE: «Tutto deve essere come i competitor! Voglio un prodotto professionale!»**
-Metro di accettazione di OGNI tappa dell'ondata 2: la parita' con i competitor (Bet Angel, Geeks Toy, Cymatic, Fairbot, Gruss),
+Metro di accettazione di OGNI tappa dell'ondata 2: la parita' con i competitor (BA, GT, CY, FB, GR),
 voce per voce della tabella `02_COMPETITOR.md` par. 2, misurata con la stessa metrica (messaggio Betfair -> ladder a schermo;
 decisione -> risposta di placeOrders). Primo lavoro dell'ondata 2: la MATRICE DI PARITA' - per ogni voce (stream ovunque, ladder a
 20 ms, tutti gli ordini del conto sul ladder con autore e P&L, fill or kill, tick offset, stop/trailing, green-up, dutching,

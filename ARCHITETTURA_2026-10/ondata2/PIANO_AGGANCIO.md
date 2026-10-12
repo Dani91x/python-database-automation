@@ -316,7 +316,7 @@ l'utente quando accende l'ombra (proposta per comparto nei paragrafi).
 |---|---|---|---|---|---|
 | 0 | Passo 0: lavori aperti nel nucleo (solo cloud, nessun aggancio) | - | nullo | prepara le decisioni 2, 3, 5, 10 | le risposte del 10/10 chiedono modifiche ai comparti prima di agganciarli |
 | 1 | W1-A1 sessione e REST (T5) | tappa 0 | medio | una sessione, nessun ban, REST con pesi e tetti | primo del percorso critico (`05` par. 3); base di tutti (token per C1, A2, C2) |
-| 2 | W1-A2 ladder (T6) | T5 (grafo; stesso `runner.py`) | basso (solo UI) | ladder a 20 ms come Bet Angel | priorita' dell'utente; nessun bot cambia ingresso |
+| 2 | W1-A2 ladder (T6) | T5 (grafo; stesso `runner.py`) | basso (solo UI) | ladder a 20 ms come BA | priorita' dell'utente; nessun bot cambia ingresso |
 | 3 | W1-C1 porta (T10) | T5, G1 (archivio, gia' integrato nel nucleo) | alto (soldi) | dedup che sopravvive, minimi unici, rifiuto desktop non multiplo di 0,50 | grafo T5 -> T10 -> T11 |
 | 4 | W1-C2 + stream ordini del conto (T11) | T10, A1, host | medio (sola lettura) + alto (sostituzione in LIVE) | TUTTI gli ordini sul ladder con autore, abbinato, prezzo medio, «se vince» | chiude il Traguardo 1 |
 | 5 | W1-G2 client cloud e cache (T2, T7) | tappa 0 | basso-medio | dati del cloud aggiornati appena ricalcolati; nessuna RPC nel giro di Omega | T2 precede T8; tocca `mike/service.py` e `omega_service.py` come T10: dopo |

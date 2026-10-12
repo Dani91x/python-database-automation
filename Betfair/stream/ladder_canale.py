@@ -1,7 +1,7 @@
 """ladder_canale.py - cadenza del ladder: CANALE LOCALE al tick, DB a 2 s (23/09).
 
 Regola dell'utente: tutto cio' che il trader vede passa dal canale al ms, come
-Bet Angel/Fairbot (refresh 20-200 ms). Fino al 23/09 il ladder_worker girava ogni
+BA/FB (refresh 20-200 ms). Fino al 23/09 il ladder_worker girava ogni
 ``LADDER_PUBLISH_SEC`` (2 s) e pubblicava sul canale solo a quel ritmo: il canale
 precedeva il DB ma era lento quanto lui.
 
@@ -38,7 +38,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, Tuple
 
-# Cadenza minima del worker: sotto 20 ms non si scende mai (Bet Angel/Fairbot
+# Cadenza minima del worker: sotto 20 ms non si scende mai (BA/FB
 # stanno fra 20 e 200 ms). Vale anche per canale_ms = 0 ("a ogni cambiamento"):
 # due book dello stesso mercato arrivati a meno di 20 ms l'uno dall'altro si
 # fondono nell'ultimo (stato completo: vince il piu' recente, nessuno perso a

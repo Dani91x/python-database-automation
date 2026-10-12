@@ -1,7 +1,7 @@
 // ============================================================================
 // MultiTradeForm — Scheda Trade MULTIPLA che PIAZZA ORDINI REALI su Betfair.
 // Riceve le selezioni spuntate dallo snapshot (1 card per selezione). Order-ticket
-// in stile software pro (Bet Angel): lato Back/Lay, quota, stake o responsabilità,
+// in stile software pro (BA): lato Back/Lay, quota, stake o responsabilità,
 // persistenza a inizio live (Cancel/Keep/Take SP), Fill-or-Kill. Flusso in 3 fasi:
 //   1) EDIT     — compili gli ordini.
 //   2) CONFIRM  — riepilogo + cap massimo stake (digitato da te) + conferma esplicita.

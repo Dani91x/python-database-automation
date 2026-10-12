@@ -211,7 +211,7 @@ PARAM_SPEC: dict[str, Spec] = {
     # successivo.
     "cover_form": ("lay_under45", str, None, None, ("lay_under45", "back_over45")),
     # importi ESATTI al centesimo (copertura 3.61, stake 1.23): sotto-minimo / fuori passo via
-    # Betfair/stream/trading/submin.py (place-and-trim, come Bet Angel/Fairbot). False = legalizza .it
+    # Betfair/stream/trading/submin.py (place-and-trim, come BA/FB). False = legalizza .it
     "exact_sizes": (True, bool, None, None, None),
     # ⚠️ ORDINE DELL'UTENTE 17/09 (reperto 25) — IL FRENO SUI RIFIUTI RIPETUTI.
     # Bnei Yehuda v Maccabi Herzliya, evento 36077571: la copertura Over 4.5

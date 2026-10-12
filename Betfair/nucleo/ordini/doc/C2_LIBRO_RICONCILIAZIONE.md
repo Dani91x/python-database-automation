@@ -41,7 +41,7 @@ confronta conto, specchio, blotter e diario e scrive le divergenze, senza toccar
   ordini non abbinati NON entrano nell'esposizione, la UI lo dice). Per la UI: `pnl_mercato.posizione_per_json` (`NaN` ->
   `null`). Senza `numberOfWinners` il modello vale solo per i `marketType` a vincitore unico per definizione
   (`vincitori_ignoti`). Una riga di coda prova l'autore SOLO se ha piazzato quell'ordine (mai cancel/replace).
-- **Decisione 5 dell'utente (10/10), «tutti i mercati», come Bet Angel e Geeks Toy**: il «se vince» PER SELEZIONE (o
+- **Decisione 5 dell'utente (10/10), «tutti i mercati», come BA e GT**: il «se vince» PER SELEZIONE (o
   per LINEA, selezione + handicap) si calcola su OGNI mercato con la stessa formula: P&L degli abbinati se vince quella
   selezione e perdono tutte le altre. `CalcoloPosizione.qualita`:
   - `esatto`: mercato a vincitore unico (`bettingType` ODDS, un vincitore o `marketType` a vincitore unico per

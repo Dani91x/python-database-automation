@@ -502,7 +502,7 @@ ha `selectionId`, `ifWin`, `ifLose`, `ifPlace` e NESSUN handicap: l'API non sa n
 **Esito: non verificabile -> `per_selezione` con nota** (`asiatico_push_non_modellato`): il numero e' per LINEA (vince
 quella linea, perdono tutte le altre; push e mezze vincite non entrano nel numero), l'esposizione e' la stima prudente,
 che invece li regge (oracolo del regolamento asiatico nei test, quarti di linea compresi). Da verificare alla prima
-occasione sul sito Betfair o su Bet Angel con un asiatico vero (vedi «non verificato», sotto).
+occasione sul sito Betfair o su BA con un asiatico vero (vedi «non verificato», sotto).
 
 **Test** (`test_c2_tutti_i_mercati.py`, 16 nuovi; righe vere = `marketDefinition` REGISTRATE in `registrazioni_banco/`
 passate dalla `MarketBookCache` VERA, ordini = `CurrentOrder` VERI nel `LibroConto`):
@@ -551,7 +551,7 @@ codice finale: rosse. **TOTALE rosse 195/195 (guasti 0)**, uscita in `mutazioni_
 Test W1-C2: **280 verdi** (prima 265); test della cartella `ordini`: **510 verdi** (prima 479). Suite intera (una corsa
 completa, alla fine, codice e test finali di D-C3 e D-C5): **12.964 verdi, 0 rossi, 101 saltati, 6 xfailed** (719 s).
 
-**Cosa NON ho potuto verificare**: come Betfair (sito) e Bet Angel/Geeks Toy mostrano DAVVERO il P&L di un asiatico e di
+**Cosa NON ho potuto verificare**: come Betfair (sito) e BA/GT mostrano DAVVERO il P&L di un asiatico e di
 un `LINE` (nessuna fonte nel repo; nessuna rete in questa ondata): `per_selezione` con nota, come chiesto. Nessun mercato
 asiatico, `LINE` o piazzato nelle registrazioni: per quelli la definizione e' quella vera registrata coi soli campi del
 tipo cambiati (dichiarato nel docstring del test). `abbinato_back/lay` e prezzi medi del contratto restano per

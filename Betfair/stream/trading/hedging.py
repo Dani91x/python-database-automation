@@ -1,6 +1,6 @@
 """hedging.py — planner PURO di copertura/flatten multi-posizione (Fase 5).
 
-Per chi: l'azione ``cashout_all`` (global cash-out, benchmark Betting Toolkit) e la UI usano
+Per chi: l'azione ``cashout_all`` (global cash-out, benchmark BTK) e la UI usano
 ``plan_flatten`` per chiudere IN UN COLPO tutte le posizioni aperte — di un mercato o
 dell'INTERO evento (più mercati) — riusando ESATTAMENTE la matematica di trading/greenup
 (``compute_greenup``, che pareggia W e L al best opposto). Nessun ordine viene piazzato qui:
@@ -130,7 +130,7 @@ def net_open_pnl(
 # se le posizioni sono su più runner). Qui invece si risolve UN sistema unico sull'INTERO
 # mercato: una gamba per runner (BACK dove serve backare, LAY dove serve layare) tale che
 # il P&L FINALE sia lo STESSO su OGNI esito — è ciò che fa il pulsante "Cash Out" di
-# Betfair e la "cash out all" di Bet Angel.
+# Betfair e la "cash out all" di BA.
 #
 # MATEMATICA (esatta, nessuna approssimazione):
 #   P_k = payoff del MERCATO se vince il runner k, PRIMA della copertura

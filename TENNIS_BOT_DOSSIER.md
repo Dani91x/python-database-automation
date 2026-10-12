@@ -36,7 +36,7 @@
 ## 1. Obiettivo del progetto + verità sull'edge
 
 **Obiettivo dichiarato:** costruire uno strumento di trading tennis su **Betfair Exchange**
-di livello professionale (parità con Bet Angel / Geeks Toy / Fairbot / Cymatic / Betting
+di livello professionale (parità con BA / GT / FB / CY / Betting
 Toolkit), con **bot armabili** (esecuzione automatica) e un **terminale** per il trading
 manuale + supervisione, alimentato **solo** da dati Betfair via backend (credenziali mai nel
 browser).
@@ -129,7 +129,7 @@ Betfair e scrivono su Supabase. Il browser non vede mai segreti.
     (provider → Betfair → IPS, alcuni secondi) + il **ritardo in-play** dei mercati (1–12s).
   - **Copertura:** Betfair ha **rimosso le WTA** dal feed punteggi (cambio fornitore), **ATP resta**,
     **ITF** è discontinuo → sui tornei minori il punteggio può mancare. Il parser ritorna `None`
-    → sistema **fail-safe** (i bot score-driven non entrano). (Fonti: [forum tennis score], [Bet Angel WTA] §16.)
+    → sistema **fail-safe** (i bot score-driven non entrano). (Fonti: [forum tennis score], [BA WTA] §16.)
 - **Real-time "vero" (sub-secondo, per-punto):** NON esiste da Betfair (nessuno stream punteggi).
   Richiederebbe un **feed terzo licenziato** — Sportradar, **Tennis Data Innovations (TDI, dati ufficiali
   ATP/WTA)**, Genius Sports — da scrivere in `tennis_live_now.score` al posto/oltre l'IPS. Scelta di
@@ -608,8 +608,8 @@ cd frontend && npx vitest run     # 363 test
 - **Betfair Exchange API — guida ufficiale:** https://developer.betfair.com/exchange-api/
 - **betfairlightweight — inplayservice.py (get_scores / get_event_timeline, endpoint ips.betfair.com):** https://github.com/betcode-org/betfair/blob/master/betfairlightweight/endpoints/inplayservice.py
 - **Betfair Developer Forum — how to get current tennis score:** https://forum.developer.betfair.com/forum/sports-exchange-api/exchange-api/30495-how-to-get-current-tennis-score
-- **Bet Angel forum — Betfair Tennis Scores API: WTA no longer available:** https://forum.betangel.com/viewtopic.php?t=22747
-- **Bet Angel — Tennis Scores:** https://www.betangel.com/tennis-scores/
+- **BA forum — Betfair Tennis Scores API: WTA no longer available:** [fonte rimossa]
+- **BA — Tennis Scores:** [fonte rimossa]
 - **flumine** (framework trading su stream, v2.13.11): https://github.com/betcode-org/flumine
 - Feed real-time terzi (opzione, non integrati): Sportradar, **Tennis Data Innovations (TDI)** (dati ufficiali ATP/WTA), Genius Sports.
 
@@ -638,7 +638,7 @@ cd frontend && npx vitest run     # 363 test
   `tennis_swing_bot.py`.
 
 ### Fonti interne (documenti del repo)
-- `TOOL_DEFINITIVO_ROADMAP.md` — roadmap parità con Bet Angel/Geeks Toy/Fairbot/Cymatic/Betting Toolkit (design terminale).
+- `TOOL_DEFINITIVO_ROADMAP.md` — roadmap parità con BA/GT/FB/CY/BTK (design terminale).
 - `HANDOFF_TOOL_DEFINITIVO.md`, `LIVE_TRADING_SOFTWARE_PLAN.md`, `HANDOFF_LIVE_TRADING.md` — piani/architettura trading software.
 - `Betfair/stream/trading/INTERFACES.md` — contratto ordini/interfacce (mirrorato per il tennis).
 - `Betfair/stream/scalper/SCALPER_BOT_DOSSIER.md` — dossier scalper calcio (template).

@@ -1,6 +1,6 @@
 """W1-C2 - decisione 5 dell'utente (10/10/2026): il "se vince" sul ladder per OGNI mercato.
 
-Come i competitor (Bet Angel, Geeks Toy): il "se vince" PER SELEZIONE (o per LINEA,
+Come i competitor (BA, GT): il "se vince" PER SELEZIONE (o per LINEA,
 selezione + handicap) si calcola su ogni mercato con la stessa formula: P&L degli
 abbinati se vince quella selezione e perdono tutte le altre. Accanto la qualita':
 ``esatto`` (vincitore unico: il numero e' l'esito del mercato, esposizione esatta) o

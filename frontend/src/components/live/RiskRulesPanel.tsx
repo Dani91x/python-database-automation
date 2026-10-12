@@ -1,5 +1,5 @@
 // ============================================================================
-// RiskRulesPanel — automazione del rischio in stile Bet Angel (Fase 3).
+// RiskRulesPanel — automazione del rischio in stile BA (Fase 3).
 // Arma regole SOFTWARE-SIDE su un mercato: offset (presa profitto), stop-loss,
 // take-profit e trailing-stop. Selezione, lato (back/lay), prezzo/size d'ingresso
 // e i parametri pertinenti (tick / % / importo P&L) con ANTEPRIMA LIVE calcolata

@@ -50,7 +50,7 @@ from Betfair.stream.recorder import serialize_book
 
 logger = logging.getLogger(__name__)
 
-#: coalescenza minima per mercato (ms): Bet Angel / Fairbot stanno a 20-200 ms
+#: coalescenza minima per mercato (ms): BA / FB stanno a 20-200 ms
 INTERVALLO_MIN_MS = 20
 #: il thread del ladder si sveglia almeno cosi' spesso per accorgersi di un
 #: canale che torna ad avere client (oggi: il giro di 200 ms del worker)

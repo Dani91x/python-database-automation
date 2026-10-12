@@ -48,7 +48,7 @@ sotto il minimo che resta a riposo sul book.** Cio' che fallisce e' SOLO il grad
 ri-piazzamento passa dalla validazione di piazzamento (minimo, bet delay in-play, stato
 del mercato) e un residuo sotto minimo non la supera.
 
-Bet Angel usa **la nostra identica sequenza** e dichiara essa stessa che «cannot guarantee
+BA usa **la nostra identica sequenza** e dichiara essa stessa che «cannot guarantee
 that bets below the minimum value will enter the market without error», e che in-play
 serve il doppio del tempo perche' sono due transazioni; sul forum raccomandano il minimo
 ufficiale quando si opera in-play. Non esiste una sequenza magica dei competitor.

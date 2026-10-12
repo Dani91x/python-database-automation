@@ -1,5 +1,5 @@
 // ============================================================================
-// servants.ts — MACRO registrabili ("servants" di Bet Angel, roadmap C27).
+// servants.ts — MACRO registrabili ("servants" di BA, roadmap C27).
 // Una macro = sequenza di AZIONI da vocabolario FISSO, salvata in localStorage e
 // richiamata con i tasti 1-9 sulla selezione sotto il cursore. Logica PURA:
 // niente React/rete — l'esecuzione la fa il ladder traducendo gli step in intent

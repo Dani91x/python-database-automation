@@ -39,7 +39,7 @@ senza tappa). **Nessuna funzionalita' si perde.**
   per i punteggi, un solo supervisore dei processi (da 18 processi a 8).
 - **I pannelli della app nascono dal contratto dei bot** (come gia' oggi il catalogo del replay): un parametro si scrive in un
   posto solo e non puo' piu' divergere fra bot e schermo (oggi lo scalper ha gia' un valore di serie diverso fra i due).
-- **Il ladder alla app** passa da un aggiornamento ogni 200 ms a un aggiornamento a ogni cambio (Bet Angel dichiara 20 ms).
+- **Il ladder alla app** passa da un aggiornamento ogni 200 ms a un aggiornamento a ogni cambio (BA dichiara 20 ms).
 
 ## 4. Cosa resta identico
 

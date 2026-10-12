@@ -4,7 +4,7 @@ Per chi: il worker (azione ``dutch``) e la UI usano queste funzioni per ripartir
 totale su N selezioni in modo che il PROFITTO sia UGUALE qualunque selezione vinca (back
 dutching) o per fare il "bookmaker" layando N selezioni a liability/profitto uguale.
 
-Logica pura, nessun I/O: testabile a unità. Standard di settore (Bet Angel / Fairbot):
+Logica pura, nessun I/O: testabile a unità. Standard di settore (BA / FB):
   * BACK dutching, profitto uguale:  s_i = T · (1/p_i) / Σ(1/p_j)
         profitto (qualunque vinca) = T · (1 − B)/B   con B = Σ(1/p_i) = "book" (in frazione)
         → profitto > 0  ⟺  book B < 1 (cioè < 100%).

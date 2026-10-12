@@ -7,7 +7,7 @@ Perche' esiste
 --------------
 Betfair rifiuta un place DIRETTO sotto il minimo di giurisdizione (.it BACK 2,00
 / LAY 0,50), ma NON rifiuta un ordine gia' esistente RIDOTTO sotto quella soglia.
-E' la tecnica di Bet Angel, Fairbot e Betting Toolkit:
+E' la tecnica di BA, FB e BTK:
 
   1. si parcheggia il MINIMO a una quota NON abbinabile (BACK 1000 / LAY 1.01);
   2. si taglia col cancel parziale fino all'importo voluto;

@@ -1,5 +1,5 @@
 // ============================================================================
-// /market-watch — D30: Market Watch multi-evento stile Fairbot. Una riga per
+// /market-watch — D30: Market Watch multi-evento stile FB. Una riga per
 // evento seguito con badge stato, P&L MTM (eventPnl, prezzi da live_now.state),
 // esposizione worst-case e cash-out EVENTO (SOLO calcio: il worker tennis non
 // supporta il cash-out → capability gating, MAI promesse bugiarde).

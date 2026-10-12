@@ -269,7 +269,7 @@ Fuori dal perimetro dei file elencati ma e' "dove si vedono" i bot: `pages/Contr
 5. **`LiveTradingSection`** (se ci sono mercati) — il terminal (2.5).
 6. **Overview** (`grid lg:grid-cols-3`): `LiveMarketBoard` (col-span 2, sez. 4.8) + `LiveSignalPanel` (col-span 1, sez. 4.10).
 
-### 2.5 LiveTradingSection — "COCKPIT MULTI-MERCATO stile Bet Angel"
+### 2.5 LiveTradingSection — "COCKPIT MULTI-MERCATO stile BA"
 Props: `markets` (da `live_now.state.markets`), `orderMode`, `eventName` = "{home} vs {away}", `eventId`, `updatedAt`, `clock{openDate,minute,scoreHome,scoreAway,inplay}`. Il mercato attivo di default = Match Odds (`market_type==='MATCH_ODDS'` o nome /match odds/i), poi ricordato per-evento nel workspace (localStorage `workspace:{eventId}`: pannelli, `activeMarketId`, `columnsProfile`, `centerView`). Modalita' (`off|paper|live`) da `live_now.state.order_mode`, fail-safe OFF.
 
 **Ordine di render**
@@ -314,7 +314,7 @@ Props: `markets` (da `live_now.state.markets`), `orderMode`, `eventName` = "{hom
 ## 3. LadderView e GridView (nucleo del trading; condivisi calcio/tennis/multi/popout)
 
 ### 3.1 LadderView (`components/live/LadderView.tsx`, ~2750 righe)
-**Scopo**: ladder per-mercato fedele a Bet Angel/Geeks Toy/Betting Toolkit: profondita' back/lay, scala tick con prezzo al centro, LTP evidenziato, volume tradato per livello, TUOI ordini non abbinati sui livelli, WOM, P&L-per-livello (greening), PIQ, EV, one-click, drag-to-move, strumenti armati, macro.
+**Scopo**: ladder per-mercato fedele a BA/GT/BTK: profondita' back/lay, scala tick con prezzo al centro, LTP evidenziato, volume tradato per livello, TUOI ordini non abbinati sui livelli, WOM, P&L-per-livello (greening), PIQ, EV, one-click, drag-to-move, strumenti armati, macro.
 
 **Props principali**: `marketId`, `marketName`, `orderMode` (OFF|PAPER|LIVE), `handicap=0`, `sport` ('calcio'|'tennis'; sceglie il profilo colonne persistito), `fallbackSelections`, `ladderSource` (DI), `orderApi` (DI), `enableDragMove=true`, `popout`, `multiSlot`, `signals` (live_signals, solo calcio), `flussoRunner=true`.
 
@@ -520,7 +520,7 @@ Card `rounded-xl border bg-white/5 p-3`, poll 60 s su RPC `get_scalper_state('ha
 **Struttura**: `min-h-screen bg-background p-2`; se mancano `market`/`event`: "Parametri mancanti: servono `market` ed `event`." (centrato muted); altrimenti barra minima (`px-1 pb-1`): `{eventName||marketName}` (11px muted, troncato) a sinistra e `BetfairMediaButtons compact` a destra; poi `StandaloneLadder` (sez. 4.17). Nessuna nav.
 
 ## 7. MarketWatch (`pages/MarketWatch.tsx`, 475 righe) — `/market-watch`
-**Scopo**: Market Watch multi-evento stile Fairbot: una riga per evento seguito con stato, P&L MTM, esposizione worst-case e (solo calcio) cash-out EVENTO. **Due sezioni separate** (regola d'oro: tennis e calcio non condividono mai dati).
+**Scopo**: Market Watch multi-evento stile FB: una riga per evento seguito con stato, P&L MTM, esposizione worst-case e (solo calcio) cash-out EVENTO. **Due sezioni separate** (regola d'oro: tennis e calcio non condividono mai dati).
 **Struttura**
 1. **Top bar sticky**: link `← Terminal` -> `/segui-live`; icona `Eye` ambra + "**Market Watch**"; a destra "modalità ordini: **{OFF|PAPER|LIVE}**" (LIVE rosso, PAPER sky, OFF grigio; modalita' = `order_mode` del primo evento calcio attivo che la pubblica, fail-safe off).
 2. Contenitore `p-3 space-y-4 max-w-[1400px]`.

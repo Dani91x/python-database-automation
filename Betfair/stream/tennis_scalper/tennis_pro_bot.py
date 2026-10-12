@@ -9,15 +9,15 @@ SETUP IMPLEMENTATI (ognuno con fonte reale):
        erba/fast -> BACK chi serve (tiene, fade dello spike);
        clay/wta  -> BACK chi riceve (break probabile).                [botblog/JuiceStorm 15-40]
   2. FADE OVER-REACTION — back del favorito dopo un break PRECOCE che
-     ne ha gonfiato la quota.                                          [Traderline/Pinnacle]
+     ne ha gonfiato la quota.                                          [TL/Pinnacle]
   3. SERVING FOR THE SET — LAY chi serve per il set (5-x, lead>=1): puo'
      fallire di servire il set -> pop.                                 [Daniel Temple]
   4. DOUBLE BREAK — LAY chi conduce di 2 break (lead game >=3): vantaggio
      fragile, rientro probabile.                                       [Daniel Temple]
   5. SET TRANSITION — nei primi game del set nuovo, LAY chi ha appena
-     vinto il set (sovra-reazione).                                    [Traderline]
+     vinto il set (sovra-reazione).                                    [TL]
   6. COMPRESSED FAVOURITE — LAY il favorito cortissimo per il wobble
-     (liability bassa, upside sul rientro).                            [Beating Betting/Bet Angel]
+     (liability bassa, upside sul rientro).                            [Beating Betting/BA]
 
 Tutti con: GATE liquidita' (mai challenger/ITF), GESTIONE A SCAGLIONI (-40% a
 meta' strada), STOP asimmetrico, uscita strutturale (chiude alla risoluzione del

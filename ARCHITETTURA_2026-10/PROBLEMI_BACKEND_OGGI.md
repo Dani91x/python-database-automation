@@ -14,7 +14,7 @@ i competitor, con file:riga), `ondata2/PIANO_AGGANCIO.md` (chi apre cosa, oggi e
 ## 0. Il problema in una frase
 
 Oggi l'app e' un insieme di ~18 processi che parlano con Betfair OGNUNO PER CONTO SUO e parlano FRA LORO attraverso il
-database cloud (Supabase). I competitor (Bet Angel, Geeks Toy, Cymatic, Fairbot, Bfexplorer) sono UN programma con UNA
+database cloud (Supabase). I competitor (BA, GT, CY, FB, BX) sono UN programma con UNA
 sessione Betfair, lo stream come fonte unica, tutto lo stato in memoria/locale e nessun database remoto nel percorso dei
 prezzi e degli ordini.
 
@@ -25,23 +25,23 @@ prezzi e degli ordini.
 | Problema | Oggi (verificato) | Competitor | Conseguenza |
 |---|---|---|---|
 | Login | Ogni processo fa il suo: fino a **12 sessioni vive** insieme (runner calcio 2, tennis 1, scanner 1, scalper 1 + fino a 4 sessioni figlie, Omega/Safe bot/Mike 1 ciascuno), + 48 login/giorno del job quote tennis, + un login IN PIU' che flumine fa all'avvio di ogni framework (`flumine/baseflumine.py:498`) | 1 login, 1 keepAlive (.it: sessione di 20 min) | rischio di superare il tetto di login del conto, relogin a cascata, token diversi per processo |
-| Connessioni Stream (limite Betfair: **10 per app key**) | prezzi calcio 1-3, ordini calcio 1, prezzi tennis 1, ordini tennis 1, scanner 1-4, ogni sessione scalper 2 in LIVE. **Caso peggiore LIVE: 10/10 senza scalper, 18 con 4 sessioni scalper** (oltre il limite: Betfair rifiuta, a caso) | un solo gestore dei flussi, 200 mercati per connessione (Bet Angel dichiara 1.000 mercati in streaming) | quando le connessioni finiscono un flusso ripiega sulla REST (lenta) o resta muto; nessuna priorita': puo' restare senza stream proprio il mercato con soldi in gioco |
-| Stream ORDINI | uno per processo flumine (runner calcio, runner tennis, ogni scalper): lo stesso ordine del conto arriva 3+ volte; flumine SCARTA gli ordini senza `customerOrderRef` e quelli delle strategie che il processo non ha (`flumine/order/process.py:39-40,101-114`) | uno solo per l'app; Geeks Toy mostra anche le «External Bets» | il ladder NON vede gli ordini fatti dal sito Betfair ne' quelli degli altri processi/bot |
+| Connessioni Stream (limite Betfair: **10 per app key**) | prezzi calcio 1-3, ordini calcio 1, prezzi tennis 1, ordini tennis 1, scanner 1-4, ogni sessione scalper 2 in LIVE. **Caso peggiore LIVE: 10/10 senza scalper, 18 con 4 sessioni scalper** (oltre il limite: Betfair rifiuta, a caso) | un solo gestore dei flussi, 200 mercati per connessione (BA dichiara 1.000 mercati in streaming) | quando le connessioni finiscono un flusso ripiega sulla REST (lenta) o resta muto; nessuna priorita': puo' restare senza stream proprio il mercato con soldi in gioco |
+| Stream ORDINI | uno per processo flumine (runner calcio, runner tennis, ogni scalper): lo stesso ordine del conto arriva 3+ volte; flumine SCARTA gli ordini senza `customerOrderRef` e quelli delle strategie che il processo non ha (`flumine/order/process.py:39-40,101-114`) | uno solo per l'app; GT mostra anche le «External Bets» | il ladder NON vede gli ordini fatti dal sito Betfair ne' quelli degli altri processi/bot |
 | REST nel percorso dei prezzi | board calcio/tennis ogni 10 s via REST; scanner sui mercati oltre la capacita' degli shard via REST; Omega e Mike leggono il book via REST nelle decisioni e uscite (`omega_market.read_book`) | REST solo di riserva (decisione utente 8: «stream dove possibile, REST solo backup») | dati vecchi di secondi, peso REST sul conto |
-| Conflation dello scanner | **1.000 ms fisso** (`safe_strategy/stream.py:66-67`): lo scanner alimenta Mike, Safe e Omega | Cymatic conflate 0 ms; Bet Angel refresh 20 ms | i tre bot vedono prezzi fino a 1 s vecchi (cambiarlo cambia l'input dei bot: solo con decisione U-01 e replay) |
+| Conflation dello scanner | **1.000 ms fisso** (`safe_strategy/stream.py:66-67`): lo scanner alimenta Mike, Safe e Omega | CY conflate 0 ms; BA refresh 20 ms | i tre bot vedono prezzi fino a 1 s vecchi (cambiarlo cambia l'input dei bot: solo con decisione U-01 e replay) |
 
 ## 2. Popolamento del ladder: lento, parziale, a volte dal cloud
 
 | Problema | Oggi | Competitor | Conseguenza |
 |---|---|---|---|
-| Cadenza | il runner pubblica il ladder al canale locale con un worker ogni **200 ms** (`config_stream.py:74`, `ladder_canale.py`): un cambio aspetta 0-200 ms prima ancora di partire; il DB `live_ladder` e' scritto ogni 0,3 s dall'app (2 s di serie) | Bet Angel: refresh fino a **20 ms**, «update» a ogni messaggio | 10 volte piu' lento del riferimento; l'utente ha deciso «massima velocita'» (20 ms) |
+| Cadenza | il runner pubblica il ladder al canale locale con un worker ogni **200 ms** (`config_stream.py:74`, `ladder_canale.py`): un cambio aspetta 0-200 ms prima ancora di partire; il DB `live_ladder` e' scritto ogni 0,3 s dall'app (2 s di serie) | BA: refresh fino a **20 ms**, «update» a ogni messaggio | 10 volte piu' lento del riferimento; l'utente ha deciso «massima velocita'» (20 ms) |
 | Sorgente di riserva | se il canale locale non c'e', la UI legge il ladder dal **DB cloud in realtime** (`frontend/src/lib/live.ts:619-632`) | nessun DB remoto | ladder dal cloud = centinaia di ms o secondi |
-| Ordini sul ladder | solo i «miei» ordini dello specchio del processo (`liveOrders.ts:530-536` via RPC cloud `get_live_orders`, o push `order` del canale); **esclusi** ordini dal sito e di altri processi; nessuna colonna «autore» | tutti gli ordini del conto (Geeks Toy External Bets) | l'utente non vede tutta la sua esposizione sul ladder |
-| P&L «se vince» | per selezione da sola; P&L di mercato solo nel replay; ordini fuori specchio non contati | Bet Angel/Traderline/Fairbot: P&L in tempo reale per selezione su ogni mercato | decisione utente 5: «se vince» su TUTTI i mercati |
-| Spostare un ordine (drag) | cancel POI place (2 transazioni, posizione in coda persa; `LadderView.tsx:2023-2026`) | drag&drop (Fairbot); decisione utente D-5: trascinare = replaceOrders, il bet delay riparte | doppie transazioni, coda persa |
-| Annulla | per lato con N `cancel` in sequenza; **nessun «annulla tutto il mercato / tutti i mercati»** in una chiamata; decisione utente D-5: tasto destro = annulla con un clic su ogni ordine (anche dei bot, che si fermano) | Bfexplorer: chiusura singola/mercato/tutte; Betfair `cancelOrders` senza istruzioni = tutto il mercato | lento nelle emergenze |
+| Ordini sul ladder | solo i «miei» ordini dello specchio del processo (`liveOrders.ts:530-536` via RPC cloud `get_live_orders`, o push `order` del canale); **esclusi** ordini dal sito e di altri processi; nessuna colonna «autore» | tutti gli ordini del conto (GT External Bets) | l'utente non vede tutta la sua esposizione sul ladder |
+| P&L «se vince» | per selezione da sola; P&L di mercato solo nel replay; ordini fuori specchio non contati | BA/TL/FB: P&L in tempo reale per selezione su ogni mercato | decisione utente 5: «se vince» su TUTTI i mercati |
+| Spostare un ordine (drag) | cancel POI place (2 transazioni, posizione in coda persa; `LadderView.tsx:2023-2026`) | drag&drop (FB); decisione utente D-5: trascinare = replaceOrders, il bet delay riparte | doppie transazioni, coda persa |
+| Annulla | per lato con N `cancel` in sequenza; **nessun «annulla tutto il mercato / tutti i mercati»** in una chiamata; decisione utente D-5: tasto destro = annulla con un clic su ogni ordine (anche dei bot, che si fermano) | BX: chiusura singola/mercato/tutte; Betfair `cancelOrders` senza istruzioni = tutto il mercato | lento nelle emergenze |
 | Bet delay a schermo | non mostrato | (Betfair lo da' nella MarketDefinition) | l'utente non sa quanto aspettera' |
-| Contatore transazioni | tetto PER PROCESSO (1.000/h), non per conto; non sul ladder | Bet Angel: contatore a schermo; Betfair conta per conto (5.000/h) | rischio di superare il tetto del conto senza saperlo |
+| Contatore transazioni | tetto PER PROCESSO (1.000/h), non per conto; non sul ladder | BA: contatore a schermo; Betfair conta per conto (5.000/h) | rischio di superare il tetto del conto senza saperlo |
 | Puntate .it | il ladder calcio TRONCA in silenzio una puntata non multipla di 0,50 (`live_order_worker.py:1497-1502`), il terminale la rifiuta | decisione utente 3: la UI offre SOLO multipli di 0,50 (nessun rifiuto, nessun troncamento nascosto) | importi diversi da quelli scelti |
 | Tennis | niente FOK sul ladder tennis, cash-out e stop parziali | completi | asimmetria calcio/tennis |
 
@@ -66,7 +66,7 @@ anche dopo un'assenza di rete). Nessun dato Betfair passa dal cloud. Il cloud re
 |---|---|---|
 | Strade degli ordini | **7 strade diverse** per mandare un ordine a Betfair, 9 modi di controllare che tornino; Mike live manda ordini per conto suo (REST) | una porta |
 | Heartbeat API di Betfair (cancella i LIMIT se il programma muore) | non usata | rete di sicurezza lato Betfair |
-| Monitor dell'API con pausa automatica | la «Salute» misura ma non agisce | Cymatic sospende il trading oltre soglia |
+| Monitor dell'API con pausa automatica | la «Salute» misura ma non agisce | CY sospende il trading oltre soglia |
 | Precedenza delle connessioni quando non bastano | nessuna (decide Betfair, a caso) | decisione utente D-4: «tutto cio' che ha soldi in gioco o da gestire ha la priorita'» |
 | Ordini dei bot toccati dall'utente | oggi il bot lo vede e si ferma | decisione utente D-5: deve restare cosi' |
 

@@ -1,6 +1,6 @@
 // ============================================================================
-// TerminalPositionsRail — colonna SINISTRA del trading terminal (stile Bet Angel /
-// Fairbot "My Bets"): POSIZIONI/P&L per selezione del mercato attivo + ORDER BOOK
+// TerminalPositionsRail — colonna SINISTRA del trading terminal (stile BA /
+// FB "My Bets"): POSIZIONI/P&L per selezione del mercato attivo + ORDER BOOK
 // personale (unmatched con cancel one-click, matched).
 //
 // SOLA PRESENTAZIONE + cancel: legge lo specchio DB (fetchLiveOrders/fetchLivePositions,

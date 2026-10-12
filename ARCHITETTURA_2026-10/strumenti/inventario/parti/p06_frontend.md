@@ -31,7 +31,7 @@ Descrizione delle pagine (prima riga di commento del file della pagina; funziona
 `/board` «Programma di oggi» (due tab calcio/tennis alimentate SOLO dai push `board` dei due canali locali, `pages/Board.tsx:1-5`); `/control-room` «IL BANCO DELLA GIORNATA»
 (tre bot Omega/Safe/Mike + scalper + tennis in una pagina, `pages/ControlRoom.tsx:1-6`, 1.740 righe + `useControlRoom.ts` 4.322); `/omega` (bot Correct Score LAY, `Omega.tsx:1-5`);
 `/safe-strategy` (radar + bot, `SafeStrategy.tsx:1-6`); `/mike` (Under 3.5 / Over 4.5 paper-first, `Mike.tsx:1-6`); `/segui-live` (partite sottoscritte allo stream, dettaglio realtime, `SeguiLive.tsx:1-5`);
-`/multi-ladder` (N ladder affiancati, `MultiLadder.tsx:1-4`); `/ladder-popout` (un ladder in finestra staccata, `LadderPopout.tsx:1-6`); `/market-watch` (stile Fairbot, `MarketWatch.tsx:1-3`);
+`/multi-ladder` (N ladder affiancati, `MultiLadder.tsx:1-4`); `/ladder-popout` (un ladder in finestra staccata, `LadderPopout.tsx:1-6`); `/market-watch` (stile FB, `MarketWatch.tsx:1-3`);
 `/live-pnl` (P&L di giornata, fonti `get_live_settled`, `LivePnl.tsx:1-3`); `/trade-journal` (review post-sessione, `TradeJournal.tsx:1-3`); `/report-personale` (KPI, equity, drawdown,
 `ReportPersonale.tsx:1-3`); `/watchlist` (Da valutare / Giocate / Scartate, `Watchlist.tsx:1-3`); `/analytics` (pagella per motore e mercato, solo RPC aggregate, `Analytics.tsx:1-3`);
 `/dashboard` (calcio: partite del giorno, previsioni ML, ritardi, direzioni, backtest automatico: componenti in `components/dashboard/`); `/tennis`, `/tennis/terminal`, `/tennis/replay`

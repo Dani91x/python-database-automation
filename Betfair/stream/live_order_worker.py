@@ -394,7 +394,7 @@ def _min_stake() -> float:
     """Stake MINIMO dell'exchange (env ``BETFAIR_MIN_STAKE``, default 2.0 EUR — .it).
 
     Sotto questa soglia un ordine LIVE non e' piazzabile direttamente: si usa la sequenza
-    place-and-trim (``trading/submin.py``, meccanismo documentato Betfair usato da Bet Angel).
+    place-and-trim (``trading/submin.py``, meccanismo documentato Betfair usato da BA).
     Ri-letto ad ogni chiamata (modificabile senza riavvio, come gli altri limiti).
     """
     val = _cfg_attr("BETFAIR_MIN_STAKE")
@@ -1295,7 +1295,7 @@ def _replace_or_raise(market: Any, order: Any, new_price: float, what: str) -> N
 
 
 # ---------------------------------------------------------------------------
-# SOTTO-MINIMO (place-and-trim) SINCRONO — meccanismo documentato Betfair (Bet Angel)
+# SOTTO-MINIMO (place-and-trim) SINCRONO — meccanismo documentato Betfair (BA)
 # ---------------------------------------------------------------------------
 # Betfair non accetta un ordine sotto il minimo di giurisdizione, ma accetta di RIDURRE un
 # ordine gia' a mercato sotto quel minimo. Quindi (vedi trading/submin.py):
@@ -2087,7 +2087,7 @@ def _cancel_unmatched(
 ) -> "tuple[int, List[Dict[str, Any]]]":
     """A3 — cancella i NOSTRI ordini unmatched del mercato (o della sola selezione).
 
-    Sequenza pro del cash-out COMPLETO (Bet Angel): prima si annullano i resting,
+    Sequenza pro del cash-out COMPLETO (BA): prima si annullano i resting,
     POI si hedgia il matched — altrimenti un resting dimenticato può abbinarsi
     DOPO l'hedge e riaprire l'esposizione appena chiusa. Cancella solo ordini
     EXECUTABLE con size_remaining > 0 (gli unici cancellabili). Un fallimento
@@ -3299,7 +3299,7 @@ def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: st
 def _do_cashout_event(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any,
                       *, client: Any = None) -> None:
     """Cash-out dell'INTERO EVENTO (cashout_event): flatten di TUTTI i mercati che condividono
-    l'event_id — chiusura globale multi-mercato (benchmark Betting Toolkit). L'event_id è preso
+    l'event_id — chiusura globale multi-mercato (benchmark BTK). L'event_id è preso
     da ``params.event_id`` o, in fallback, dal ``market.event_id`` del market_id passato.
 
     OGNI mercato è chiuso PER CONTO SUO (flatten indipendente): nessun netting cross-market

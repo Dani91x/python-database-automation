@@ -1,6 +1,6 @@
 // ============================================================================
 // priceAxis.ts — scala TICK Betfair completa (1.01 → 1000) come ASSE NAVIGABILE
-// (price bar stile Geeks Toy): mappa prezzo↔indice-tick e profilo di
+// (price bar stile GT): mappa prezzo↔indice-tick e profilo di
 // concentrazione del denaro per zona. Matematica PURA, testabile a unità.
 //
 // Le bande tick sono lo standard Betfair Exchange:
