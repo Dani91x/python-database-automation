@@ -55,3 +55,16 @@ Dettaglio in `ARCHITETTURA_2026-10/ondata2/PIANO_AGGANCIO.md`.
 | D-3 | Tetto delle transazioni per conto (Betfair: 5.000/ora): valore e se le CHIUSURE sono sempre ammesse anche a tetto raggiunto | **Tetto Betfair, chiusure sempre ammesse** (uscire da una posizione non deve mai essere bloccato) |
 | D-4 | Se le 10 connessioni non bastano, chi ha la precedenza | **Ordini > ladder aperto dall'utente > bot in-play > scanner** |
 | D-5 | Dal ladder si possono dare comandi (annulla/sposta) anche sugli ordini dei bot? | **Si', con conferma esplicita** (come i competitor: tutto il conto e' controllabile), mai a un clic |
+
+## Risposte dell'utente (12/10/2026) - VINCOLANTI
+
+| # | Risposta dell'utente | Cosa significa per il codice |
+|---|---|---|
+| Mappatura | **Si'** al merge su master del ramo `claude/mappa-flussi` dopo la firma del PC; **si'** all'accensione dei tre registratori | Firma LEGGERA (vedi sotto) |
+| Firma del solo tracciamento | «se aggiungiamo solo una riga di codice di TRACCIAMENTO non c'e' bisogno dei replay perche' non abbiamo cambiato nulla, gli unici test sono di corretto e uguale funzionamento» | Per cambi di PURO tracciamento: `ARCHITETTURA_2026-10/mappa/verifica_solo_tracciamento.py` (AST a interruttori spenti identico alla base + test di funzionamento) al posto di replay/ricertificazioni. Un cambio di comportamento, anche di una riga, segue lo standard pieno |
+| 3 (rivista) | «devono essere a multipli di 0,50 senza rifiuti o errori silenti» | Nella v2 la puntata del desktop (ladder calcio e tennis, terminale) si sceglie SOLO a passi di 0,50 EUR: il campo, i preset e la rotella offrono solo multipli di 0,50, l'importo mostrato e' quello che parte. Nessun troncamento nascosto e nessun rifiuto, perche' un importo non multiplo non si puo' comporre. La porta tiene comunque il rifiuto come ultima difesa (mai raggiunta dalla UI). Bot invariati |
+| D-1 | **Si'**: processo `betfair-nucleo` unico (sessione, stream ordini, gestore dei flussi) | Come da PIANO_AGGANCIO |
+| D-2 | **Si'**, «non voglio errori nel db» | Letture: ritentate come oggi (57014, OSError). Scritture con soldi: MAI ritentate alla cieca; passano dall'archivio locale e dal postino (chiave naturale, consegna idempotente, dead-letter ritentata): nessun dato perso, nessun doppione |
+| D-3 | **Si'**: tetto Betfair 5.000 transazioni/ora, chiusure sempre ammesse | Come raccomandato |
+| D-4 | «tutto cio' che ha soldi in gioco o da gestire ha la priorita'» | Precedenza delle connessioni: 1) stream ordini; 2) mercati con ordini aperti o posizioni da gestire (di chiunque: utente o bot, paper escluso perche' non usa connessioni Betfair per gli ordini); 3) ladder aperti dall'utente; 4) bot in-play senza posizione; 5) scanner |
+| D-5 | «annullare con un click, tasto destro come i competitor; spostare uguale, basta trascinare l'ordine dove vuoi come i competitor, e riparte il bet-delay di Betfair» | Dal ladder, su OGNI ordine del conto (utente e bot): ANNULLA = un clic destro sull'ordine, nessuna conferma; SPOSTA = trascinare l'ordine su un altro prezzo (replaceOrders: Betfair annulla e ripiazza, il bet delay in-play riparte; il ladder lo mostra). Nessuna finestra di conferma. L'ordine di un bot spostato/annullato dall'utente resta segnato col suo autore (D10) |
