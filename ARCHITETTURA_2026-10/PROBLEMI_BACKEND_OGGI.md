@@ -1,8 +1,8 @@
 # I problemi del backend di oggi rispetto ai competitor (12/10/2026)
 
-Destinatario: l'agente del PC che confronta BettingToolkit col nostro sistema
-(`ARCHITETTURA_2026-10/CONFRONTO_BETTINGTOOLKIT/`). Scopo: sapere ESATTAMENTE cosa ci manca, per dire punto per punto
-se BettingToolkit lo risolve, come, e a che prezzo.
+Destinatario: l'agente del PC che confronta BTK col nostro sistema
+(`ARCHITETTURA_2026-10/CONFRONTO_BTK/`). Scopo: sapere ESATTAMENTE cosa ci manca, per dire punto per punto
+se BTK lo risolve, come, e a che prezzo.
 
 Fonti (tutte nel repo, ramo `claude/architettura-tappa0` salvo dove detto): `ARCHITETTURA_2026-10/06_RIEPILOGO_PER_L_UTENTE.md`,
 `07_MISURE_OGGI.md` (misure vere), `02_COMPETITOR.md` (63 fonti pubbliche), `ondata2/MATRICE_PARITA.md` (51 voci contro
@@ -85,10 +85,10 @@ ordini del conto senza filtro (W1-A2), ladder a ogni cambio con coalescenza 20 m
 minimi .it (W1-C1), libro ordini del conto con autore e P&L (W1-C2), archivio locale SQLite + postino verso il cloud
 (W1-G1), client cloud unico con cache (W1-G2), stato partita (W1-B). Suite 13.082 verdi. Manca l'AGGANCIO (ondata 2,
 piano in `ondata2/PIANO_AGGANCIO.md`: processo unico `betfair-nucleo`, connessioni da 18 a 10, login da 12 a 1;
-stima 49-64 giorni). Se BettingToolkit copre questi pezzi, la domanda vera e': ci risparmia l'aggancio o solo il nucleo
+stima 49-64 giorni). Se BTK copre questi pezzi, la domanda vera e': ci risparmia l'aggancio o solo il nucleo
 che abbiamo gia'?
 
-## 7. Cosa NON deve cambiare (vale anche per BettingToolkit)
+## 7. Cosa NON deve cambiare (vale anche per BTK)
 
 Strategie dei bot intoccate (soglie, stake, tetti, gambe); paper e live mai sommati; calcio e tennis mai mischiati; bot
 accesi solo dall'utente; minimi italiani (1 EUR diretto, passi di 0,50); certificazione dei bot sul banco col codice di
@@ -96,7 +96,7 @@ produzione; ogni sostituzione prima in ombra e su master solo se uguale o meglio
 
 ## 8. Cosa chiediamo al confronto (una riga per ciascun problema dei par. 1-5)
 
-Per ogni riga: **BettingToolkit lo risolve? (si'/in parte/no)**, con file e funzione di BettingToolkit; come
+Per ogni riga: **BTK lo risolve? (si'/in parte/no)**, con file e funzione di BTK; come
 (processo/thread/cache/DB); cosa servirebbe per collegarlo ai nostri bot Python, alla UI Electron/React e al canale
 locale; rischi (licenza, lingua, dipendenze, chi lo mantiene, test esistenti); se e' piu' rapido del nostro aggancio.
 In testa: provenienza e licenza esatta (non copiare il loro codice nel nostro repo finche' la licenza non lo permette),
