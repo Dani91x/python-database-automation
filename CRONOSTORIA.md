@@ -5725,3 +5725,32 @@ dei due runner, `/order` del desktop (motore ordini calcio, worker ordini tennis
 - PUNTO DI RIPRESA, nell'ordine: (1) l'utente applica `migrations/monitor_metrics_2026-10-09.sql` (7 giorni); (2) il PC aggiunge
   `MONITOR_SALUTE=1` al `.env`; (3) `npm run build` ad app spenta; (4) l'utente riavvia l'app; (5) 24 h di misura con 30 ordini paper;
   (6) referto T0A §5. Cloud: R-3 chiuso (`5d03131e`), restano decisioni (a)-(e), «modalita-mista», ondata 1.
+
+## 2026-10-12 — MAPPATURA DEI FLUSSI (M-1, M-2, M-3) SU MASTER, SPENTA (coordinatore PC, Opus 5.5)
+Stato di partenza verificato: master locale = origin/master = `a3a58ad8` (cronostoria del 09/10). Ramo cloud `claude/mappa-flussi`
+= `4e93e61d`, nato da `a3a58ad8` (39 file, solo tracciamento dietro `REGISTRO_ORDINI`, `MONITOR_SALUTE`, `REGISTRA_CANALE`).
+Decisione dell'utente del 12/10: per cambi di PURO tracciamento niente replay, ricertificazioni ne' suite intera (gia' fatta nel
+cloud l'11/10: 11.771 verdi / 0 rossi); solo la prova di funzionamento identico (`ARCHITETTURA_2026-10/mappa/LEGGIMI_FIRMA_PC.md` par. 3).
+
+### Checkpoint
+- 08:20 worktree staccato su `4e93e61d` nello scratchpad (giunzioni `.venv` e `node_modules` al principale).
+- 08:22 `verifica_solo_tracciamento.py`: 12 file di produzione VERDI (AST a interruttori spenti = base `a3a58ad8`; frontend solo
+  righe guardate), test di funzionamento 308 passati + 4 saltati (= 312), **ESITO: VERDE - solo tracciamento** (93 s).
+- 08:22 `npx tsc -p tsconfig.app.json --noEmit`: 0 errori.
+- 08:24 falsificazione del coordinatore: una riga non guardata in coda a `Betfair/stream/tempi_ordine.py` -> ROSSO sul file e sui
+  test di funzionamento (ESITO: ROSSO (2)); file ripristinato, worktree pulito.
+- 08:25 push su master in avanzamento veloce (fetch prima): **master = `4e93e61d`**. Checkout principale NON ancora aggiornato
+  (si fa ad app chiusa, insieme alla build).
+- Utente: migrazione `migrations/monitor_metrics_2026-10-09.sql` APPLICATA (12/10 mattina).
+- 08:30 app chiusa (nessun processo AlphaScore/electron/python): aggiunte al `.env` della radice `MONITOR_SALUTE=1`,
+  `REGISTRO_ORDINI=1`, `REGISTRA_CANALE=1` (nient'altro toccato); checkout principale portato a `4e93e61d` (`merge --ff-only`).
+- 08:32 `npm run build` ad app chiusa: exit 0 (built in 59 s); `loadEnv` di vite legge `MONITOR_SALUTE=1` -> voce «Salute» nel menu.
+- 08:34 worktree di verifica rimosso (giunzioni tolte con rmdir prima; `.venv` e `node_modules` del principale presenti).
+
+### Punto di ripresa
+1. L'utente riapre l'app (interruttori ACCESI).
+2. Controlli "acceso" (solo osservazione, niente replay): cartelle `_live_raw\_ordini`, `_logs\canale`, `_logs\monitor` che si
+   riempiono; voce «Salute» nel menu; punti di `M1_REGISTRATORE_ORDINI.md` par. 8, `M2_MISURE.md` par. 4, `M3_CANALE_E_MAPPA.md` par. 7.
+   Le cartelle prima del riavvio NON esistono (verificato alle 08:33): nascono all'accensione.
+3. Dopo un giorno: peso su disco reale (stima M-1 1-6 MB/g, M-3 50-300 MB/g) e misura T0A 24 h con 30 ordini paper -> referto T0A par. 5.
+4. Giro di 5 minuti a interruttori spenti (`LEGGIMI_FIRMA_PC.md` par. 3 punto 4) NON fatto: l'utente ha chiesto di accendere subito.
