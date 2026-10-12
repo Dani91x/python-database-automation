@@ -35,25 +35,36 @@ sul PC dopo un giorno.
   identico al referto T0A.
 - Suite intera sul ramo unito: vedi par. 5.
 
-## 3. Checklist del PC (in quest'ordine)
+## 3. Checklist del PC (in quest'ordine) - VERSIONE LEGGERA, decisione dell'utente del 12/10/2026
 
-1. `git fetch`; `git diff origin/master..origin/claude/mappa-flussi --stat`. File esistenti toccati (solo aggiunte,
-   tutte dietro un interruttore): `Betfair/stream/auth.py`, `Betfair/client.py`, `Betfair/stream/tempi_ordine.py`,
-   `Betfair/stream/local_channel.py`, `Betfair/stream/live_order_worker.py` (1 argomento di misura),
-   `Betfair/stream/esiti_ordini_canale.py`, `Betfair/stream/tennis_live/tennis_runner.py`,
-   `Betfair/safe_strategy/canale_scan.py`, `frontend/src/lib/localChannel.ts`, `localTransport.ts`, `salute.ts`,
-   `components/live/LadderView.tsx`. Rileggerli di persona.
-2. Test e mutazioni dei tre documenti (M1 par. 8, M2 par. 4 e 7.4, M3 par. 7), poi la suite intera UNA volta
-   (`python -m pytest Betfair/ -q -p no:cacheprovider`), frontend `npx tsc -p tsconfig.app.json --noEmit` (0 errori) e
-   `npx vitest run`.
-3. **Ricertificazione dal punto d'ingresso unico** (cambia l'impronta del codice, NON la strategia):
-   `python -m Betfair.stream.backtest.certifica` prima (`a3a58ad8`) e dopo, a interruttori spenti, righe uguali tolti
-   i tempi, per: safe_base, safe_esatto, safe_punta, **safe_tennis**, **i 4 bot tennis** (registrazione tennis del
-   PC); di controllo omega e mike su 35760084. Senza questo punto il ramo NON va su master.
-4. Giro paper a interruttori SPENTI: app identica a ieri (nessuna cartella `_live_raw\_ordini`, `_logs\canale`).
-5. Solo dopo la firma e il si' dell'utente: merge su master, righe nel `.env`, `npm run build` in `frontend/` AD APP
-   SPENTA, riavvio dell'app da parte dell'utente; controlli dei punti "acceso" dei tre documenti.
-6. Firma: chi ha rieseguito, data, numeri.
+Decisione dell'utente (12/10): "non voglio perdere giorni a rifare i test (abbiamo certificato tutto piu' volte):
+se aggiungiamo solo righe di codice di TRACCIAMENTO non servono i replay, perche' non abbiamo cambiato nulla; gli
+unici test sono di corretto e uguale funzionamento". Quindi per QUESTO ramo NON si rifanno replay ne' ricertificazioni
+ne' la suite intera (gia' eseguita: par. 5). Al loro posto una prova meccanica che il codice di prima, a interruttori
+spenti, e' IDENTICO.
+
+1. `git fetch`; `git checkout claude/mappa-flussi` (o un worktree).
+2. `python ARCHITETTURA_2026-10/mappa/verifica_solo_tracciamento.py` (circa 1 minuto). Cosa fa:
+   - per ogni file di produzione gia' esistente toccato, confronta l'ALBERO del codice (AST) della base `a3a58ad8`
+     con quello del ramo dopo aver tolto SOLO gli import del tracciamento e i blocchi `if <interruttore>:`; se resta
+     una differenza qualsiasi, ROSSO. Unica eccezione dichiarata: l'argomento di misura `invio=req.ricevuto_ms`
+     (0 a monitor spento = nessuna misura, provato);
+   - frontend: ogni riga aggiunta deve essere tracciamento riconosciuto (guardata da `misuraAccesa()`), nessuna
+     riga tolta;
+   - lancia i 312 test "spento = identico, acceso = stesso esito" dei quattro pezzi.
+   Deve finire con `ESITO: VERDE - solo tracciamento`. Falsificata nel cloud: una chiamata non guardata, un ramo
+   "spento" cambiato, una riga TS in piu' e una riga TS cambiata escono ROSSE.
+3. `cd frontend && npx tsc -p tsconfig.app.json --noEmit` -> 0 errori.
+4. Un giro di 5 minuti con l'app COSI' COM'E' (interruttori spenti, dopo il merge e prima di accendere): tutto
+   come ieri.
+5. Riferire all'utente il risultato; merge su master SOLO col suo si' (gia' dato il 12/10 "dopo la firma").
+6. Accensione (la fa l'utente, vedi par. 4): migrazione `migrations/monitor_metrics_2026-10-09.sql`, tre righe nel
+   `.env`, `npm run build` in `frontend/` AD APP CHIUSA, riavvio dell'app. Controlli "acceso" ai par. 8 di M1, 4 di
+   M2, 7 di M3 (solo i punti di osservazione, non i replay).
+
+Nota per chi verra' dopo: questa via leggera vale SOLO per cambi di puro tracciamento che passano
+`verifica_solo_tracciamento.py`. Un cambio che tocca il comportamento (anche di una riga) segue lo standard pieno di
+`PROCESSO_STANDARD_BOT.md`.
 
 ## 4. Da dire all'utente prima dell'accensione
 
