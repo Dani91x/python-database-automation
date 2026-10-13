@@ -1700,6 +1700,17 @@ def test_dopo_kickoff_id_produce_il_filtro_or_vero_di_postgrest():
     assert en._dopo_kickoff_id(q, None) is q
 
 
+def test_dopo_kickoff_id_mette_il_cursore_come_condizione_d_indice():
+    """13/10 (run 38111407477, 38194697954): senza `kickoff >= cursore` in AND
+    l'`or` e' solo un Filter e ogni pagina riscorre l'indice da `since` -> 57014
+    sulle pagine tarde. Il filtro `since` della prima pagina deve restare."""
+    from postgrest import SyncPostgrestClient
+    c = SyncPostgrestClient("http://127.0.0.1:9")
+    q = c.from_("analytics_signals").select("league_id,fixture_id,kickoff,id").gte("kickoff", "S")
+    q = en._dopo_kickoff_id(q, ("2026-10-12T12:30:00+00:00", 6209363))
+    assert q.request.params.get_list("kickoff") == ["gte.S", "gte.2026-10-12T12:30:00+00:00"]
+
+
 def test_main_leagues_recupera_solo_le_leghe_indicate(monkeypatch, capsys):
     sig = _righe_signals_lega(5, league_id=292) + _righe_signals_lega(5, league_id=331)
     db = FakeDB({"analytics_signals": sig, "analytics_snap_staging": [],

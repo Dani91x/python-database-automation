@@ -564,11 +564,17 @@ def _enrich_league(sb, league_id: int, dry: bool, counters: dict,
 def _dopo_kickoff_id(q, dopo):
     """Filtro keyset sul cursore composto (kickoff, id): righe DOPO l'ultima letta
     nell'ordine `kickoff, id`. Il timestamp va fra virgolette doppie nel filtro
-    `or` di PostgREST (contiene ':' e '+')."""
+    `or` di PostgREST (contiene ':' e '+').
+
+    13/10 - `kickoff >= k` in AND: l'`or` da solo NON e' una condizione d'indice,
+    quindi ogni pagina riscorreva idx_as_kickoff da `since` fino al cursore e
+    scartava tutte le righe gia' lette (pagina tarda: 226.675 righe scartate,
+    10,3 s -> 57014 a blocco 25 nelle run 38111407477 e 38194697954). Con
+    `kickoff >= k` l'indice parte dal cursore: stessa pagina in 3,6 ms, stesse righe."""
     if dopo is None:
         return q
     k, i = dopo
-    return q.or_(f'kickoff.gt."{k}",and(kickoff.eq."{k}",id.gt.{int(i)})')
+    return q.gte("kickoff", k).or_(f'kickoff.gt."{k}",and(kickoff.eq."{k}",id.gt.{int(i)})')
 
 
 def _recent_targets(sb, days: int) -> dict[int, set[int]]:
